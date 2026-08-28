@@ -40,7 +40,7 @@ uleb      wire version: 1
 id        module identity
 id        revision identity
 uleb      parent count
-id[]      parent revision identities, lexicographically sorted
+id[]      parent revision identities, strictly lexicographically sorted
 uleb      entity count
 entity[]  entities, lexicographically sorted by identity
 ```
