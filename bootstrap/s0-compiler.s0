@@ -1,0 +1,510 @@
+# The portable S0 compiler, authored as readable S0.
+ve 3
+cp 7
+fc 3
+
+# function 0
+fn 2 3 27 51
+lg 1
+cu 127
+an
+ls 2
+lg 1
+cu 7
+sr
+ls 1
+lg 1
+cu 0
+eq
+bf 13 25
+ju 17 33
+lg 2
+cu 128
+or
+ls 2
+lg 0
+lg 2
+bp
+ls 0
+lg 1
+cu 0
+eq
+bf 0 0
+lg 0
+re
+
+# function 1
+fn 1 2 244 746
+lg 0
+cu 30309
+eq
+bf 7 21
+cu 65537
+ls 1
+ju 242 743
+lg 0
+cu 25456
+eq
+bf 14 42
+cu 131073
+ls 1
+ju 242 743
+lg 0
+cu 26211
+eq
+bf 21 63
+cu 131073
+ls 1
+ju 242 743
+lg 0
+cu 26222
+eq
+bf 28 84
+cu 131076
+ls 1
+ju 242 743
+lg 0
+cu 25966
+eq
+bf 35 105
+cu 131073
+ls 1
+ju 242 743
+lg 0
+cu 29285
+eq
+bf 42 124
+cu 0
+ls 1
+ju 242 743
+lg 0
+cu 25461
+eq
+bf 49 145
+cu 257
+ls 1
+ju 242 743
+lg 0
+cu 27751
+eq
+bf 56 166
+cu 513
+ls 1
+ju 242 743
+lg 0
+cu 27763
+eq
+bf 63 187
+cu 769
+ls 1
+ju 242 743
+lg 0
+cu 25714
+eq
+bf 70 208
+cu 1024
+ls 1
+ju 242 743
+lg 0
+cu 25717
+eq
+bf 77 229
+cu 1280
+ls 1
+ju 242 743
+lg 0
+cu 24932
+eq
+bf 84 250
+cu 4096
+ls 1
+ju 242 743
+lg 0
+cu 29557
+eq
+bf 91 271
+cu 4352
+ls 1
+ju 242 743
+lg 0
+cu 28021
+eq
+bf 98 292
+cu 4608
+ls 1
+ju 242 743
+lg 0
+cu 25705
+eq
+bf 105 313
+cu 4864
+ls 1
+ju 242 743
+lg 0
+cu 29293
+eq
+bf 112 334
+cu 5120
+ls 1
+ju 242 743
+lg 0
+cu 24942
+eq
+bf 119 355
+cu 5376
+ls 1
+ju 242 743
+lg 0
+cu 28530
+eq
+bf 126 376
+cu 5632
+ls 1
+ju 242 743
+lg 0
+cu 30831
+eq
+bf 133 398
+cu 5888
+ls 1
+ju 242 743
+lg 0
+cu 29548
+eq
+bf 140 420
+cu 6144
+ls 1
+ju 242 743
+lg 0
+cu 29554
+eq
+bf 147 442
+cu 6400
+ls 1
+ju 242 743
+lg 0
+cu 25969
+eq
+bf 154 464
+cu 6656
+ls 1
+ju 242 743
+lg 0
+cu 27764
+eq
+bf 161 486
+cu 6912
+ls 1
+ju 242 743
+lg 0
+cu 27253
+eq
+bf 168 508
+cu 8194
+ls 1
+ju 242 743
+lg 0
+cu 25190
+eq
+bf 175 530
+cu 8450
+ls 1
+ju 242 743
+lg 0
+cu 25441
+eq
+bf 182 552
+cu 12289
+ls 1
+ju 242 743
+lg 0
+cu 25196
+eq
+bf 189 575
+cu 16384
+ls 1
+ju 242 743
+lg 0
+cu 25191
+eq
+bf 196 598
+cu 16640
+ls 1
+ju 242 743
+lg 0
+cu 25198
+eq
+bf 203 621
+cu 16896
+ls 1
+ju 242 743
+lg 0
+cu 25200
+eq
+bf 210 644
+cu 17152
+ls 1
+ju 242 743
+lg 0
+cu 24931
+eq
+bf 217 667
+cu 24576
+ls 1
+ju 242 743
+lg 0
+cu 24935
+eq
+bf 224 690
+cu 24832
+ls 1
+ju 242 743
+lg 0
+cu 26226
+eq
+bf 231 713
+cu 25088
+ls 1
+ju 242 743
+lg 0
+cu 26231
+eq
+bf 238 736
+cu 25344
+ls 1
+ju 242 743
+cu 1
+cu 0
+di
+ls 1
+lg 1
+re
+
+# function 2
+fn 0 14 224 464
+cu 0
+ag
+fr
+ls 0
+cu 1048576
+bn
+ls 1
+cu 0
+ls 2
+lg 0
+bl
+ls 3
+lg 2
+lg 3
+eq
+bf 17 35
+ju 217 453
+lg 0
+lg 2
+bg
+ls 12
+lg 12
+cu 35
+eq
+bf 26 53
+ju 35 71
+lg 12
+cu 33
+lt
+bf 57 114
+lg 2
+cu 1
+ad
+ls 2
+ju 12 22
+lg 2
+cu 1
+ad
+ls 2
+lg 2
+lg 3
+eq
+bf 44 89
+ju 12 22
+lg 0
+lg 2
+bg
+ls 12
+lg 2
+cu 1
+ad
+ls 2
+lg 12
+cu 10
+eq
+bf 39 78
+ju 12 22
+lg 0
+lg 2
+bg
+cu 256
+mu
+lg 0
+lg 2
+cu 1
+ad
+bg
+ad
+ls 4
+lg 2
+cu 2
+ad
+ls 2
+lg 4
+ca 1
+ls 5
+lg 5
+cu 16
+sr
+ls 6
+lg 5
+cu 8
+sr
+cu 255
+an
+ls 7
+lg 5
+cu 255
+an
+ls 8
+lg 6
+cu 1
+eq
+bf 127 243
+lg 1
+cu 83
+bp
+ls 1
+lg 1
+cu 69
+bp
+ls 1
+lg 1
+cu 77
+bp
+ls 1
+lg 1
+cu 69
+bp
+ls 1
+lg 1
+cu 45
+bp
+ls 1
+lg 1
+cu 75
+bp
+ls 1
+lg 1
+cu 48
+bp
+ls 1
+lg 1
+cu 0
+bp
+ls 1
+ju 135 260
+lg 6
+cu 0
+eq
+bf 135 260
+lg 1
+lg 7
+bp
+ls 1
+cu 0
+ls 9
+lg 9
+lg 8
+eq
+bf 142 277
+ju 12 22
+lg 2
+lg 3
+eq
+bf 147 292
+ju 213 443
+lg 0
+lg 2
+bg
+ls 12
+lg 12
+cu 33
+lt
+bf 160 321
+lg 2
+cu 1
+ad
+ls 2
+ju 142 277
+cu 0
+ls 10
+cu 0
+ls 11
+lg 2
+lg 3
+eq
+bf 169 344
+ju 199 408
+lg 0
+lg 2
+bg
+ls 12
+lg 12
+cu 48
+lt
+bf 178 366
+ju 199 408
+lg 12
+cu 58
+lt
+bf 199 408
+lg 10
+cu 10
+mu
+lg 12
+cu 48
+su
+ad
+ls 10
+lg 11
+cu 1
+ad
+ls 11
+lg 2
+cu 1
+ad
+ls 2
+ju 164 329
+lg 11
+cu 0
+eq
+bf 204 423
+ju 213 443
+lg 1
+lg 10
+ca 0
+ls 1
+lg 9
+cu 1
+ad
+ls 9
+ju 137 264
+cu 1
+cu 0
+di
+ju 223 463
+cu 1
+ag
+ls 13
+lg 13
+lg 1
+fw
+re
+
+en 2
