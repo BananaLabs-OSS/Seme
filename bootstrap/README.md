@@ -71,6 +71,19 @@ a portable K0 program to parse decimal/hexadecimal source and emit canonical
 integer encodings; future source readers no longer require new arithmetic in
 assembly.
 
+## First portable compiler
+
+`a0-byte-compiler.k0` is the first compiler program executed by portable K0
+rather than native assembly. Its checked A0 construction source is
+`a0-byte-compiler.k0.a0`. It accepts the auditable `bHH` subset used by checked
+bootstrap construction sources, ignores whitespace and `#` comments, and emits
+the represented bytes through declared argument/read/write capabilities.
+
+The portable compiler compiles `k0-linux-amd64.a0` into a byte-identical copy of
+the frozen K0 executor. Hex0 construction, native A0 construction, and portable
+K0 compilation therefore converge on the same executable bytes. Decimal A0 and
+the future human Seme notation remain separate compiler milestones.
+
 ## Seed responsibilities
 
 - accept exactly an input and output path;
