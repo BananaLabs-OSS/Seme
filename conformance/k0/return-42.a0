@@ -1,0 +1,7 @@
+# magic "SEME-K0\0"
+b53 b45 b4d b45 b2d b4b b30 b00
+# version 1, zero locals, four instructions
+u1 u0 u4
+# const.u 20; const.u 22; add; return
+b01 u20 b01 u22 b10 b00
+
