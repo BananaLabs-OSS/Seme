@@ -1,0 +1,13 @@
+# K0-P2: a canonical ten-byte uint64 ULEB must pass whole-image preflight.
+# The large value is dropped so the observable program result remains 42.
+b53 b45 b4d b45 b2d b4b b30 b00
+u3
+u0
+u1
+u0 u0 u4 u15
+b01
+bff bff bff bff bff bff bff bff bff b01
+b04
+b01 u42
+b00
+u0
