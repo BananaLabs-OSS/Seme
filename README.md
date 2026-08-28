@@ -1,0 +1,43 @@
+# Seme
+
+Seme is a canonical semantic programming platform. Syntax is a projection,
+mechanics are composable semantic modules, packages and runtimes are explicit
+dependencies, and execution targets declare how faithfully they realize those
+semantics.
+
+This repository starts at the independent bootstrap boundary. USIR remains the
+research prototype and behavioral reference; it is not copied into Seme and is
+not part of Seme's trusted build path.
+
+## Bootstrap direction
+
+```text
+frozen Linux-amd64 seed
+    -> Hex0 source
+    -> A0 canonical byte/integer notation
+    -> structured kernel notation
+    -> Seme Kernel v1 reader/executor
+    -> human-authored Seme compiler
+    -> self-hosted Seme compiler
+```
+
+Only the first seed is native machine code with auditable assembly source.
+Substantial software belongs in readable Seme, not assembly.
+
+## Current status
+
+- Kernel v1 is being specified; it is not frozen.
+- The initial Hex0 seed is independently executable on Linux amd64.
+- No Go, Rust, C, C++, Python, LLVM, or language runtime is required to run the
+  frozen seed.
+- The seed's checked-in hexadecimal image reproduces the frozen executable
+  byte-for-byte without a host assembler or linker.
+- The Hex0 seed constructs A0, and two A0 generations reproduce byte-identical
+  A0 executables.
+- A0 constructs the first portable K0-P0 executor; arithmetic, local-state, and
+  malformed-image conformance fixtures pass.
+- Host assembly tools remain optional construction and cross-check conveniences.
+- Seme is not self-hosted yet.
+
+See [`spec/architecture.md`](spec/architecture.md) and
+[`bootstrap/README.md`](bootstrap/README.md).

@@ -1,0 +1,5 @@
+b53 b45 b4d b45 b2d b4b b30 b00
+u1 u1 u6
+# local0 = 20; local0 + 22; return
+b01 u20 b03 u0 b02 u0 b01 u22 b10 b00
+
