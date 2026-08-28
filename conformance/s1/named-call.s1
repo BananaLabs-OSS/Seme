@@ -1,0 +1,19 @@
+# Function indices are assigned from declaration order, not written by hand.
+ve 3
+cp 0
+
+fn add 2 2
+  lg 0
+  lg 1
+  ad
+  re
+fe
+
+fn main 0 0
+  cu 20
+  cu 22
+  ca add
+  re
+fe
+
+en main
