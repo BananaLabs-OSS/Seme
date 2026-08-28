@@ -38,6 +38,9 @@ Substantial software belongs in readable Seme, not assembly.
   looping control flow, and malformed-image conformance fixtures pass.
 - K0-P1 adds isolated function frames, parameters, calls, and entry selection
   while retaining P0 execution compatibility.
+- K0-P2 adds bounded byte buffers and capability-scoped arguments, filesystem
+  reads, and filesystem writes; a portable program performs a byte-identical
+  file copy.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - Seme is not self-hosted yet.
 

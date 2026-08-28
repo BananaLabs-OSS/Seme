@@ -54,6 +54,11 @@ invalid call indices, entry parameters, and attempts to observe caller locals
 from a callee. Function bodies are still validated lazily; complete preflight
 validation remains a freeze gate.
 
+P2 adds bounded byte buffers and explicit capability bits for arguments,
+filesystem reads, and filesystem writes. A portable P2 program reads one path
+and writes a byte-identical copy to another. Undeclared effects and byte
+out-of-bounds access are rejected before the host operation is performed.
+
 ## Seed responsibilities
 
 - accept exactly an input and output path;
