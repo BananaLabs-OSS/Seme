@@ -50,6 +50,9 @@ Substantial software belongs in readable Seme, not assembly.
   reproduces its own K0 image byte-for-byte across two generated generations.
 - New bootstrap compiler work can now be authored in S0 without editing
   assembly, hexadecimal source, or A0 byte streams.
+- The symbolic S1 compiler derives function tables, named calls, labels,
+  instruction counts, code sizes, and byte witnesses. Its checked construction
+  image and two self-produced generations are byte-identical.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - The S0 bootstrap compiler is self-reproducing; the semantic Kernel v1 compiler
   is not self-hosted yet.

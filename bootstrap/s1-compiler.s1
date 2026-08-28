@@ -1,0 +1,1768 @@
+# Portable symbolic S1 compiler.
+#
+# Token spans pack cursor/start/length into three 21-bit fields:
+#   (cursor << 42) | (start << 21) | length
+# This covers every position in a maximum-size K0 byte buffer, including EOF.
+
+ve 3
+cp 7
+
+# next-token(buffer, cursor) -> packed span
+fn next-token 2 7
+  lg 0
+  bl
+  ls 2
+
+  lb skip
+  lg 1
+  lg 2
+  eq
+  bf have-skip-byte
+  cu 1
+  cu 0
+  di
+  re
+
+  lb have-skip-byte
+  lg 0
+  lg 1
+  bg
+  ls 3
+  lg 3
+  cu 35
+  eq
+  bf whitespace
+
+  lb comment
+  lg 1
+  cu 1
+  ad
+  ls 1
+  lg 1
+  lg 2
+  eq
+  bf comment-byte
+  ju skip
+
+  lb comment-byte
+  lg 0
+  lg 1
+  bg
+  cu 10
+  eq
+  bf comment
+  lg 1
+  cu 1
+  ad
+  ls 1
+  ju skip
+
+  lb whitespace
+  lg 3
+  cu 33
+  lt
+  bf token-start
+  lg 1
+  cu 1
+  ad
+  ls 1
+  ju skip
+
+  lb token-start
+  lg 1
+  ls 4
+
+  lb token-loop
+  lg 1
+  lg 2
+  eq
+  bf token-byte
+  ju token-done
+
+  lb token-byte
+  lg 0
+  lg 1
+  bg
+  ls 3
+  lg 3
+  cu 33
+  lt
+  bf token-comment-check
+  ju token-done
+
+  lb token-comment-check
+  lg 3
+  cu 35
+  eq
+  bf token-advance
+  ju token-done
+
+  lb token-advance
+  lg 1
+  cu 1
+  ad
+  ls 1
+  ju token-loop
+
+  lb token-done
+  lg 1
+  lg 4
+  su
+  ls 5
+  lg 1
+  cu 42
+  sl
+  lg 4
+  cu 21
+  sl
+  or
+  lg 5
+  or
+  re
+fe
+
+# token-code(buffer, span) -> big-endian two-byte directive code
+fn token-code 2 5
+  lg 1
+  cu 2097151
+  an
+  cu 2
+  eq
+  bf token-code-invalid
+  lg 1
+  cu 21
+  sr
+  cu 2097151
+  an
+  ls 2
+  lg 0
+  lg 2
+  bg
+  cu 256
+  mu
+  lg 0
+  lg 2
+  cu 1
+  ad
+  bg
+  ad
+  re
+
+  lb token-code-invalid
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+# token-equal(buffer, left-span, right-span) -> bool
+fn token-equal 3 8
+  lg 1
+  cu 2097151
+  an
+  ls 3
+  lg 2
+  cu 2097151
+  an
+  ls 4
+  lg 3
+  lg 4
+  eq
+  bf token-not-equal
+  lg 1
+  cu 21
+  sr
+  cu 2097151
+  an
+  ls 5
+  lg 2
+  cu 21
+  sr
+  cu 2097151
+  an
+  ls 6
+  cu 0
+  ls 7
+
+  lb equal-loop
+  lg 7
+  lg 3
+  eq
+  bf equal-byte
+  cu 1
+  re
+
+  lb equal-byte
+  lg 0
+  lg 5
+  lg 7
+  ad
+  bg
+  lg 0
+  lg 6
+  lg 7
+  ad
+  bg
+  eq
+  bf token-not-equal
+  lg 7
+  cu 1
+  ad
+  ls 7
+  ju equal-loop
+
+  lb token-not-equal
+  cu 0
+  re
+fe
+
+# parse-u64(buffer, span) -> exact unsigned value; invalid input traps.
+fn parse-u64 2 9
+  lg 1
+  cu 2097151
+  an
+  ls 2
+  lg 1
+  cu 21
+  sr
+  cu 2097151
+  an
+  ls 3
+  lg 2
+  cu 0
+  eq
+  bf decimal-first-byte
+  cu 1
+  cu 0
+  di
+  re
+
+  lb decimal-first-byte
+  lg 0
+  lg 3
+  bg
+  cu 48
+  eq
+  bf decimal-init
+  lg 2
+  cu 1
+  eq
+  bf decimal-invalid
+  cu 0
+  re
+
+  lb decimal-init
+  cu 0
+  ls 4
+  cu 0
+  ls 5
+
+  lb decimal-loop
+  lg 5
+  lg 2
+  eq
+  bf decimal-byte
+  lg 4
+  re
+
+  lb decimal-byte
+  lg 0
+  lg 3
+  lg 5
+  ad
+  bg
+  ls 6
+  lg 6
+  cu 48
+  lt
+  bf decimal-upper
+  cu 1
+  cu 0
+  di
+  re
+
+  lb decimal-upper
+  lg 6
+  cu 58
+  lt
+  bf decimal-invalid
+  lg 6
+  cu 48
+  su
+  ls 7
+
+  # Reject accumulator * 10 + digit above 2^64 - 1.
+  cu 1844674407370955161
+  lg 4
+  lt
+  bf decimal-max-equal
+  ju decimal-invalid
+
+  lb decimal-max-equal
+  lg 4
+  cu 1844674407370955161
+  eq
+  bf decimal-safe
+  cu 5
+  lg 7
+  lt
+  bf decimal-safe
+  ju decimal-invalid
+
+  lb decimal-safe
+  lg 4
+  cu 10
+  mu
+  lg 7
+  ad
+  ls 4
+  lg 5
+  cu 1
+  ad
+  ls 5
+  ju decimal-loop
+
+  lb decimal-invalid
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+# directive-info(two-byte-code) -> (K0 opcode << 8) | operand kind
+# Operand kinds: 0 none, 1 unsigned, 2 label, 3 function.
+# Values above 65535 are parser markers, not K0 instructions.
+fn directive-info 1 1
+  lg 0
+  cu 29285
+  eq
+  bf info-cu
+  cu 0
+  re
+  lb info-cu
+  lg 0
+  cu 25461
+  eq
+  bf info-lg
+  cu 257
+  re
+  lb info-lg
+  lg 0
+  cu 27751
+  eq
+  bf info-ls
+  cu 513
+  re
+  lb info-ls
+  lg 0
+  cu 27763
+  eq
+  bf info-dr
+  cu 769
+  re
+  lb info-dr
+  lg 0
+  cu 25714
+  eq
+  bf info-du
+  cu 1024
+  re
+  lb info-du
+  lg 0
+  cu 25717
+  eq
+  bf info-ad
+  cu 1280
+  re
+  lb info-ad
+  lg 0
+  cu 24932
+  eq
+  bf info-su
+  cu 4096
+  re
+  lb info-su
+  lg 0
+  cu 29557
+  eq
+  bf info-mu
+  cu 4352
+  re
+  lb info-mu
+  lg 0
+  cu 28021
+  eq
+  bf info-di
+  cu 4608
+  re
+  lb info-di
+  lg 0
+  cu 25705
+  eq
+  bf info-rm
+  cu 4864
+  re
+  lb info-rm
+  lg 0
+  cu 29293
+  eq
+  bf info-an
+  cu 5120
+  re
+  lb info-an
+  lg 0
+  cu 24942
+  eq
+  bf info-or
+  cu 5376
+  re
+  lb info-or
+  lg 0
+  cu 28530
+  eq
+  bf info-xo
+  cu 5632
+  re
+  lb info-xo
+  lg 0
+  cu 30831
+  eq
+  bf info-sl
+  cu 5888
+  re
+  lb info-sl
+  lg 0
+  cu 29548
+  eq
+  bf info-sr
+  cu 6144
+  re
+  lb info-sr
+  lg 0
+  cu 29554
+  eq
+  bf info-eq
+  cu 6400
+  re
+  lb info-eq
+  lg 0
+  cu 25969
+  eq
+  bf info-lt
+  cu 6656
+  re
+  lb info-lt
+  lg 0
+  cu 27764
+  eq
+  bf info-ju
+  cu 6912
+  re
+  lb info-ju
+  lg 0
+  cu 27253
+  eq
+  bf info-bf
+  cu 8194
+  re
+  lb info-bf
+  lg 0
+  cu 25190
+  eq
+  bf info-ca
+  cu 8450
+  re
+  lb info-ca
+  lg 0
+  cu 25441
+  eq
+  bf info-bl
+  cu 12291
+  re
+  lb info-bl
+  lg 0
+  cu 25196
+  eq
+  bf info-bg
+  cu 16384
+  re
+  lb info-bg
+  lg 0
+  cu 25191
+  eq
+  bf info-bn
+  cu 16640
+  re
+  lb info-bn
+  lg 0
+  cu 25198
+  eq
+  bf info-bp
+  cu 16896
+  re
+  lb info-bp
+  lg 0
+  cu 25200
+  eq
+  bf info-ac
+  cu 17152
+  re
+  lb info-ac
+  lg 0
+  cu 24931
+  eq
+  bf info-ag
+  cu 24576
+  re
+  lb info-ag
+  lg 0
+  cu 24935
+  eq
+  bf info-fr
+  cu 24832
+  re
+  lb info-fr
+  lg 0
+  cu 26226
+  eq
+  bf info-fw
+  cu 25088
+  re
+  lb info-fw
+  lg 0
+  cu 26231
+  eq
+  bf info-lb
+  cu 25344
+  re
+  lb info-lb
+  lg 0
+  cu 27746
+  eq
+  bf info-fe
+  cu 65537
+  re
+  lb info-fe
+  lg 0
+  cu 26213
+  eq
+  bf info-invalid
+  cu 65538
+  re
+  lb info-invalid
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+# scan-body(buffer, cursor-after-function-header)
+#   -> (cursor-after-fe << 21) | instruction-count
+fn scan-body 2 9
+  cu 0
+  ls 2
+
+  lb scan-body-loop
+  lg 0
+  lg 1
+  ca next-token
+  ls 3
+  lg 3
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 3
+  ca token-code
+  ca directive-info
+  ls 4
+
+  lg 4
+  cu 65538
+  eq
+  bf scan-body-label
+  lg 1
+  cu 21
+  sl
+  lg 2
+  or
+  re
+
+  lb scan-body-label
+  lg 4
+  cu 65537
+  eq
+  bf scan-body-instruction
+  lg 0
+  lg 1
+  ca next-token
+  ls 3
+  lg 3
+  cu 42
+  sr
+  ls 1
+  ju scan-body-loop
+
+  lb scan-body-instruction
+  lg 4
+  cu 255
+  an
+  ls 5
+  lg 5
+  cu 0
+  eq
+  bf scan-body-operand
+  ju scan-body-count
+
+  lb scan-body-operand
+  lg 0
+  lg 1
+  ca next-token
+  ls 3
+  lg 3
+  cu 42
+  sr
+  ls 1
+  lg 5
+  cu 1
+  eq
+  bf scan-body-count
+  lg 0
+  lg 3
+  ca parse-u64
+  dr
+
+  lb scan-body-count
+  lg 2
+  cu 1
+  ad
+  ls 2
+  cu 65535
+  lg 2
+  lt
+  bf scan-body-loop
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+# parse-header(buffer) -> (cursor-after-header << 3) | capability mask
+fn parse-header 1 6
+  cu 0
+  ls 1
+  lg 0
+  lg 1
+  ca next-token
+  ls 2
+  lg 2
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 2
+  ca token-code
+  cu 30309
+  eq
+  bf header-invalid
+  lg 0
+  lg 1
+  ca next-token
+  ls 2
+  lg 2
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 2
+  ca parse-u64
+  cu 3
+  eq
+  bf header-invalid
+
+  lg 0
+  lg 1
+  ca next-token
+  ls 2
+  lg 2
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 2
+  ca token-code
+  cu 25456
+  eq
+  bf header-invalid
+  lg 0
+  lg 1
+  ca next-token
+  ls 2
+  lg 2
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 2
+  ca parse-u64
+  ls 3
+  cu 7
+  lg 3
+  lt
+  bf header-valid
+
+  lb header-invalid
+  cu 1
+  cu 0
+  di
+  re
+
+  lb header-valid
+  lg 1
+  cu 3
+  sl
+  lg 3
+  or
+  re
+fe
+
+# count-functions(buffer, cursor-after-header) -> declared function count
+fn count-functions 2 12
+  cu 0
+  ls 2
+
+  lb count-function-loop
+  lg 0
+  lg 1
+  ca next-token
+  ls 3
+  lg 3
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 3
+  ca token-code
+  ls 4
+  lg 4
+  cu 25966
+  eq
+  bf count-expect-function
+  lg 0
+  lg 1
+  ca next-token
+  dr
+  lg 2
+  cu 0
+  eq
+  bf count-done
+  ju count-invalid
+
+  lb count-expect-function
+  lg 4
+  cu 26222
+  eq
+  bf count-invalid
+  lg 0
+  lg 1
+  ca next-token
+  ls 3
+  lg 3
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 1
+  ca next-token
+  ls 3
+  lg 3
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 3
+  ca parse-u64
+  ls 5
+  lg 0
+  lg 1
+  ca next-token
+  ls 3
+  lg 3
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 3
+  ca parse-u64
+  ls 6
+  cu 64
+  lg 6
+  lt
+  bf count-params
+  ju count-invalid
+  lb count-params
+  lg 6
+  lg 5
+  lt
+  bf count-scan-body
+  ju count-invalid
+
+  lb count-scan-body
+  lg 0
+  lg 1
+  ca scan-body
+  ls 7
+  lg 7
+  cu 21
+  sr
+  ls 1
+  lg 2
+  cu 1
+  ad
+  ls 2
+  cu 16
+  lg 2
+  lt
+  bf count-function-loop
+
+  lb count-invalid
+  cu 1
+  cu 0
+  di
+  re
+
+  lb count-done
+  lg 2
+  re
+fe
+
+# function-index(buffer, cursor-after-header, name-span) -> declaration index
+fn function-index 3 10
+  cu 0
+  ls 3
+
+  lb function-index-loop
+  lg 0
+  lg 1
+  ca next-token
+  ls 4
+  lg 4
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 4
+  ca token-code
+  cu 26222
+  eq
+  bf function-index-missing
+
+  lg 0
+  lg 1
+  ca next-token
+  ls 5
+  lg 5
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 5
+  lg 2
+  ca token-equal
+  bf function-index-skip-header
+  lg 3
+  re
+
+  lb function-index-skip-header
+  lg 0
+  lg 1
+  ca next-token
+  ls 4
+  lg 4
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 1
+  ca next-token
+  ls 4
+  lg 4
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 1
+  ca scan-body
+  ls 6
+  lg 6
+  cu 21
+  sr
+  ls 1
+  lg 3
+  cu 1
+  ad
+  ls 3
+  ju function-index-loop
+
+  lb function-index-missing
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+# label-index(buffer, function-body-cursor, name-span) -> instruction index
+fn label-index 3 10
+  cu 0
+  ls 3
+
+  lb label-index-loop
+  lg 0
+  lg 1
+  ca next-token
+  ls 4
+  lg 4
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 4
+  ca token-code
+  ca directive-info
+  ls 5
+  lg 5
+  cu 65538
+  eq
+  bf label-index-label
+  ju label-index-missing
+
+  lb label-index-label
+  lg 5
+  cu 65537
+  eq
+  bf label-index-instruction
+  lg 0
+  lg 1
+  ca next-token
+  ls 6
+  lg 6
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 6
+  lg 2
+  ca token-equal
+  bf label-index-loop
+  lg 3
+  re
+
+  lb label-index-instruction
+  lg 5
+  cu 255
+  an
+  cu 0
+  eq
+  bf label-index-skip-operand
+  ju label-index-count
+
+  lb label-index-skip-operand
+  lg 0
+  lg 1
+  ca next-token
+  ls 4
+  lg 4
+  cu 42
+  sr
+  ls 1
+
+  lb label-index-count
+  lg 3
+  cu 1
+  ad
+  ls 3
+  ju label-index-loop
+
+  lb label-index-missing
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+# uleb-width(value) -> canonical encoded byte count
+fn uleb-width 1 2
+  cu 1
+  ls 1
+  lb uleb-width-loop
+  lg 0
+  cu 128
+  lt
+  bf uleb-width-more
+  lg 1
+  re
+  lb uleb-width-more
+  lg 0
+  cu 7
+  sr
+  ls 0
+  lg 1
+  cu 1
+  ad
+  ls 1
+  ju uleb-width-loop
+fe
+
+# code-offset(layout-buffer, function-base, target-index) -> byte offset
+fn code-offset 3 7
+  lg 1
+  lg 2
+  ad
+  cu 3
+  mu
+  ls 3
+  lg 0
+  lg 3
+  bg
+  ls 4
+  lg 0
+  lg 3
+  cu 1
+  ad
+  bg
+  cu 8
+  sl
+  lg 4
+  or
+  ls 4
+  lg 0
+  lg 3
+  cu 2
+  ad
+  bg
+  cu 16
+  sl
+  lg 4
+  or
+  re
+fe
+
+# build-layout(source, header-cursor, refinement, previous-layout) -> layout
+# Stores every function's semantic instruction boundaries as packed u24 values.
+fn build-layout 4 24
+  cu 1048576
+  bn
+  ls 4
+  lg 1
+  ls 5
+  cu 0
+  ls 6
+
+  lb layout-function-loop
+  lg 0
+  lg 5
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 5
+  lg 0
+  lg 7
+  ca token-code
+  ls 8
+  lg 8
+  cu 25966
+  eq
+  bf layout-expect-function
+  lg 4
+  re
+
+  lb layout-expect-function
+  lg 8
+  cu 26222
+  eq
+  bf layout-invalid
+  # Skip name, parameters, and locals; the validation pass parsed them.
+  lg 0
+  lg 5
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 5
+  lg 0
+  lg 5
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 5
+  lg 0
+  lg 5
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 5
+  lg 5
+  ls 10
+  lg 0
+  lg 10
+  ca scan-body
+  ls 11
+  lg 11
+  cu 2097151
+  an
+  ls 12
+  cu 0
+  ls 13
+  cu 0
+  ls 14
+
+  lb layout-instruction-loop
+  lg 0
+  lg 5
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 5
+  lg 0
+  lg 7
+  ca token-code
+  ca directive-info
+  ls 8
+  lg 8
+  cu 65538
+  eq
+  bf layout-label
+  # Append the epilogue boundary.
+  lg 4
+  lg 13
+  cu 255
+  an
+  bp
+  ls 4
+  lg 4
+  lg 13
+  cu 8
+  sr
+  cu 255
+  an
+  bp
+  ls 4
+  lg 4
+  lg 13
+  cu 16
+  sr
+  cu 255
+  an
+  bp
+  ls 4
+  lg 6
+  lg 12
+  cu 1
+  ad
+  ad
+  ls 6
+  ju layout-function-loop
+
+  lb layout-label
+  lg 8
+  cu 65537
+  eq
+  bf layout-instruction
+  lg 0
+  lg 5
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 5
+  ju layout-instruction-loop
+
+  lb layout-instruction
+  # Append this instruction boundary.
+  lg 4
+  lg 13
+  cu 255
+  an
+  bp
+  ls 4
+  lg 4
+  lg 13
+  cu 8
+  sr
+  cu 255
+  an
+  bp
+  ls 4
+  lg 4
+  lg 13
+  cu 16
+  sr
+  cu 255
+  an
+  bp
+  ls 4
+  lg 13
+  cu 1
+  ad
+  ls 13
+  lg 8
+  cu 255
+  an
+  ls 15
+
+  # Source return is encoded as jump(count, epilogue witness).
+  lg 8
+  cu 0
+  eq
+  bf layout-kind
+  lg 12
+  ca uleb-width
+  lg 13
+  ad
+  ls 13
+  lg 2
+  cu 0
+  eq
+  bf layout-return-refined
+  lg 13
+  cu 1
+  ad
+  ls 13
+  ju layout-count
+
+  lb layout-return-refined
+  lg 3
+  lg 6
+  lg 12
+  ca code-offset
+  ca uleb-width
+  lg 13
+  ad
+  ls 13
+  ju layout-count
+
+  lb layout-kind
+  lg 15
+  cu 0
+  eq
+  bf layout-operand
+  ju layout-count
+
+  lb layout-operand
+  lg 0
+  lg 5
+  ca next-token
+  ls 16
+  lg 16
+  cu 42
+  sr
+  ls 5
+  lg 15
+  cu 1
+  eq
+  bf layout-label-operand
+  lg 0
+  lg 16
+  ca parse-u64
+  ca uleb-width
+  lg 13
+  ad
+  ls 13
+  ju layout-count
+
+  lb layout-label-operand
+  lg 15
+  cu 2
+  eq
+  bf layout-function-operand
+  lg 0
+  lg 10
+  lg 16
+  ca label-index
+  ls 17
+  lg 17
+  ca uleb-width
+  lg 13
+  ad
+  ls 13
+  lg 2
+  cu 0
+  eq
+  bf layout-label-refined
+  lg 13
+  cu 1
+  ad
+  ls 13
+  ju layout-count
+
+  lb layout-label-refined
+  lg 3
+  lg 6
+  lg 17
+  ca code-offset
+  ca uleb-width
+  lg 13
+  ad
+  ls 13
+  ju layout-count
+
+  lb layout-function-operand
+  lg 15
+  cu 3
+  eq
+  bf layout-invalid
+  lg 0
+  lg 1
+  lg 16
+  ca function-index
+  ca uleb-width
+  lg 13
+  ad
+  ls 13
+
+  lb layout-count
+  lg 14
+  cu 1
+  ad
+  ls 14
+  ju layout-instruction-loop
+
+  lb layout-invalid
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+# append-uleb(buffer, value) -> buffer
+fn append-uleb 2 3
+  lb append-uleb-loop
+  lg 1
+  cu 127
+  an
+  ls 2
+  lg 1
+  cu 7
+  sr
+  ls 1
+  lg 1
+  cu 0
+  eq
+  bf append-uleb-more
+  ju append-uleb-byte
+  lb append-uleb-more
+  lg 2
+  cu 128
+  or
+  ls 2
+  lb append-uleb-byte
+  lg 0
+  lg 2
+  bp
+  ls 0
+  lg 1
+  cu 0
+  eq
+  bf append-uleb-loop
+  lg 0
+  re
+fe
+
+fn main 0 24
+  cu 0
+  ag
+  fr
+  ls 0
+  lg 0
+  ca parse-header
+  ls 2
+  lg 2
+  cu 3
+  sr
+  ls 3
+  lg 2
+  cu 7
+  an
+  ls 4
+  lg 0
+  lg 3
+  ca count-functions
+  ls 5
+
+  # Four monotone layout refinements: assumed width one, then three derived.
+  lg 0
+  lg 3
+  cu 0
+  cu 0
+  ca build-layout
+  ls 22
+  lg 0
+  lg 3
+  cu 1
+  lg 22
+  ca build-layout
+  ls 22
+  lg 0
+  lg 3
+  cu 2
+  lg 22
+  ca build-layout
+  ls 22
+  lg 0
+  lg 3
+  cu 3
+  lg 22
+  ca build-layout
+  ls 22
+  cu 0
+  ls 23
+
+  cu 1048576
+  bn
+  ls 1
+  lg 1
+  cu 83
+  bp
+  ls 1
+  lg 1
+  cu 69
+  bp
+  ls 1
+  lg 1
+  cu 77
+  bp
+  ls 1
+  lg 1
+  cu 69
+  bp
+  ls 1
+  lg 1
+  cu 45
+  bp
+  ls 1
+  lg 1
+  cu 75
+  bp
+  ls 1
+  lg 1
+  cu 48
+  bp
+  ls 1
+  lg 1
+  cu 0
+  bp
+  ls 1
+  lg 1
+  cu 3
+  ca append-uleb
+  ls 1
+  lg 1
+  lg 4
+  ca append-uleb
+  ls 1
+  lg 1
+  lg 5
+  ca append-uleb
+  ls 1
+  lg 3
+  ls 6
+
+  lb emit-function-loop
+  lg 0
+  lg 6
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 6
+  lg 0
+  lg 7
+  ca token-code
+  ls 8
+  lg 8
+  cu 25966
+  eq
+  bf emit-expect-function
+  ju emit-entry
+
+  lb emit-expect-function
+  lg 8
+  cu 26222
+  eq
+  bf emit-invalid
+  # Function name is consumed; declaration order is already validated.
+  lg 0
+  lg 6
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 6
+  lg 0
+  lg 6
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 6
+  lg 0
+  lg 7
+  ca parse-u64
+  ls 10
+  lg 0
+  lg 6
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 6
+  lg 0
+  lg 7
+  ca parse-u64
+  ls 11
+  lg 6
+  ls 13
+  lg 0
+  lg 13
+  ca scan-body
+  ls 12
+  lg 12
+  cu 2097151
+  an
+  ls 14
+
+  lg 1
+  lg 10
+  ca append-uleb
+  ls 1
+  lg 1
+  lg 11
+  ca append-uleb
+  ls 1
+  lg 1
+  lg 14
+  cu 1
+  ad
+  ca append-uleb
+  ls 1
+  lg 22
+  lg 23
+  lg 14
+  ca code-offset
+  cu 1
+  ad
+  ls 15
+  lg 1
+  lg 15
+  ca append-uleb
+  ls 1
+  lg 13
+  ls 6
+  cu 0
+  ls 16
+
+  lb emit-instruction-loop
+  lg 0
+  lg 6
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 6
+  lg 0
+  lg 7
+  ca token-code
+  ca directive-info
+  ls 8
+  lg 8
+  cu 65538
+  eq
+  bf emit-label
+  lg 1
+  cu 0
+  bp
+  ls 1
+  lg 23
+  lg 14
+  cu 1
+  ad
+  ad
+  ls 23
+  ju emit-function-loop
+
+  lb emit-label
+  lg 8
+  cu 65537
+  eq
+  bf emit-instruction
+  lg 0
+  lg 6
+  ca next-token
+  ls 7
+  lg 7
+  cu 42
+  sr
+  ls 6
+  ju emit-instruction-loop
+
+  lb emit-instruction
+  lg 8
+  cu 255
+  an
+  ls 18
+  lg 8
+  cu 0
+  eq
+  bf emit-opcode
+  # Source return becomes jump(source-count, epilogue-offset).
+  lg 1
+  cu 32
+  bp
+  ls 1
+  lg 1
+  lg 14
+  ca append-uleb
+  ls 1
+  lg 22
+  lg 23
+  lg 14
+  ca code-offset
+  ls 20
+  lg 1
+  lg 20
+  ca append-uleb
+  ls 1
+  ju emit-count-instruction
+
+  lb emit-opcode
+  lg 1
+  lg 8
+  cu 8
+  sr
+  bp
+  ls 1
+  lg 18
+  cu 0
+  eq
+  bf emit-operand
+  ju emit-count-instruction
+
+  lb emit-operand
+  lg 0
+  lg 6
+  ca next-token
+  ls 9
+  lg 9
+  cu 42
+  sr
+  ls 6
+  lg 18
+  cu 1
+  eq
+  bf emit-label-operand
+  lg 0
+  lg 9
+  ca parse-u64
+  ls 19
+  lg 1
+  lg 19
+  ca append-uleb
+  ls 1
+  ju emit-count-instruction
+
+  lb emit-label-operand
+  lg 18
+  cu 2
+  eq
+  bf emit-function-operand
+  lg 0
+  lg 13
+  lg 9
+  ca label-index
+  ls 19
+  lg 1
+  lg 19
+  ca append-uleb
+  ls 1
+  lg 22
+  lg 23
+  lg 19
+  ca code-offset
+  ls 20
+  lg 1
+  lg 20
+  ca append-uleb
+  ls 1
+  ju emit-count-instruction
+
+  lb emit-function-operand
+  lg 18
+  cu 3
+  eq
+  bf emit-invalid
+  lg 0
+  lg 3
+  lg 9
+  ca function-index
+  ls 19
+  lg 1
+  lg 19
+  ca append-uleb
+  ls 1
+
+  lb emit-count-instruction
+  lg 16
+  cu 1
+  ad
+  ls 16
+  ju emit-instruction-loop
+
+  lb emit-entry
+  lg 0
+  lg 6
+  ca next-token
+  ls 21
+  lg 21
+  cu 42
+  sr
+  ls 6
+  lg 0
+  lg 3
+  lg 21
+  ca function-index
+  ls 19
+  lg 1
+  lg 19
+  ca append-uleb
+  ls 1
+  cu 1
+  ag
+  ls 17
+  lg 17
+  lg 1
+  fw
+  re
+
+  lb emit-invalid
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+en main
