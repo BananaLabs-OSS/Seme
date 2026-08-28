@@ -41,6 +41,8 @@ Substantial software belongs in readable Seme, not assembly.
 - K0-P2 adds bounded byte buffers and capability-scoped arguments, filesystem
   reads, and filesystem writes; a portable program performs a byte-identical
   file copy.
+- P1/P2 images receive whole-image structural preflight before execution,
+  including unreachable code and branch-witness validation.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - Seme is not self-hosted yet.
 

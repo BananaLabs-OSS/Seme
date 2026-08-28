@@ -1,0 +1,6 @@
+b53 b45 b4d b45 b2d b4b b30 b00
+u2 u1
+u0 u0 u2 u4
+# target instruction 1 actually begins at byte 3, not byte 0
+b20 u1 u0 b00
+u0

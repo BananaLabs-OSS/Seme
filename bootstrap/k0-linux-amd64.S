@@ -122,6 +122,8 @@ p1_function_loop:
     test %rax, %rax
     jz invalid
     mov %rax, %r14
+    lea function_code_sizes(%rip), %r11
+    mov %rax, (%r11,%r13,8)
     mov $SYS_LSEEK, %rax
     mov %r12, %rdi
     xor %rsi, %rsi
@@ -153,6 +155,7 @@ p1_functions_done:
     call read_byte
     test %edx, %edx
     jnz invalid
+    call validate_all_functions
     movq $0, call_depth(%rip)
     movq $0, current_local_base(%rip)
     movq $0, current_stack_base(%rip)
@@ -710,6 +713,198 @@ return_to_caller:
     jne close_io_error
     jmp execute
 
+/* Structural whole-image validation for P1/P2. */
+validate_all_functions:
+    movq $0, validation_function(%rip)
+validate_function_loop:
+    mov validation_function(%rip), %r13
+    cmp function_count(%rip), %r13
+    jae validation_complete
+    lea function_offsets(%rip), %r11
+    mov (%r11,%r13,8), %rbx
+    mov %rbx, validation_code_start(%rip)
+    lea function_code_sizes(%rip), %r11
+    mov (%r11,%r13,8), %rax
+    add %rbx, %rax
+    jc invalid
+    mov %rax, validation_code_end(%rip)
+    lea function_instructions(%rip), %r11
+    mov (%r11,%r13,8), %rax
+    mov %rax, validation_instruction_count(%rip)
+    movq $0, validation_instruction(%rip)
+    movq $0, validation_branch_count(%rip)
+    call seek_rbx
+
+validate_instruction_loop:
+    mov validation_instruction(%rip), %r14
+    cmp validation_instruction_count(%rip), %r14
+    jae validate_function_end
+    call current_file_offset
+    mov %rax, %rbx
+    sub validation_code_start(%rip), %rbx
+    jc invalid
+    lea validation_boundaries(%rip), %r11
+    mov %rbx, (%r11,%r14,8)
+    call required_byte
+    cmp $0x00, %al
+    je validate_return
+    cmp $0x01, %al
+    je validate_one_uleb
+    cmp $0x02, %al
+    je validate_local
+    cmp $0x03, %al
+    je validate_local
+    cmp $0x04, %al
+    je validate_instruction_done
+    cmp $0x05, %al
+    je validate_instruction_done
+    cmp $0x10, %al
+    je validate_instruction_done
+    cmp $0x11, %al
+    je validate_instruction_done
+    cmp $0x12, %al
+    je validate_instruction_done
+    cmp $0x1a, %al
+    je validate_instruction_done
+    cmp $0x1b, %al
+    je validate_instruction_done
+    cmp $0x20, %al
+    je validate_branch
+    cmp $0x21, %al
+    je validate_branch
+    cmp $0x30, %al
+    je validate_call
+    cmp $0x40, %al
+    je validate_p2_plain
+    cmp $0x41, %al
+    je validate_p2_plain
+    cmp $0x42, %al
+    je validate_p2_plain
+    cmp $0x43, %al
+    je validate_p2_plain
+    cmp $0x60, %al
+    je validate_arguments_effect
+    cmp $0x61, %al
+    je validate_arguments_effect
+    cmp $0x62, %al
+    je validate_read_effect
+    cmp $0x63, %al
+    je validate_write_effect
+    jmp invalid
+
+validate_return:
+    mov validation_instruction_count(%rip), %rax
+    dec %rax
+    cmp %rax, %r14
+    jne invalid
+    jmp validate_instruction_done
+
+validate_one_uleb:
+    call read_uleb
+    jmp validate_instruction_done
+
+validate_local:
+    call read_uleb
+    mov validation_function(%rip), %r13
+    lea function_locals(%rip), %r11
+    cmp (%r11,%r13,8), %rax
+    jae invalid
+    jmp validate_instruction_done
+
+validate_branch:
+    call read_uleb
+    cmp validation_instruction_count(%rip), %rax
+    jae invalid
+    mov validation_branch_count(%rip), %r10
+    lea validation_branch_targets(%rip), %r11
+    mov %rax, (%r11,%r10,8)
+    call read_uleb
+    lea validation_branch_witnesses(%rip), %r11
+    mov %rax, (%r11,%r10,8)
+    incq validation_branch_count(%rip)
+    jmp validate_instruction_done
+
+validate_call:
+    call read_uleb
+    cmp function_count(%rip), %rax
+    jae invalid
+    jmp validate_instruction_done
+
+validate_p2_plain:
+    cmpq $3, image_profile(%rip)
+    jne invalid
+    jmp validate_instruction_done
+
+validate_arguments_effect:
+    cmpq $3, image_profile(%rip)
+    jne invalid
+    testq $1, capability_mask(%rip)
+    jz invalid
+    jmp validate_instruction_done
+
+validate_read_effect:
+    cmpq $3, image_profile(%rip)
+    jne invalid
+    testq $2, capability_mask(%rip)
+    jz invalid
+    jmp validate_instruction_done
+
+validate_write_effect:
+    cmpq $3, image_profile(%rip)
+    jne invalid
+    testq $4, capability_mask(%rip)
+    jz invalid
+
+validate_instruction_done:
+    incq validation_instruction(%rip)
+    jmp validate_instruction_loop
+
+validate_function_end:
+    call current_file_offset
+    cmp validation_code_end(%rip), %rax
+    jne invalid
+    movq $0, validation_branch(%rip)
+validate_branch_loop:
+    mov validation_branch(%rip), %r10
+    cmp validation_branch_count(%rip), %r10
+    jae validate_next_function
+    lea validation_branch_targets(%rip), %r11
+    mov (%r11,%r10,8), %rax
+    lea validation_boundaries(%rip), %r11
+    mov (%r11,%rax,8), %rax
+    lea validation_branch_witnesses(%rip), %r11
+    cmp (%r11,%r10,8), %rax
+    jne invalid
+    incq validation_branch(%rip)
+    jmp validate_branch_loop
+
+validate_next_function:
+    incq validation_function(%rip)
+    jmp validate_function_loop
+
+validation_complete:
+    ret
+
+current_file_offset:
+    mov $SYS_LSEEK, %rax
+    mov %r12, %rdi
+    xor %rsi, %rsi
+    mov $1, %rdx
+    syscall
+    test %rax, %rax
+    js close_io_error
+    ret
+
+seek_rbx:
+    mov $SYS_LSEEK, %rax
+    mov %r12, %rdi
+    mov %rbx, %rsi
+    xor %rdx, %rdx
+    syscall
+    cmp %rbx, %rax
+    jne close_io_error
+    ret
+
 enter_current_function:
     mov current_function(%rip), %rax
     lea function_locals(%rip), %r11
@@ -884,6 +1079,8 @@ function_instructions:
     .skip MAX_FUNCTIONS * 8
 function_offsets:
     .skip MAX_FUNCTIONS * 8
+function_code_sizes:
+    .skip MAX_FUNCTIONS * 8
 frame_return_offset:
     .skip MAX_CALL_DEPTH * 8
 frame_remaining:
@@ -904,6 +1101,26 @@ effect_result_handle:
     .skip 8
 effect_content_index:
     .skip 8
+validation_function:
+    .skip 8
+validation_instruction:
+    .skip 8
+validation_instruction_count:
+    .skip 8
+validation_code_start:
+    .skip 8
+validation_code_end:
+    .skip 8
+validation_branch_count:
+    .skip 8
+validation_branch:
+    .skip 8
+validation_boundaries:
+    .skip MAX_INSTRUCTIONS * 8
+validation_branch_targets:
+    .skip MAX_INSTRUCTIONS * 8
+validation_branch_witnesses:
+    .skip MAX_INSTRUCTIONS * 8
 local_values:
     .skip MAX_CALL_DEPTH * FRAME_LOCALS * 8
 local_initialized:
