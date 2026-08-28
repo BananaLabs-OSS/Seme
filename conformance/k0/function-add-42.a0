@@ -1,0 +1,11 @@
+b53 b45 b4d b45 b2d b4b b30 b00
+# P1, two functions
+u2 u2
+# function 0: add(a, b), 2 parameters/locals, 4 instructions, 6 code bytes
+u2 u2 u4 u6
+b02 u0 b02 u1 b10 b00
+# function 1: main(), 0 locals, 4 instructions, 7 code bytes
+u0 u0 u4 u7
+b01 u20 b01 u22 b30 u0 b00
+# entry function 1
+u1
