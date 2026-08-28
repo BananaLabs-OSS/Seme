@@ -3,8 +3,9 @@
 Kernel v1 is deliberately not frozen yet. A construct belongs here only if the
 self-hosted compiler and every semantic module require it.
 
-The candidate canonical representation is specified in `kernel-wire-v1.md`.
-It remains explicitly unfrozen while the following gates are incomplete.
+The candidate canonical representation is specified in `kernel-wire-v1.md`,
+and its finite self-description is specified in `kernel-meta-v1.md`. Both
+remain explicitly unfrozen while the following gates are incomplete.
 
 ## Required entities
 
