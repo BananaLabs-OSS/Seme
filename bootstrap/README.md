@@ -65,6 +65,12 @@ code sizes, and mismatched branch witnesses are rejected before any effect can
 run. Semantic control-flow validation remains intentionally above this native
 bootstrap boundary.
 
+The executor also provides unsigned division/remainder and complete 64-bit
+bitwise/shift primitives. Together with byte buffers, these are sufficient for
+a portable K0 program to parse decimal/hexadecimal source and emit canonical
+integer encodings; future source readers no longer require new arithmetic in
+assembly.
+
 ## Seed responsibilities
 
 - accept exactly an input and output path;
