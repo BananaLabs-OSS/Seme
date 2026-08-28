@@ -1082,7 +1082,7 @@ uleb_shift:
 uleb_done:
     cmp $1, %r8d
     je uleb_ok
-    test %r9d, %r9d
+    test %r9, %r9
     jz invalid                       /* non-minimal terminal zero */
 uleb_ok:
     mov %rbx, %rax
