@@ -59,6 +59,12 @@ filesystem reads, and filesystem writes. A portable P2 program reads one path
 and writes a byte-identical copy to another. Undeclared effects and byte
 out-of-bounds access are rejected before the host operation is performed.
 
+Every P1/P2 function is structurally scanned before entry execution. Unreachable
+invalid opcodes, malformed operands, bad indices, undeclared effects, incorrect
+code sizes, and mismatched branch witnesses are rejected before any effect can
+run. Semantic control-flow validation remains intentionally above this native
+bootstrap boundary.
+
 ## Seed responsibilities
 
 - accept exactly an input and output path;
