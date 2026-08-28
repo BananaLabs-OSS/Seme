@@ -102,8 +102,18 @@ extension without adding more native assembly.
 
 `S1.md` specifies the symbolic authoring rung used for that implementation. It
 derives functions, labels, counts, sizes, indices, and branch witnesses so new
-portable compiler code does not require manual layout bookkeeping. S1 is not
-implemented or trusted yet.
+portable compiler code does not require manual layout bookkeeping.
+
+`s1-compiler.s1` is the human-authored compiler source. Its checked S0
+construction form produces `s1-compiler.k0`; that compiler produces generation
+B from the S1 source, and B produces generation C. The construction artifact,
+B, and C are byte-identical. Named calls, forward labels, and generated return
+epilogues compile to independent programs that return 42.
+
+The compiler constructs four append-only layout tables to derive canonical K0
+branch witnesses without mutable memory or native assistance. Symbol-uniqueness,
+trailing-input, and malformed-source conformance remain freeze gates before S1
+becomes the sole bootstrap authoring floor.
 
 ## Seed responsibilities
 

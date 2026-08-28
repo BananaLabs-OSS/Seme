@@ -1,0 +1,1554 @@
+ve 3
+cp 7
+fc 15
+
+fn 2 7 89 179
+lg 0
+bl
+ls 2
+lg 1
+lg 2
+eq
+bf 11 22
+cu 1
+cu 0
+di
+ju 88 178
+lg 0
+lg 1
+bg
+ls 3
+lg 3
+cu 35
+eq
+bf 39 76
+lg 1
+cu 1
+ad
+ls 1
+lg 1
+lg 2
+eq
+bf 28 55
+ju 3 5
+lg 0
+lg 1
+bg
+cu 10
+eq
+bf 19 37
+lg 1
+cu 1
+ad
+ls 1
+ju 3 5
+lg 3
+cu 33
+lt
+bf 48 94
+lg 1
+cu 1
+ad
+ls 1
+ju 3 5
+lg 1
+ls 4
+lg 1
+lg 2
+eq
+bf 55 110
+ju 74 153
+lg 0
+lg 1
+bg
+ls 3
+lg 3
+cu 33
+lt
+bf 64 130
+ju 74 153
+lg 3
+cu 35
+eq
+bf 69 143
+ju 74 153
+lg 1
+cu 1
+ad
+ls 1
+ju 50 98
+lg 1
+lg 4
+su
+ls 5
+lg 1
+cu 42
+sl
+lg 4
+cu 21
+sl
+or
+lg 5
+or
+ju 88 178
+re
+
+fn 2 5 29 55
+lg 1
+cu 2097151
+an
+cu 2
+eq
+bf 24 46
+lg 1
+cu 21
+sr
+cu 2097151
+an
+ls 2
+lg 0
+lg 2
+bg
+cu 256
+mu
+lg 0
+lg 2
+cu 1
+ad
+bg
+ad
+ju 28 54
+cu 1
+cu 0
+di
+ju 28 54
+re
+
+fn 3 8 52 103
+lg 1
+cu 2097151
+an
+ls 3
+lg 2
+cu 2097151
+an
+ls 4
+lg 3
+lg 4
+eq
+bf 49 97
+lg 1
+cu 21
+sr
+cu 2097151
+an
+ls 5
+lg 2
+cu 21
+sr
+cu 2097151
+an
+ls 6
+cu 0
+ls 7
+lg 7
+lg 3
+eq
+bf 32 67
+cu 1
+ju 51 102
+lg 0
+lg 5
+lg 7
+ad
+bg
+lg 0
+lg 6
+lg 7
+ad
+bg
+eq
+bf 49 97
+lg 7
+cu 1
+ad
+ls 7
+ju 26 54
+cu 0
+ju 51 102
+re
+
+fn 2 9 92 210
+lg 1
+cu 2097151
+an
+ls 2
+lg 1
+cu 21
+sr
+cu 2097151
+an
+ls 3
+lg 2
+cu 0
+eq
+bf 18 38
+cu 1
+cu 0
+di
+ju 91 209
+lg 0
+lg 3
+bg
+cu 48
+eq
+bf 30 64
+lg 2
+cu 1
+eq
+bf 87 200
+cu 0
+ju 91 209
+cu 0
+ls 4
+cu 0
+ls 5
+lg 5
+lg 2
+eq
+bf 40 86
+lg 4
+ju 91 209
+lg 0
+lg 3
+lg 5
+ad
+bg
+ls 6
+lg 6
+cu 48
+lt
+bf 54 113
+cu 1
+cu 0
+di
+ju 91 209
+lg 6
+cu 58
+lt
+bf 87 200
+lg 6
+cu 48
+su
+ls 7
+cu 1844674407370955161
+lg 4
+lt
+bf 67 150
+ju 87 200
+lg 4
+cu 1844674407370955161
+eq
+bf 76 180
+cu 5
+lg 7
+lt
+bf 76 180
+ju 87 200
+lg 4
+cu 10
+mu
+lg 7
+ad
+ls 4
+lg 5
+cu 1
+ad
+ls 5
+ju 34 72
+cu 1
+cu 0
+di
+ju 91 209
+re
+
+fn 1 1 191 612
+lg 0
+cu 29285
+eq
+bf 6 17
+cu 0
+ju 190 611
+lg 0
+cu 25461
+eq
+bf 12 35
+cu 257
+ju 190 611
+lg 0
+cu 27751
+eq
+bf 18 53
+cu 513
+ju 190 611
+lg 0
+cu 27763
+eq
+bf 24 71
+cu 769
+ju 190 611
+lg 0
+cu 25714
+eq
+bf 30 89
+cu 1024
+ju 190 611
+lg 0
+cu 25717
+eq
+bf 36 107
+cu 1280
+ju 190 611
+lg 0
+cu 24932
+eq
+bf 42 125
+cu 4096
+ju 190 611
+lg 0
+cu 29557
+eq
+bf 48 144
+cu 4352
+ju 190 611
+lg 0
+cu 28021
+eq
+bf 54 163
+cu 4608
+ju 190 611
+lg 0
+cu 25705
+eq
+bf 60 182
+cu 4864
+ju 190 611
+lg 0
+cu 29293
+eq
+bf 66 201
+cu 5120
+ju 190 611
+lg 0
+cu 24942
+eq
+bf 72 220
+cu 5376
+ju 190 611
+lg 0
+cu 28530
+eq
+bf 78 239
+cu 5632
+ju 190 611
+lg 0
+cu 30831
+eq
+bf 84 258
+cu 5888
+ju 190 611
+lg 0
+cu 29548
+eq
+bf 90 277
+cu 6144
+ju 190 611
+lg 0
+cu 29554
+eq
+bf 96 296
+cu 6400
+ju 190 611
+lg 0
+cu 25969
+eq
+bf 102 315
+cu 6656
+ju 190 611
+lg 0
+cu 27764
+eq
+bf 108 334
+cu 6912
+ju 190 611
+lg 0
+cu 27253
+eq
+bf 114 353
+cu 8194
+ju 190 611
+lg 0
+cu 25190
+eq
+bf 120 372
+cu 8450
+ju 190 611
+lg 0
+cu 25441
+eq
+bf 126 391
+cu 12291
+ju 190 611
+lg 0
+cu 25196
+eq
+bf 132 412
+cu 16384
+ju 190 611
+lg 0
+cu 25191
+eq
+bf 138 433
+cu 16640
+ju 190 611
+lg 0
+cu 25198
+eq
+bf 144 454
+cu 16896
+ju 190 611
+lg 0
+cu 25200
+eq
+bf 150 475
+cu 17152
+ju 190 611
+lg 0
+cu 24931
+eq
+bf 156 496
+cu 24576
+ju 190 611
+lg 0
+cu 24935
+eq
+bf 162 517
+cu 24832
+ju 190 611
+lg 0
+cu 26226
+eq
+bf 168 538
+cu 25088
+ju 190 611
+lg 0
+cu 26231
+eq
+bf 174 559
+cu 25344
+ju 190 611
+lg 0
+cu 27746
+eq
+bf 180 580
+cu 65537
+ju 190 611
+lg 0
+cu 26213
+eq
+bf 186 601
+cu 65538
+ju 190 611
+cu 1
+cu 0
+di
+ju 190 611
+re
+
+fn 2 9 76 157
+cu 0
+ls 2
+lg 0
+lg 1
+ca 0
+ls 3
+lg 3
+cu 42
+sr
+ls 1
+lg 0
+lg 3
+ca 1
+ca 4
+ls 4
+lg 4
+cu 65538
+eq
+bf 25 51
+lg 1
+cu 21
+sl
+lg 2
+or
+ju 75 156
+lg 4
+cu 65537
+eq
+bf 38 79
+lg 0
+lg 1
+ca 0
+ls 3
+lg 3
+cu 42
+sr
+ls 1
+ju 2 4
+lg 4
+cu 255
+an
+ls 5
+lg 5
+cu 0
+eq
+bf 47 99
+ju 63 130
+lg 0
+lg 1
+ca 0
+ls 3
+lg 3
+cu 42
+sr
+ls 1
+lg 5
+cu 1
+eq
+bf 63 130
+lg 0
+lg 3
+ca 3
+dr
+lg 2
+cu 1
+ad
+ls 2
+cu 65535
+lg 2
+lt
+bf 2 4
+cu 1
+cu 0
+di
+ju 75 156
+re
+
+fn 1 6 71 143
+cu 0
+ls 1
+lg 0
+lg 1
+ca 0
+ls 2
+lg 2
+cu 42
+sr
+ls 1
+lg 0
+lg 2
+ca 1
+cu 30309
+eq
+bf 60 121
+lg 0
+lg 1
+ca 0
+ls 2
+lg 2
+cu 42
+sr
+ls 1
+lg 0
+lg 2
+ca 3
+cu 3
+eq
+bf 60 121
+lg 0
+lg 1
+ca 0
+ls 2
+lg 2
+cu 42
+sr
+ls 1
+lg 0
+lg 2
+ca 1
+cu 25456
+eq
+bf 60 121
+lg 0
+lg 1
+ca 0
+ls 2
+lg 2
+cu 42
+sr
+ls 1
+lg 0
+lg 2
+ca 3
+ls 3
+cu 7
+lg 3
+lt
+bf 64 130
+cu 1
+cu 0
+di
+ju 70 142
+lg 1
+cu 3
+sl
+lg 3
+or
+ju 70 142
+re
+
+fn 2 12 96 201
+cu 0
+ls 2
+lg 0
+lg 1
+ca 0
+ls 3
+lg 3
+cu 42
+sr
+ls 1
+lg 0
+lg 3
+ca 1
+ls 4
+lg 4
+cu 25966
+eq
+bf 27 57
+lg 0
+lg 1
+ca 0
+dr
+lg 2
+cu 0
+eq
+bf 93 194
+ju 89 185
+lg 4
+cu 26222
+eq
+bf 89 185
+lg 0
+lg 1
+ca 0
+ls 3
+lg 3
+cu 42
+sr
+ls 1
+lg 0
+lg 1
+ca 0
+ls 3
+lg 3
+cu 42
+sr
+ls 1
+lg 0
+lg 3
+ca 3
+ls 5
+lg 0
+lg 1
+ca 0
+ls 3
+lg 3
+cu 42
+sr
+ls 1
+lg 0
+lg 3
+ca 3
+ls 6
+cu 64
+lg 6
+lt
+bf 68 142
+ju 89 185
+lg 6
+lg 5
+lt
+bf 73 155
+ju 89 185
+lg 0
+lg 1
+ca 5
+ls 7
+lg 7
+cu 21
+sr
+ls 1
+lg 2
+cu 1
+ad
+ls 2
+cu 16
+lg 2
+lt
+bf 2 4
+cu 1
+cu 0
+di
+ju 95 200
+lg 2
+ju 95 200
+re
+
+fn 3 10 65 128
+cu 0
+ls 3
+lg 0
+lg 1
+ca 0
+ls 4
+lg 4
+cu 42
+sr
+ls 1
+lg 0
+lg 4
+ca 1
+cu 26222
+eq
+bf 60 119
+lg 0
+lg 1
+ca 0
+ls 5
+lg 5
+cu 42
+sr
+ls 1
+lg 0
+lg 5
+lg 2
+ca 2
+bf 31 64
+lg 3
+ju 64 127
+lg 0
+lg 1
+ca 0
+ls 4
+lg 4
+cu 42
+sr
+ls 1
+lg 0
+lg 1
+ca 0
+ls 4
+lg 4
+cu 42
+sr
+ls 1
+lg 0
+lg 1
+ca 5
+ls 6
+lg 6
+cu 21
+sr
+ls 1
+lg 3
+cu 1
+ad
+ls 3
+ju 2 4
+cu 1
+cu 0
+di
+ju 64 127
+re
+
+fn 3 10 64 134
+cu 0
+ls 3
+lg 0
+lg 1
+ca 0
+ls 4
+lg 4
+cu 42
+sr
+ls 1
+lg 0
+lg 4
+ca 1
+ca 4
+ls 5
+lg 5
+cu 65538
+eq
+bf 20 42
+ju 59 124
+lg 5
+cu 65537
+eq
+bf 39 84
+lg 0
+lg 1
+ca 0
+ls 6
+lg 6
+cu 42
+sr
+ls 1
+lg 0
+lg 6
+lg 2
+ca 2
+bf 2 4
+lg 3
+ju 63 133
+lg 5
+cu 255
+an
+cu 0
+eq
+bf 46 99
+ju 54 114
+lg 0
+lg 1
+ca 0
+ls 4
+lg 4
+cu 42
+sr
+ls 1
+lg 3
+cu 1
+ad
+ls 3
+ju 2 4
+cu 1
+cu 0
+di
+ju 63 133
+re
+
+fn 1 2 18 36
+cu 1
+ls 1
+lg 0
+cu 128
+lt
+bf 8 18
+lg 1
+ju 17 35
+lg 0
+cu 7
+sr
+ls 0
+lg 1
+cu 1
+ad
+ls 1
+ju 2 4
+re
+
+fn 3 7 31 51
+lg 1
+lg 2
+ad
+cu 3
+mu
+ls 3
+lg 0
+lg 3
+bg
+ls 4
+lg 0
+lg 3
+cu 1
+ad
+bg
+cu 8
+sl
+lg 4
+or
+ls 4
+lg 0
+lg 3
+cu 2
+ad
+bg
+cu 16
+sl
+lg 4
+or
+ju 30 50
+re
+
+fn 4 24 262 550
+cu 1048576
+bn
+ls 4
+lg 1
+ls 5
+cu 0
+ls 6
+lg 0
+lg 5
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 5
+lg 0
+lg 7
+ca 1
+ls 8
+lg 8
+cu 25966
+eq
+bf 25 55
+lg 4
+ju 261 549
+lg 8
+cu 26222
+eq
+bf 257 539
+lg 0
+lg 5
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 5
+lg 0
+lg 5
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 5
+lg 0
+lg 5
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 5
+lg 5
+ls 10
+lg 0
+lg 10
+ca 5
+ls 11
+lg 11
+cu 2097151
+an
+ls 12
+cu 0
+ls 13
+cu 0
+ls 14
+lg 0
+lg 5
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 5
+lg 0
+lg 7
+ca 1
+ca 4
+ls 8
+lg 8
+cu 65538
+eq
+bf 113 229
+lg 4
+lg 13
+cu 255
+an
+bp
+ls 4
+lg 4
+lg 13
+cu 8
+sr
+cu 255
+an
+bp
+ls 4
+lg 4
+lg 13
+cu 16
+sr
+cu 255
+an
+bp
+ls 4
+lg 6
+lg 12
+cu 1
+ad
+ad
+ls 6
+ju 7 15
+lg 8
+cu 65537
+eq
+bf 126 259
+lg 0
+lg 5
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 5
+ju 67 141
+lg 4
+lg 13
+cu 255
+an
+bp
+ls 4
+lg 4
+lg 13
+cu 8
+sr
+cu 255
+an
+bp
+ls 4
+lg 4
+lg 13
+cu 16
+sr
+cu 255
+an
+bp
+ls 4
+lg 13
+cu 1
+ad
+ls 13
+lg 8
+cu 255
+an
+ls 15
+lg 8
+cu 0
+eq
+bf 183 374
+lg 12
+ca 10
+lg 13
+ad
+ls 13
+lg 2
+cu 0
+eq
+bf 174 354
+lg 13
+cu 1
+ad
+ls 13
+ju 252 528
+lg 3
+lg 6
+lg 12
+ca 11
+ca 10
+lg 13
+ad
+ls 13
+ju 252 528
+lg 15
+cu 0
+eq
+bf 188 389
+ju 252 528
+lg 0
+lg 5
+ca 0
+ls 16
+lg 16
+cu 42
+sr
+ls 5
+lg 15
+cu 1
+eq
+bf 208 432
+lg 0
+lg 16
+ca 3
+ca 10
+lg 13
+ad
+ls 13
+ju 252 528
+lg 15
+cu 2
+eq
+bf 240 503
+lg 0
+lg 10
+lg 16
+ca 9
+ls 17
+lg 17
+ca 10
+lg 13
+ad
+ls 13
+lg 2
+cu 0
+eq
+bf 231 483
+lg 13
+cu 1
+ad
+ls 13
+ju 252 528
+lg 3
+lg 6
+lg 17
+ca 11
+ca 10
+lg 13
+ad
+ls 13
+ju 252 528
+lg 15
+cu 3
+eq
+bf 257 539
+lg 0
+lg 1
+lg 16
+ca 8
+ca 10
+lg 13
+ad
+ls 13
+lg 14
+cu 1
+ad
+ls 14
+ju 67 141
+cu 1
+cu 0
+di
+ju 261 549
+re
+
+fn 2 3 28 54
+lg 1
+cu 127
+an
+ls 2
+lg 1
+cu 7
+sr
+ls 1
+lg 1
+cu 0
+eq
+bf 13 25
+ju 17 33
+lg 2
+cu 128
+or
+ls 2
+lg 0
+lg 2
+bp
+ls 0
+lg 1
+cu 0
+eq
+bf 0 0
+lg 0
+ju 27 53
+re
+
+fn 0 24 355 733
+cu 0
+ag
+fr
+ls 0
+lg 0
+ca 6
+ls 2
+lg 2
+cu 3
+sr
+ls 3
+lg 2
+cu 7
+an
+ls 4
+lg 0
+lg 3
+ca 7
+ls 5
+lg 0
+lg 3
+cu 0
+cu 0
+ca 12
+ls 22
+lg 0
+lg 3
+cu 1
+lg 22
+ca 12
+ls 22
+lg 0
+lg 3
+cu 2
+lg 22
+ca 12
+ls 22
+lg 0
+lg 3
+cu 3
+lg 22
+ca 12
+ls 22
+cu 0
+ls 23
+cu 1048576
+bn
+ls 1
+lg 1
+cu 83
+bp
+ls 1
+lg 1
+cu 69
+bp
+ls 1
+lg 1
+cu 77
+bp
+ls 1
+lg 1
+cu 69
+bp
+ls 1
+lg 1
+cu 45
+bp
+ls 1
+lg 1
+cu 75
+bp
+ls 1
+lg 1
+cu 48
+bp
+ls 1
+lg 1
+cu 0
+bp
+ls 1
+lg 1
+cu 3
+ca 13
+ls 1
+lg 1
+lg 4
+ca 13
+ls 1
+lg 1
+lg 5
+ca 13
+ls 1
+lg 3
+ls 6
+lg 0
+lg 6
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 6
+lg 0
+lg 7
+ca 1
+ls 8
+lg 8
+cu 25966
+eq
+bf 111 216
+ju 326 674
+lg 8
+cu 26222
+eq
+bf 350 722
+lg 0
+lg 6
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 6
+lg 0
+lg 6
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 6
+lg 0
+lg 7
+ca 3
+ls 10
+lg 0
+lg 6
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 6
+lg 0
+lg 7
+ca 3
+ls 11
+lg 6
+ls 13
+lg 0
+lg 13
+ca 5
+ls 12
+lg 12
+cu 2097151
+an
+ls 14
+lg 1
+lg 10
+ca 13
+ls 1
+lg 1
+lg 11
+ca 13
+ls 1
+lg 1
+lg 14
+cu 1
+ad
+ca 13
+ls 1
+lg 22
+lg 23
+lg 14
+ca 11
+cu 1
+ad
+ls 15
+lg 1
+lg 15
+ca 13
+ls 1
+lg 13
+ls 6
+cu 0
+ls 16
+lg 0
+lg 6
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 6
+lg 0
+lg 7
+ca 1
+ca 4
+ls 8
+lg 8
+cu 65538
+eq
+bf 214 424
+lg 1
+cu 0
+bp
+ls 1
+lg 23
+lg 14
+cu 1
+ad
+ad
+ls 23
+ju 94 177
+lg 8
+cu 65537
+eq
+bf 227 456
+lg 0
+lg 6
+ca 0
+ls 7
+lg 7
+cu 42
+sr
+ls 6
+ju 186 366
+lg 8
+cu 255
+an
+ls 18
+lg 8
+cu 0
+eq
+bf 253 512
+lg 1
+cu 32
+bp
+ls 1
+lg 1
+lg 14
+ca 13
+ls 1
+lg 22
+lg 23
+lg 14
+ca 11
+ls 20
+lg 1
+lg 20
+ca 13
+ls 1
+ju 321 662
+lg 1
+lg 8
+cu 8
+sr
+bp
+ls 1
+lg 18
+cu 0
+eq
+bf 264 537
+ju 321 662
+lg 0
+lg 6
+ca 0
+ls 9
+lg 9
+cu 42
+sr
+ls 6
+lg 18
+cu 1
+eq
+bf 285 583
+lg 0
+lg 9
+ca 3
+ls 19
+lg 1
+lg 19
+ca 13
+ls 1
+ju 321 662
+lg 18
+cu 2
+eq
+bf 308 634
+lg 0
+lg 13
+lg 9
+ca 9
+ls 19
+lg 1
+lg 19
+ca 13
+ls 1
+lg 22
+lg 23
+lg 19
+ca 11
+ls 20
+lg 1
+lg 20
+ca 13
+ls 1
+ju 321 662
+lg 18
+cu 3
+eq
+bf 350 722
+lg 0
+lg 3
+lg 9
+ca 8
+ls 19
+lg 1
+lg 19
+ca 13
+ls 1
+lg 16
+cu 1
+ad
+ls 16
+ju 186 366
+lg 0
+lg 6
+ca 0
+ls 21
+lg 21
+cu 42
+sr
+ls 6
+lg 0
+lg 3
+lg 21
+ca 8
+ls 19
+lg 1
+lg 19
+ca 13
+ls 1
+cu 1
+ag
+ls 17
+lg 17
+lg 1
+fw
+ju 354 732
+cu 1
+cu 0
+di
+ju 354 732
+re
+
+en 14
