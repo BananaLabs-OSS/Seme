@@ -84,6 +84,22 @@ the frozen K0 executor. Hex0 construction, native A0 construction, and portable
 K0 compilation therefore converge on the same executable bytes. Decimal A0 and
 the future human Seme notation remain separate compiler milestones.
 
+## S0 readable compiler
+
+`s0-compiler.k0` is the first self-reproducing compiler written in readable
+bootstrap source. Its canonical source is `s0-compiler.s0`; the initial K0 image
+has an auditable A0 construction source in `s0-compiler.k0.a0`.
+
+The frozen K0 executor compiles `s0-compiler.s0` into generation B. Generation B
+then compiles the same source into generation C. The checked compiler, B, and C
+are byte-identical. S0 also compiles an independent return-42 program and
+deterministically rejects unknown directives and missing operands.
+
+S0 exposes image counts, byte sizes, and branch witnesses. That is intentional
+bootstrap machinery, not the canonical Seme semantic model. The next rung uses
+S0 to implement Kernel v1 entities, validation, canonical encoding, and module
+extension without adding more native assembly.
+
 ## Seed responsibilities
 
 - accept exactly an input and output path;

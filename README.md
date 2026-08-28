@@ -15,7 +15,7 @@ not part of Seme's trusted build path.
 frozen Linux-amd64 seed
     -> Hex0 source
     -> A0 canonical byte/integer notation
-    -> structured kernel notation
+    -> S0 readable bootstrap notation
     -> Seme Kernel v1 reader/executor
     -> human-authored Seme compiler
     -> self-hosted Seme compiler
@@ -46,8 +46,13 @@ Substantial software belongs in readable Seme, not assembly.
 - The first portable K0 compiler consumes checked A0 byte source and reproduces
   the K0 executor byte-for-byte; artifact construction has begun moving above
   native assembly.
+- The portable S0 compiler consumes readable decimal/directive source and
+  reproduces its own K0 image byte-for-byte across two generated generations.
+- New bootstrap compiler work can now be authored in S0 without editing
+  assembly, hexadecimal source, or A0 byte streams.
 - Host assembly tools remain optional construction and cross-check conveniences.
-- Seme is not self-hosted yet.
+- The S0 bootstrap compiler is self-reproducing; the semantic Kernel v1 compiler
+  is not self-hosted yet.
 
 See [`spec/architecture.md`](spec/architecture.md) and
 [`bootstrap/README.md`](bootstrap/README.md).
