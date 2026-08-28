@@ -18,7 +18,7 @@
 .equ FRAME_LOCALS, 64
 .equ MAX_CALL_DEPTH, 32
 .equ MAX_BUFFERS, 16
-.equ BUFFER_CAPACITY, 65536
+.equ BUFFER_CAPACITY, 1048576
 
 _start:
     mov (%rsp), %rax
@@ -775,6 +775,13 @@ return_to_caller:
     lea function_locals(%rip), %r11
     mov (%r11,%rax,8), %rax
     mov %rax, current_local_count(%rip)
+    mov current_function(%rip), %rax
+    lea function_instructions(%rip), %r11
+    mov (%r11,%rax,8), %rbx
+    mov %rbx, instruction_total(%rip)
+    lea function_offsets(%rip), %r11
+    mov (%r11,%rax,8), %rbx
+    mov %rbx, code_file_offset(%rip)
     lea frame_return_offset(%rip), %r11
     mov (%r11,%r10,8), %rsi
     mov $SYS_LSEEK, %rax

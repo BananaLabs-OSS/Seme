@@ -43,6 +43,9 @@ Substantial software belongs in readable Seme, not assembly.
   file copy.
 - P1/P2 images receive whole-image structural preflight before execution,
   including unreachable code and branch-witness validation.
+- The first portable K0 compiler consumes checked A0 byte source and reproduces
+  the K0 executor byte-for-byte; artifact construction has begun moving above
+  native assembly.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - Seme is not self-hosted yet.
 
