@@ -201,6 +201,20 @@ execute:
     je op_sub
     cmp $0x12, %al
     je op_mul
+    cmp $0x13, %al
+    je op_div
+    cmp $0x14, %al
+    je op_rem
+    cmp $0x15, %al
+    je op_and
+    cmp $0x16, %al
+    je op_or
+    cmp $0x17, %al
+    je op_xor
+    cmp $0x18, %al
+    je op_shl
+    cmp $0x19, %al
+    je op_shr
     cmp $0x1a, %al
     je op_eq
     cmp $0x1b, %al
@@ -282,6 +296,64 @@ op_sub:
 op_mul:
     call pop_binary
     imul %r10, %rbx
+    call push_rbx
+    jmp execute
+
+op_div:
+    call pop_binary
+    test %r10, %r10
+    jz invalid
+    mov %rbx, %rax
+    xor %edx, %edx
+    div %r10
+    mov %rax, %rbx
+    call push_rbx
+    jmp execute
+
+op_rem:
+    call pop_binary
+    test %r10, %r10
+    jz invalid
+    mov %rbx, %rax
+    xor %edx, %edx
+    div %r10
+    mov %rdx, %rbx
+    call push_rbx
+    jmp execute
+
+op_and:
+    call pop_binary
+    and %r10, %rbx
+    call push_rbx
+    jmp execute
+
+op_or:
+    call pop_binary
+    or %r10, %rbx
+    call push_rbx
+    jmp execute
+
+op_xor:
+    call pop_binary
+    xor %r10, %rbx
+    call push_rbx
+    jmp execute
+
+op_shl:
+    call pop_binary
+    cmp $64, %r10
+    jae invalid
+    mov %r10b, %cl
+    shl %cl, %rbx
+    call push_rbx
+    jmp execute
+
+op_shr:
+    call pop_binary
+    cmp $64, %r10
+    jae invalid
+    mov %r10b, %cl
+    shr %cl, %rbx
     call push_rbx
     jmp execute
 
@@ -763,6 +835,20 @@ validate_instruction_loop:
     cmp $0x11, %al
     je validate_instruction_done
     cmp $0x12, %al
+    je validate_instruction_done
+    cmp $0x13, %al
+    je validate_instruction_done
+    cmp $0x14, %al
+    je validate_instruction_done
+    cmp $0x15, %al
+    je validate_instruction_done
+    cmp $0x16, %al
+    je validate_instruction_done
+    cmp $0x17, %al
+    je validate_instruction_done
+    cmp $0x18, %al
+    je validate_instruction_done
+    cmp $0x19, %al
     je validate_instruction_done
     cmp $0x1a, %al
     je validate_instruction_done
