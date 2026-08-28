@@ -1,0 +1,15 @@
+# Forward labels do not expose instruction indices or byte witnesses.
+ve 3
+cp 0
+
+fn choose 0 0
+  cu 0
+  bf answer
+  cu 1
+  re
+  lb answer
+  cu 42
+  re
+fe
+
+en choose

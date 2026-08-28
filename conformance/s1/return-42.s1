@@ -1,0 +1,10 @@
+# Layout is entirely derived by the S1 compiler.
+ve 3
+cp 0
+
+fn answer 0 0
+  cu 42
+  re
+fe
+
+en answer
