@@ -1,0 +1,17 @@
+b53 b45 b4d b45 b2d b4b b30 b00
+u1 u2 u20
+# local0 = 5; local1 = 0
+b01 u5 b03 u0 b01 u0 b03 u1
+# instruction 4, byte 8: if local0 == 0 continue, otherwise branch to body
+b02 u0 b01 u0 b1a
+b21 u9 u19
+# jump to instruction 18, byte 36 (finished)
+b20 u18 u36
+# instruction 9, byte 19: local1 += local0
+b02 u1 b02 u0 b10 b03 u1
+# local0 -= 1
+b02 u0 b01 u1 b11 b03 u0
+# jump to instruction 4, byte 8
+b20 u4 u8
+# instruction 18, byte 36
+b02 u1 b00

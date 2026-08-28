@@ -34,8 +34,8 @@ Substantial software belongs in readable Seme, not assembly.
   byte-for-byte without a host assembler or linker.
 - The Hex0 seed constructs A0, and two A0 generations reproduce byte-identical
   A0 executables.
-- A0 constructs the first portable K0-P0 executor; arithmetic, local-state, and
-  malformed-image conformance fixtures pass.
+- A0 constructs the first portable K0-P0 executor; arithmetic, local-state,
+  looping control flow, and malformed-image conformance fixtures pass.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - Seme is not self-hosted yet.
 
