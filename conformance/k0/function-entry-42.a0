@@ -1,0 +1,6 @@
+b53 b45 b4d b45 b2d b4b b30 b00
+u2 u1
+# one zero-parameter entry function: const 42; return
+u0 u0 u2 u3
+b01 u42 b00
+u0

@@ -36,6 +36,8 @@ Substantial software belongs in readable Seme, not assembly.
   A0 executables.
 - A0 constructs the first portable K0-P0 executor; arithmetic, local-state,
   looping control flow, and malformed-image conformance fixtures pass.
+- K0-P1 adds isolated function frames, parameters, calls, and entry selection
+  while retaining P0 execution compatibility.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - Seme is not self-hosted yet.
 

@@ -48,6 +48,12 @@ non-canonical ULEB values, and trailing bytes. P0 is not Kernel v1: complete
 branch-witness validation, functions, byte values, effects, and structured
 diagnostics remain required before the kernel compiler can be expressed.
 
+P1 adds a bounded function table and isolated call frames. The current executor
+passes zero- and two-parameter calls, preserves all P0 fixtures, and rejects
+invalid call indices, entry parameters, and attempts to observe caller locals
+from a callee. Function bodies are still validated lazily; complete preflight
+validation remains a freeze gate.
+
 ## Seed responsibilities
 
 - accept exactly an input and output path;

@@ -1,0 +1,10 @@
+b53 b45 b4d b45 b2d b4b b30 b00
+u2 u2
+# function 0 reads its uninitialized local0
+u0 u1 u2 u3
+b02 u0 b00
+# entry initializes its own local0, then calls function 0
+u0 u1 u4 u7
+b01 u7 b03 u0 b30 u0 b00
+u1
+
