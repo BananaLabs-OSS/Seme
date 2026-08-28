@@ -100,6 +100,11 @@ bootstrap machinery, not the canonical Seme semantic model. The next rung uses
 S0 to implement Kernel v1 entities, validation, canonical encoding, and module
 extension without adding more native assembly.
 
+`S1.md` specifies the symbolic authoring rung used for that implementation. It
+derives functions, labels, counts, sizes, indices, and branch witnesses so new
+portable compiler code does not require manual layout bookkeeping. S1 is not
+implemented or trusted yet.
+
 ## Seed responsibilities
 
 - accept exactly an input and output path;
