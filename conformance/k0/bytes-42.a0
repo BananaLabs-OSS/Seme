@@ -1,0 +1,9 @@
+b53 b45 b4d b45 b2d b4b b30 b00
+# P2, no capabilities, one function
+u3 u0 u1
+u0 u1 u11 u17
+# buffer.new(2); push 40; push 42; store handle
+b01 u2 b42 b01 u40 b43 b01 u42 b43 b03 u0
+# get byte at index 1; return
+b02 u0 b01 u1 b41 b00
+u0
