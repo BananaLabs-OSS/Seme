@@ -39,11 +39,13 @@ structured kernel notation, not a larger native assembler.
 `seme-k0-linux-amd64` implements the draft portable execution profile in
 `K0.md`. Both Hex0 and A0 construction inputs reproduce the checked executable
 byte-for-byte. P0 currently validates canonical images and executes unsigned
-integer arithmetic, comparisons, locals, stack operations, and return.
+integer arithmetic, comparisons, locals, stack operations, control-flow loops,
+and return.
 
-The conformance suite proves two independent programs return `42` and rejects
-uninitialized local reads, non-canonical ULEB values, and trailing bytes. P0 is
-not Kernel v1: control flow, functions, byte values, effects, and structured
+The conformance suite proves two independent programs return `42`, executes a
+looping sum, and rejects uninitialized local reads, invalid branch targets,
+non-canonical ULEB values, and trailing bytes. P0 is not Kernel v1: complete
+branch-witness validation, functions, byte values, effects, and structured
 diagnostics remain required before the kernel compiler can be expressed.
 
 ## Seed responsibilities

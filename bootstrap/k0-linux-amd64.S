@@ -5,6 +5,7 @@
 .equ SYS_READ,  0
 .equ SYS_OPEN,  2
 .equ SYS_CLOSE, 3
+.equ SYS_LSEEK, 8
 .equ SYS_EXIT, 60
 .equ O_RDONLY, 0
 .equ MAX_LOCALS, 256
@@ -47,6 +48,16 @@ magic_loop:
     cmp $MAX_INSTRUCTIONS, %rax
     ja invalid
     mov %rax, instruction_remaining(%rip)
+    mov %rax, instruction_total(%rip)
+
+    mov $SYS_LSEEK, %rax
+    mov %r12, %rdi
+    xor %rsi, %rsi
+    mov $1, %rdx                    /* SEEK_CUR */
+    syscall
+    test %rax, %rax
+    js close_io_error
+    mov %rax, code_file_offset(%rip)
 
     lea local_initialized(%rip), %rdi
     mov $MAX_LOCALS, %rcx
@@ -81,6 +92,10 @@ execute:
     je op_eq
     cmp $0x1b, %al
     je op_lt
+    cmp $0x20, %al
+    je op_jump
+    cmp $0x21, %al
+    je op_branch_false
     jmp invalid
 
 op_const:
@@ -152,6 +167,48 @@ op_lt:
     movzbl %bl, %ebx
     call push_rbx
     jmp execute
+
+op_jump:
+    call read_branch_target
+    call take_branch
+    jmp execute
+
+op_branch_false:
+    call read_branch_target
+    mov %rax, %r10
+    mov %rbx, %r14
+    call pop_rbx
+    test %rbx, %rbx
+    jnz execute
+    mov %r10, %rax
+    mov %r14, %rbx
+    call take_branch
+    jmp execute
+
+read_branch_target:
+    call read_uleb
+    cmp instruction_total(%rip), %rax
+    jae invalid
+    push %rax
+    call read_uleb
+    mov %rax, %rbx
+    pop %rax
+    ret
+
+take_branch:
+    mov instruction_total(%rip), %r10
+    sub %rax, %r10
+    mov %r10, instruction_remaining(%rip)
+    add code_file_offset(%rip), %rbx
+    jc invalid
+    mov $SYS_LSEEK, %rax
+    mov %r12, %rdi
+    mov %rbx, %rsi
+    xor %rdx, %rdx                  /* SEEK_SET */
+    syscall
+    cmp %rbx, %rax
+    jne close_io_error
+    ret
 
 op_return:
     cmpq $0, instruction_remaining(%rip)
@@ -277,6 +334,10 @@ input_byte:
     .skip 1
 .balign 8
 instruction_remaining:
+    .skip 8
+instruction_total:
+    .skip 8
+code_file_offset:
     .skip 8
 local_values:
     .skip MAX_LOCALS * 8
