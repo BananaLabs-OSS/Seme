@@ -3,6 +3,9 @@
 Kernel v1 is deliberately not frozen yet. A construct belongs here only if the
 self-hosted compiler and every semantic module require it.
 
+The candidate canonical representation is specified in `kernel-wire-v1.md`.
+It remains explicitly unfrozen while the following gates are incomplete.
+
 ## Required entities
 
 ```text
@@ -41,3 +44,10 @@ Kernel v1 may be frozen only after it can:
 6. execute or lower its own compiler;
 7. migrate at least one deliberately obsolete fixture.
 
+## Non-goals
+
+Kernel v1 does not standardize a preferred source syntax, object system,
+ownership model, garbage collector, exception model, scheduler, database,
+package ecosystem, instruction set, or execution target. Those remain semantic
+modules and target contracts so the kernel does not collapse every language
+into one lowest-common-denominator worldview.
