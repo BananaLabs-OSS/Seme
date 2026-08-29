@@ -3,6 +3,23 @@
 Patch Module v1 defines transactional semantic editing above frozen Kernel v1
 and Semantic Foundation v1.
 
+## Stable identities
+
+| Identity | Meaning |
+|---|---|
+| `00000000000000000000000000005000` | Patch module |
+| `00000000000000000000000000005010` | Patch schema |
+| `00000000000000000000000000005011` | RenameDeclaration schema |
+| `00000000000000000000000000005100` | patch.author |
+| `00000000000000000000000000005101` | patch.base_revision |
+| `00000000000000000000000000005102` | patch.operations |
+| `00000000000000000000000000005110` | rename.target |
+| `00000000000000000000000000005111` | rename.field |
+| `00000000000000000000000000005112` | rename.expected_value |
+| `00000000000000000000000000005113` | rename.replacement |
+
+Patch identity is the ordinary Kernel entity identity of a Patch instance.
+
 ## Patch
 
 A patch contains stable patch identity, author/provenance identity, base

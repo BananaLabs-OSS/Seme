@@ -9,6 +9,12 @@ import (
 
 const nameField foundation.ID = "field:name"
 
+func TestModuleV1Declaration(t *testing.T) {
+	if _, err := foundation.Validate(ModuleV1(), map[foundation.ID]foundation.Entity{}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func workspace() Workspace {
 	module := foundation.Module{ID: "module:test", Schemas: []foundation.Schema{{ID: "schema:function", Version: 1, Fields: []foundation.Field{{ID: nameField, Shape: foundation.Shape{Kind: foundation.Bytes}, Cardinality: foundation.One, Since: 1}}}}}
 	return Workspace{Revision: "revision:one", Module: module, Entities: map[foundation.ID]foundation.Entity{"function:greeting": {ID: "function:greeting", Schema: "schema:function", Version: 1, Fields: map[foundation.ID]foundation.Value{nameField: {Kind: foundation.Bytes, Bytes: []byte("Greeting")}}}}}
