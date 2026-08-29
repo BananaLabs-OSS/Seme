@@ -106,6 +106,13 @@ awk '
     "$work/foundation-invalid-since.seme"
 expect_status 65 "$k0" "$foundation/validator.k0" \
     "$work/foundation-invalid-since.seme"
+expect_status 65 "$k0" "$foundation/validator.k0" \
+    "$work/foundation-invalid-since.seme" \
+    "$work/foundation-invalid-since.report.seme"
+"$k0" "$kernel" "$work/foundation-invalid-since.report.seme" \
+    "$work/foundation-invalid-since.report.validated.seme"
+cmp "$work/foundation-invalid-since.report.seme" \
+    "$work/foundation-invalid-since.report.validated.seme"
 
 awk '
     $1 == "en" { field = ($2 == "00000000000000000000000000000100") }
@@ -118,6 +125,13 @@ awk '
     "$work/foundation-invalid-shape.seme"
 expect_status 65 "$k0" "$foundation/validator.k0" \
     "$work/foundation-invalid-shape.seme"
+expect_status 65 "$k0" "$foundation/validator.k0" \
+    "$work/foundation-invalid-shape.seme" \
+    "$work/foundation-invalid-shape.report.seme"
+"$k0" "$kernel" "$work/foundation-invalid-shape.report.seme" \
+    "$work/foundation-invalid-shape.report.validated.seme"
+cmp "$work/foundation-invalid-shape.report.seme" \
+    "$work/foundation-invalid-shape.report.validated.seme"
 
 (
     cd "$patch"
