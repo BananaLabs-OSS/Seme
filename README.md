@@ -86,3 +86,5 @@ Substantial software belongs in readable Seme, not assembly.
 See [`spec/architecture.md`](spec/architecture.md) and
 [`spec/roadmap.md`](spec/roadmap.md) for the product proof sequence, and
 [`bootstrap/README.md`](bootstrap/README.md) for the independent bootstrap.
+The broader Seme–registry–Pulp interoperability direction is documented in
+[`spec/software-commons.md`](spec/software-commons.md).
