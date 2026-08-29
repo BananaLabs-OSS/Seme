@@ -1,0 +1,246 @@
+# Bootstrap profile 1 canonical K0-module graph lowerer.
+# The first vertical slice accepts one function containing const.u and return.
+ve 3
+cp 7
+
+fn fail 0 0
+  cu 1 cu 0 di re
+fe
+
+# take-uleb(buffer, cursor) -> (value << 21) | cursor
+fn take-uleb 2 10
+  cu 0 ls 2
+  cu 0 ls 3
+  cu 0 ls 4
+  lg 0 bl ls 5
+  lb take-byte
+  lg 1 lg 5 eq bf take-have-byte
+  ca fail re
+  lb take-have-byte
+  lg 0 lg 1 bg ls 6
+  lg 1 cu 1 ad ls 1
+  lg 6 cu 127 an ls 7
+  lg 3 cu 63 eq bf take-shift
+  cu 1 lg 7 lt bf take-shift
+  ca fail re
+  lb take-shift
+  lg 7 lg 3 sl lg 2 or ls 2
+  lg 4 cu 1 ad ls 4
+  lg 6 cu 128 an cu 0 eq bf take-more
+  lg 4 cu 1 eq bf take-terminal
+  lg 2 cu 21 sl lg 1 or re
+  lb take-terminal
+  lg 7 cu 0 eq bf take-done
+  ca fail re
+  lb take-done
+  lg 2 cu 21 sl lg 1 or re
+  lb take-more
+  lg 3 cu 7 ad ls 3
+  cu 63 lg 3 lt bf take-byte
+  ca fail re
+fe
+
+fn append-uleb 2 3
+  lb append-loop
+  lg 1 cu 127 an ls 2
+  lg 1 cu 7 sr ls 1
+  lg 1 cu 0 eq bf append-more
+  ju append-byte
+  lb append-more
+  lg 2 cu 128 or ls 2
+  lb append-byte
+  lg 0 lg 2 bp ls 0
+  lg 1 cu 0 eq bf append-loop
+  lg 0 re
+fe
+
+# id-is(buffer, offset, low-16-bit identity) -> bool
+fn id-is 3 7
+  cu 0 ls 3
+  lb id-prefix
+  lg 3 cu 14 eq bf id-prefix-byte
+  lg 0 lg 1 cu 14 ad bg lg 2 cu 8 sr cu 255 an eq bf id-false
+  lg 0 lg 1 cu 15 ad bg lg 2 cu 255 an eq bf id-false
+  cu 1 re
+  lb id-prefix-byte
+  lg 0 lg 1 lg 3 ad bg cu 0 eq bf id-false
+  lg 3 cu 1 ad ls 3
+  ju id-prefix
+  lb id-false
+  cu 0 re
+fe
+
+fn id-equal 4 7
+  cu 0 ls 4
+  lb equal-loop
+  lg 4 cu 16 eq bf equal-byte
+  cu 1 re
+  lb equal-byte
+  lg 0 lg 1 lg 4 ad bg
+  lg 2 lg 3 lg 4 ad bg
+  eq bf equal-false
+  lg 4 cu 1 ad ls 4
+  ju equal-loop
+  lb equal-false
+  cu 0 re
+fe
+
+# expect-id(buffer, cursor, low-16-bit identity) -> cursor + 16
+fn expect-id 3 4
+  lg 0 lg 1 lg 2 ca id-is bf expect-id-invalid
+  lg 1 cu 16 ad re
+  lb expect-id-invalid
+  ca fail re
+fe
+
+# expect-byte(buffer, cursor, byte) -> cursor + 1
+fn expect-byte 3 4
+  lg 1 lg 0 bl eq bf expect-byte-room
+  ca fail re
+  lb expect-byte-room
+  lg 0 lg 1 bg lg 2 eq bf expect-byte-invalid
+  lg 1 cu 1 ad re
+  lb expect-byte-invalid
+  ca fail re
+fe
+
+# expect-uleb(buffer, cursor, value) -> cursor
+fn expect-uleb 3 5
+  lg 0 lg 1 ca take-uleb ls 3
+  lg 3 cu 21 sr lg 2 eq bf expect-uleb-invalid
+  lg 3 cu 2097151 an re
+  lb expect-uleb-invalid
+  ca fail re
+fe
+
+fn main 0 20
+  ac cu 2 eq bf lower-invalid
+  cu 0 ag fr ls 0
+  lg 0 bl ls 1
+  cu 0 ls 2
+
+  # Kernel envelope and K0 module identity.
+  lg 0 lg 2 cu 83 ca expect-byte ls 2
+  lg 0 lg 2 cu 69 ca expect-byte ls 2
+  lg 0 lg 2 cu 77 ca expect-byte ls 2
+  lg 0 lg 2 cu 69 ca expect-byte ls 2
+  lg 0 lg 2 cu 75 ca expect-byte ls 2
+  lg 0 lg 2 cu 49 ca expect-byte ls 2
+  lg 0 lg 2 cu 13 ca expect-byte ls 2
+  lg 0 lg 2 cu 10 ca expect-byte ls 2
+  lg 0 lg 2 cu 1 ca expect-uleb ls 2
+  lg 0 lg 2 cu 40960 ca expect-id ls 2
+  # Revision identity is metadata for the derived artifact.
+  lg 2 cu 16 ad ls 2
+  lg 0 lg 2 cu 0 ca expect-uleb ls 2
+  lg 0 lg 2 cu 4 ca expect-uleb ls 2
+
+  # Program entity. Save its function reference at local 3.
+  lg 2 cu 16 ad ls 2
+  lg 0 lg 2 cu 40976 ca expect-id ls 2
+  lg 0 lg 2 cu 1 ca expect-uleb ls 2
+  lg 0 lg 2 cu 4 ca expect-uleb ls 2
+  lg 0 lg 2 cu 41216 ca expect-id ls 2
+  lg 0 lg 2 cu 3 ca expect-byte ls 2
+  lg 0 lg 2 cu 2 ca expect-uleb ls 2
+  lg 0 lg 2 cu 41217 ca expect-id ls 2
+  lg 0 lg 2 cu 3 ca expect-byte ls 2
+  lg 0 lg 2 cu 0 ca expect-uleb ls 2
+  lg 0 lg 2 cu 41218 ca expect-id ls 2
+  lg 0 lg 2 cu 7 ca expect-byte ls 2
+  lg 0 lg 2 cu 1 ca expect-uleb ls 2
+  lg 0 lg 2 cu 6 ca expect-byte ls 2
+  lg 2 ls 3
+  lg 2 cu 16 ad ls 2
+  lg 0 lg 2 cu 41219 ca expect-id ls 2
+  lg 0 lg 2 cu 6 ca expect-byte ls 2
+  lg 0 lg 3 lg 0 lg 2 ca id-equal bf lower-invalid
+  lg 2 cu 16 ad ls 2
+
+  # Referenced function entity.
+  lg 0 lg 3 lg 0 lg 2 ca id-equal bf lower-invalid
+  lg 2 cu 16 ad ls 2
+  lg 0 lg 2 cu 40977 ca expect-id ls 2
+  lg 0 lg 2 cu 1 ca expect-uleb ls 2
+  lg 0 lg 2 cu 3 ca expect-uleb ls 2
+  lg 0 lg 2 cu 41232 ca expect-id ls 2
+  lg 0 lg 2 cu 3 ca expect-byte ls 2
+  lg 0 lg 2 cu 0 ca expect-uleb ls 2
+  lg 0 lg 2 cu 41233 ca expect-id ls 2
+  lg 0 lg 2 cu 3 ca expect-byte ls 2
+  lg 0 lg 2 cu 0 ca expect-uleb ls 2
+  lg 0 lg 2 cu 41234 ca expect-id ls 2
+  lg 0 lg 2 cu 7 ca expect-byte ls 2
+  lg 0 lg 2 cu 2 ca expect-uleb ls 2
+  lg 0 lg 2 cu 6 ca expect-byte ls 2
+  lg 2 ls 4
+  lg 2 cu 16 ad ls 2
+  lg 0 lg 2 cu 6 ca expect-byte ls 2
+  lg 2 ls 5
+  lg 2 cu 16 ad ls 2
+
+  # const.u instruction entity and operand.
+  lg 0 lg 4 lg 0 lg 2 ca id-equal bf lower-invalid
+  lg 2 cu 16 ad ls 2
+  lg 0 lg 2 cu 40978 ca expect-id ls 2
+  lg 0 lg 2 cu 1 ca expect-uleb ls 2
+  lg 0 lg 2 cu 2 ca expect-uleb ls 2
+  lg 0 lg 2 cu 41248 ca expect-id ls 2
+  lg 0 lg 2 cu 3 ca expect-byte ls 2
+  lg 0 lg 2 cu 1 ca expect-uleb ls 2
+  lg 0 lg 2 cu 41249 ca expect-id ls 2
+  lg 0 lg 2 cu 3 ca expect-byte ls 2
+  lg 0 lg 2 ca take-uleb ls 6
+  lg 6 cu 21 sr ls 7
+  lg 6 cu 2097151 an ls 2
+
+  # return instruction entity.
+  lg 0 lg 5 lg 0 lg 2 ca id-equal bf lower-invalid
+  lg 2 cu 16 ad ls 2
+  lg 0 lg 2 cu 40978 ca expect-id ls 2
+  lg 0 lg 2 cu 1 ca expect-uleb ls 2
+  lg 0 lg 2 cu 1 ca expect-uleb ls 2
+  lg 0 lg 2 cu 41248 ca expect-id ls 2
+  lg 0 lg 2 cu 3 ca expect-byte ls 2
+  lg 0 lg 2 cu 0 ca expect-uleb ls 2
+  lg 2 lg 1 eq bf lower-invalid
+
+  # Build the derived P1 image and derive code size from a temporary buffer.
+  cu 32 bn ls 8
+  lg 8 cu 1 bp ls 8
+  lg 8 lg 7 ca append-uleb ls 8
+  lg 8 cu 0 bp ls 8
+  lg 8 bl ls 9
+
+  cu 128 bn ls 10
+  lg 10 cu 83 bp ls 10
+  lg 10 cu 69 bp ls 10
+  lg 10 cu 77 bp ls 10
+  lg 10 cu 69 bp ls 10
+  lg 10 cu 45 bp ls 10
+  lg 10 cu 75 bp ls 10
+  lg 10 cu 48 bp ls 10
+  lg 10 cu 0 bp ls 10
+  lg 10 cu 2 ca append-uleb ls 10
+  lg 10 cu 1 ca append-uleb ls 10
+  lg 10 cu 0 ca append-uleb ls 10
+  lg 10 cu 0 ca append-uleb ls 10
+  lg 10 cu 2 ca append-uleb ls 10
+  lg 10 lg 9 ca append-uleb ls 10
+  cu 0 ls 11
+  lb copy-code
+  lg 11 lg 9 eq bf copy-code-byte
+  ju write-entry
+  lb copy-code-byte
+  lg 10 lg 8 lg 11 bg bp ls 10
+  lg 11 cu 1 ad ls 11
+  ju copy-code
+  lb write-entry
+  lg 10 cu 0 ca append-uleb ls 10
+  cu 1 ag lg 10 fw re
+
+  lb lower-invalid
+  ca fail re
+fe
+
+en main

@@ -49,3 +49,16 @@ readable source for the finite Kernel meta-schema. Its checked canonical output,
 Counter fixture is likewise byte-identical to its older A0 construction. These
 equalities demonstrate a change in presentation without a change in canonical
 semantic state.
+
+## First semantic executable lowering
+
+`k0-module-lowerer.s1` consumes a validated canonical Kernel graph using the K0
+semantic module and derives a portable K0 image. Bootstrap profile 1 currently
+accepts one zero-parameter function containing `const.u` and `return`. It checks
+the module, schemas, field shapes, and every semantic reference it consumes.
+
+The checked `return-42.seme` graph lowers to `return-42.k0`, which the frozen K0
+executor runs with result 42. Function indices, instruction indices, code size,
+and byte layout exist only in the derived image. This is the first complete
+canonical-semantics-to-execution path; expanding the accepted instruction and
+function set is required before moving the compiler graph onto it.
