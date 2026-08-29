@@ -1,0 +1,731 @@
+# Portable G1 readable graph compiler.
+ve 3
+cp 7
+
+fn next-token 2 7
+  lg 0
+  bl
+  ls 2
+
+  lb skip
+  lg 1
+  lg 2
+  eq
+  bf have-skip-byte
+  cu 1
+  cu 0
+  di
+  re
+
+  lb have-skip-byte
+  lg 0
+  lg 1
+  bg
+  ls 3
+  lg 3
+  cu 35
+  eq
+  bf whitespace
+
+  lb comment
+  lg 1
+  cu 1
+  ad
+  ls 1
+  lg 1
+  lg 2
+  eq
+  bf comment-byte
+  ju skip
+
+  lb comment-byte
+  lg 0
+  lg 1
+  bg
+  cu 10
+  eq
+  bf comment
+  lg 1
+  cu 1
+  ad
+  ls 1
+  ju skip
+
+  lb whitespace
+  lg 3
+  cu 33
+  lt
+  bf token-start
+  lg 1
+  cu 1
+  ad
+  ls 1
+  ju skip
+
+  lb token-start
+  lg 1
+  ls 4
+
+  lb token-loop
+  lg 1
+  lg 2
+  eq
+  bf token-byte
+  ju token-done
+
+  lb token-byte
+  lg 0
+  lg 1
+  bg
+  ls 3
+  lg 3
+  cu 33
+  lt
+  bf token-comment-check
+  ju token-done
+
+  lb token-comment-check
+  lg 3
+  cu 35
+  eq
+  bf token-advance
+  ju token-done
+
+  lb token-advance
+  lg 1
+  cu 1
+  ad
+  ls 1
+  ju token-loop
+
+  lb token-done
+  lg 1
+  lg 4
+  su
+  ls 5
+  lg 1
+  cu 42
+  sl
+  lg 4
+  cu 21
+  sl
+  or
+  lg 5
+  or
+  re
+fe
+
+fn token-code 2 5
+  lg 1
+  cu 2097151
+  an
+  cu 2
+  eq
+  bf token-code-invalid
+  lg 1
+  cu 21
+  sr
+  cu 2097151
+  an
+  ls 2
+  lg 0
+  lg 2
+  bg
+  cu 256
+  mu
+  lg 0
+  lg 2
+  cu 1
+  ad
+  bg
+  ad
+  re
+
+  lb token-code-invalid
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+fn parse-u64 2 9
+  lg 1
+  cu 2097151
+  an
+  ls 2
+  lg 1
+  cu 21
+  sr
+  cu 2097151
+  an
+  ls 3
+  lg 2
+  cu 0
+  eq
+  bf decimal-first-byte
+  cu 1
+  cu 0
+  di
+  re
+
+  lb decimal-first-byte
+  lg 0
+  lg 3
+  bg
+  cu 48
+  eq
+  bf decimal-init
+  lg 2
+  cu 1
+  eq
+  bf decimal-invalid
+  cu 0
+  re
+
+  lb decimal-init
+  cu 0
+  ls 4
+  cu 0
+  ls 5
+
+  lb decimal-loop
+  lg 5
+  lg 2
+  eq
+  bf decimal-byte
+  lg 4
+  re
+
+  lb decimal-byte
+  lg 0
+  lg 3
+  lg 5
+  ad
+  bg
+  ls 6
+  lg 6
+  cu 48
+  lt
+  bf decimal-upper
+  cu 1
+  cu 0
+  di
+  re
+
+  lb decimal-upper
+  lg 6
+  cu 58
+  lt
+  bf decimal-invalid
+  lg 6
+  cu 48
+  su
+  ls 7
+
+  # Reject accumulator * 10 + digit above 2^64 - 1.
+  cu 1844674407370955161
+  lg 4
+  lt
+  bf decimal-max-equal
+  ju decimal-invalid
+
+  lb decimal-max-equal
+  lg 4
+  cu 1844674407370955161
+  eq
+  bf decimal-safe
+  cu 5
+  lg 7
+  lt
+  bf decimal-safe
+  ju decimal-invalid
+
+  lb decimal-safe
+  lg 4
+  cu 10
+  mu
+  lg 7
+  ad
+  ls 4
+  lg 5
+  cu 1
+  ad
+  ls 5
+  ju decimal-loop
+
+  lb decimal-invalid
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+fn append-uleb 2 3
+  lb append-uleb-loop
+  lg 1
+  cu 127
+  an
+  ls 2
+  lg 1
+  cu 7
+  sr
+  ls 1
+  lg 1
+  cu 0
+  eq
+  bf append-uleb-more
+  ju append-uleb-byte
+  lb append-uleb-more
+  lg 2
+  cu 128
+  or
+  ls 2
+  lb append-uleb-byte
+  lg 0
+  lg 2
+  bp
+  ls 0
+  lg 1
+  cu 0
+  eq
+  bf append-uleb-loop
+  lg 0
+  re
+fe
+
+# hex-nibble(byte) -> value; lowercase canonical form only
+fn hex-nibble 1 2
+  lg 0
+  cu 48
+  lt
+  bf hex-decimal-upper
+  cu 1 cu 0 di re
+  lb hex-decimal-upper
+  lg 0
+  cu 58
+  lt
+  bf hex-lower
+  lg 0
+  cu 48
+  su
+  re
+  lb hex-lower
+  lg 0
+  cu 97
+  lt
+  bf hex-lower-upper
+  cu 1 cu 0 di re
+  lb hex-lower-upper
+  lg 0
+  cu 103
+  lt
+  bf hex-invalid
+  lg 0
+  cu 87
+  su
+  re
+  lb hex-invalid
+  cu 1 cu 0 di re
+fe
+
+# emit-id(source, token-span, output) -> output
+fn emit-id 3 9
+  lg 1
+  cu 2097151
+  an
+  cu 32
+  eq
+  bf emit-id-invalid
+  lg 1
+  cu 21
+  sr
+  cu 2097151
+  an
+  ls 3
+  cu 0
+  ls 4
+  lb emit-id-loop
+  lg 4
+  cu 32
+  eq
+  bf emit-id-byte
+  lg 2
+  re
+  lb emit-id-byte
+  lg 0
+  lg 3
+  lg 4
+  ad
+  bg
+  ca hex-nibble
+  cu 16
+  mu
+  lg 0
+  lg 3
+  lg 4
+  cu 1
+  ad
+  ad
+  bg
+  ca hex-nibble
+  ad
+  ls 5
+  lg 2
+  lg 5
+  bp
+  ls 2
+  lg 4
+  cu 2
+  ad
+  ls 4
+  ju emit-id-loop
+  lb emit-id-invalid
+  cu 1 cu 0 di re
+fe
+
+# emit-bytes(source, token-span, output) -> output
+fn emit-bytes 3 11
+  lg 1
+  cu 2097151
+  an
+  ls 3
+  lg 1
+  cu 21
+  sr
+  cu 2097151
+  an
+  ls 4
+  lg 3
+  cu 1
+  eq
+  bf emit-bytes-even
+  lg 0
+  lg 4
+  bg
+  cu 45
+  eq
+  bf emit-bytes-invalid
+  lg 2
+  cu 0
+  ca append-uleb
+  re
+  lb emit-bytes-even
+  lg 3
+  cu 1
+  an
+  cu 0
+  eq
+  bf emit-bytes-invalid
+  lg 3
+  cu 1
+  sr
+  ls 5
+  lg 2
+  lg 5
+  ca append-uleb
+  ls 2
+  cu 0
+  ls 6
+  lb emit-bytes-loop
+  lg 6
+  lg 3
+  eq
+  bf emit-bytes-byte
+  lg 2
+  re
+  lb emit-bytes-byte
+  lg 0
+  lg 4
+  lg 6
+  ad
+  bg
+  ca hex-nibble
+  cu 16
+  mu
+  lg 0
+  lg 4
+  lg 6
+  cu 1
+  ad
+  ad
+  bg
+  ca hex-nibble
+  ad
+  ls 7
+  lg 2
+  lg 7
+  bp
+  ls 2
+  lg 6
+  cu 2
+  ad
+  ls 6
+  ju emit-bytes-loop
+  lb emit-bytes-invalid
+  cu 1 cu 0 di re
+fe
+
+# expect-code(source, cursor, two-byte-code) -> new cursor
+fn expect-code 3 6
+  lg 0
+  lg 1
+  ca next-token
+  ls 3
+  lg 3
+  cu 42
+  sr
+  ls 4
+  lg 0
+  lg 3
+  ca token-code
+  lg 2
+  eq
+  bf expect-invalid
+  lg 4
+  re
+  lb expect-invalid
+  cu 1 cu 0 di re
+fe
+
+# emit-value(source, cursor, output) -> new cursor
+fn emit-value 3 14
+  lg 0
+  lg 1
+  ca next-token
+  ls 3
+  lg 3
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 3
+  ca token-code
+  ls 4
+
+  lg 4 cu 30062 eq bf value-false
+  lg 2 cu 0 bp ls 2
+  lg 1 re
+  lb value-false
+  lg 4 cu 26209 eq bf value-true
+  lg 2 cu 1 bp ls 2
+  lg 1 re
+  lb value-true
+  lg 4 cu 29810 eq bf value-uint
+  lg 2 cu 2 bp ls 2
+  lg 1 re
+
+  lb value-uint
+  lg 4 cu 30069 eq bf value-zigzag
+  lg 2 cu 3 bp ls 2
+  lg 0 lg 1 ca next-token ls 3
+  lg 3 cu 42 sr ls 1
+  lg 0 lg 3 ca parse-u64 ls 5
+  lg 2 lg 5 ca append-uleb ls 2
+  lg 1 re
+
+  lb value-zigzag
+  lg 4 cu 31354 eq bf value-bytes
+  lg 2 cu 4 bp ls 2
+  lg 0 lg 1 ca next-token ls 3
+  lg 3 cu 42 sr ls 1
+  lg 0 lg 3 ca parse-u64 ls 5
+  lg 2 lg 5 ca append-uleb ls 2
+  lg 1 re
+
+  lb value-bytes
+  lg 4 cu 25209 eq bf value-reference
+  lg 2 cu 5 bp ls 2
+  lg 0 lg 1 ca next-token ls 3
+  lg 3 cu 42 sr ls 1
+  lg 0 lg 3 lg 2 ca emit-bytes dr
+  lg 1 re
+
+  lb value-reference
+  lg 4 cu 29286 eq bf value-list
+  lg 2 cu 6 bp ls 2
+  lg 0 lg 1 ca next-token ls 3
+  lg 3 cu 42 sr ls 1
+  lg 0 lg 3 lg 2 ca emit-id dr
+  lg 1 re
+
+  lb value-list
+  lg 4 cu 27753 eq bf value-record
+  lg 2 cu 7 bp ls 2
+  lg 0 lg 1 ca next-token ls 3
+  lg 3 cu 42 sr ls 1
+  lg 0 lg 3 ca parse-u64 ls 5
+  lg 2 lg 5 ca append-uleb ls 2
+  cu 0 ls 6
+  lb value-list-loop
+  lg 6 lg 5 eq bf value-list-item
+  lg 1 re
+  lb value-list-item
+  lg 0 lg 1 lg 2 ca emit-value ls 1
+  lg 6 cu 1 ad ls 6
+  ju value-list-loop
+
+  lb value-record
+  lg 4 cu 29283 eq bf value-hole
+  lg 2 cu 8 bp ls 2
+  lg 0 lg 1 ca next-token ls 3
+  lg 3 cu 42 sr ls 1
+  lg 0 lg 3 ca parse-u64 ls 5
+  lg 2 lg 5 ca append-uleb ls 2
+  cu 0 ls 6
+  lb value-record-loop
+  lg 6 lg 5 eq bf value-record-field
+  lg 1 re
+  lb value-record-field
+  lg 0 lg 1 cu 26217 ca expect-code ls 1
+  lg 0 lg 1 ca next-token ls 3
+  lg 3 cu 42 sr ls 1
+  lg 0 lg 3 lg 2 ca emit-id dr
+  lg 0 lg 1 lg 2 ca emit-value ls 1
+  lg 6 cu 1 ad ls 6
+  ju value-record-loop
+
+  lb value-hole
+  lg 4 cu 26735 eq bf value-invalid
+  lg 2 cu 9 bp ls 2
+  lg 0 lg 1 ca next-token ls 3
+  lg 3 cu 42 sr ls 1
+  lg 0 lg 3 lg 2 ca emit-id dr
+  lg 1 re
+
+  lb value-invalid
+  cu 1 cu 0 di re
+fe
+
+fn main 0 20
+  ac
+  cu 2
+  eq
+  bf main-invalid
+  cu 0
+  ag
+  fr
+  ls 0
+  cu 1048576
+  bn
+  ls 1
+  # Kernel wire v1 magic.
+  lg 1 cu 83 bp ls 1
+  lg 1 cu 69 bp ls 1
+  lg 1 cu 77 bp ls 1
+  lg 1 cu 69 bp ls 1
+  lg 1 cu 75 bp ls 1
+  lg 1 cu 49 bp ls 1
+  lg 1 cu 13 bp ls 1
+  lg 1 cu 10 bp ls 1
+  cu 0
+  ls 2
+
+  lg 0 lg 2 cu 30309 ca expect-code ls 2
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 ca parse-u64 ls 4
+  lg 4 cu 1 eq bf main-invalid
+  lg 1 cu 1 ca append-uleb ls 1
+
+  lg 0 lg 2 cu 28015 ca expect-code ls 2
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 lg 1 ca emit-id dr
+
+  lg 0 lg 2 cu 29302 ca expect-code ls 2
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 lg 1 ca emit-id dr
+
+  lg 0 lg 2 cu 28771 ca expect-code ls 2
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 ca parse-u64 ls 4
+  lg 1 lg 4 ca append-uleb ls 1
+  cu 0 ls 5
+  lb main-parent-loop
+  lg 5 lg 4 eq bf main-parent
+  ju main-entities
+  lb main-parent
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 lg 1 ca emit-id dr
+  lg 5 cu 1 ad ls 5
+  ju main-parent-loop
+
+  lb main-entities
+  lg 0 lg 2 cu 25955 ca expect-code ls 2
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 ca parse-u64 ls 4
+  lg 1 lg 4 ca append-uleb ls 1
+  cu 0 ls 5
+  lb main-entity-loop
+  lg 5 lg 4 eq bf main-entity
+  ju main-trailing-start
+
+  lb main-entity
+  lg 0 lg 2 cu 25966 ca expect-code ls 2
+  # entity identity
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 lg 1 ca emit-id dr
+  # schema identity
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 lg 1 ca emit-id dr
+  # schema version
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 ca parse-u64 ls 8
+  lg 1 lg 8 ca append-uleb ls 1
+  # field count
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 ca parse-u64 ls 9
+  lg 1 lg 9 ca append-uleb ls 1
+  cu 0 ls 10
+  lb main-field-loop
+  lg 10 lg 9 eq bf main-field
+  lg 5 cu 1 ad ls 5
+  ju main-entity-loop
+  lb main-field
+  lg 0 lg 2 cu 26217 ca expect-code ls 2
+  lg 0 lg 2 ca next-token ls 3
+  lg 3 cu 42 sr ls 2
+  lg 0 lg 3 lg 1 ca emit-id dr
+  lg 0 lg 2 lg 1 ca emit-value ls 2
+  lg 10 cu 1 ad ls 10
+  ju main-field-loop
+
+  lb main-trailing-start
+  lg 0 bl ls 7
+  lb main-trailing-loop
+  lg 2 lg 7 eq bf main-trailing-byte
+  ju main-write
+  lb main-trailing-byte
+  lg 0 lg 2 bg ls 8
+  lg 8 cu 35 eq bf main-trailing-whitespace
+  lb main-trailing-comment
+  lg 2 cu 1 ad ls 2
+  lg 2 lg 7 eq bf main-trailing-comment-byte
+  ju main-write
+  lb main-trailing-comment-byte
+  lg 0 lg 2 bg cu 10 eq bf main-trailing-comment
+  lg 2 cu 1 ad ls 2
+  ju main-trailing-loop
+  lb main-trailing-whitespace
+  lg 8 cu 33 lt bf main-invalid
+  lg 2 cu 1 ad ls 2
+  ju main-trailing-loop
+
+  lb main-write
+  cu 1 ag ls 6
+  lg 6 lg 1 fw
+  re
+
+  lb main-invalid
+  cu 1 cu 0 di re
+fe
+
+en main
