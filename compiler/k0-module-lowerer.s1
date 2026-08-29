@@ -1,5 +1,5 @@
-# Bootstrap profile 5 canonical K0-module graph lowerer.
-# This rung accepts multiple P1 functions and stable semantic control flow.
+# Bootstrap profile 6 canonical K0-module graph lowerer.
+# This rung accepts P1/P2 functions, stable control flow, and explicit effects.
 ve 3
 cp 7
 
@@ -247,7 +247,19 @@ fn build-layout 6 20
   lg 12 cu 16 lt bf build-layout-arithmetic-high
   ju build-layout-invalid
   lb build-layout-arithmetic-high
-  lg 12 cu 28 lt bf build-layout-invalid
+  lg 12 cu 28 lt bf build-layout-p2-buffer-low
+  ju build-layout-next
+  lb build-layout-p2-buffer-low
+  lg 12 cu 64 lt bf build-layout-p2-buffer-high
+  ju build-layout-invalid
+  lb build-layout-p2-buffer-high
+  lg 12 cu 68 lt bf build-layout-p2-effect-low
+  ju build-layout-next
+  lb build-layout-p2-effect-low
+  lg 12 cu 96 lt bf build-layout-p2-effect-high
+  ju build-layout-invalid
+  lb build-layout-p2-effect-high
+  lg 12 cu 100 lt bf build-layout-invalid
   ju build-layout-next
 
   lb build-layout-next
@@ -258,7 +270,7 @@ fn build-layout 6 20
   ca fail re
 fe
 
-fn main 0 25
+fn main 0 27
   ac cu 2 eq bf lower-invalid
   cu 0 ag fr ls 0
   lg 0 bl ls 1
@@ -289,10 +301,25 @@ fn main 0 25
   lg 0 lg 2 cu 4 ca expect-uleb ls 2
   lg 0 lg 2 cu 41216 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
-  lg 0 lg 2 cu 2 ca expect-uleb ls 2
+  lg 0 lg 2 ca take-uleb ls 6
+  lg 6 cu 21 sr ls 25
+  lg 6 cu 2097151 an ls 2
+  lg 25 cu 2 eq bf program-profile-three
+  ju program-profile-valid
+  lb program-profile-three
+  lg 25 cu 3 eq bf lower-invalid
+  lb program-profile-valid
   lg 0 lg 2 cu 41217 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
-  lg 0 lg 2 cu 0 ca expect-uleb ls 2
+  lg 0 lg 2 ca take-uleb ls 6
+  lg 6 cu 21 sr ls 26
+  lg 6 cu 2097151 an ls 2
+  cu 7 lg 26 lt bf program-capability-profile
+  ju lower-invalid
+  lb program-capability-profile
+  lg 25 cu 2 eq bf program-capability-valid
+  lg 26 cu 0 eq bf lower-invalid
+  lb program-capability-valid
   lg 0 lg 2 cu 41218 ca expect-id ls 2
   lg 0 lg 2 cu 7 ca expect-byte ls 2
   lg 0 lg 2 ca take-uleb ls 6
@@ -474,7 +501,21 @@ fn main 0 25
   lg 7 cu 16 lt bf instruction-arithmetic-upper
   ju lower-invalid
   lb instruction-arithmetic-upper
-  lg 7 cu 28 lt bf lower-invalid
+  lg 7 cu 28 lt bf instruction-p2-buffer-lower
+  ju instruction-append
+  lb instruction-p2-buffer-lower
+  lg 7 cu 64 lt bf instruction-p2-buffer-upper
+  ju lower-invalid
+  lb instruction-p2-buffer-upper
+  lg 7 cu 68 lt bf instruction-p2-effect-lower
+  ju instruction-p2-require-profile
+  lb instruction-p2-effect-lower
+  lg 7 cu 96 lt bf instruction-p2-effect-upper
+  ju lower-invalid
+  lb instruction-p2-effect-upper
+  lg 7 cu 100 lt bf lower-invalid
+  lb instruction-p2-require-profile
+  lg 25 cu 3 eq bf lower-invalid
   ju instruction-append
   lb instruction-append
   lg 8 lg 7 bp ls 8
@@ -516,7 +557,10 @@ fn main 0 25
   lg 10 cu 75 bp ls 10
   lg 10 cu 48 bp ls 10
   lg 10 cu 0 bp ls 10
-  lg 10 cu 2 ca append-uleb ls 10
+  lg 10 lg 25 ca append-uleb ls 10
+  lg 25 cu 3 eq bf write-function-count
+  lg 10 lg 26 ca append-uleb ls 10
+  lb write-function-count
   lg 10 lg 20 ca append-uleb ls 10
   cu 0 ls 11
   lg 22 bl ls 9
