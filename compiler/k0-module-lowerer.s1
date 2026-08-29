@@ -1,5 +1,5 @@
-# Bootstrap profile 1 canonical K0-module graph lowerer.
-# The first vertical slice accepts one function containing const.u and return.
+# Bootstrap profile 2 canonical K0-module graph lowerer.
+# This rung accepts one P1 function with straight-line integer/local operations.
 ve 3
 cp 7
 
@@ -133,7 +133,9 @@ fn main 0 20
   # Revision identity is metadata for the derived artifact.
   lg 2 cu 16 ad ls 2
   lg 0 lg 2 cu 0 ca expect-uleb ls 2
-  lg 0 lg 2 cu 4 ca expect-uleb ls 2
+  lg 0 lg 2 ca take-uleb ls 6
+  lg 6 cu 21 sr ls 12
+  lg 6 cu 2097151 an ls 2
 
   # Program entity. Save its function reference at local 3.
   lg 2 cu 16 ad ls 2
@@ -145,7 +147,9 @@ fn main 0 20
   lg 0 lg 2 cu 2 ca expect-uleb ls 2
   lg 0 lg 2 cu 41217 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
-  lg 0 lg 2 cu 0 ca expect-uleb ls 2
+  lg 0 lg 2 ca take-uleb ls 6
+  lg 6 cu 21 sr ls 13
+  lg 6 cu 2097151 an ls 2
   lg 0 lg 2 cu 41218 ca expect-id ls 2
   lg 0 lg 2 cu 7 ca expect-byte ls 2
   lg 0 lg 2 cu 1 ca expect-uleb ls 2
@@ -165,51 +169,109 @@ fn main 0 20
   lg 0 lg 2 cu 3 ca expect-uleb ls 2
   lg 0 lg 2 cu 41232 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
-  lg 0 lg 2 cu 0 ca expect-uleb ls 2
+  lg 0 lg 2 ca take-uleb ls 6
+  lg 6 cu 21 sr ls 14
+  lg 6 cu 2097151 an ls 2
   lg 0 lg 2 cu 41233 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
   lg 0 lg 2 cu 0 ca expect-uleb ls 2
   lg 0 lg 2 cu 41234 ca expect-id ls 2
   lg 0 lg 2 cu 7 ca expect-byte ls 2
-  lg 0 lg 2 cu 2 ca expect-uleb ls 2
-  lg 0 lg 2 cu 6 ca expect-byte ls 2
-  lg 2 ls 4
-  lg 2 cu 16 ad ls 2
-  lg 0 lg 2 cu 6 ca expect-byte ls 2
-  lg 2 ls 5
-  lg 2 cu 16 ad ls 2
+  lg 0 lg 2 ca take-uleb ls 6
+  lg 6 cu 21 sr ls 5
+  lg 6 cu 2097151 an ls 2
+  lg 5 cu 0 eq bf instruction-references
+  ju lower-invalid
 
-  # const.u instruction entity and operand.
-  lg 0 lg 4 lg 0 lg 2 ca id-equal bf lower-invalid
+  # References are retained in the source graph while instruction entities are
+  # parsed. Canonical entity order must match function instruction order in this
+  # bootstrap profile; the general lowerer will use an identity table.
+  lb instruction-references
+  lg 2 ls 4
+  cu 0 ls 11
+  lb instruction-reference-loop
+  lg 11 lg 5 eq bf instruction-reference
+  ju instruction-entities-start
+  lb instruction-reference
+  lg 0 lg 2 cu 6 ca expect-byte ls 2
+  lg 2 cu 16 ad ls 2
+  lg 11 cu 1 ad ls 11
+  ju instruction-reference-loop
+
+  lb instruction-entities-start
+  lg 5 cu 2 ad lg 12 eq bf lower-invalid
+  cu 1048576 bn ls 8
+  cu 0 ls 11
+
+  lb instruction-entity-loop
+  lg 11 lg 5 eq bf instruction-entity
+  ju instructions-finished
+
+  lb instruction-entity
+  # Reference offset = first tag + (index * 17) + 1.
+  lg 4 lg 11 cu 17 mu ad cu 1 ad ls 16
+  lg 0 lg 16 lg 0 lg 2 ca id-equal bf lower-invalid
   lg 2 cu 16 ad ls 2
   lg 0 lg 2 cu 40978 ca expect-id ls 2
   lg 0 lg 2 cu 1 ca expect-uleb ls 2
-  lg 0 lg 2 cu 2 ca expect-uleb ls 2
+  lg 0 lg 2 ca take-uleb ls 6
+  lg 6 cu 21 sr ls 15
+  lg 6 cu 2097151 an ls 2
   lg 0 lg 2 cu 41248 ca expect-id ls 2
-  lg 0 lg 2 cu 3 ca expect-byte ls 2
-  lg 0 lg 2 cu 1 ca expect-uleb ls 2
-  lg 0 lg 2 cu 41249 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
   lg 0 lg 2 ca take-uleb ls 6
   lg 6 cu 21 sr ls 7
   lg 6 cu 2097151 an ls 2
 
-  # return instruction entity.
-  lg 0 lg 5 lg 0 lg 2 ca id-equal bf lower-invalid
-  lg 2 cu 16 ad ls 2
-  lg 0 lg 2 cu 40978 ca expect-id ls 2
-  lg 0 lg 2 cu 1 ca expect-uleb ls 2
-  lg 0 lg 2 cu 1 ca expect-uleb ls 2
-  lg 0 lg 2 cu 41248 ca expect-id ls 2
+  # Operand-bearing straight-line instructions: const.u, local.get, local.set.
+  lg 7 cu 1 eq bf instruction-local-get
+  ju instruction-with-operand
+  lb instruction-local-get
+  lg 7 cu 2 eq bf instruction-local-set
+  ju instruction-with-operand
+  lb instruction-local-set
+  lg 7 cu 3 eq bf instruction-no-operand
+  ju instruction-with-operand
+
+  lb instruction-with-operand
+  lg 15 cu 2 eq bf lower-invalid
+  lg 8 lg 7 bp ls 8
+  lg 0 lg 2 cu 41249 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
-  lg 0 lg 2 cu 0 ca expect-uleb ls 2
+  lg 0 lg 2 ca take-uleb ls 6
+  lg 6 cu 21 sr ls 7
+  lg 6 cu 2097151 an ls 2
+  lg 8 lg 7 ca append-uleb ls 8
+  ju instruction-next
+
+  lb instruction-no-operand
+  lg 15 cu 1 eq bf lower-invalid
+  # return, drop, dup, and integer arithmetic/comparison opcodes.
+  lg 7 cu 0 eq bf instruction-drop-check
+  ju instruction-append
+  lb instruction-drop-check
+  lg 7 cu 4 eq bf instruction-dup-check
+  ju instruction-append
+  lb instruction-dup-check
+  lg 7 cu 5 eq bf instruction-arithmetic-lower
+  ju instruction-append
+  lb instruction-arithmetic-lower
+  lg 7 cu 16 lt bf instruction-arithmetic-upper
+  ju lower-invalid
+  lb instruction-arithmetic-upper
+  lg 7 cu 28 lt bf lower-invalid
+  ju instruction-append
+  lb instruction-append
+  lg 8 lg 7 bp ls 8
+
+  lb instruction-next
+  lg 11 cu 1 ad ls 11
+  ju instruction-entity-loop
+
+  lb instructions-finished
   lg 2 lg 1 eq bf lower-invalid
 
-  # Build the derived P1 image and derive code size from a temporary buffer.
-  cu 32 bn ls 8
-  lg 8 cu 1 bp ls 8
-  lg 8 lg 7 ca append-uleb ls 8
-  lg 8 cu 0 bp ls 8
+  # Build the derived P1 image and derive code size from the code buffer.
   lg 8 bl ls 9
 
   cu 128 bn ls 10
@@ -223,9 +285,9 @@ fn main 0 20
   lg 10 cu 0 bp ls 10
   lg 10 cu 2 ca append-uleb ls 10
   lg 10 cu 1 ca append-uleb ls 10
-  lg 10 cu 0 ca append-uleb ls 10
-  lg 10 cu 0 ca append-uleb ls 10
-  lg 10 cu 2 ca append-uleb ls 10
+  lg 10 lg 13 ca append-uleb ls 10
+  lg 10 lg 14 ca append-uleb ls 10
+  lg 10 lg 5 ca append-uleb ls 10
   lg 10 lg 9 ca append-uleb ls 10
   cu 0 ls 11
   lb copy-code

@@ -53,12 +53,16 @@ semantic state.
 ## First semantic executable lowering
 
 `k0-module-lowerer.s1` consumes a validated canonical Kernel graph using the K0
-semantic module and derives a portable K0 image. Bootstrap profile 1 currently
-accepts one zero-parameter function containing `const.u` and `return`. It checks
-the module, schemas, field shapes, and every semantic reference it consumes.
+semantic module and derives a portable K0 image. Bootstrap profile 2 accepts one
+P1 function with arbitrary parameter/local counts and an arbitrary-length list
+of straight-line constant, local, stack, integer arithmetic, and comparison
+instructions. It checks the module, schemas, field shapes, and every semantic
+reference it consumes.
 
 The checked `return-42.seme` graph lowers to `return-42.k0`, which the frozen K0
 executor runs with result 42. Function indices, instruction indices, code size,
 and byte layout exist only in the derived image. This is the first complete
-canonical-semantics-to-execution path; expanding the accepted instruction and
-function set is required before moving the compiler graph onto it.
+canonical-semantics-to-execution path. A second checked graph derives `20 + 22`
+through separate instruction entities and also executes as 42. Branches, calls,
+multiple functions, and P2 effects remain required before moving the compiler
+graph onto it.
