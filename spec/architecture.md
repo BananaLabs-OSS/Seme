@@ -15,6 +15,38 @@ Users edit one canonical program through textual, visual, conversational, or
 direct semantic interfaces. A projection may resemble an existing language
 without silently adopting that language's mechanics.
 
+## Developer continuity contract
+
+Seme is a universal semantic joiner, not a mandatory replacement user
+experience. Adopting Seme in an existing project must not require its developer
+to abandon the project's normal source files, directory layout, editor,
+debugger, package manager, test commands, framework, engine, version-control
+workflow, or deployment targets. A new Seme-connected project may likewise
+present exactly like an ordinary project in its chosen ecosystem.
+
+Native project files are writable projections and interoperability boundaries.
+Seme may import them into canonical semantic identities and project accepted
+changes back, but it must preserve constructs it cannot yet understand rather
+than silently reinterpret or discard them. Adoption must be incremental down
+to a file or explicitly delimited region. A project must remain usable by its
+native tools and must be able to leave Seme without losing source or semantics
+that Seme claimed to preserve.
+
+G1, Kernel wire, bootstrap profiles, and canonical storage are normally
+invisible implementation layers. No developer is required to learn them merely
+to use a Seme-connected package or project.
+
+WebAssembly is a useful analogy but a different boundary: WebAssembly joins
+execution producers and runtimes through a portable machine format; Seme joins
+program meaning, mechanics, ecosystems, presentations, and targets through a
+canonical semantic model. WebAssembly can be one Seme target or package bridge.
+
+Every native import/projection must report its fidelity. An `exact` round trip
+requires conformance evidence covering native parsing, unchanged-region
+preservation, semantic edits, generated native output, and behavior under the
+original ecosystem toolchain. Anything weaker is labeled explicitly and may
+remain an opaque native region.
+
 ## Kernel boundary
 
 Kernel v1 is limited to:
@@ -65,4 +97,3 @@ development conveniences, and differential oracles.
 Self-hosting and universality are separate claims. Self-hosting proves that Seme
 implements and reproduces its own compiler. Language or mechanic support
 requires separate conformance evidence.
-
