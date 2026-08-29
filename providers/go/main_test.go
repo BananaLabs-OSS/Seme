@@ -8,21 +8,7 @@ import (
 )
 
 func TestRenameRoundTrip(t *testing.T) {
-	fixture := filepath.Join("testdata", "ordinary")
-	root := t.TempDir()
-	entries, err := os.ReadDir(fixture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		data, err := os.ReadFile(filepath.Join(fixture, entry.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, entry.Name()), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
+	root := copyFixture(t)
 	before, err := ingest(root, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -35,6 +21,15 @@ func TestRenameRoundTrip(t *testing.T) {
 	}
 	if target.ID == "" || len(target.Occurrences) != 3 {
 		t.Fatalf("unexpected target: %#v", target)
+	}
+	var foundSubpackage bool
+	for _, entity := range before.Entities {
+		if entity.Package == "example.com/ordinary/sub" && entity.Name == "Value" {
+			foundSubpackage = true
+		}
+	}
+	if !foundSubpackage {
+		t.Fatal("module subpackage was not loaded")
 	}
 	patch := Patch{Contract: "seme.patch/v1", BaseRevision: before.Revision, Renames: []Rename{{Entity: target.ID, ExpectedName: "Greeting", NewName: "Welcome"}}}
 	if err := verifyNativeDigests(before); err != nil {
@@ -102,18 +97,26 @@ func copyFixture(t *testing.T) string {
 	t.Helper()
 	fixture := filepath.Join("testdata", "ordinary")
 	root := t.TempDir()
-	entries, err := os.ReadDir(fixture)
+	err := filepath.WalkDir(fixture, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(fixture, path)
+		if err != nil {
+			return err
+		}
+		destination := filepath.Join(root, rel)
+		if entry.IsDir() {
+			return os.MkdirAll(destination, 0o755)
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		return os.WriteFile(destination, data, 0o644)
+	})
 	if err != nil {
 		t.Fatal(err)
-	}
-	for _, entry := range entries {
-		data, err := os.ReadFile(filepath.Join(fixture, entry.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(root, entry.Name()), data, 0o644); err != nil {
-			t.Fatal(err)
-		}
 	}
 	return root
 }
