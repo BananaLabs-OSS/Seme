@@ -1,4 +1,4 @@
-# Target contract module v1 candidate
+# Target Contract v1
 
 Target contracts describe how an execution backend can realize semantic
 requirements. They are an external semantic module: neither WebAssembly nor
@@ -140,3 +140,27 @@ authored for Wasm, discover its package and runtime assumptions, emit the plan,
 produce a Wasm component where permitted, and compare behavior with the
 package's original toolchain. Source changes made only to appease Wasm fail the
 continuity proof.
+
+## First canonical planning proof
+
+The canonical module and first deterministic resolver are implemented for a
+scoped ordinary Go profile. The fixture calls `log.Printf` after computing a
+quota decision. The provider uses Go parsing and type information to prove the
+exact call target, fixed message, logged value, return value, dependency, and
+effect. It emits:
+
+- package dependency `go:log`;
+- Foundation effect and capability `observability.log`;
+- target `wasm32-pulp-v1`;
+- an `adapted` rule requiring `pulp.host.log-v1`;
+- an explicit typed Boundary to that host import;
+- canonical evidence and runtime assumptions.
+
+With `allow-adapted` policy the plan is executable and retains fidelity `2`.
+With `exact-only` policy the same rules are not relabeled: both requirements
+resolve as `impossible` and the plan is non-executable. Native source changes,
+unsupported message semantics, and invented policies reject.
+
+This completes canonical target planning, not Wasm emission or Pulp execution.
+Those are the next portability proof and must consume the checked executable
+plan rather than bypassing it.

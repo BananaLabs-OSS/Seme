@@ -102,6 +102,16 @@ building the first Wasm portability plan.
 
 ## 6. WebAssembly portability proof
 
+Status: canonical planning complete for the scoped logging profile; artifact
+emission and Pulp execution remain.
+
+- Target Contract v1 now analyzes a real `go:log` dependency and
+  `observability.log` effect.
+- The Wasm/Pulp plan records an adapted host-import Boundary and remains
+  executable only when adaptation policy permits it.
+- Exact-only policy produces impossible resolutions rather than dishonest
+  exact fidelity.
+
 - Analyze the transitive package closure against a versioned Wasm target
   contract.
 - Resolve every requirement as exact, refined, adapted, emulated, embedded
