@@ -21,6 +21,12 @@ The initial Kernel meta-schema identities are:
 A rule identity defines the failure. Its name assists projections but is not
 used to compare diagnostics.
 
+The bootstrap validator uses the stable parent rule `kernel.invalid_input` with
+a structured unsigned kind argument: `0` means a decoded envelope violated
+structural relationships and `1` means the input could not be decoded
+canonically. Later validators may refine these failures while retaining the
+parent rule for consumers that only need the broad classification.
+
 ## Diagnostic fields
 
 | Identity | Meaning | Shape |
@@ -35,6 +41,10 @@ used to compare diagnostics.
 Entity identities are bytes rather than references because a diagnostic must
 be able to locate a missing, duplicate, or otherwise invalid entity. Empty
 bytes mean that validation failed before an entity location existed.
+
+An all-zero revision identity means the input failed before its claimed
+revision could be trusted. It is a location sentinel, never an allocated
+revision identity.
 
 Severity values are `0` error, `1` warning, and `2` information. Severity does
 not affect diagnostic identity or ordering.
@@ -67,11 +77,10 @@ reorder failures based on human wording.
 
 During the frozen K0 transition, validators retain their existing process
 statuses: `0` success, `64` invalid invocation, `65` semantic/malformed input,
-and `74` I/O failure. An optional final argument names a file that receives a
-canonical DiagnosticReport. This file is the semantic result; the process
-status remains a shell-compatible summary.
+and `74` I/O failure. With only an input argument, validation produces no file.
+With the existing optional result-path argument, the validator writes the
+canonical input on success or a canonical DiagnosticReport on semantic failure.
+The process status remains a shell-compatible summary.
 
-If the report itself cannot be written, the validator returns `74`. Successful
-validation may omit the output file or emit a report with status `0` and an
-empty diagnostic list, as selected by the invocation contract. That choice may
-not affect validation behavior.
+If the semantic result cannot be written, the validator returns `74`. Selecting
+the result mode may not otherwise affect validation behavior.
