@@ -1,0 +1,9 @@
+ve 3
+cp 0
+fn main 0 0
+  lb repeated
+  lb repeated
+  cu 42
+  re
+fe
+en main

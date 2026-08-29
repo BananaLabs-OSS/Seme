@@ -1,0 +1,11 @@
+ve 3
+cp 0
+fn same 0 0
+  cu 1
+  re
+fe
+fn same 0 0
+  cu 2
+  re
+fe
+en same
