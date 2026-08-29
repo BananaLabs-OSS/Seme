@@ -81,6 +81,21 @@ The P2 fixtures prove buffer operations and capability-scoped compiler I/O. A
 canonical graph reads one argument path and writes the same bytes to another;
 the emitted artifact declares exactly the argument/read/write capability mask.
 
+## Canonical lowerer self-reproduction
+
+`k0-module-lowerer.g1` is the readable projection of the compiler graph and
+`k0-module-lowerer.seme` is its canonical source. The graph was deterministically
+lifted once from the human-authored S1 bootstrap compiler: K0 function and
+instruction structure became semantic entities, derived branch witnesses and
+numeric call indices became stable references, and no executable bytes were
+embedded as data. The temporary lifter is not part of this repository or the
+reproduction path.
+
+The checked lowerer A compiles the canonical graph to B; B compiles it to C.
+A, B, and C are byte-identical. Canonical Seme is therefore authoritative for
+this lowerer now; `k0-module-lowerer.s1` remains as auditable bootstrap history,
+not the continuing source required to reproduce it.
+
 Branch and call lowering will retain semantic references in canonical storage.
 Like the symbolic S1 compiler, the canonical lowerer derives positional indices
 and branch witnesses through monotone layout refinement before emission. The K0
