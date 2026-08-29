@@ -2,8 +2,9 @@
 #
 # Runtime interface:
 #   interpreter.k0 PROGRAM.seme ARGS.bin RESULT.bin
-# ARGS.bin contains two little-endian i64 bit patterns. RESULT.bin contains
-# one little-endian i64 bit pattern. Go is not involved in this invocation.
+# ARGS.bin contains two or three little-endian i64 bit patterns. RESULT.bin is
+# one little-endian i64 bit pattern or one canonical boolean byte. Go is not
+# involved in this invocation.
 ve 3
 cp 7
 
@@ -154,7 +155,7 @@ fn load64 2 6
   lg 3 cu 1 ad ls 3 ju loop
 fe
 
-# Evaluate the two expression forms in the frozen v1 execution profile.
+# Evaluate the expression forms in Core Execution revisions 1 and 2.
 fn eval 3 20
   lg 0 lg 1 cu 16 ad cu 36883 ca id-is bf add
   # ParameterRead.parameter -> Parameter.index -> argument slot.
@@ -169,12 +170,12 @@ fn eval 3 20
   lb index
   lg 0 lg 5 ca take ls 6
   lg 6 cu 21 sr ls 7
-  lg 7 cu 2 lt cu 0 eq bf index-ok ca fail re
+  lg 7 cu 3 lt cu 0 eq bf index-ok ca fail re
   lb index-ok
   lg 2 lg 7 cu 8 mu ca load64 re
 
   lb add
-  lg 0 lg 1 cu 16 ad cu 36884 ca id-is bf unsupported
+  lg 0 lg 1 cu 16 ad cu 36884 ca id-is bf compare
   lg 0 lg 1 cu 37184 ca find-field-is ls 8
   lg 0 lg 1 cu 37185 ca find-field-is ls 9
   lg 8 cu 0 eq bf left ca fail re
@@ -189,6 +190,26 @@ fn eval 3 20
   lb right-found
   lg 0 lg 10 lg 2 ca eval ls 12
   lg 0 lg 11 lg 2 ca eval lg 12 ad re
+
+  lb compare
+  lg 0 lg 1 cu 16 ad cu 36897 ca id-is bf unsupported
+  lg 0 lg 1 cu 37216 ca find-field-is ls 8
+  lg 0 lg 1 cu 37217 ca find-field-is ls 9
+  lg 8 cu 0 eq bf compare-left ca fail re
+  lb compare-left
+  lg 9 cu 0 eq bf compare-right ca fail re
+  lb compare-right
+  lg 0 lg 0 lg 8 ca find-entity ls 10
+  lg 0 lg 0 lg 9 ca find-entity ls 11
+  lg 10 cu 0 eq bf compare-left-found ca fail re
+  lb compare-left-found
+  lg 11 cu 0 eq bf compare-right-found ca fail re
+  lb compare-right-found
+  # Signed left <= right is !(signed right < signed left). Flipping the sign
+  # bit maps two's-complement signed ordering to unsigned K0 ordering.
+  lg 0 lg 11 lg 2 ca eval cu 9223372036854775808 xo
+  lg 0 lg 10 lg 2 ca eval cu 9223372036854775808 xo
+  lt cu 0 eq re
   lb unsupported
   ca fail re
 fe
@@ -196,10 +217,8 @@ fe
 fn main 0 24
   ac cu 3 eq bf invocation
   cu 0 ag fr ls 0 cu 1 ag fr ls 1
-  lg 1 bl cu 16 eq cu 0 eq bf arguments ca fail re
 
-  # Locate the sole entry point and verify the supported i64 profile.
-  lb arguments
+  # Locate the sole entry point and verify its supported result profile.
   lg 0 cu 36885 ca find-schema ls 2
   lg 2 cu 0 eq bf program ca fail re
   lb program
@@ -214,10 +233,10 @@ fn main 0 24
   lg 0 lg 4 cu 37138 ca find-field-is ls 5
   lg 5 cu 0 eq bf result-field ca fail re
   lb result-field
-  lg 0 lg 0 lg 5 ca find-entity ls 6
+  lg 0 lg 0 lg 5 ca find-entity ls 6 cu 8 ls 19
   lg 6 cu 0 eq bf type ca fail re
   lb type
-  lg 0 lg 6 cu 16 ad cu 36880 ca id-is cu 0 eq bf integer-type ca fail re
+  lg 0 lg 6 cu 16 ad cu 36880 ca id-is bf boolean-type
   lb integer-type
   lg 0 lg 6 cu 37120 ca find-field-is ls 7
   lg 0 lg 7 ca take ls 8
@@ -230,11 +249,22 @@ fn main 0 24
   lg 0 lg 10 ca take ls 11
   lg 11 cu 21 sr cu 0 eq cu 0 eq bf overflow ca fail re
   lb overflow
+  ju result-type
+  lb boolean-type
+  lg 0 lg 6 cu 16 ad cu 36896 ca id-is cu 0 eq bf boolean-valid ca fail re
+  lb boolean-valid
+  cu 1 ls 19
+  lb result-type
   lg 0 lg 4 cu 37137 ca find-field-is ls 12
   lg 0 lg 12 ca take ls 13
-  lg 13 cu 21 sr cu 2 eq cu 0 eq bf arity ca fail re
+  lg 13 cu 21 sr ls 20
+  lg 20 cu 2 eq bf arity-check-three ju arity
+  lb arity-check-three
+  lg 20 cu 3 eq cu 0 eq bf arity ca fail re
 
   lb arity
+  lg 1 bl lg 20 cu 8 mu eq cu 0 eq bf arguments ca fail re
+  lb arguments
   lg 0 lg 4 cu 37139 ca find-field-is ls 14
   lg 14 cu 0 eq bf body-field ca fail re
   lb body-field
@@ -243,9 +273,9 @@ fn main 0 24
   lb body
   lg 0 lg 15 lg 1 ca eval ls 16
 
-  cu 8 bn ls 17 cu 0 ls 18
+  lg 19 bn ls 17 cu 0 ls 18
   lb output-loop
-  lg 18 cu 8 eq bf output-byte ju output
+  lg 18 lg 19 eq bf output-byte ju output
   lb output-byte
   lg 17 lg 16 lg 18 cu 8 mu sr cu 255 an bp ls 17
   lg 18 cu 1 ad ls 18 ju output-loop

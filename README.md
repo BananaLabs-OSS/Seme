@@ -104,6 +104,12 @@ as the source oracle, but is absent from the runtime invocation. Unsupported
 bodies reject explicitly; this is an independent execution proof, not a claim
 of general Go execution. Run it with `./scripts/check-execution-v1.sh`.
 
+[`Package Contract v1`](spec/package-contract-v1.md) adds the first useful
+application boundary: an untouched ordinary Go quota policy with a stable typed
+interface, explicit empty dependency/effect sets, a modular-integer runtime
+assumption, and exact-fidelity evidence. Core Execution v2 runs it independently
+and compares its behavior with Go. Run `./scripts/check-application-v1.sh`.
+
 Above frozen Kernel v1, Semantic Foundation v1 and Patch Module v1 define the
 first versioned schema and transactional-edit contracts. Their checked module
 artifacts and differential conformance gate are under `modules/`, `reference/`,
