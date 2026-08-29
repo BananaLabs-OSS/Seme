@@ -1,0 +1,12 @@
+# Deliberately obsolete v0 envelope: no parent-count field.
+b53 b45 b4d b45 b4b b31 b0d b0a
+u0
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 baa b01
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 baa b02
+u1
+# One external entity with one byte field.
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b40 b00
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b40 b10
+u1 u1
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b30 b00
+b05 u3 b6f b6c b64
