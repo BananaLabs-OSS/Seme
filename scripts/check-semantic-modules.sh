@@ -139,10 +139,26 @@ cmp "$work/foundation-invalid-shape.report.seme" \
     sha256sum -c module.seme.sha256
 )
 
+(
+    cd "$repo/reference/go"
+    go run ./cmd/patch-module
+) > "$work/patch-v1.g1"
+cmp "$patch/module.g1" "$work/patch-v1.g1"
 "$k0" "$g1" "$patch/module.g1" "$work/patch-v1.seme"
 cmp "$patch/module.seme" "$work/patch-v1.seme"
 "$k0" "$kernel" "$work/patch-v1.seme" "$work/patch-v1.validated.seme"
 cmp "$work/patch-v1.seme" "$work/patch-v1.validated.seme"
+
+for mode in valid stale precondition duplicate; do
+    (
+        cd "$repo/reference/go"
+        go run ./cmd/patch-fixture "$mode"
+    ) > "$work/patch-$mode.g1"
+    "$k0" "$g1" "$work/patch-$mode.g1" "$work/patch-$mode.seme"
+    "$k0" "$repo/compiler/kernel-wire-validator.k0" \
+        "$work/patch-$mode.seme"
+    "$k0" "$foundation/validator.k0" "$work/patch-$mode.seme"
+done
 
 (cd "$repo/reference/go" && go test ./...)
 
