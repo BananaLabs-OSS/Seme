@@ -156,121 +156,121 @@ fe
 
 # Build one monotone instruction layout refinement. Each boundary is u24.
 # build-layout(source, entity-start, count, refs-start, previous, refine)
-fn build-layout 6 20
-  cu 1048576 bn ls 6
-  lg 1 ls 7
-  cu 0 ls 8
-  cu 0 ls 9
+fn build-layout 8 22
+  lg 4 ls 8
+  lg 1 ls 9
+  cu 0 ls 10
+  cu 0 ls 11
   lb build-layout-loop
-  lg 8 lg 2 eq bf build-layout-item
-  lg 6 lg 9 ca append-u24 re
+  lg 10 lg 2 eq bf build-layout-item
+  lg 8 lg 11 ca append-u24 re
 
   lb build-layout-item
-  lg 6 lg 9 ca append-u24 ls 6
+  lg 8 lg 11 ca append-u24 ls 8
   # entity identity + Instruction schema + version
-  lg 7 cu 16 ad ls 7
-  lg 0 lg 7 cu 40978 ca expect-id ls 7
-  lg 0 lg 7 cu 1 ca expect-uleb ls 7
-  lg 0 lg 7 ca take-uleb ls 10
-  lg 10 cu 21 sr ls 11
-  lg 10 cu 2097151 an ls 7
-  lg 0 lg 7 cu 41248 ca expect-id ls 7
-  lg 0 lg 7 cu 3 ca expect-byte ls 7
-  lg 0 lg 7 ca take-uleb ls 10
-  lg 10 cu 21 sr ls 12
-  lg 10 cu 2097151 an ls 7
-  cu 1 ls 13
+  lg 9 cu 16 ad ls 9
+  lg 0 lg 9 cu 40978 ca expect-id ls 9
+  lg 0 lg 9 cu 1 ca expect-uleb ls 9
+  lg 0 lg 9 ca take-uleb ls 12
+  lg 12 cu 21 sr ls 13
+  lg 12 cu 2097151 an ls 9
+  lg 0 lg 9 cu 41248 ca expect-id ls 9
+  lg 0 lg 9 cu 3 ca expect-byte ls 9
+  lg 0 lg 9 ca take-uleb ls 12
+  lg 12 cu 21 sr ls 14
+  lg 12 cu 2097151 an ls 9
+  cu 1 ls 15
 
   # Numeric-operand instructions use the already canonical operand width.
-  lg 12 cu 1 eq bf build-layout-local-get
+  lg 14 cu 1 eq bf build-layout-local-get
   ju build-layout-operand
   lb build-layout-local-get
-  lg 12 cu 2 eq bf build-layout-local-set
+  lg 14 cu 2 eq bf build-layout-local-set
   ju build-layout-operand
   lb build-layout-local-set
-  lg 12 cu 3 eq bf build-layout-branch
+  lg 14 cu 3 eq bf build-layout-branch
   ju build-layout-operand
 
   lb build-layout-operand
-  lg 11 cu 2 eq bf build-layout-invalid
-  lg 0 lg 7 cu 41249 ca expect-id ls 7
-  lg 0 lg 7 cu 3 ca expect-byte ls 7
-  lg 7 ls 14
-  lg 0 lg 7 ca take-uleb ls 10
-  lg 10 cu 2097151 an ls 7
-  lg 7 lg 14 su lg 13 ad ls 13
+  lg 13 cu 2 eq bf build-layout-invalid
+  lg 0 lg 9 cu 41249 ca expect-id ls 9
+  lg 0 lg 9 cu 3 ca expect-byte ls 9
+  lg 9 ls 16
+  lg 0 lg 9 ca take-uleb ls 12
+  lg 12 cu 2097151 an ls 9
+  lg 9 lg 16 su lg 15 ad ls 15
   ju build-layout-next
 
   lb build-layout-branch
-  lg 12 cu 32 eq bf build-layout-branch-false
+  lg 14 cu 32 eq bf build-layout-branch-false
   ju build-layout-target
   lb build-layout-branch-false
-  lg 12 cu 33 eq bf build-layout-call-check
+  lg 14 cu 33 eq bf build-layout-call-check
   ju build-layout-target
 
   lb build-layout-call-check
-  lg 12 cu 48 eq bf build-layout-no-operand
-  lg 11 cu 2 eq bf build-layout-invalid
-  lg 0 lg 7 cu 41251 ca expect-id ls 7
-  lg 0 lg 7 cu 6 ca expect-byte ls 7
-  lg 7 cu 16 ad ls 7
+  lg 14 cu 48 eq bf build-layout-no-operand
+  lg 13 cu 2 eq bf build-layout-invalid
+  lg 0 lg 9 cu 41251 ca expect-id ls 9
+  lg 0 lg 9 cu 6 ca expect-byte ls 9
+  lg 9 cu 16 ad ls 9
   # Function indices are one byte because K0 permits at most 16 functions.
-  lg 13 cu 1 ad ls 13
+  lg 15 cu 1 ad ls 15
   ju build-layout-next
 
   lb build-layout-target
-  lg 11 cu 2 eq bf build-layout-invalid
-  lg 0 lg 7 cu 41250 ca expect-id ls 7
-  lg 0 lg 7 cu 6 ca expect-byte ls 7
-  lg 0 lg 3 lg 7 lg 2 ca reference-index ls 15
-  lg 15 ca uleb-width lg 13 ad ls 13
-  lg 5 cu 0 eq bf build-layout-refined
-  lg 13 cu 1 ad ls 13
+  lg 13 cu 2 eq bf build-layout-invalid
+  lg 0 lg 9 cu 41250 ca expect-id ls 9
+  lg 0 lg 9 cu 6 ca expect-byte ls 9
+  lg 0 lg 3 lg 9 lg 2 ca reference-index ls 17
+  lg 17 ca uleb-width lg 15 ad ls 15
+  lg 7 cu 0 eq bf build-layout-refined
+  lg 15 cu 1 ad ls 15
   ju build-layout-target-done
   lb build-layout-refined
-  lg 4 lg 15 ca layout-offset ca uleb-width lg 13 ad ls 13
+  lg 5 lg 6 lg 17 ad ca layout-offset ca uleb-width lg 15 ad ls 15
   lb build-layout-target-done
-  lg 7 cu 16 ad ls 7
+  lg 9 cu 16 ad ls 9
   ju build-layout-next
 
   lb build-layout-no-operand
-  lg 11 cu 1 eq bf build-layout-invalid
-  lg 12 cu 0 eq bf build-layout-drop
+  lg 13 cu 1 eq bf build-layout-invalid
+  lg 14 cu 0 eq bf build-layout-drop
   ju build-layout-next
   lb build-layout-drop
-  lg 12 cu 4 eq bf build-layout-dup
+  lg 14 cu 4 eq bf build-layout-dup
   ju build-layout-next
   lb build-layout-dup
-  lg 12 cu 5 eq bf build-layout-arithmetic-low
+  lg 14 cu 5 eq bf build-layout-arithmetic-low
   ju build-layout-next
   lb build-layout-arithmetic-low
-  lg 12 cu 16 lt bf build-layout-arithmetic-high
+  lg 14 cu 16 lt bf build-layout-arithmetic-high
   ju build-layout-invalid
   lb build-layout-arithmetic-high
-  lg 12 cu 28 lt bf build-layout-p2-buffer-low
+  lg 14 cu 28 lt bf build-layout-p2-buffer-low
   ju build-layout-next
   lb build-layout-p2-buffer-low
-  lg 12 cu 64 lt bf build-layout-p2-buffer-high
+  lg 14 cu 64 lt bf build-layout-p2-buffer-high
   ju build-layout-invalid
   lb build-layout-p2-buffer-high
-  lg 12 cu 68 lt bf build-layout-p2-effect-low
+  lg 14 cu 68 lt bf build-layout-p2-effect-low
   ju build-layout-next
   lb build-layout-p2-effect-low
-  lg 12 cu 96 lt bf build-layout-p2-effect-high
+  lg 14 cu 96 lt bf build-layout-p2-effect-high
   ju build-layout-invalid
   lb build-layout-p2-effect-high
-  lg 12 cu 100 lt bf build-layout-invalid
+  lg 14 cu 100 lt bf build-layout-invalid
   ju build-layout-next
 
   lb build-layout-next
-  lg 9 lg 13 ad ls 9
-  lg 8 cu 1 ad ls 8
+  lg 11 lg 15 ad ls 11
+  lg 10 cu 1 ad ls 10
   ju build-layout-loop
   lb build-layout-invalid
   ca fail re
 fe
 
-fn main 0 27
+fn main 0 32
   ac cu 2 eq bf lower-invalid
   cu 0 ag fr ls 0
   lg 0 bl ls 1
@@ -349,6 +349,13 @@ fn main 0 27
   lg 2 cu 16 ad ls 2
 
   cu 1048576 bn ls 22
+  # Four append-only global layout buffers. Each function contributes count+1
+  # boundaries to every refinement, so buffer handles do not accumulate.
+  cu 1048576 bn ls 27
+  cu 1048576 bn ls 28
+  cu 1048576 bn ls 29
+  cu 1048576 bn ls 30
+  cu 0 ls 31
   cu 0 ls 23
   cu 1 ls 24
   lb function-loop
@@ -407,11 +414,17 @@ fn main 0 27
 
   lb instruction-entities-start
   lg 2 ls 16
-  lg 0 lg 16 lg 5 lg 4 cu 0 cu 0 ca build-layout ls 17
-  lg 0 lg 16 lg 5 lg 4 lg 17 cu 1 ca build-layout ls 17
-  lg 0 lg 16 lg 5 lg 4 lg 17 cu 2 ca build-layout ls 17
-  lg 0 lg 16 lg 5 lg 4 lg 17 cu 3 ca build-layout ls 17
-  cu 1048576 bn ls 8
+  lg 0 lg 16 lg 5 lg 4 lg 27 cu 0 lg 31 cu 0 ca build-layout dr
+  lg 0 lg 16 lg 5 lg 4 lg 28 lg 27 lg 31 cu 1 ca build-layout dr
+  lg 0 lg 16 lg 5 lg 4 lg 29 lg 28 lg 31 cu 2 ca build-layout dr
+  lg 0 lg 16 lg 5 lg 4 lg 30 lg 29 lg 31 cu 3 ca build-layout ls 17
+  # The final boundary is the exact code size. Emit the header now and append
+  # code directly to the aggregate function-section buffer.
+  lg 17 lg 31 lg 5 ad ca layout-offset ls 9
+  lg 22 lg 13 ca append-uleb ls 22
+  lg 22 lg 14 ca append-uleb ls 22
+  lg 22 lg 5 ca append-uleb ls 22
+  lg 22 lg 9 ca append-uleb ls 22
   cu 0 ls 11
 
   lb instruction-entity-loop
@@ -444,23 +457,23 @@ fn main 0 27
   lb instruction-call-check
   lg 7 cu 48 eq bf instruction-operand-check
   lg 15 cu 2 eq bf lower-invalid
-  lg 8 lg 7 bp ls 8
+  lg 22 lg 7 bp ls 22
   lg 0 lg 2 cu 41251 ca expect-id ls 2
   lg 0 lg 2 cu 6 ca expect-byte ls 2
   lg 0 lg 3 lg 2 lg 20 ca reference-index ls 18
-  lg 8 lg 18 ca append-uleb ls 8
+  lg 22 lg 18 ca append-uleb ls 22
   lg 2 cu 16 ad ls 2
   ju instruction-next
 
   lb instruction-with-target
   lg 15 cu 2 eq bf lower-invalid
-  lg 8 lg 7 bp ls 8
+  lg 22 lg 7 bp ls 22
   lg 0 lg 2 cu 41250 ca expect-id ls 2
   lg 0 lg 2 cu 6 ca expect-byte ls 2
   lg 0 lg 4 lg 2 lg 5 ca reference-index ls 18
-  lg 8 lg 18 ca append-uleb ls 8
-  lg 17 lg 18 ca layout-offset ls 19
-  lg 8 lg 19 ca append-uleb ls 8
+  lg 22 lg 18 ca append-uleb ls 22
+  lg 17 lg 31 lg 18 ad ca layout-offset ls 19
+  lg 22 lg 19 ca append-uleb ls 22
   lg 2 cu 16 ad ls 2
   ju instruction-next
 
@@ -477,13 +490,13 @@ fn main 0 27
 
   lb instruction-with-operand
   lg 15 cu 2 eq bf lower-invalid
-  lg 8 lg 7 bp ls 8
+  lg 22 lg 7 bp ls 22
   lg 0 lg 2 cu 41249 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
   lg 0 lg 2 ca take-uleb ls 6
   lg 6 cu 21 sr ls 7
   lg 6 cu 2097151 an ls 2
-  lg 8 lg 7 ca append-uleb ls 8
+  lg 22 lg 7 ca append-uleb ls 22
   ju instruction-next
 
   lb instruction-no-operand
@@ -518,28 +531,15 @@ fn main 0 27
   lg 25 cu 3 eq bf lower-invalid
   ju instruction-append
   lb instruction-append
-  lg 8 lg 7 bp ls 8
+  lg 22 lg 7 bp ls 22
 
   lb instruction-next
   lg 11 cu 1 ad ls 11
   ju instruction-entity-loop
 
   lb instructions-finished
-  # Append this derived function to the function-section buffer.
-  lg 8 bl ls 9
-  lg 22 lg 13 ca append-uleb ls 22
-  lg 22 lg 14 ca append-uleb ls 22
-  lg 22 lg 5 ca append-uleb ls 22
-  lg 22 lg 9 ca append-uleb ls 22
-  cu 0 ls 11
-  lb append-function-code
-  lg 11 lg 9 eq bf append-function-code-byte
-  ju next-function
-  lb append-function-code-byte
-  lg 22 lg 8 lg 11 bg bp ls 22
-  lg 11 cu 1 ad ls 11
-  ju append-function-code
   lb next-function
+  lg 31 lg 5 cu 1 ad ad ls 31
   lg 24 lg 5 cu 1 ad ad ls 24
   lg 23 cu 1 ad ls 23
   ju function-loop
@@ -548,7 +548,7 @@ fn main 0 27
   lg 24 lg 12 eq bf lower-invalid
   lg 2 lg 1 eq bf lower-invalid
 
-  cu 128 bn ls 10
+  cu 1048576 bn ls 10
   lg 10 cu 83 bp ls 10
   lg 10 cu 69 bp ls 10
   lg 10 cu 77 bp ls 10

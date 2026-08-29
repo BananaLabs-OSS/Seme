@@ -65,6 +65,9 @@ Substantial software belongs in readable Seme, not assembly.
   semantic lowerer turns its checked return-42 graph into a portable K0 image,
   derives execution layout rather than storing it canonically, and the frozen
   executor returns 42.
+- The K0 semantic lowerer now has canonical Seme source and reproduces itself:
+  checked compiler A, self-produced B, and B-produced C are byte-identical. Its
+  S1 source is retained only as bootstrap history.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - The S0 bootstrap compiler is self-reproducing; the semantic Kernel v1 compiler
   is not self-hosted yet.
