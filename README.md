@@ -56,6 +56,10 @@ Substantial software belongs in readable Seme, not assembly.
 - The first S1-authored Kernel wire validator accepts canonical nested semantic
   envelopes and rejects malformed integer, ordering, identity, tag, bounds, and
   trailing-byte cases.
+- The S1-authored G1 compiler turns readable semantic graph notation into
+  canonical Kernel wire. Its Counter and finite Kernel meta-schema outputs are
+  byte-identical to the earlier A0 constructions and pass the independent
+  validator.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - The S0 bootstrap compiler is self-reproducing; the semantic Kernel v1 compiler
   is not self-hosted yet.

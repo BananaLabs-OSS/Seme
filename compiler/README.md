@@ -34,3 +34,18 @@ diagnostics.
 obsolete v0 envelope, which lacked parent-revision metadata, to canonical v1.
 The v1 validator rejects the old fixture, accepts the migrated graph, and the
 migration preserves the entity payload while inserting a zero parent count.
+
+## G1 readable graph projection
+
+`g1-compiler.s1` is the first readable authoring projection for complete Kernel
+wire graphs. It is itself compiled deterministically by the checked S1 compiler.
+G1 separates human-readable graph construction from canonical storage: the G1
+emitter produces Kernel wire v1 and the independent validator establishes that
+the result is canonical.
+
+`kernel-meta-minimal.g1` replaces the previous A0 byte construction as the
+readable source for the finite Kernel meta-schema. Its checked canonical output,
+`kernel-meta-bootstrap.seme`, is byte-identical to the A0-built envelope. The G1
+Counter fixture is likewise byte-identical to its older A0 construction. These
+equalities demonstrate a change in presentation without a change in canonical
+semantic state.
