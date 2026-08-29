@@ -27,4 +27,10 @@ references against the complete entity table and rejects dangling references.
 For the reserved Kernel module identity it additionally requires the finite
 Module/Schema/Field bootstrap declarations and verifies their schema
 relationships. It does not yet validate every declared field shape, resolve
-imported references, migrate revisions, or produce structured diagnostics.
+imported references, perform schema-level migrations, or produce structured
+diagnostics.
+
+`kernel-migrate-v0.s1` is a deterministic migration from the deliberately
+obsolete v0 envelope, which lacked parent-revision metadata, to canonical v1.
+The v1 validator rejects the old fixture, accepts the migrated graph, and the
+migration preserves the entity payload while inserting a zero parent count.

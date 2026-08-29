@@ -45,6 +45,9 @@ Kernel v1 may be frozen only after it can:
 6. execute or lower its own compiler;
 7. migrate at least one deliberately obsolete fixture.
 
+The executable v0-to-v1 migration now satisfies gate 7 for the wire envelope.
+Schema-level migration remains part of the broader module-versioning work.
+
 ## Non-goals
 
 Kernel v1 does not standardize a preferred source syntax, object system,

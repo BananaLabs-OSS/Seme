@@ -1,0 +1,140 @@
+# Deterministic Kernel wire v0 -> v1 migration.
+# v0 layout: magic, version=0, module id, revision id, entity count, entities.
+# v1 inserts parent-count=0 after the revision identity.
+ve 3
+cp 7
+
+fn fail 0 0
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+fn main 0 10
+  cu 0
+  ag
+  fr
+  ls 0
+  lg 0
+  bl
+  ls 1
+  lg 1
+  cu 42
+  lt
+  bf migrate-prefix
+  ca fail
+  re
+
+  lb migrate-prefix
+  lg 0 cu 0 bg cu 83 eq bf migrate-invalid
+  lg 0 cu 1 bg cu 69 eq bf migrate-invalid
+  lg 0 cu 2 bg cu 77 eq bf migrate-invalid
+  lg 0 cu 3 bg cu 69 eq bf migrate-invalid
+  lg 0 cu 4 bg cu 75 eq bf migrate-invalid
+  lg 0 cu 5 bg cu 49 eq bf migrate-invalid
+  lg 0 cu 6 bg cu 13 eq bf migrate-invalid
+  lg 0 cu 7 bg cu 10 eq bf migrate-invalid
+  lg 0 cu 8 bg cu 0 eq bf migrate-invalid
+  lg 1
+  cu 1
+  ad
+  bn
+  ls 2
+  cu 0
+  ls 3
+
+  # Preserve magic.
+  lb copy-magic
+  lg 3
+  cu 8
+  eq
+  bf copy-magic-byte
+  ju write-version
+  lb copy-magic-byte
+  lg 2
+  lg 0
+  lg 3
+  bg
+  bp
+  ls 2
+  lg 3
+  cu 1
+  ad
+  ls 3
+  ju copy-magic
+
+  lb write-version
+  lg 2
+  cu 1
+  bp
+  ls 2
+  cu 9
+  ls 3
+  cu 0
+  ls 4
+
+  # Preserve module and revision identities.
+  lb copy-identities
+  lg 4
+  cu 32
+  eq
+  bf copy-identity-byte
+  ju write-parent-count
+  lb copy-identity-byte
+  lg 2
+  lg 0
+  lg 3
+  bg
+  bp
+  ls 2
+  lg 3
+  cu 1
+  ad
+  ls 3
+  lg 4
+  cu 1
+  ad
+  ls 4
+  ju copy-identities
+
+  lb write-parent-count
+  lg 2
+  cu 0
+  bp
+  ls 2
+
+  # Preserve entity count and entity graph verbatim. The v1 validator proves
+  # canonicality and semantic integrity after migration.
+  lb copy-graph
+  lg 3
+  lg 1
+  eq
+  bf copy-graph-byte
+  ju migrate-write
+  lb copy-graph-byte
+  lg 2
+  lg 0
+  lg 3
+  bg
+  bp
+  ls 2
+  lg 3
+  cu 1
+  ad
+  ls 3
+  ju copy-graph
+
+  lb migrate-write
+  cu 1
+  ag
+  lg 2
+  fw
+  re
+
+  lb migrate-invalid
+  ca fail
+  re
+fe
+
+en main
