@@ -1,0 +1,771 @@
+# Canonical Kernel wire v1 structural validator, authored in symbolic S1.
+ve 3
+cp 3
+
+fn fail 0 0
+  cu 1
+  cu 0
+  di
+  re
+fe
+
+# take-count(buffer, cursor) -> (value << 21) | new-cursor
+# Counts are bounded by the one-MiB bootstrap envelope.
+fn take-count 2 10
+  cu 0
+  ls 2
+  cu 0
+  ls 3
+  cu 0
+  ls 4
+  lg 0
+  bl
+  ls 5
+
+  lb count-byte
+  lg 1
+  lg 5
+  eq
+  bf count-have-byte
+  ca fail
+  re
+
+  lb count-have-byte
+  lg 0
+  lg 1
+  bg
+  ls 6
+  lg 1
+  cu 1
+  ad
+  ls 1
+  lg 6
+  cu 127
+  an
+  ls 7
+  lg 3
+  cu 63
+  eq
+  bf count-shift
+  cu 1
+  lg 7
+  lt
+  bf count-shift
+  ca fail
+  re
+
+  lb count-shift
+  lg 7
+  lg 3
+  sl
+  lg 2
+  or
+  ls 2
+  lg 4
+  cu 1
+  ad
+  ls 4
+  lg 6
+  cu 128
+  an
+  cu 0
+  eq
+  bf count-more
+  lg 4
+  cu 1
+  eq
+  bf count-terminal-nonzero
+  ju count-bounds
+
+  lb count-terminal-nonzero
+  lg 7
+  cu 0
+  eq
+  bf count-bounds
+  ca fail
+  re
+
+  lb count-more
+  lg 3
+  cu 7
+  ad
+  ls 3
+  cu 63
+  lg 3
+  lt
+  bf count-byte
+  ca fail
+  re
+
+  lb count-bounds
+  cu 1048576
+  lg 2
+  lt
+  bf count-result
+  ca fail
+  re
+
+  lb count-result
+  lg 2
+  cu 21
+  sl
+  lg 1
+  or
+  re
+fe
+
+# skip-uleb(buffer, cursor) -> new-cursor
+fn skip-uleb 2 9
+  cu 0
+  ls 2
+  cu 0
+  ls 3
+  lg 0
+  bl
+  ls 4
+
+  lb skip-uleb-byte
+  lg 1
+  lg 4
+  eq
+  bf skip-uleb-have-byte
+  ca fail
+  re
+
+  lb skip-uleb-have-byte
+  lg 0
+  lg 1
+  bg
+  ls 5
+  lg 1
+  cu 1
+  ad
+  ls 1
+  lg 5
+  cu 127
+  an
+  ls 6
+  lg 2
+  cu 63
+  eq
+  bf skip-uleb-count
+  cu 1
+  lg 6
+  lt
+  bf skip-uleb-count
+  ca fail
+  re
+
+  lb skip-uleb-count
+  lg 3
+  cu 1
+  ad
+  ls 3
+  lg 5
+  cu 128
+  an
+  cu 0
+  eq
+  bf skip-uleb-more
+  lg 3
+  cu 1
+  eq
+  bf skip-uleb-terminal
+  lg 1
+  re
+
+  lb skip-uleb-terminal
+  lg 6
+  cu 0
+  eq
+  bf skip-uleb-done
+  ca fail
+  re
+  lb skip-uleb-done
+  lg 1
+  re
+
+  lb skip-uleb-more
+  lg 2
+  cu 7
+  ad
+  ls 2
+  cu 63
+  lg 2
+  lt
+  bf skip-uleb-byte
+  ca fail
+  re
+fe
+
+# id-less(buffer, left-offset, right-offset) -> bool
+fn id-less 3 7
+  cu 0
+  ls 3
+  lb id-compare
+  lg 3
+  cu 16
+  eq
+  bf id-byte
+  cu 0
+  re
+  lb id-byte
+  lg 0
+  lg 1
+  lg 3
+  ad
+  bg
+  ls 4
+  lg 0
+  lg 2
+  lg 3
+  ad
+  bg
+  ls 5
+  lg 4
+  lg 5
+  lt
+  bf id-greater-check
+  cu 1
+  re
+  lb id-greater-check
+  lg 5
+  lg 4
+  lt
+  bf id-next
+  cu 0
+  re
+  lb id-next
+  lg 3
+  cu 1
+  ad
+  ls 3
+  ju id-compare
+fe
+
+# skip-value(buffer, cursor, depth) -> new-cursor
+fn skip-value 3 16
+  cu 16
+  lg 2
+  lt
+  bf value-depth-ok
+  ca fail
+  re
+  lb value-depth-ok
+  lg 0
+  bl
+  ls 3
+  lg 1
+  lg 3
+  eq
+  bf value-tag
+  ca fail
+  re
+  lb value-tag
+  lg 0
+  lg 1
+  bg
+  ls 4
+  lg 1
+  cu 1
+  ad
+  ls 1
+  lg 4
+  cu 3
+  lt
+  bf value-unsigned
+  lg 1
+  re
+
+  lb value-unsigned
+  lg 4
+  cu 3
+  eq
+  bf value-signed
+  lg 0
+  lg 1
+  ca skip-uleb
+  re
+  lb value-signed
+  lg 4
+  cu 4
+  eq
+  bf value-bytes
+  lg 0
+  lg 1
+  ca skip-uleb
+  re
+
+  lb value-bytes
+  lg 4
+  cu 5
+  eq
+  bf value-reference
+  lg 0
+  lg 1
+  ca take-count
+  ls 5
+  lg 5
+  cu 2097151
+  an
+  ls 1
+  lg 5
+  cu 21
+  sr
+  ls 6
+  lg 1
+  lg 6
+  ad
+  ls 1
+  lg 3
+  lg 1
+  lt
+  bf value-return
+  ca fail
+  re
+
+  lb value-reference
+  lg 4
+  cu 6
+  eq
+  bf value-list
+  lg 1
+  cu 16
+  ad
+  ls 1
+  lg 3
+  lg 1
+  lt
+  bf value-return
+  ca fail
+  re
+
+  lb value-list
+  lg 4
+  cu 7
+  eq
+  bf value-record
+  lg 0
+  lg 1
+  ca take-count
+  ls 5
+  lg 5
+  cu 2097151
+  an
+  ls 1
+  lg 5
+  cu 21
+  sr
+  ls 6
+  cu 0
+  ls 7
+  lb value-list-loop
+  lg 7
+  lg 6
+  eq
+  bf value-list-item
+  lg 1
+  re
+  lb value-list-item
+  lg 0
+  lg 1
+  lg 2
+  cu 1
+  ad
+  ca skip-value
+  ls 1
+  lg 7
+  cu 1
+  ad
+  ls 7
+  ju value-list-loop
+
+  lb value-record
+  lg 4
+  cu 8
+  eq
+  bf value-hole
+  lg 0
+  lg 1
+  ca take-count
+  ls 5
+  lg 5
+  cu 2097151
+  an
+  ls 1
+  lg 5
+  cu 21
+  sr
+  ls 6
+  cu 0
+  ls 7
+  cu 0
+  ls 8
+  lb value-record-loop
+  lg 7
+  lg 6
+  eq
+  bf value-record-field
+  lg 1
+  re
+  lb value-record-field
+  lg 3
+  lg 1
+  cu 16
+  ad
+  lt
+  bf value-record-room
+  ca fail
+  re
+  lb value-record-room
+  lg 7
+  cu 0
+  eq
+  bf value-record-order
+  ju value-record-save
+  lb value-record-order
+  lg 0
+  lg 8
+  lg 1
+  ca id-less
+  bf value-invalid
+  lb value-record-save
+  lg 1
+  ls 8
+  lg 1
+  cu 16
+  ad
+  ls 1
+  lg 0
+  lg 1
+  lg 2
+  cu 1
+  ad
+  ca skip-value
+  ls 1
+  lg 7
+  cu 1
+  ad
+  ls 7
+  ju value-record-loop
+
+  lb value-hole
+  lg 4
+  cu 9
+  eq
+  bf value-invalid
+  lg 1
+  cu 16
+  ad
+  ls 1
+  lg 3
+  lg 1
+  lt
+  bf value-return
+  ca fail
+  re
+
+  lb value-invalid
+  ca fail
+  re
+  lb value-return
+  lg 1
+  re
+fe
+
+fn main 0 16
+  cu 0
+  ag
+  fr
+  ls 0
+  cu 0
+  ls 1
+  lg 0
+  bl
+  ls 2
+  lg 2
+  cu 8
+  lt
+  bf envelope-magic
+  ca fail
+  re
+
+  lb envelope-magic
+  lg 0
+  cu 0
+  bg
+  cu 83
+  eq
+  bf envelope-invalid
+  lg 0
+  cu 1
+  bg
+  cu 69
+  eq
+  bf envelope-invalid
+  lg 0
+  cu 2
+  bg
+  cu 77
+  eq
+  bf envelope-invalid
+  lg 0
+  cu 3
+  bg
+  cu 69
+  eq
+  bf envelope-invalid
+  lg 0
+  cu 4
+  bg
+  cu 75
+  eq
+  bf envelope-invalid
+  lg 0
+  cu 5
+  bg
+  cu 49
+  eq
+  bf envelope-invalid
+  lg 0
+  cu 6
+  bg
+  cu 13
+  eq
+  bf envelope-invalid
+  lg 0
+  cu 7
+  bg
+  cu 10
+  eq
+  bf envelope-invalid
+  cu 8
+  ls 1
+
+  lg 0
+  lg 1
+  ca take-count
+  ls 3
+  lg 3
+  cu 2097151
+  an
+  ls 1
+  lg 3
+  cu 21
+  sr
+  cu 1
+  eq
+  bf envelope-invalid
+
+  # Module and revision identities.
+  lg 1
+  cu 32
+  ad
+  ls 1
+  lg 2
+  lg 1
+  lt
+  bf envelope-parents
+  ju envelope-invalid
+
+  lb envelope-parents
+  lg 0
+  lg 1
+  ca take-count
+  ls 3
+  lg 3
+  cu 2097151
+  an
+  ls 1
+  lg 3
+  cu 21
+  sr
+  ls 4
+  cu 0
+  ls 5
+  cu 0
+  ls 11
+
+  lb parent-loop
+  lg 5
+  lg 4
+  eq
+  bf parent-item
+  ju entity-count
+
+  lb parent-item
+  lg 2
+  lg 1
+  cu 16
+  ad
+  lt
+  bf parent-room
+  ju envelope-invalid
+  lb parent-room
+  lg 11
+  cu 0
+  eq
+  bf parent-order
+  ju parent-save
+  lb parent-order
+  lg 0
+  lg 6
+  lg 1
+  ca id-less
+  bf envelope-invalid
+  lb parent-save
+  lg 1
+  ls 6
+  cu 1
+  ls 11
+  lg 1
+  cu 16
+  ad
+  ls 1
+  lg 5
+  cu 1
+  ad
+  ls 5
+  ju parent-loop
+
+  lb entity-count
+  lg 0
+  lg 1
+  ca take-count
+  ls 3
+  lg 3
+  cu 2097151
+  an
+  ls 1
+  lg 3
+  cu 21
+  sr
+  ls 4
+  cu 0
+  ls 10
+  cu 0
+  ls 11
+
+  lb entity-loop
+  lg 10
+  lg 4
+  eq
+  bf entity-item
+  ju envelope-finish
+
+  lb entity-item
+  lg 2
+  lg 1
+  cu 32
+  ad
+  lt
+  bf entity-room
+  ju envelope-invalid
+  lb entity-room
+  lg 11
+  cu 0
+  eq
+  bf entity-order
+  ju entity-save
+  lb entity-order
+  lg 0
+  lg 6
+  lg 1
+  ca id-less
+  bf envelope-invalid
+  lb entity-save
+  lg 1
+  ls 6
+  cu 1
+  ls 11
+  # Skip entity identity and schema identity.
+  lg 1
+  cu 32
+  ad
+  ls 1
+  lg 0
+  lg 1
+  ca skip-uleb
+  ls 1
+  lg 0
+  lg 1
+  ca take-count
+  ls 3
+  lg 3
+  cu 2097151
+  an
+  ls 1
+  lg 3
+  cu 21
+  sr
+  ls 8
+  cu 0
+  ls 9
+  cu 0
+  ls 12
+
+  lb field-loop
+  lg 9
+  lg 8
+  eq
+  bf field-item
+  lg 10
+  cu 1
+  ad
+  ls 10
+  ju entity-loop
+
+  lb field-item
+  lg 2
+  lg 1
+  cu 16
+  ad
+  lt
+  bf field-room
+  ju envelope-invalid
+  lb field-room
+  lg 12
+  cu 0
+  eq
+  bf field-order
+  ju field-save
+  lb field-order
+  lg 0
+  lg 7
+  lg 1
+  ca id-less
+  bf envelope-invalid
+  lb field-save
+  lg 1
+  ls 7
+  cu 1
+  ls 12
+  lg 1
+  cu 16
+  ad
+  ls 1
+  lg 0
+  lg 1
+  cu 0
+  ca skip-value
+  ls 1
+  lg 9
+  cu 1
+  ad
+  ls 9
+  ju field-loop
+
+  lb envelope-finish
+  lg 1
+  lg 2
+  eq
+  bf envelope-invalid
+  cu 0
+  re
+
+  lb envelope-invalid
+  ca fail
+  re
+fe
+
+en main

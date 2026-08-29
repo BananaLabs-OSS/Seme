@@ -10,3 +10,15 @@ bootstrap compiler sources remain under `bootstrap/`.
 The handoff criterion is strict: the semantic compiler must rebuild itself,
 preserve conformance behavior and diagnostics, and let subsequent platform work
 proceed without modifying assembly.
+
+## Kernel wire validator
+
+`kernel-wire-validator.s1` is the first compiler-layer program authored above
+the self-hosted bootstrap. Checked S1 compiles it deterministically to
+`kernel-wire-validator.k0`.
+
+The current structural profile validates the Kernel v1 envelope, canonical
+ULEB integers, bounds, strictly ordered parent/entity/field identities,
+recursive lists and records, known value tags, nesting depth, and exact
+end-of-file. It does not yet interpret the Kernel meta-schema, resolve semantic
+references/imports, migrate revisions, or produce structured diagnostics.

@@ -53,6 +53,9 @@ Substantial software belongs in readable Seme, not assembly.
 - The symbolic S1 compiler derives function tables, named calls, labels,
   instruction counts, code sizes, and byte witnesses. Its checked construction
   image and two self-produced generations are byte-identical.
+- The first S1-authored Kernel wire validator accepts canonical nested semantic
+  envelopes and rejects malformed integer, ordering, identity, tag, bounds, and
+  trailing-byte cases.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - The S0 bootstrap compiler is self-reproducing; the semantic Kernel v1 compiler
   is not self-hosted yet.
