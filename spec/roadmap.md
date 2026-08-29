@@ -23,6 +23,10 @@ Completing a later layer does not waive an earlier layer's conformance gates.
   refinement, unknown-field, and migration conformance.
 - Freeze the canonical format, identities, validation behavior, and migrations.
 
+The diagnostic report shape now has a canonical compile/validate/round-trip
+fixture. This is representation evidence only; the gate remains open until the
+validators emit reports for their actual failure paths.
+
 ## 2. Transactional semantic editing
 
 - Apply identity-based patches against an explicit starting revision.

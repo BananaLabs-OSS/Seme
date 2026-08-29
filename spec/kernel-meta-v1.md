@@ -23,6 +23,8 @@ is only an audit convenience; consumers must treat them as opaque.
 | `00000000000000000000000000000017` | Provenance |
 | `00000000000000000000000000000018` | Refinement |
 | `00000000000000000000000000000019` | DiagnosticRule |
+| `0000000000000000000000000000001a` | Diagnostic |
+| `0000000000000000000000000000001b` | DiagnosticReport |
 
 `Schema` is an instance of itself. Every other row is an entity whose schema is
 `Schema`. This finite self-reference is intentional: the wire decoder can read
@@ -58,10 +60,21 @@ the same declarations it validates.
 | `0182` | refinement.evidence | bytes |
 | `0190` | diagnostic.name | bytes |
 | `0191` | diagnostic.arguments | list(record ValueShape) |
+| `01a0` | diagnostic.rule | reference DiagnosticRule |
+| `01a1` | diagnostic.revision | bytes (exactly one revision identity) |
+| `01a2` | diagnostic.entity | bytes (empty or exactly one entity identity) |
+| `01a3` | diagnostic.path | list(record PathSegment) |
+| `01a4` | diagnostic.arguments | list(value) |
+| `01a5` | diagnostic.severity | unsigned |
+| `01b0` | diagnostic_report.status | unsigned |
+| `01b1` | diagnostic_report.diagnostics | list(reference Diagnostic) |
 
 Every field identity is the 14-byte zero prefix followed by the listed suffix.
 Names are descriptive data for projections and diagnostics; identity, not name,
 defines a field.
+
+The complete diagnostic and path contracts are defined in
+[`diagnostics-v1.md`](diagnostics-v1.md).
 
 ## ValueShape record
 

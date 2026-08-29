@@ -118,6 +118,9 @@ identity, entity identity, a field/list path, and structured value arguments.
 Human wording belongs to a diagnostic projection and is not used to compare
 compiler generations.
 
+The canonical report shape and bootstrap delivery contract are specified in
+[`diagnostics-v1.md`](diagnostics-v1.md).
+
 ## Target contract
 
 Reading this format does not imply that a target can execute every represented
