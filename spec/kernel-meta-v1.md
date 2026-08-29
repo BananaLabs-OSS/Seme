@@ -27,6 +27,8 @@ is only an audit convenience; consumers must treat them as opaque.
 | `0000000000000000000000000000001b` | DiagnosticReport |
 | `0000000000000000000000000000001c` | ValueShape |
 | `0000000000000000000000000000001d` | PathSegment |
+| `0000000000000000000000000000001e` | ValidationResult |
+| `0000000000000000000000000000001f` | ValidationReport |
 | `00000000000000000000000000003000` | Semantic Foundation v1 module entity |
 
 The frozen bootstrap envelope uses module identity `...0001` and contains only
@@ -56,7 +58,7 @@ the same declarations it validates.
 | `0122` | module.exports | list(reference) |
 | `0123` | module.required_effects | list(reference Effect) |
 | `0130` | import.module | reference Module |
-| `0131` | import.minimum_revision | bytes (exactly one revision identity) |
+| `0131` | import.required_revision | bytes (exactly one revision identity) |
 | `0140` | constraint.rule | reference DiagnosticRule |
 | `0141` | constraint.operation | bytes |
 | `0150` | effect.name | bytes |

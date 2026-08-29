@@ -50,7 +50,7 @@ func declarations() []schema {
 		{id(0x10), "Schema", []field{f(0x100, "schema.name", foundation.Bytes, "", foundation.One), f(0x101, "schema.fields", foundation.Reference, id(0x11), foundation.Many), f(0x102, "schema.constraints", foundation.Reference, id(0x14), foundation.Many)}},
 		{id(0x11), "Field", []field{f(0x110, "field.name", foundation.Bytes, "", foundation.One), f(0x111, "field.value_shape", foundation.Record, id(0x1c), foundation.One), f(0x112, "field.cardinality", foundation.Unsigned, "", foundation.One), f(0x113, "field.since_version", foundation.Unsigned, "", foundation.One)}},
 		{id(0x12), "Module", []field{f(0x120, "module.name", foundation.Bytes, "", foundation.One), f(0x121, "module.imports", foundation.Reference, id(0x13), foundation.Many), f(0x122, "module.exports", foundation.Reference, "", foundation.Many), f(0x123, "module.required_effects", foundation.Reference, id(0x15), foundation.Many)}},
-		{id(0x13), "Import", []field{f(0x130, "import.module", foundation.Reference, id(0x12), foundation.One), f(0x131, "import.minimum_revision", foundation.Bytes, "", foundation.One)}},
+		{id(0x13), "Import", []field{f(0x130, "import.module", foundation.Reference, id(0x12), foundation.One), f(0x131, "import.required_revision", foundation.Bytes, "", foundation.One)}},
 		{id(0x14), "Constraint", []field{f(0x140, "constraint.rule", foundation.Reference, id(0x19), foundation.One), f(0x141, "constraint.operation", foundation.Bytes, "", foundation.One)}},
 		{id(0x15), "Effect", []field{f(0x150, "effect.name", foundation.Bytes, "", foundation.One), f(0x151, "effect.capability", foundation.Reference, id(0x16), foundation.One)}},
 		{id(0x16), "Capability", []field{f(0x160, "capability.name", foundation.Bytes, "", foundation.One)}},
@@ -61,6 +61,8 @@ func declarations() []schema {
 		{id(0x1b), "DiagnosticReport", []field{f(0x1b0, "diagnostic_report.status", foundation.Unsigned, "", foundation.One), f(0x1b1, "diagnostic_report.diagnostics", foundation.Reference, id(0x1a), foundation.Many)}},
 		{id(0x1c), "ValueShape", []field{f(0x2000, "value_shape.kind", foundation.Unsigned, "", foundation.One), f(0x2001, "value_shape.schema", foundation.Reference, id(0x10), foundation.Optional), f(0x2002, "value_shape.element", foundation.Record, id(0x1c), foundation.Optional)}},
 		{id(0x1d), "PathSegment", []field{f(0x2100, "path_segment.kind", foundation.Unsigned, "", foundation.One), f(0x2101, "path_segment.identity", foundation.Bytes, "", foundation.Optional), f(0x2102, "path_segment.index", foundation.Unsigned, "", foundation.Optional)}},
+		{id(0x1e), "ValidationResult", []field{f(0x2200, "validation_result.entity", foundation.Bytes, "", foundation.One), f(0x2201, "validation_result.disposition", foundation.Unsigned, "", foundation.One)}},
+		{id(0x1f), "ValidationReport", []field{f(0x2210, "validation_report.revision", foundation.Bytes, "", foundation.One), f(0x2211, "validation_report.results", foundation.Record, id(0x1e), foundation.Many), f(0x2212, "validation_report.diagnostics", foundation.Reference, id(0x1a), foundation.Many)}},
 	}
 }
 
