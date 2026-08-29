@@ -22,7 +22,7 @@ Located Diagnostics 1 successor generation. See `LOCATED-DIAGNOSTICS-1.md` for
 its guarantees, reproduction procedure, conformance gate, and explicit
 provenance boundary.
 
-The current structural profile validates the Kernel v1 envelope, canonical
+The frozen structural Kernel v1 profile validates the envelope, canonical
 ULEB integers, bounds, strictly ordered parent/entity/field identities,
 recursive lists and records, known value tags, nesting depth, and exact
 end-of-file. With an output path it writes the validated canonical envelope
@@ -31,8 +31,9 @@ validator does not interpret. A second append-only pass resolves local forward
 references against the complete entity table and rejects dangling references.
 For the reserved Kernel module identity it additionally requires the finite
 Module/Schema/Field bootstrap declarations and verifies their schema
-relationships. It does not yet validate every declared field shape, resolve
-imported references, or perform schema-level migrations.
+relationships. Declared field shapes, imported-module semantics, and
+schema-level migrations belong to versioned semantic-foundation modules above
+the frozen wire validator.
 
 `kernel-wire-validator-diagnostic.seme` is the post-Frozen-Core successor. With
 one argument it validates exactly like the frozen validator. With a result path

@@ -29,7 +29,8 @@ Substantial software belongs in readable Seme, not assembly.
 
 ## Current status
 
-- Kernel v1 is being specified; it is not frozen.
+- Structural Kernel v1 is frozen with pinned canonical artifacts, executable
+  preservation/rejection/migration evidence, and deterministic diagnostics.
 - The initial Hex0 seed is independently executable on Linux amd64.
 - No Go, Rust, C, C++, Python, LLVM, or language runtime is required to run the
   frozen seed.
@@ -76,16 +77,16 @@ Substantial software belongs in readable Seme, not assembly.
   Python, or another language toolchain. See
   [`compiler/FROZEN-CORE-1.md`](compiler/FROZEN-CORE-1.md).
 - Host assembly tools remain optional construction and cross-check conveniences.
-- The frozen compiler core is self-hosted. Full Kernel v1 schema semantics and
-  structured diagnostics remain incomplete above that independent floor.
-- The post-freeze canonical validator emits deterministic canonical diagnostic
-  reports for every current rejection path while preserving the frozen
-  validator and its trust-boundary hashes. Broad graph/encoding locations are
-  implemented; entity/field path refinement remains a Kernel v1 gate.
+- The frozen compiler core is self-hosted. Semantic-foundation schemas continue
+  above the frozen structural Kernel without expanding its wire boundary.
+- The canonical located validator emits deterministic canonical diagnostic
+  reports for every frozen rejection path and preserves valid inputs exactly.
 
 See [`spec/architecture.md`](spec/architecture.md) and
 [`spec/roadmap.md`](spec/roadmap.md) for the product proof sequence, and
 [`bootstrap/README.md`](bootstrap/README.md) for the independent bootstrap.
+The exact Kernel boundary and frozen hashes are recorded in
+[`compiler/KERNEL-V1-FREEZE.md`](compiler/KERNEL-V1-FREEZE.md).
 The broader Seme–registry–Pulp interoperability direction is documented in
 [`spec/software-commons.md`](spec/software-commons.md).
 

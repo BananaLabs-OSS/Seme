@@ -1,10 +1,11 @@
-# Kernel wire v1 candidate
+# Kernel wire v1
 
-This document defines the candidate canonical byte representation for Seme
+This document defines the canonical byte representation for Seme
 Kernel v1. It is deliberately a semantic graph encoding, not source text, an
 AST for one presentation, or an execution target.
 
-The candidate remains unfrozen until every gate in `kernel-v1.md` passes.
+This encoding is frozen by the evidence and hashes in
+[`KERNEL-V1-FREEZE.md`](../compiler/KERNEL-V1-FREEZE.md).
 
 ## Design boundary
 
@@ -85,30 +86,25 @@ tags.
 
 ## References and preservation
 
-Every reference resolves either to an entity in this envelope or to an import
-declared by the module entity. Reference validity is checked before semantic
-module validation.
+Every wire reference resolves to an entity in this envelope. Cross-module
+targets are represented by a local import entity whose versioned schema names
+the external module, revision requirements, and target identity. Resolution of
+that import is semantic-module validation above the wire decoder.
 
 A conforming read-modify-write implementation must preserve unknown entities,
 unknown fields, unknown schema versions, and unknown value structure exactly at
 the semantic-value level. It may canonicalize their byte encoding. It must not
 claim to validate semantics it does not understand.
 
-## Bootstrap meta-schema
+## Bootstrap structural schema
 
-The wire decoder recognizes no domain schema. Kernel validation begins from a
-small versioned meta-schema module whose checked canonical envelope defines:
+The wire decoder recognizes no domain schema. A small bootstrap module proves
+that Schema, Field, and Module declarations can describe themselves without
+making their future semantic vocabulary part of the wire kernel.
 
-- schema declarations;
-- field declarations and cardinality;
-- module imports and exports;
-- constraints and their stable diagnostic rule identities;
-- effects and required capabilities;
-- provenance and refinement relationships.
-
-The meta-schema is data encoded by this wire format. Its identity constants and
-initial canonical bytes will be frozen together only after the self-description
-and external-module conformance fixtures pass.
+The larger semantic foundation in `kernel-meta-v1.md` is ordinary versioned
+module data. Generic schema, import, constraint, effect, provenance, and
+refinement validation may evolve above the frozen decoder.
 
 ## Determinism and diagnostics
 
