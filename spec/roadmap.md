@@ -17,6 +17,11 @@ Completing a later layer does not waive an earlier layer's conformance gates.
 
 ## 1. Trustworthy Kernel v1
 
+The executable gate status and missing conformance groups are tracked in the
+[`Kernel v1 freeze audit`](kernel-v1-freeze-audit.md). A documented identity is
+not counted as implemented until canonical validation and positive/negative
+fixtures prove it.
+
 - Emit deterministic structured diagnostics with stable rule, revision, entity,
   field/list path, and structured argument identities.
 - Complete schema/import, effects/capabilities, constraints/holes, provenance,
