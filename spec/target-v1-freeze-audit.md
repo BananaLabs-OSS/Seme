@@ -14,6 +14,6 @@ canonical planning boundary.
 | Determinism | pass | Ingestion and both policy plans reproduce byte-for-byte. |
 | Fail-closed scope | pass | Stale native evidence, changed message semantics, and unknown policy reject. |
 
-This freeze does not claim that a Wasm artifact exists or that Pulp has executed
-the component. It freezes the canonical input that the emitter and runtime must
-honor next.
+The subsequent Wasm v1 proof consumes this canonical input and cannot lower the
+non-executable exact-only plan. This audit still makes no claim that actual Pulp
+has executed the component.

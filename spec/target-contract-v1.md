@@ -161,6 +161,6 @@ With `exact-only` policy the same rules are not relabeled: both requirements
 resolve as `impossible` and the plan is non-executable. Native source changes,
 unsupported message semantics, and invented policies reject.
 
-This completes canonical target planning, not Wasm emission or Pulp execution.
-Those are the next portability proof and must consume the checked executable
-plan rather than bypassing it.
+This completes canonical target planning. The subsequent scoped Wasm v1 backend
+now consumes the checked executable plan and rejects the exact-only plan; actual
+Pulp execution remains the next runtime proof.
