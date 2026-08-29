@@ -30,7 +30,7 @@ func main() {
 		{0x5102, 0, "patch.operations", 5, 0x5011, 2},
 	}
 	renameFields := []field{
-		{0x5110, 0, "rename.target", 5, 0, 0},
+		{0x5110, 0, "rename.target", 4, 0, 0},
 		{0x5111, 0, "rename.field", 4, 0, 0},
 		{0x5112, 0, "rename.expected_value", 4, 0, 0},
 		{0x5113, 0, "rename.replacement", 4, 0, 0},
