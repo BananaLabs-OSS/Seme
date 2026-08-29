@@ -33,6 +33,19 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 
 	integerID := stableID("execution", "type", "i64")
 	booleanID := stableID("execution", "type", "bool")
+	canonicalFunctionID := stableID("canonical-function", declaration.ID)
+	parameterIDs := []string{
+		stableID("execution", canonicalFunctionID, "parameter", "0"),
+		stableID("execution", canonicalFunctionID, "parameter", "1"),
+		stableID("execution", canonicalFunctionID, "parameter", "2"),
+	}
+	readIDs := []string{
+		stableID("execution", canonicalFunctionID, "read", "0"),
+		stableID("execution", canonicalFunctionID, "read", "1"),
+		stableID("execution", canonicalFunctionID, "read", "2"),
+	}
+	addID := stableID("execution", canonicalFunctionID, "add")
+	comparisonID := stableID("execution", canonicalFunctionID, "less-equal")
 	packageID := stableID("package", packagePathOf(declaration.NativeKey))
 	interfaceID := stableID("package-interface", declaration.ID)
 	dependencyID := stableID("dependency", packageID, "go:log")
@@ -62,8 +75,8 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		{runtimeID, entity(runtimeID, "0000000000000000000000000000b013", []graphField{bytesField(0xb130, "go.log.Printf"), bytesField(0xb131, "formatted process-global logging sink")})},
 		{hostAdapterID, entity(hostAdapterID, "0000000000000000000000000000b013", []graphField{bytesField(0xb130, "pulp.host.log-v1"), bytesField(0xb131, "Wasm host import guarded by observability.log capability")})},
 		{dependencyID, entity(dependencyID, "0000000000000000000000000000b012", []graphField{bytesField(0xb120, "go:log"), bytesField(0xb121, "Go standard library for provider profile"), refField(0xb122, hostAdapterID)})},
-		{interfaceID, entity(interfaceID, "0000000000000000000000000000b011", []graphField{bytesField(0xb110, "Admit"), refField(0xb111, declaration.ID), refsField(0xb112, []string{integerID, integerID, integerID}), refField(0xb113, booleanID)})},
-		{mappingID, entity(mappingID, "0000000000000000000000000000b014", []graphField{refField(0xb140, declaration.ID), refField(0xb141, declaration.ID), unsignedField(0xb142, 2), bytesField(0xb143, "go/types resolves log.Printf; Pulp host import preserves accepted decision message")})},
+		{interfaceID, entity(interfaceID, "0000000000000000000000000000b011", []graphField{bytesField(0xb110, "Admit"), refField(0xb111, canonicalFunctionID), refsField(0xb112, []string{integerID, integerID, integerID}), refField(0xb113, booleanID)})},
+		{mappingID, entity(mappingID, "0000000000000000000000000000b014", []graphField{refField(0xb140, declaration.ID), refField(0xb141, canonicalFunctionID), unsignedField(0xb142, 2), bytesField(0xb143, "go/types exact decision lift; Pulp host import adapts log.Printf")})},
 		{packageID, entity(packageID, "0000000000000000000000000000b010", []graphField{bytesField(0xb100, packagePathOf(declaration.NativeKey)), bytesField(0xb101, manifest.Revision), refsField(0xb102, []string{interfaceID}), refsField(0xb103, []string{dependencyID}), refsField(0xb104, []string{effectID}), refsField(0xb105, []string{runtimeID}), refsField(0xb106, []string{mappingID})})},
 		{dependencyRequirementID, entity(dependencyRequirementID, "0000000000000000000000000000c011", []graphField{refField(0xc110, dependencyID), unsignedField(0xc111, 1), refsField(0xc112, []string{runtimeID})})},
 		{effectRequirementID, entity(effectRequirementID, "0000000000000000000000000000c011", []graphField{refField(0xc110, effectID), unsignedField(0xc111, 1), refsField(0xc112, []string{runtimeID})})},
@@ -71,6 +84,17 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		{effectRuleID, entity(effectRuleID, "0000000000000000000000000000c012", []graphField{refField(0xc120, effectID), unsignedField(0xc121, 1), refsField(0xc122, []string{runtimeID}), unsignedField(0xc123, 2), refField(0xc124, hostAdapterID), refsField(0xc125, []string{mappingID})})},
 		{targetID, entity(targetID, "0000000000000000000000000000c010", []graphField{bytesField(0xc100, "wasm32-pulp-v1"), unsignedField(0xc101, 1), refsField(0xc102, []string{dependencyRuleID, effectRuleID})})},
 	}
+	instances = append(instances,
+		graphEntity{parameterIDs[0], entity(parameterIDs[0], "00000000000000000000000000009012", []graphField{bytesField(0x9120, signature.Params().At(0).Name()), refField(0x9121, integerID), unsignedField(0x9122, 0)})},
+		graphEntity{parameterIDs[1], entity(parameterIDs[1], "00000000000000000000000000009012", []graphField{bytesField(0x9120, signature.Params().At(1).Name()), refField(0x9121, integerID), unsignedField(0x9122, 1)})},
+		graphEntity{parameterIDs[2], entity(parameterIDs[2], "00000000000000000000000000009012", []graphField{bytesField(0x9120, signature.Params().At(2).Name()), refField(0x9121, integerID), unsignedField(0x9122, 2)})},
+		graphEntity{readIDs[0], entity(readIDs[0], "00000000000000000000000000009013", []graphField{refField(0x9130, parameterIDs[0])})},
+		graphEntity{readIDs[1], entity(readIDs[1], "00000000000000000000000000009013", []graphField{refField(0x9130, parameterIDs[1])})},
+		graphEntity{readIDs[2], entity(readIDs[2], "00000000000000000000000000009013", []graphField{refField(0x9130, parameterIDs[2])})},
+		graphEntity{addID, entity(addID, "00000000000000000000000000009014", []graphField{refField(0x9140, readIDs[0]), refField(0x9141, readIDs[1]), refField(0x9142, integerID)})},
+		graphEntity{comparisonID, entity(comparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, addID), refField(0x9161, readIDs[2]), refField(0x9162, integerID)})},
+		graphEntity{canonicalFunctionID, entity(canonicalFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, "Admit"), refsField(0x9111, parameterIDs), refField(0x9112, booleanID), refField(0x9113, comparisonID)})},
+	)
 
 	resolutionIDs := []string{dependencyResolutionID, effectResolutionID}
 	if policy == "allow-adapted" {

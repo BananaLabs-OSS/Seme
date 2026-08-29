@@ -96,14 +96,14 @@ Status: complete for Package Contract v1's scoped quota-policy profile.
 - Core Execution v2 independently executes the package policy and matches Go,
   including signed overflow.
 
-This establishes the package/application contract but is not yet the real Pulp
-workload. The next proof should exercise a nonempty effect and dependency while
-building the first Wasm portability plan.
+This establishes the package/application contract. The subsequent target/Wasm
+proof exercises a nonempty dependency and effect; actual Pulp execution is the
+remaining real-workload boundary.
 
 ## 6. WebAssembly portability proof
 
-Status: canonical planning complete for the scoped logging profile; artifact
-emission and Pulp execution remain.
+Status: canonical planning and artifact execution complete for the scoped
+logging profile; actual Pulp execution remains.
 
 - Target Contract v1 now analyzes a real `go:log` dependency and
   `observability.log` effect.
@@ -111,12 +111,15 @@ emission and Pulp execution remain.
   executable only when adaptation policy permits it.
 - Exact-only policy produces impossible resolutions rather than dishonest
   exact fidelity.
+- A checked-plan backend emits a deterministic 78-byte Wasm module, executes it
+  with the declared logging host import, and matches Go result/effect traces.
 
 - Analyze the transitive package closure against a versioned Wasm target
   contract.
 - Resolve every requirement as exact, refined, adapted, emulated, embedded
   runtime, native island, or impossible.
-- Emit and execute a faithful Wasm component when the plan permits it.
+- Emit and execute a faithful Wasm component when the plan permits it. Complete
+  for the scoped core-module profile; Component Model packaging remains.
 - Reject or expose mixed deployment when semantics cannot remain all-Wasm.
 - Require no source changes made merely to cater to WebAssembly.
 

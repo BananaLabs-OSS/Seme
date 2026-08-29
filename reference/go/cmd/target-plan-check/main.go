@@ -24,6 +24,9 @@ func main() {
 	dependencies := bySchema(graph, 0xb012)
 	runtimes := bySchema(graph, 0xb013)
 	mappings := bySchema(graph, 0xb014)
+	interfaces := bySchema(graph, 0xb011)
+	providerDeclarations := bySchema(graph, 0x7013)
+	canonicalFunctions := bySchema(graph, 0x9011)
 	effects := bySchema(graph, 0x15)
 	capabilities := bySchema(graph, 0x16)
 	targets := bySchema(graph, 0xc010)
@@ -32,7 +35,8 @@ func main() {
 	resolutions := bySchema(graph, 0xc013)
 	plans := bySchema(graph, 0xc014)
 	boundaries := bySchema(graph, 0xc015)
-	must(len(packages) == 1 && len(dependencies) == 1 && len(mappings) == 1, "package requirement cardinality mismatch")
+	must(len(packages) == 1 && len(dependencies) == 1 && len(mappings) == 1 && len(interfaces) == 1, "package requirement cardinality mismatch")
+	must(len(providerDeclarations) == 1 && len(canonicalFunctions) == 1, "source/canonical function cardinality mismatch")
 	must(len(runtimes) == 2 && len(effects) == 1 && len(capabilities) == 1, "effect/runtime cardinality mismatch")
 	must(len(targets) == 1 && len(requirements) == 2 && len(rules) == 2 && len(resolutions) == 2 && len(plans) == 1, "target plan cardinality mismatch")
 
@@ -46,6 +50,9 @@ func main() {
 	must(field(effects[0], 0x151).Reference == capabilities[0].ID, "effect capability mismatch")
 	must(string(field(capabilities[0], 0x160).Bytes) == "observability.log", "capability name mismatch")
 	must(field(mappings[0], 0xb142).Unsigned == 2, "package mapping must remain adapted")
+	must(field(mappings[0], 0xb140).Reference == providerDeclarations[0].ID, "mapping source is not provider Declaration")
+	must(field(mappings[0], 0xb141).Reference == canonicalFunctions[0].ID, "mapping target is not Core Function")
+	must(field(interfaces[0], 0xb111).Reference == canonicalFunctions[0].ID, "typed interface bypasses canonical Function")
 
 	target := targets[0]
 	must(string(field(target, 0xc100).Bytes) == "wasm32-pulp-v1", "target name mismatch")
