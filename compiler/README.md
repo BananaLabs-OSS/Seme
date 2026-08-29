@@ -63,6 +63,8 @@ The checked `return-42.seme` graph lowers to `return-42.k0`, which the frozen K0
 executor runs with result 42. Function indices, instruction indices, code size,
 and byte layout exist only in the derived image. This is the first complete
 canonical-semantics-to-execution path. A second checked graph derives `20 + 22`
-through separate instruction entities and also executes as 42. Branches, calls,
-multiple functions, and P2 effects remain required before moving the compiler
-graph onto it.
+through separate instruction entities and also executes as 42. A third graph
+stores and reloads 42 through an explicit local, guarding the distinction
+between Program capabilities and Function parameter/local counts. Branches,
+calls, multiple functions, and P2 effects remain required before moving the
+compiler graph onto it.

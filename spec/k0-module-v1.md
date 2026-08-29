@@ -41,11 +41,26 @@ reformatted.
 | `0000000000000000000000000000a120` | opcode | unsigned K0 opcode |
 | `0000000000000000000000000000a121` | operand | optional unsigned operand |
 | `0000000000000000000000000000a122` | target | optional reference Instruction |
+| `0000000000000000000000000000a123` | callee | optional reference Function |
 
 Instructions are entities rather than anonymous records so branches target
 stable semantic identities. The lowerer derives function indices, instruction
 indices, code sizes, and branch byte witnesses. Those values never enter the
 canonical graph.
+
+Instruction field shapes are determined by opcode:
+
+- `const.u`, `local.get`, and `local.set` require `operand`;
+- `jump` and `branch.false` require `target`;
+- `call` requires `callee`;
+- all remaining P0/P1 stack and integer instructions have only `opcode`;
+- P2 effect instructions have only `opcode`, while authority comes from the
+  Program capability declaration rather than an instruction operand.
+
+The lowerer resolves branch and call references in two deterministic layout
+passes. The first assigns derived function/instruction indices and byte offsets
+in declared list order. The second emits code and witnesses. A reference is
+never replaced by a positional index in canonical storage.
 
 This module does not make K0 canonical Seme semantics. It is the finite bridge
 used to express and execute the self-hosting compiler before richer mechanics

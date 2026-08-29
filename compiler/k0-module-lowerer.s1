@@ -147,9 +147,7 @@ fn main 0 20
   lg 0 lg 2 cu 2 ca expect-uleb ls 2
   lg 0 lg 2 cu 41217 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
-  lg 0 lg 2 ca take-uleb ls 6
-  lg 6 cu 21 sr ls 13
-  lg 6 cu 2097151 an ls 2
+  lg 0 lg 2 cu 0 ca expect-uleb ls 2
   lg 0 lg 2 cu 41218 ca expect-id ls 2
   lg 0 lg 2 cu 7 ca expect-byte ls 2
   lg 0 lg 2 cu 1 ca expect-uleb ls 2
@@ -170,11 +168,13 @@ fn main 0 20
   lg 0 lg 2 cu 41232 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
   lg 0 lg 2 ca take-uleb ls 6
-  lg 6 cu 21 sr ls 14
+  lg 6 cu 21 sr ls 13
   lg 6 cu 2097151 an ls 2
   lg 0 lg 2 cu 41233 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
-  lg 0 lg 2 cu 0 ca expect-uleb ls 2
+  lg 0 lg 2 ca take-uleb ls 6
+  lg 6 cu 21 sr ls 14
+  lg 6 cu 2097151 an ls 2
   lg 0 lg 2 cu 41234 ca expect-id ls 2
   lg 0 lg 2 cu 7 ca expect-byte ls 2
   lg 0 lg 2 ca take-uleb ls 6
