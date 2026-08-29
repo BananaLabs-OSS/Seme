@@ -78,6 +78,9 @@ Substantial software belongs in readable Seme, not assembly.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - The frozen compiler core is self-hosted. Full Kernel v1 schema semantics and
   structured diagnostics remain incomplete above that independent floor.
+- The candidate structured-diagnostic module has its first canonical,
+  byte-stable conformance report. Validator failure-path emission remains the
+  next Kernel v1 implementation gate.
 
 See [`spec/architecture.md`](spec/architecture.md) and
 [`spec/roadmap.md`](spec/roadmap.md) for the product proof sequence, and
