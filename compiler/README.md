@@ -27,8 +27,14 @@ references against the complete entity table and rejects dangling references.
 For the reserved Kernel module identity it additionally requires the finite
 Module/Schema/Field bootstrap declarations and verifies their schema
 relationships. It does not yet validate every declared field shape, resolve
-imported references, perform schema-level migrations, or produce structured
-diagnostics.
+imported references, or perform schema-level migrations.
+
+`kernel-wire-validator-diagnostic.seme` is the post-Frozen-Core successor. With
+one argument it validates exactly like the frozen validator. With a result path
+it writes the unchanged canonical input on success or a canonical
+DiagnosticReport on rejection. Its stable `kernel.invalid_input` rule uses kind
+`0` for invalid decoded graphs and kind `1` for malformed encodings. The frozen
+validator remains checked separately so Frozen Core 1 stays reproducible.
 
 `kernel-migrate-v0.s1` is a deterministic migration from the deliberately
 obsolete v0 envelope, which lacked parent-revision metadata, to canonical v1.
