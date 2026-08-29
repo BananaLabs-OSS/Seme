@@ -487,6 +487,33 @@ fn expect-code 3 6
   cu 1 cu 0 di re
 fe
 
+# token-id-less(source, left-token, right-token) -> bool
+# Identity spelling order is byte order because G1 requires fixed-width
+# lowercase hexadecimal identities.
+fn token-id-less 3 9
+  lg 1 cu 2097151 an cu 32 eq bf token-id-invalid
+  lg 2 cu 2097151 an cu 32 eq bf token-id-invalid
+  lg 1 cu 21 sr cu 2097151 an ls 3
+  lg 2 cu 21 sr cu 2097151 an ls 4
+  cu 0 ls 5
+  lb token-id-compare
+  lg 5 cu 32 eq bf token-id-byte
+  cu 0 re
+  lb token-id-byte
+  lg 0 lg 3 lg 5 ad bg ls 6
+  lg 0 lg 4 lg 5 ad bg ls 7
+  lg 6 lg 7 lt bf token-id-greater
+  cu 1 re
+  lb token-id-greater
+  lg 7 lg 6 lt bf token-id-next
+  cu 0 re
+  lb token-id-next
+  lg 5 cu 1 ad ls 5
+  ju token-id-compare
+  lb token-id-invalid
+  cu 1 cu 0 di re
+fe
+
 # emit-value(source, cursor, output) -> new cursor
 fn emit-value 3 14
   lg 0
@@ -572,6 +599,7 @@ fn emit-value 3 14
   lg 0 lg 3 ca parse-u64 ls 5
   lg 2 lg 5 ca append-uleb ls 2
   cu 0 ls 6
+  cu 0 ls 7
   lb value-record-loop
   lg 6 lg 5 eq bf value-record-field
   lg 1 re
@@ -579,6 +607,13 @@ fn emit-value 3 14
   lg 0 lg 1 cu 26217 ca expect-code ls 1
   lg 0 lg 1 ca next-token ls 3
   lg 3 cu 42 sr ls 1
+  lg 7 cu 0 eq bf value-record-compare
+  ju value-record-ordered
+  lb value-record-compare
+  lg 0 lg 8 lg 3 ca token-id-less bf value-invalid
+  lb value-record-ordered
+  lg 3 ls 8
+  cu 1 ls 7
   lg 0 lg 3 lg 2 ca emit-id dr
   lg 0 lg 1 lg 2 ca emit-value ls 1
   lg 6 cu 1 ad ls 6
@@ -643,12 +678,20 @@ fn main 0 20
   lg 0 lg 3 ca parse-u64 ls 4
   lg 1 lg 4 ca append-uleb ls 1
   cu 0 ls 5
+  cu 0 ls 11
   lb main-parent-loop
   lg 5 lg 4 eq bf main-parent
   ju main-entities
   lb main-parent
   lg 0 lg 2 ca next-token ls 3
   lg 3 cu 42 sr ls 2
+  lg 11 cu 0 eq bf main-parent-compare
+  ju main-parent-ordered
+  lb main-parent-compare
+  lg 0 lg 12 lg 3 ca token-id-less bf main-invalid
+  lb main-parent-ordered
+  lg 3 ls 12
+  cu 1 ls 11
   lg 0 lg 3 lg 1 ca emit-id dr
   lg 5 cu 1 ad ls 5
   ju main-parent-loop
@@ -660,6 +703,7 @@ fn main 0 20
   lg 0 lg 3 ca parse-u64 ls 4
   lg 1 lg 4 ca append-uleb ls 1
   cu 0 ls 5
+  cu 0 ls 11
   lb main-entity-loop
   lg 5 lg 4 eq bf main-entity
   ju main-trailing-start
@@ -669,6 +713,13 @@ fn main 0 20
   # entity identity
   lg 0 lg 2 ca next-token ls 3
   lg 3 cu 42 sr ls 2
+  lg 11 cu 0 eq bf main-entity-compare
+  ju main-entity-ordered
+  lb main-entity-compare
+  lg 0 lg 12 lg 3 ca token-id-less bf main-invalid
+  lb main-entity-ordered
+  lg 3 ls 12
+  cu 1 ls 11
   lg 0 lg 3 lg 1 ca emit-id dr
   # schema identity
   lg 0 lg 2 ca next-token ls 3
@@ -685,6 +736,7 @@ fn main 0 20
   lg 0 lg 3 ca parse-u64 ls 9
   lg 1 lg 9 ca append-uleb ls 1
   cu 0 ls 10
+  cu 0 ls 13
   lb main-field-loop
   lg 10 lg 9 eq bf main-field
   lg 5 cu 1 ad ls 5
@@ -693,6 +745,13 @@ fn main 0 20
   lg 0 lg 2 cu 26217 ca expect-code ls 2
   lg 0 lg 2 ca next-token ls 3
   lg 3 cu 42 sr ls 2
+  lg 13 cu 0 eq bf main-field-compare
+  ju main-field-ordered
+  lb main-field-compare
+  lg 0 lg 14 lg 3 ca token-id-less bf main-invalid
+  lb main-field-ordered
+  lg 3 ls 14
+  cu 1 ls 13
   lg 0 lg 3 lg 1 ca emit-id dr
   lg 0 lg 2 lg 1 ca emit-value ls 2
   lg 10 cu 1 ad ls 10
