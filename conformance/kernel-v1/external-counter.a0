@@ -1,0 +1,21 @@
+# Structurally canonical external module with a Counter entity.
+# Field 3002 is deliberately unknown to the Kernel validator and must survive.
+b53 b45 b4d b45 b4b b31 b0d b0a
+u1
+# external module identity and revision identity
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 baa b01
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 baa b02
+u0 u1
+# Counter entity and external schema identity
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b40 b00
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b40 b10
+u1 u3
+# value = 20
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b30 b00
+b03 u20
+# step = 22
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b30 b01
+b03 u22
+# unknown optional future field = "kept"
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b30 b02
+b05 u4 b6b b65 b70 b74
