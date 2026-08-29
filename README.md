@@ -88,3 +88,9 @@ See [`spec/architecture.md`](spec/architecture.md) and
 [`bootstrap/README.md`](bootstrap/README.md) for the independent bootstrap.
 The broader Seme–registry–Pulp interoperability direction is documented in
 [`spec/software-commons.md`](spec/software-commons.md).
+
+The first ordinary-project dogfood layer is the narrow
+[`Provider Contract v1`](spec/provider-contract-v1.md) Go proof. It imports
+package functions, performs an identity-addressed semantic rename, minimally
+projects resolved occurrences, runs the native Go tests, re-imports, and proves
+identity recovery. It validates the provider boundary, not general Go support.
