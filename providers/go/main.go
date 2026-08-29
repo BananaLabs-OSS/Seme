@@ -8,16 +8,15 @@ import (
 	"flag"
 	"fmt"
 	"go/ast"
-	"go/importer"
-	"go/parser"
 	"go/token"
-	"go/types"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 )
 
 const contractVersion = "seme.provider/v1"
@@ -240,58 +239,47 @@ func ingest(root string, previous *Program) (Program, error) {
 	if err != nil {
 		return Program{}, err
 	}
-	module, err := modulePath(abs)
+	loaded, err := packages.Load(&packages.Config{
+		Dir: abs,
+		Mode: packages.NeedName | packages.NeedFiles | packages.NeedCompiledGoFiles |
+			packages.NeedSyntax | packages.NeedTypes | packages.NeedTypesInfo |
+			packages.NeedImports | packages.NeedModule,
+		Tests: true,
+	}, "./...")
 	if err != nil {
-		return Program{}, err
+		return Program{}, fmt.Errorf("Go package load: %w", err)
 	}
-	fset := token.NewFileSet()
-	var paths []string
-	err = filepath.WalkDir(abs, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return err
+	var loadErrors []string
+	for _, pkg := range loaded {
+		for _, problem := range pkg.Errors {
+			loadErrors = append(loadErrors, problem.Error())
 		}
-		if d.IsDir() && (d.Name() == ".git" || d.Name() == "vendor") && path != abs {
-			return filepath.SkipDir
+	}
+	if len(loadErrors) != 0 {
+		sort.Strings(loadErrors)
+		return Program{}, fmt.Errorf("Go package load: %s", strings.Join(loadErrors, "; "))
+	}
+	fileSet := map[string]bool{}
+	for _, pkg := range loaded {
+		for _, path := range append(append([]string{}, pkg.GoFiles...), pkg.CompiledGoFiles...) {
+			if within(abs, path) {
+				fileSet[path] = true
+			}
 		}
-		if !d.IsDir() && strings.HasSuffix(path, ".go") {
-			paths = append(paths, path)
-		}
-		return nil
-	})
-	if err != nil {
-		return Program{}, err
+	}
+	paths := make([]string, 0, len(fileSet))
+	for path := range fileSet {
+		paths = append(paths, path)
 	}
 	sort.Strings(paths)
-	parsed := make([]*ast.File, 0, len(paths))
-	pathForFile := map[*ast.File]string{}
 	var nativeFiles []NativeFile
-	packageNames := map[string]bool{}
 	for _, path := range paths {
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return Program{}, err
 		}
-		file, err := parser.ParseFile(fset, path, data, parser.ParseComments)
-		if err != nil {
-			return Program{}, err
-		}
-		parsed = append(parsed, file)
-		packageNames[file.Name.Name] = true
-		pathForFile[file], _ = filepath.Rel(abs, path)
-		nativeFiles = append(nativeFiles, NativeFile{Path: pathForFile[file], SHA256: digest(data)})
-	}
-	if len(packageNames) != 1 {
-		return Program{}, fmt.Errorf("provider proof requires one package, found %d", len(packageNames))
-	}
-	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
-	conf := types.Config{Importer: importer.Default()}
-	pkg, err := conf.Check(module, fset, parsed, info)
-	if err != nil {
-		return Program{}, fmt.Errorf("Go provider type check: %w", err)
-	}
-	packageName := module
-	if pkg != nil {
-		packageName = pkg.Path()
+		rel, _ := filepath.Rel(abs, path)
+		nativeFiles = append(nativeFiles, NativeFile{Path: rel, SHA256: digest(data)})
 	}
 	priorByAnchor := map[string]Entity{}
 	priorByName := map[string][]Entity{}
@@ -302,60 +290,69 @@ func ingest(root string, previous *Program) (Program, error) {
 			priorByName[key] = append(priorByName[key], entity)
 		}
 	}
-	type declaration struct {
-		entity Entity
-		object types.Object
-	}
-	var declarations []declaration
-	for _, file := range parsed {
-		rel := pathForFile[file]
-		for _, decl := range file.Decls {
-			fn, ok := decl.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil {
+	entityByAnchor := map[string]Entity{}
+	occurrenceSets := map[string]map[string]Occurrence{}
+	for _, pkg := range loaded {
+		for _, file := range pkg.Syntax {
+			filename := pkg.Fset.Position(file.Pos()).Filename
+			if !within(abs, filename) {
 				continue
 			}
-			start := fset.Position(fn.Name.Pos()).Offset
-			end := fset.Position(fn.Name.End()).Offset
-			id := stableID(module, rel, "function", start)
-			nameMatches := priorByName[rel+":"+"function"+":"+fn.Name.Name]
-			if len(nameMatches) == 1 {
-				id = nameMatches[0].ID
-			} else if old, ok := priorByAnchor[anchor(rel, "function", start)]; ok {
-				id = old.ID
+			rel, _ := filepath.Rel(abs, filename)
+			for _, decl := range file.Decls {
+				fn, ok := decl.(*ast.FuncDecl)
+				if !ok || fn.Recv != nil {
+					continue
+				}
+				obj := pkg.TypesInfo.Defs[fn.Name]
+				if obj == nil {
+					continue
+				}
+				start := pkg.Fset.Position(fn.Name.Pos()).Offset
+				end := pkg.Fset.Position(fn.Name.End()).Offset
+				key := anchor(rel, "function", start)
+				entity, exists := entityByAnchor[key]
+				if !exists {
+					id := stableID(pkg.PkgPath, rel, "function", start)
+					nameMatches := priorByName[rel+":"+"function"+":"+fn.Name.Name]
+					if len(nameMatches) == 1 {
+						id = nameMatches[0].ID
+					} else if old, ok := priorByAnchor[key]; ok {
+						id = old.ID
+					}
+					entity = Entity{ID: id, Kind: "function", Name: fn.Name.Name, Package: pkg.PkgPath, File: rel, Declaration: Occurrence{File: rel, Start: start, End: end}, Type: obj.Type().String(), Fidelity: "refined"}
+					occurrenceSets[key] = map[string]Occurrence{}
+				}
+				for ident, used := range pkg.TypesInfo.Defs {
+					if used == obj {
+						addOccurrence(occurrenceSets[key], pkg.Fset, abs, ident)
+					}
+				}
+				for ident, used := range pkg.TypesInfo.Uses {
+					if used == obj {
+						addOccurrence(occurrenceSets[key], pkg.Fset, abs, ident)
+					}
+				}
+				entityByAnchor[key] = entity
 			}
-			typeText := "unresolved"
-			if obj := info.Defs[fn.Name]; obj != nil {
-				typeText = obj.Type().String()
-			}
-			entity := Entity{ID: id, Kind: "function", Name: fn.Name.Name, Package: packageName, File: rel, Declaration: Occurrence{File: rel, Start: start, End: end}, Type: typeText, Fidelity: "refined"}
-			declarations = append(declarations, declaration{entity: entity, object: info.Defs[fn.Name]})
 		}
 	}
-	for i := range declarations {
-		for ident, obj := range info.Defs {
-			if obj != nil && obj == declarations[i].object {
-				declarations[i].entity.Occurrences = append(declarations[i].entity.Occurrences, occurrence(fset, abs, ident))
-			}
+	entities := make([]Entity, 0, len(entityByAnchor))
+	for key, entity := range entityByAnchor {
+		for _, occ := range occurrenceSets[key] {
+			entity.Occurrences = append(entity.Occurrences, occ)
 		}
-		for ident, obj := range info.Uses {
-			if obj != nil && obj == declarations[i].object {
-				declarations[i].entity.Occurrences = append(declarations[i].entity.Occurrences, occurrence(fset, abs, ident))
-			}
-		}
-		sort.Slice(declarations[i].entity.Occurrences, func(a, b int) bool {
-			x, y := declarations[i].entity.Occurrences[a], declarations[i].entity.Occurrences[b]
+		sort.Slice(entity.Occurrences, func(i, j int) bool {
+			x, y := entity.Occurrences[i], entity.Occurrences[j]
 			if x.File == y.File {
 				return x.Start < y.Start
 			}
 			return x.File < y.File
 		})
-	}
-	entities := make([]Entity, len(declarations))
-	for i := range declarations {
-		entities[i] = declarations[i].entity
+		entities = append(entities, entity)
 	}
 	sort.Slice(entities, func(i, j int) bool { return entities[i].ID < entities[j].ID })
-	p := Program{Contract: contractVersion, Provider: "seme.go/0.1", Profile: Profile{Language: "Go", Version: strings.TrimPrefix(runtime.Version(), "go"), Toolchain: "go/parser+go/types", Target: runtime.GOOS + "/" + runtime.GOARCH, Supports: []string{"single-package trees", "package functions", "resolved function references", "semantic rename"}, Excludes: []string{"multi-package trees", "methods", "cgo", "unsafe semantics", "generated files", "build-tag variants"}}, Root: abs, Files: nativeFiles, Entities: entities}
+	p := Program{Contract: contractVersion, Provider: "seme.go/0.2", Profile: Profile{Language: "Go", Version: strings.TrimPrefix(runtime.Version(), "go"), Toolchain: "go/packages", Target: runtime.GOOS + "/" + runtime.GOARCH, Supports: []string{"module package loading", "package functions", "resolved function references", "semantic rename", "native test variants"}, Excludes: []string{"methods", "cgo semantics", "unsafe semantics", "generated-file editing"}}, Root: abs, Files: nativeFiles, Entities: entities}
 	p.Revision = programRevision(p)
 	return p, nil
 }
@@ -435,6 +432,17 @@ func occurrence(fset *token.FileSet, root string, ident *ast.Ident) Occurrence {
 	rel, _ := filepath.Rel(root, pos.Filename)
 	return Occurrence{File: rel, Start: pos.Offset, End: fset.Position(ident.End()).Offset}
 }
+func addOccurrence(set map[string]Occurrence, fset *token.FileSet, root string, ident *ast.Ident) {
+	occ := occurrence(fset, root, ident)
+	if strings.HasPrefix(occ.File, "..") {
+		return
+	}
+	set[fmt.Sprintf("%s:%d:%d", occ.File, occ.Start, occ.End)] = occ
+}
+func within(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
 func anchor(file, kind string, start int) string { return fmt.Sprintf("%s:%s:%d", file, kind, start) }
 func stableID(module, file, kind string, start int) string {
 	sum := sha256.Sum256([]byte(anchor(module+"/"+file, kind, start)))
@@ -446,19 +454,6 @@ func programRevision(p Program) string {
 	copy.Revision = ""
 	data, _ := json.Marshal(copy)
 	return digest(data)
-}
-func modulePath(root string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(root, "go.mod"))
-	if err != nil {
-		return "", err
-	}
-	fields := strings.Fields(string(data))
-	for i := range fields {
-		if fields[i] == "module" && i+1 < len(fields) {
-			return fields[i+1], nil
-		}
-	}
-	return "", errors.New("go.mod has no module directive")
 }
 func readJSON(path string, value any) error {
 	data, err := os.ReadFile(path)

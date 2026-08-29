@@ -5,7 +5,7 @@ only package-level functions, resolved references, and semantic rename. It is
 not general Go support.
 
 Parsing, name resolution, type checking, formatting, and native testing are
-delegated to `go/parser`, `go/types`, `gofmt`, and `go test`. The adapter does
+delegated to `go/packages`, `gofmt`, and `go test`. The adapter does
 not handwrite those language facilities. Its current `refined` fidelity claim
 covers stable function identity, compiler-resolved signatures/references, and
 rename projection; it does not claim complete Go behavioral semantics.
