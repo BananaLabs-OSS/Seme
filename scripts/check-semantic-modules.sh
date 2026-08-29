@@ -137,6 +137,9 @@ cmp "$work/foundation-invalid-shape.report.seme" \
     cd "$patch"
     sha256sum -c module.g1.sha256
     sha256sum -c module.seme.sha256
+    sha256sum -c apply-candidate.k0.sha256
+    sha256sum -c apply-candidate.g1.sha256
+    sha256sum -c apply-candidate.seme.sha256
 )
 
 (
@@ -148,6 +151,16 @@ cmp "$patch/module.g1" "$work/patch-v1.g1"
 cmp "$patch/module.seme" "$work/patch-v1.seme"
 "$k0" "$kernel" "$work/patch-v1.seme" "$work/patch-v1.validated.seme"
 cmp "$work/patch-v1.seme" "$work/patch-v1.validated.seme"
+"$k0" "$repo/bootstrap/s1-compiler.k0" "$patch/apply-candidate.s1" \
+    "$work/patch-apply-candidate.k0"
+cmp "$patch/apply-candidate.k0" "$work/patch-apply-candidate.k0"
+"$k0" "$repo/compiler/k0-module-lowerer.k0" \
+    "$patch/apply-candidate.seme" "$work/patch-apply-candidate-lowered.k0"
+cmp "$patch/apply-candidate.k0" "$work/patch-apply-candidate-lowered.k0"
+"$k0" "$kernel" "$patch/apply-candidate.seme" \
+    "$work/patch-apply-candidate.validated.seme"
+cmp "$patch/apply-candidate.seme" \
+    "$work/patch-apply-candidate.validated.seme"
 
 for mode in valid stale precondition duplicate; do
     (
@@ -158,6 +171,21 @@ for mode in valid stale precondition duplicate; do
     "$k0" "$repo/compiler/kernel-wire-validator.k0" \
         "$work/patch-$mode.seme"
     "$k0" "$foundation/validator.k0" "$work/patch-$mode.seme"
+done
+
+"$k0" "$patch/apply-candidate.k0" "$work/patch-valid.seme" \
+    "$work/patch-valid.candidate.seme"
+"$k0" "$repo/compiler/kernel-wire-validator.k0" \
+    "$work/patch-valid.candidate.seme"
+"$k0" "$foundation/validator.k0" "$work/patch-valid.candidate.seme"
+
+for mode in stale precondition duplicate; do
+    cp "$work/patch-$mode.seme" "$work/patch-$mode.unchanged.seme"
+    cp "$work/patch-$mode.unchanged.seme" "$work/patch-$mode.output.seme"
+    expect_status 65 "$k0" "$patch/apply-candidate.k0" \
+        "$work/patch-$mode.seme" "$work/patch-$mode.output.seme"
+    cmp "$work/patch-$mode.unchanged.seme" \
+        "$work/patch-$mode.output.seme"
 done
 
 (cd "$repo/reference/go" && go test ./...)

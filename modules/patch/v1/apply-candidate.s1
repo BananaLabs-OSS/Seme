@@ -1,0 +1,299 @@
+# Patch Module v1 isolated candidate applicator construction source.
+# Input must first pass Kernel v1 and Foundation v1. The output carries a zero
+# revision placeholder and is never published directly; the canonical digest
+# and stamp stages complete the transaction.
+ve 3
+cp 7
+
+fn fail 0 0
+  cu 65 cu 0 di re
+fe
+
+fn take 2 10
+  cu 0 ls 2 cu 0 ls 3 cu 0 ls 4 lg 0 bl ls 5
+  lb byte
+  lg 1 lg 5 eq bf have ca fail re
+  lb have
+  lg 0 lg 1 bg ls 6 lg 1 cu 1 ad ls 1 lg 6 cu 127 an ls 7
+  lg 3 cu 63 eq bf shift cu 1 lg 7 lt bf shift ca fail re
+  lb shift
+  lg 7 lg 3 sl lg 2 or ls 2 lg 4 cu 1 ad ls 4
+  lg 6 cu 128 an cu 0 eq bf more
+  lg 4 cu 1 eq bf terminal lg 2 cu 21 sl lg 1 or re
+  lb terminal
+  lg 7 cu 0 eq bf done ca fail re
+  lb done
+  lg 2 cu 21 sl lg 1 or re
+  lb more
+  lg 3 cu 7 ad ls 3 cu 63 lg 3 lt bf byte ca fail re
+fe
+
+fn id-equal 4 6
+  cu 0 ls 4
+  lb loop
+  lg 4 cu 16 eq bf byte cu 1 re
+  lb byte
+  lg 0 lg 1 lg 4 ad bg lg 2 lg 3 lg 4 ad bg eq bf no
+  lg 4 cu 1 ad ls 4 ju loop
+  lb no
+  cu 0 re
+fe
+
+fn id-is 3 6
+  cu 0 ls 3
+  lb prefix
+  lg 3 cu 14 eq bf byte
+  lg 0 lg 1 cu 14 ad bg lg 2 cu 8 sr cu 255 an eq bf no
+  lg 0 lg 1 cu 15 ad bg lg 2 cu 255 an eq bf no
+  cu 1 re
+  lb byte
+  lg 0 lg 1 lg 3 ad bg cu 0 eq bf no
+  lg 3 cu 1 ad ls 3 ju prefix
+  lb no
+  cu 0 re
+fe
+
+fn skip-value 2 10
+  lg 0 lg 1 bg ls 2 lg 1 cu 1 ad ls 1
+  lg 2 cu 3 lt bf integer lg 1 re
+  lb integer
+  lg 2 cu 5 lt bf bytes lg 0 lg 1 ca take cu 2097151 an re
+  lb bytes
+  lg 2 cu 5 eq bf reference
+  lg 0 lg 1 ca take ls 3 lg 3 cu 2097151 an lg 3 cu 21 sr ad re
+  lb reference
+  lg 2 cu 6 eq bf list lg 1 cu 16 ad re
+  lb list
+  lg 2 cu 7 eq bf record
+  lg 0 lg 1 ca take ls 3 lg 3 cu 2097151 an ls 1
+  lg 3 cu 21 sr ls 4 cu 0 ls 5
+  lb list-loop
+  lg 5 lg 4 eq bf list-item lg 1 re
+  lb list-item
+  lg 0 lg 1 ca skip-value ls 1 lg 5 cu 1 ad ls 5 ju list-loop
+  lb record
+  lg 2 cu 8 eq bf hole
+  lg 0 lg 1 ca take ls 3 lg 3 cu 2097151 an ls 1
+  lg 3 cu 21 sr ls 4 cu 0 ls 5
+  lb record-loop
+  lg 5 lg 4 eq bf record-item lg 1 re
+  lb record-item
+  lg 1 cu 16 ad ls 1 lg 0 lg 1 ca skip-value ls 1
+  lg 5 cu 1 ad ls 5 ju record-loop
+  lb hole
+  lg 1 cu 16 ad re
+fe
+
+fn entities 1 6
+  cu 8 ls 1 lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an cu 32 ad ls 1
+  lg 0 lg 1 ca take ls 2 lg 2 cu 2097151 an ls 1
+  lg 2 cu 21 sr cu 16 mu lg 1 ad ls 1
+  lg 0 lg 1 ca take ls 2
+  lg 2 cu 21 sr cu 21 sl lg 2 cu 2097151 an or re
+fe
+
+fn next-entity 2 7
+  lg 1 cu 32 ad ls 1 lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an ls 1 lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an ls 1 lg 2 cu 21 sr ls 3 cu 0 ls 4
+  lb loop
+  lg 4 lg 3 eq bf field lg 1 re
+  lb field
+  lg 1 cu 16 ad ls 1 lg 0 lg 1 ca skip-value ls 1
+  lg 4 cu 1 ad ls 4 ju loop
+fe
+
+fn find-entity 3 10
+  lg 0 ca entities ls 3 lg 3 cu 2097151 an ls 4
+  lg 3 cu 21 sr ls 5 cu 0 ls 6
+  lb loop
+  lg 6 lg 5 eq bf item cu 0 re
+  lb item
+  lg 0 lg 4 lg 1 lg 2 ca id-equal bf next lg 4 re
+  lb next
+  lg 0 lg 4 ca next-entity ls 4 lg 6 cu 1 ad ls 6 ju loop
+fe
+
+fn find-schema 2 10
+  lg 0 ca entities ls 2 lg 2 cu 2097151 an ls 3
+  lg 2 cu 21 sr ls 4 cu 0 ls 5
+  lb loop
+  lg 5 lg 4 eq bf item cu 0 re
+  lb item
+  lg 0 lg 3 cu 16 ad lg 1 ca id-is bf next lg 3 re
+  lb next
+  lg 0 lg 3 ca next-entity ls 3 lg 5 cu 1 ad ls 5 ju loop
+fe
+
+fn find-field-is 3 9
+  lg 1 cu 32 ad ls 1 lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1 lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1 lg 3 cu 21 sr ls 4 cu 0 ls 5
+  lb loop
+  lg 5 lg 4 eq bf item cu 0 re
+  lb item
+  lg 0 lg 1 lg 2 ca id-is bf next lg 1 cu 17 ad re
+  lb next
+  lg 1 cu 16 ad ls 1 lg 0 lg 1 ca skip-value ls 1
+  lg 5 cu 1 ad ls 5 ju loop
+fe
+
+fn find-field 4 10
+  lg 1 cu 32 ad ls 1 lg 0 lg 1 ca take ls 4
+  lg 4 cu 2097151 an ls 1 lg 0 lg 1 ca take ls 4
+  lg 4 cu 2097151 an ls 1 lg 4 cu 21 sr ls 5 cu 0 ls 6
+  lb loop
+  lg 6 lg 5 eq bf item cu 0 re
+  lb item
+  lg 0 lg 1 lg 2 lg 3 ca id-equal bf next lg 1 cu 17 ad re
+  lb next
+  lg 1 cu 16 ad ls 1 lg 0 lg 1 ca skip-value ls 1
+  lg 6 cu 1 ad ls 6 ju loop
+fe
+
+# equal-bytes(buffer, value-cursor, buffer, value-cursor) -> bool.
+fn equal-bytes 4 12
+  lg 0 lg 1 cu 1 su bg cu 5 eq bf no
+  lg 2 lg 3 cu 1 su bg cu 5 eq bf no
+  lg 0 lg 1 ca take ls 4 lg 2 lg 3 ca take ls 5
+  lg 4 cu 21 sr lg 5 cu 21 sr eq bf no
+  lg 4 cu 2097151 an ls 6 lg 5 cu 2097151 an ls 7
+  lg 4 cu 21 sr ls 8 cu 0 ls 9
+  lb loop
+  lg 9 lg 8 eq bf byte cu 1 re
+  lb byte
+  lg 0 lg 6 lg 9 ad bg lg 2 lg 7 lg 9 ad bg eq bf no
+  lg 9 cu 1 ad ls 9 ju loop
+  lb no
+  cu 0 re
+fe
+
+# replacement(buffer, patch, entity-id, field-id) -> replacement value cursor.
+fn replacement 4 22
+  lg 0 lg 1 cu 20738 ca find-field-is ls 4
+  lg 0 lg 4 ca take ls 5 lg 5 cu 2097151 an ls 6
+  lg 5 cu 21 sr ls 7 cu 0 ls 8
+  lb loop
+  lg 8 lg 7 eq bf item cu 0 re
+  lb item
+  lg 6 cu 1 ad ls 9 lg 0 lg 0 lg 9 ca find-entity ls 10
+  lg 0 lg 10 cu 20752 ca find-field-is ls 11
+  lg 0 lg 11 lg 0 lg 2 ca id-equal bf next
+  lg 0 lg 10 cu 20753 ca find-field-is ls 12
+  lg 0 lg 12 ca take ls 13 lg 13 cu 21 sr cu 16 eq bf invalid
+  lg 13 cu 2097151 an ls 14
+  lg 0 lg 14 lg 0 lg 3 ca id-equal bf next
+  lg 0 lg 10 cu 20755 ca find-field-is re
+  lb next
+  lg 0 lg 6 ca skip-value ls 6 lg 8 cu 1 ad ls 8 ju loop
+  lb invalid
+  ca fail re
+fe
+
+fn copy-range 4 7
+  lb loop
+  lg 2 lg 3 eq bf byte lg 0 re
+  lb byte
+  lg 0 lg 1 lg 2 bg bp ls 0 lg 2 cu 1 ad ls 2 ju loop
+fe
+
+fn main 0 40
+  ac cu 2 eq bf invocation
+  cu 0 ag fr ls 0 cu 1048576 bn ls 1
+  lg 0 cu 20496 ca find-schema ls 2
+  lg 2 cu 0 eq bf patch-known ca fail re
+  lb patch-known
+  # Base revision precondition.
+  lg 0 lg 2 cu 20737 ca find-field-is ls 3
+  lg 0 lg 3 ca take ls 4 lg 4 cu 21 sr cu 16 eq bf invalid
+  lg 4 cu 2097151 an ls 5
+  lg 0 lg 5 lg 0 cu 25 ca id-equal bf invalid
+  # Validate all operation preconditions against the unchanged base.
+  lg 0 lg 2 cu 20738 ca find-field-is ls 6
+  lg 0 lg 6 ca take ls 7 lg 7 cu 2097151 an ls 8
+  lg 7 cu 21 sr ls 9 cu 0 ls 10
+  lb operation-loop
+  lg 10 lg 9 eq bf operation ju build
+  lb operation
+  lg 8 cu 1 ad ls 11 lg 0 lg 0 lg 11 ca find-entity ls 12
+  lg 12 cu 0 eq bf operation-known ca fail re
+  lb operation-known
+  lg 0 lg 12 cu 20752 ca find-field-is ls 13
+  lg 0 lg 13 lg 0 lg 13 ca id-equal dr
+  lg 0 lg 0 lg 13 ca find-entity ls 14
+  lg 14 cu 0 eq bf target-known ca fail re
+  lb target-known
+  lg 0 lg 12 cu 20753 ca find-field-is ls 15
+  lg 0 lg 15 ca take ls 16 lg 16 cu 21 sr cu 16 eq bf invalid
+  lg 16 cu 2097151 an ls 17
+  lg 0 lg 14 lg 0 lg 17 ca find-field ls 18
+  lg 18 cu 0 eq bf target-field-known ca fail re
+  lb target-field-known
+  lg 0 lg 12 cu 20754 ca find-field-is ls 19
+  lg 0 lg 18 lg 0 lg 19 ca equal-bytes bf invalid
+  # No earlier operation may address the same entity field.
+  lg 8 ls 20 cu 0 ls 21
+  lb duplicate-loop
+  lg 21 lg 10 eq bf duplicate-item ju operation-next
+  lb duplicate-item
+  lg 20 cu 1 ad ls 22 lg 0 lg 0 lg 22 ca find-entity ls 23
+  lg 0 lg 23 cu 20752 ca find-field-is ls 24
+  lg 0 lg 24 lg 0 lg 13 ca id-equal bf duplicate-next
+  lg 0 lg 23 cu 20753 ca find-field-is ls 25
+  lg 0 lg 25 ca take ls 26 lg 26 cu 2097151 an ls 27
+  lg 0 lg 27 lg 0 lg 17 ca id-equal bf duplicate-next
+  ca fail re
+  lb duplicate-next
+  lg 0 lg 20 ca skip-value ls 20 lg 21 cu 1 ad ls 21 ju duplicate-loop
+  lb operation-next
+  lg 0 lg 8 ca skip-value ls 8 lg 10 cu 1 ad ls 10 ju operation-loop
+
+  lb build
+  # Copy envelope through its revision, then reserve the revision for digesting.
+  lg 1 lg 0 cu 0 cu 25 ca copy-range ls 1 cu 0 ls 28
+  lb zero-revision
+  lg 28 cu 16 eq bf zero-byte ju after-revision
+  lb zero-byte
+  lg 1 cu 0 bp ls 1 lg 28 cu 1 ad ls 28 ju zero-revision
+  lb after-revision
+  lg 0 ca entities ls 29 lg 29 cu 2097151 an ls 30
+  lg 1 lg 0 cu 41 lg 30 ca copy-range ls 1
+  lg 29 cu 21 sr ls 31 cu 0 ls 32
+  lb entity-loop
+  lg 32 lg 31 eq bf entity ju output
+  lb entity
+  lg 30 ls 33
+  lg 1 lg 0 lg 30 lg 30 cu 32 ad ca copy-range ls 1
+  lg 30 cu 32 ad ls 34 lg 0 lg 34 ca take ls 35
+  lg 35 cu 2097151 an ls 34 lg 1 lg 0 lg 33 cu 32 ad lg 34 ca copy-range ls 1
+  lg 34 ls 39
+  lg 0 lg 34 ca take ls 35 lg 35 cu 2097151 an ls 34
+  lg 35 cu 21 sr ls 36 lg 1 lg 0 lg 39 lg 34 ca copy-range ls 1
+  cu 0 ls 37
+  lb field-loop
+  lg 37 lg 36 eq bf field ju entity-next
+  lb field
+  lg 1 lg 0 lg 34 lg 34 cu 16 ad ca copy-range ls 1
+  lg 0 lg 2 lg 33 lg 34 ca replacement ls 38
+  lg 34 cu 16 ad ls 39
+  lg 0 lg 39 ca skip-value ls 35
+  lg 38 cu 0 eq bf replace
+  lg 1 lg 0 lg 39 lg 35 ca copy-range ls 1 ju field-next
+  lb replace
+  lg 38 cu 1 su ls 28
+  lg 0 lg 28 ca skip-value ls 29
+  lg 1 lg 0 lg 28 lg 29 ca copy-range ls 1
+  lb field-next
+  lg 35 ls 34 lg 37 cu 1 ad ls 37 ju field-loop
+  lb entity-next
+  lg 0 lg 30 ca next-entity ls 30 lg 32 cu 1 ad ls 32 ju entity-loop
+  lb output
+  cu 1 ag lg 1 fw re
+  lb invalid
+  ca fail re
+  lb invocation
+  cu 64 cu 0 di re
+fe
+
+en main
