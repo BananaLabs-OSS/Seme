@@ -49,7 +49,10 @@ revision identity.
 Severity values are `0` error, `1` warning, and `2` information. Severity does
 not affect diagnostic identity or ordering.
 
-## PathSegment record
+## PathSegment
+
+PathSegment is schema `0000000000000000000000000000001d` and has these
+fields:
 
 | Identity | Meaning | Shape |
 |---|---|---|

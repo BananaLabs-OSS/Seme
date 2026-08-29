@@ -25,6 +25,8 @@ is only an audit convenience; consumers must treat them as opaque.
 | `00000000000000000000000000000019` | DiagnosticRule |
 | `0000000000000000000000000000001a` | Diagnostic |
 | `0000000000000000000000000000001b` | DiagnosticReport |
+| `0000000000000000000000000000001c` | ValueShape |
+| `0000000000000000000000000000001d` | PathSegment |
 
 `Schema` is an instance of itself. Every other row is an entity whose schema is
 `Schema`. This finite self-reference is intentional: the wire decoder can read
@@ -76,9 +78,10 @@ defines a field.
 The complete diagnostic and path contracts are defined in
 [`diagnostics-v1.md`](diagnostics-v1.md).
 
-## ValueShape record
+## ValueShape
 
-Value shapes use a record rather than adding wire tags:
+ValueShape is schema `0000000000000000000000000000001c`. Values use a
+record rather than adding wire tags:
 
 | Field identity | Meaning |
 |---|---|
@@ -86,7 +89,7 @@ Value shapes use a record rather than adding wire tags:
 | `00000000000000000000000000002001` | referenced schema: optional reference |
 | `00000000000000000000000000002002` | element shape: optional nested record |
 
-The initial meta-schema uses only wire kinds, schema references, and homogeneous
+The initial foundation module uses only wire kinds, schema references, and homogeneous
 lists. Later modules can define richer sums, widths, ranges, text encodings, and
 domain types without changing the wire kernel.
 

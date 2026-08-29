@@ -18,7 +18,9 @@ contains:
 Value shapes recursively use Kernel value kinds: unit, boolean, unsigned,
 signed, bytes, reference, list, record, and hole. Reference shapes may constrain
 the referenced schema identity. Lists declare one element shape. Records name a
-schema rather than duplicating its fields.
+schema rather than duplicating its fields. The foundation module allocates
+stable schema identity `0000000000000000000000000000001c` for ValueShape so
+this recursion is ordinary schema data rather than validator special-casing.
 
 ## Validation
 
