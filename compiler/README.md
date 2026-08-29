@@ -68,3 +68,10 @@ stores and reloads 42 through an explicit local, guarding the distinction
 between Program capabilities and Function parameter/local counts. Branches,
 calls, multiple functions, and P2 effects remain required before moving the
 compiler graph onto it.
+
+Branch and call lowering will retain semantic references in canonical storage.
+Like the symbolic S1 compiler, the canonical lowerer derives positional indices
+and branch witnesses through monotone layout refinement before emission. The K0
+module contract now distinguishes an instruction `target` reference from a
+function `callee` reference; neither is serialized canonically as a derived
+numeric index.
