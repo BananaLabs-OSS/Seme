@@ -11,17 +11,17 @@ Contract plan. Its deliberately finite profile requires:
 - BooleanType result.
 
 The backend independently validates those canonical entities and emits a
-deterministic 205-byte WebAssembly Pulp reactor:
+deterministic 262-byte WebAssembly Pulp reactor:
 
 ```text
 import pulp.log_bool(i32) -> i32
-export admit(i64, i64, i64) -> i32
 export memory
 export pulp_alloc / pulp_init / pulp_step / pulp_shutdown
+export pulp_on_call(name, request, response-out) -> status
 ```
 
 The imported function is the target realization of the explicitly adapted
-logging effect. It observes the same decision returned by `admit`. The Wasm
+logging effect. It observes the same decision returned in the provider response. The Wasm
 contains no Go runtime, source, AST, or package machinery.
 
 The host import returns a status code; nonzero status traps so denial cannot
@@ -33,8 +33,12 @@ the canonical Seme graph and rejects unsupported graph shapes. This is an
 implementation layer that can later be lifted/self-hosted without changing the
 target contract or artifact behavior.
 
+Application Wire v1 maps the three canonical parameters to a fixed 24-byte
+little-endian request record and maps the canonical Boolean result to one byte.
+Pulp's provider ABI carries those bytes without interpreting their semantics.
+
 Conformance executes the artifact in Node's WebAssembly engine with a host
-adapter implementing the declared import. Five result/effect traces, including
+adapter implementing the declared import. Five request/result/effect traces, including
 signed overflow, match the ordinary Go package. A valid exact-only plan rejects
 before artifact production. The Node adapter proves the ABI and effect mapping;
 the same reactor is also executed by actual Pulp in the subsequent target proof.

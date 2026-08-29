@@ -3,7 +3,7 @@ set -eu
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 pulp_repo=${PULP_REPO:-"$repo/../Pulp"}
-pulp_proof_commit=97b1c8c
+pulp_proof_commit=f4d15bb
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-pulp-v1.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 
@@ -19,31 +19,37 @@ fi
 (cd "$repo/targets/wasm/pulp-v1" && sha256sum -c quota-admit.wasm.sha256)
 (cd "$pulp_repo" && go test ./cmd/pulp-seme-proof && go build -o "$work/pulp-seme-proof" ./cmd/pulp-seme-proof)
 
-# The generated reactor must start through Pulp's real manifest loader, wazero
-# runtime, capability registry, lifecycle calls, and step loop. GNU timeout
-# supplies SIGINT and preserves Pulp's clean zero exit after the proof event.
-timeout --preserve-status --signal=INT 1s "$work/pulp-seme-proof" \
+# The generated reactor must process multiple structured requests through
+# Pulp's real manifest loader, capability registry, cell lifecycle, allocator,
+# and pulp_on_call provider ABI without being reloaded between requests.
+"$work/pulp-seme-proof" \
     -manifest "$repo/targets/wasm/pulp-v1/pulp.cell.toml" \
+    -request 40,2,50 \
+    -request 40,20,50 \
+    -request 9223372036854775807,1,0 \
     > "$work/allowed.log" 2>&1
-rg -q 'cell ready.*cell=seme-quota' "$work/allowed.log"
 rg -q '\[observability.log\] cell=seme-quota quota.accepted=true' "$work/allowed.log"
-test "$(rg -c '^\[observability.log\]' "$work/allowed.log")" -eq 1
-rg -q 'pulp exit clean' "$work/allowed.log"
+rg -q '\[observability.log\] cell=seme-quota quota.accepted=false' "$work/allowed.log"
+test "$(rg -c '^\[observability.log\]' "$work/allowed.log")" -eq 3
+rg -q '"current":40,"delta":2,"limit":50.*"accepted":true' "$work/allowed.log"
+rg -q '"current":40,"delta":20,"limit":50.*"accepted":false' "$work/allowed.log"
+rg -q '"current":9223372036854775807,"delta":1,"limit":0.*"accepted":true' "$work/allowed.log"
+rg -q 'shutdown complete.*cell=seme-quota' "$work/allowed.log"
 
 # The identical artifact without the manifest grant receives Pulp's gated stub.
-# The guest treats its nonzero denial status as fatal and initialization fails.
+# The guest treats its nonzero denial status as fatal and the call traps.
 set +e
 "$work/pulp-seme-proof" \
     -manifest "$repo/targets/wasm/pulp-v1/pulp.denied.cell.toml" \
+    -request 40,2,50 \
     > "$work/denied.log" 2>&1
 denied_status=$?
 set -e
 test "$denied_status" -eq 1
-rg -q 'init failed.*cell=seme-quota-denied' "$work/denied.log"
-rg -q 'wasm error: unreachable' "$work/denied.log"
+rg -q 'pulp_on_call trap: wasm error: unreachable' "$work/denied.log"
 if rg -q '^\[observability.log\]' "$work/denied.log"; then
     echo "denied Pulp cell performed the logging effect" >&2
     exit 1
 fi
 
-echo "Pulp target v1: generated Seme Wasm ran with granted effect and trapped when denied"
+echo "Pulp target v1: repeated structured requests ran with granted effect and trapped when denied"

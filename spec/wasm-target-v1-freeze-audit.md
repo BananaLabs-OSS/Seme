@@ -3,8 +3,8 @@
 | Property | Result | Evidence |
 |---|---|---|
 | Canonical input authority | pass | Backend accepts only the checked executable Target Contract graph and validates the complete supported expression/effect profile. |
-| Deterministic artifact | pass | Two lowerings are byte-identical to the pinned 205-byte Wasm reactor and hash. |
-| Independent runtime | pass | Runtime command uses Node, Wasm, host adapter, and scalar inputs with no Go component. |
+| Deterministic artifact | pass | Two lowerings are byte-identical to the pinned 262-byte Wasm reactor and hash. |
+| Independent runtime | pass | Runtime command uses Node, Wasm, host adapter, and Application Wire v1 requests with no Go component. |
 | Behavioral fidelity | pass | Result and logging-effect trace match Go over five vectors including modular overflow. |
 | Boundary fidelity | pass | Wasm import realizes the canonical adapted `seme.pulp.log-v1` Boundary and remains labeled adapted. |
 | Policy enforcement | pass | The valid exact-only non-executable plan cannot be lowered. |
