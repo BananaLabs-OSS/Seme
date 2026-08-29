@@ -80,4 +80,5 @@ Substantial software belongs in readable Seme, not assembly.
   structured diagnostics remain incomplete above that independent floor.
 
 See [`spec/architecture.md`](spec/architecture.md) and
-[`bootstrap/README.md`](bootstrap/README.md).
+[`spec/roadmap.md`](spec/roadmap.md) for the product proof sequence, and
+[`bootstrap/README.md`](bootstrap/README.md) for the independent bootstrap.
