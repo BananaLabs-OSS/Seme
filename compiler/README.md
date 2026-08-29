@@ -24,5 +24,7 @@ end-of-file. With an output path it writes the validated canonical envelope
 byte-for-byte, providing the preservation path for semantics the current
 validator does not interpret. A second append-only pass resolves local forward
 references against the complete entity table and rejects dangling references.
-It does not yet interpret the Kernel meta-schema, resolve imported references,
-migrate revisions, or produce structured diagnostics.
+For the reserved Kernel module identity it additionally requires the finite
+Module/Schema/Field bootstrap declarations and verifies their schema
+relationships. It does not yet validate every declared field shape, resolve
+imported references, migrate revisions, or produce structured diagnostics.

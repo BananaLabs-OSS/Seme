@@ -536,7 +536,59 @@ fn id-equal 4 7
   re
 fe
 
-fn main 0 16
+# id-is(buffer, offset, low-16-bit candidate) -> bool
+fn id-is 3 7
+  cu 0
+  ls 3
+  lb id-is-prefix
+  lg 3
+  cu 14
+  eq
+  bf id-is-prefix-byte
+  lg 0
+  lg 1
+  cu 14
+  ad
+  bg
+  lg 2
+  cu 8
+  sr
+  cu 255
+  an
+  eq
+  bf id-is-false
+  lg 0
+  lg 1
+  cu 15
+  ad
+  bg
+  lg 2
+  cu 255
+  an
+  eq
+  bf id-is-false
+  cu 1
+  re
+  lb id-is-prefix-byte
+  lg 0
+  lg 1
+  lg 3
+  ad
+  bg
+  cu 0
+  eq
+  bf id-is-false
+  lg 3
+  cu 1
+  ad
+  ls 3
+  ju id-is-prefix
+  lb id-is-false
+  cu 0
+  re
+fe
+
+fn main 0 20
   cu 0
   ag
   fr
@@ -625,6 +677,15 @@ fn main 0 16
   cu 1
   eq
   bf envelope-invalid
+
+  # Reserved module identity activates the finite meta-schema checks.
+  lg 0
+  lg 1
+  cu 1
+  ca id-is
+  ls 16
+  cu 0
+  ls 17
 
   # Module and revision identities.
   lg 1
@@ -731,6 +792,145 @@ fn main 0 16
   bf entity-room
   ju envelope-invalid
   lb entity-room
+  lg 16
+  cu 0
+  eq
+  bf meta-entity-01
+  ju entity-copy-start
+
+  lb meta-entity-01
+  lg 0
+  lg 1
+  cu 1
+  ca id-is
+  bf meta-entity-10
+  lg 0
+  lg 1
+  cu 16
+  ad
+  cu 18
+  ca id-is
+  bf envelope-invalid
+  lg 17
+  cu 1
+  or
+  ls 17
+  ju entity-copy-start
+
+  lb meta-entity-10
+  lg 0
+  lg 1
+  cu 16
+  ca id-is
+  bf meta-entity-11
+  lg 0
+  lg 1
+  cu 16
+  ad
+  cu 16
+  ca id-is
+  bf envelope-invalid
+  lg 17
+  cu 2
+  or
+  ls 17
+  ju entity-copy-start
+
+  lb meta-entity-11
+  lg 0
+  lg 1
+  cu 17
+  ca id-is
+  bf meta-entity-12
+  lg 0
+  lg 1
+  cu 16
+  ad
+  cu 16
+  ca id-is
+  bf envelope-invalid
+  lg 17
+  cu 4
+  or
+  ls 17
+  ju entity-copy-start
+
+  lb meta-entity-12
+  lg 0
+  lg 1
+  cu 18
+  ca id-is
+  bf meta-entity-0101
+  lg 0
+  lg 1
+  cu 16
+  ad
+  cu 16
+  ca id-is
+  bf envelope-invalid
+  lg 17
+  cu 8
+  or
+  ls 17
+  ju entity-copy-start
+
+  lb meta-entity-0101
+  lg 0
+  lg 1
+  cu 257
+  ca id-is
+  bf meta-entity-0111
+  lg 0
+  lg 1
+  cu 16
+  ad
+  cu 17
+  ca id-is
+  bf envelope-invalid
+  lg 17
+  cu 16
+  or
+  ls 17
+  ju entity-copy-start
+
+  lb meta-entity-0111
+  lg 0
+  lg 1
+  cu 273
+  ca id-is
+  bf meta-entity-0122
+  lg 0
+  lg 1
+  cu 16
+  ad
+  cu 17
+  ca id-is
+  bf envelope-invalid
+  lg 17
+  cu 32
+  or
+  ls 17
+  ju entity-copy-start
+
+  lb meta-entity-0122
+  lg 0
+  lg 1
+  cu 290
+  ca id-is
+  bf entity-copy-start
+  lg 0
+  lg 1
+  cu 16
+  ad
+  cu 17
+  ca id-is
+  bf envelope-invalid
+  lg 17
+  cu 64
+  or
+  ls 17
+
+  lb entity-copy-start
   cu 0
   ls 15
   lb entity-copy-id
@@ -913,6 +1113,18 @@ fn main 0 16
   ju reference-loop
 
   lb references-valid
+  lg 16
+  cu 0
+  eq
+  bf meta-complete
+  ju output-mode
+  lb meta-complete
+  lg 17
+  cu 127
+  eq
+  bf envelope-invalid
+
+  lb output-mode
   ac
   cu 1
   eq

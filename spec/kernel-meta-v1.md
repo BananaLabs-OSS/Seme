@@ -91,6 +91,13 @@ domain types without changing the wire kernel.
 The fixed expectation in phase 3 is the trusted semantic seed. It contains two
 entity shapes, not a catalogue of language mechanics.
 
+The executable bootstrap slice currently covers Module, Schema, Field,
+schema.fields, field.value_shape, and module.exports. The checked validator
+activates those requirements only for the reserved Kernel module identity,
+verifies all seven declarations and their schema relationships, and rejects an
+incomplete reserved module. Remaining meta-schema declarations stay candidate
+until their field shapes are encoded and validated.
+
 ## External-module proof
 
 The first extension fixture will define a `Counter` schema in a distinct module:
