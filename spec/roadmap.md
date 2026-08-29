@@ -29,6 +29,12 @@ rejection path. Diagnostic transport and broad stable rule classification are
 complete. The Kernel gate remains open until entity and field/list locations
 are refined and covered by conformance fixtures.
 
+Located Diagnostics 1 is complete: its canonical validator preserves valid
+inputs exactly, emits canonical reports for the current invalid corpus, carries
+trustworthy revision/entity identities, and records field-level failures with
+the explicit unavailable-identity sentinel. Exact field identity plus nested,
+list, and reference provenance remain part of the open Kernel gate.
+
 ## 2. Transactional semantic editing
 
 - Apply identity-based patches against an explicit starting revision.

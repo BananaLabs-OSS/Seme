@@ -17,6 +17,11 @@ proceed without modifying assembly.
 the self-hosted bootstrap. Checked S1 compiles it deterministically to
 `kernel-wire-validator.k0`.
 
+`kernel-wire-validator-located.g1`, `.seme`, and `.k0` are the canonical
+Located Diagnostics 1 successor generation. See `LOCATED-DIAGNOSTICS-1.md` for
+its guarantees, reproduction procedure, conformance gate, and explicit
+provenance boundary.
+
 The current structural profile validates the Kernel v1 envelope, canonical
 ULEB integers, bounds, strictly ordered parent/entity/field identities,
 recursive lists and records, known value tags, nesting depth, and exact
