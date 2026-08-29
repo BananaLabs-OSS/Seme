@@ -1,0 +1,50 @@
+# Executable finite meta-schema slice: Module, Schema, Field, and bootstrap fields.
+b53 b45 b4d b45 b4b b31 b0d b0a
+u1
+# kernel module and revision
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b02
+u0 u7
+# Module entity 01, schema 12, exports six declarations.
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b12
+u1 u1
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b22
+b07 u6
+b06 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b10
+b06 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b11
+b06 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b12
+b06 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b01
+b06 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b11
+b06 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b22
+# Schema entity 10 is an instance of itself and declares schema.fields.
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b10
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b10
+u1 u1
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b01
+b07 u1 b06
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b01
+# Field entity 11 is described by Schema and declares field.value_shape.
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b11
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b10
+u1 u1
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b01
+b07 u1 b06
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b11
+# Module schema 12 declares module.exports.
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b12
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b10
+u1 u1
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b01
+b07 u1 b06
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b22
+# Three field declaration entities are instances of Field.
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b01
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b11
+u1 u0
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b11
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b11
+u1 u0
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b22
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b11
+u1 u0
