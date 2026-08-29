@@ -1,0 +1,22 @@
+# One entity containing a record, list, uint, bytes, and hole.
+b53 b45 b4d b45 b4b b31 b0d b0a
+u1
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b02
+u0
+u1
+# entity identity, schema identity, schema version, one field
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b10
+u1
+u1
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b01 b00
+# record with two sorted fields
+b08 u2
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b20 b00
+b07 u2
+b03 u128
+b05 u3 b61 b62 b63
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b20 b01
+b09
+b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b00 b99
