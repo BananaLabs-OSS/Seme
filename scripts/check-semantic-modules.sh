@@ -11,6 +11,19 @@ kernel="$repo/compiler/kernel-wire-validator-located.k0"
 patch="$repo/modules/patch/v1"
 foundation="$repo/modules/foundation/v1"
 
+expect_status() {
+    expected=$1
+    shift
+    set +e
+    "$@"
+    actual=$?
+    set -e
+    if [ "$actual" -ne "$expected" ]; then
+        echo "expected status $expected, got $actual: $*" >&2
+        exit 1
+    fi
+}
+
 (
     cd "$foundation"
     sha256sum -c module.g1.sha256
@@ -23,6 +36,63 @@ cmp "$foundation/module.g1" "$work/foundation-v1.g1"
 cmp "$foundation/module.seme" "$work/foundation-v1.seme"
 "$k0" "$kernel" "$work/foundation-v1.seme" "$work/foundation-v1.validated.seme"
 cmp "$work/foundation-v1.seme" "$work/foundation-v1.validated.seme"
+
+(
+    cd "$foundation"
+    sha256sum -c validator.k0.sha256
+    sha256sum -c validator.g1.sha256
+    sha256sum -c validator.seme.sha256
+)
+"$k0" "$repo/bootstrap/s1-compiler.k0" "$foundation/validator.s1" \
+    "$work/foundation-validator.k0"
+cmp "$foundation/validator.k0" "$work/foundation-validator.k0"
+"$k0" "$repo/compiler/k0-module-lowerer.k0" "$foundation/validator.seme" \
+    "$work/foundation-validator-lowered.k0"
+cmp "$foundation/validator.k0" "$work/foundation-validator-lowered.k0"
+"$k0" "$kernel" "$foundation/validator.seme" \
+    "$work/foundation-validator.validated.seme"
+cmp "$foundation/validator.seme" "$work/foundation-validator.validated.seme"
+"$k0" "$foundation/validator.k0" "$foundation/module.seme" \
+    "$work/foundation-semantic.validated.seme"
+cmp "$foundation/module.seme" "$work/foundation-semantic.validated.seme"
+
+# A module whose declarations are unavailable remains preserved, while a known
+# future schema version is preserved rather than falsely certified or rejected.
+"$k0" "$foundation/validator.k0" "$patch/module.seme" \
+    "$work/patch-unavailable.seme"
+cmp "$patch/module.seme" "$work/patch-unavailable.seme"
+awk '$1 == "en" && $2 == "00000000000000000000000000000011" { $4 = 2 } { print }' \
+    "$foundation/module.g1" > "$work/foundation-future.g1"
+"$k0" "$g1" "$work/foundation-future.g1" "$work/foundation-future.seme"
+"$k0" "$foundation/validator.k0" "$work/foundation-future.seme" \
+    "$work/foundation-future.preserved.seme"
+cmp "$work/foundation-future.seme" "$work/foundation-future.preserved.seme"
+
+# Both declaration malformation and a declared value-shape violation are
+# structurally valid Kernel graphs but must reject semantically.
+awk '
+    $1 == "en" { field = ($2 == "00000000000000000000000000000100") }
+    field && $2 == "00000000000000000000000000000113" { $4 = 0 }
+    { print }
+' "$foundation/module.g1" > "$work/foundation-invalid-since.g1"
+"$k0" "$g1" "$work/foundation-invalid-since.g1" \
+    "$work/foundation-invalid-since.seme"
+"$k0" "$repo/compiler/kernel-wire-validator.k0" \
+    "$work/foundation-invalid-since.seme"
+expect_status 65 "$k0" "$foundation/validator.k0" \
+    "$work/foundation-invalid-since.seme"
+
+awk '
+    $1 == "en" { field = ($2 == "00000000000000000000000000000100") }
+    field && $2 == "00000000000000000000000000002000" { $4 = 2 }
+    { print }
+' "$foundation/module.g1" > "$work/foundation-invalid-shape.g1"
+"$k0" "$g1" "$work/foundation-invalid-shape.g1" \
+    "$work/foundation-invalid-shape.seme"
+"$k0" "$repo/compiler/kernel-wire-validator.k0" \
+    "$work/foundation-invalid-shape.seme"
+expect_status 65 "$k0" "$foundation/validator.k0" \
+    "$work/foundation-invalid-shape.seme"
 
 (
     cd "$patch"
