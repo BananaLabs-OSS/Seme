@@ -42,6 +42,9 @@ cmp "$work/foundation-v1.seme" "$work/foundation-v1.validated.seme"
     sha256sum -c validator.k0.sha256
     sha256sum -c validator.g1.sha256
     sha256sum -c validator.seme.sha256
+    sha256sum -c reporter.k0.sha256
+    sha256sum -c reporter.g1.sha256
+    sha256sum -c reporter.seme.sha256
 )
 "$k0" "$repo/bootstrap/s1-compiler.k0" "$foundation/validator.s1" \
     "$work/foundation-validator.k0"
@@ -52,21 +55,43 @@ cmp "$foundation/validator.k0" "$work/foundation-validator-lowered.k0"
 "$k0" "$kernel" "$foundation/validator.seme" \
     "$work/foundation-validator.validated.seme"
 cmp "$foundation/validator.seme" "$work/foundation-validator.validated.seme"
+"$k0" "$repo/bootstrap/s1-compiler.k0" "$foundation/reporter.s1" \
+    "$work/foundation-reporter.k0"
+cmp "$foundation/reporter.k0" "$work/foundation-reporter.k0"
+"$k0" "$repo/compiler/k0-module-lowerer.k0" "$foundation/reporter.seme" \
+    "$work/foundation-reporter-lowered.k0"
+cmp "$foundation/reporter.k0" "$work/foundation-reporter-lowered.k0"
+"$k0" "$kernel" "$foundation/reporter.seme" \
+    "$work/foundation-reporter.validated.seme"
+cmp "$foundation/reporter.seme" "$work/foundation-reporter.validated.seme"
 "$k0" "$foundation/validator.k0" "$foundation/module.seme" \
     "$work/foundation-semantic.validated.seme"
 cmp "$foundation/module.seme" "$work/foundation-semantic.validated.seme"
+"$k0" "$foundation/reporter.k0" "$foundation/module.seme" \
+    "$work/foundation-report.seme"
+"$k0" "$kernel" "$work/foundation-report.seme"
+(cd "$repo/reference/go" && go run ./cmd/foundation-report-check \
+    "$work/foundation-report.seme" 61 61 0 0)
 
 # A module whose declarations are unavailable remains preserved, while a known
 # future schema version is preserved rather than falsely certified or rejected.
 "$k0" "$foundation/validator.k0" "$patch/module.seme" \
     "$work/patch-unavailable.seme"
 cmp "$patch/module.seme" "$work/patch-unavailable.seme"
+"$k0" "$foundation/reporter.k0" "$patch/module.seme" \
+    "$work/patch-unavailable-report.seme"
+(cd "$repo/reference/go" && go run ./cmd/foundation-report-check \
+    "$work/patch-unavailable-report.seme" 10 0 0 10)
 awk '$1 == "en" && $2 == "00000000000000000000000000000011" { $4 = 2 } { print }' \
     "$foundation/module.g1" > "$work/foundation-future.g1"
 "$k0" "$g1" "$work/foundation-future.g1" "$work/foundation-future.seme"
 "$k0" "$foundation/validator.k0" "$work/foundation-future.seme" \
     "$work/foundation-future.preserved.seme"
 cmp "$work/foundation-future.seme" "$work/foundation-future.preserved.seme"
+"$k0" "$foundation/reporter.k0" "$work/foundation-future.seme" \
+    "$work/foundation-future-report.seme"
+(cd "$repo/reference/go" && go run ./cmd/foundation-report-check \
+    "$work/foundation-future-report.seme" 61 60 1 0)
 
 # Both declaration malformation and a declared value-shape violation are
 # structurally valid Kernel graphs but must reject semantically.

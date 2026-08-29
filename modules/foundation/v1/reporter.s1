@@ -1,0 +1,243 @@
+# Semantic Foundation v1 successful-validation reporter construction source.
+# Run only after validator.k0 accepts the same Kernel-v1 envelope.
+ve 3
+cp 7
+
+fn fail 0 0
+  cu 65 cu 0 di re
+fe
+
+fn take 2 10
+  cu 0 ls 2 cu 0 ls 3 cu 0 ls 4 lg 0 bl ls 5
+  lb byte
+  lg 1 lg 5 eq bf have ca fail re
+  lb have
+  lg 0 lg 1 bg ls 6 lg 1 cu 1 ad ls 1
+  lg 6 cu 127 an ls 7
+  lg 3 cu 63 eq bf shift cu 1 lg 7 lt bf shift ca fail re
+  lb shift
+  lg 7 lg 3 sl lg 2 or ls 2 lg 4 cu 1 ad ls 4
+  lg 6 cu 128 an cu 0 eq bf more
+  lg 4 cu 1 eq bf terminal lg 2 cu 21 sl lg 1 or re
+  lb terminal
+  lg 7 cu 0 eq bf done ca fail re
+  lb done
+  lg 2 cu 21 sl lg 1 or re
+  lb more
+  lg 3 cu 7 ad ls 3 cu 63 lg 3 lt bf byte ca fail re
+fe
+
+fn id-equal 4 6
+  cu 0 ls 4
+  lb loop
+  lg 4 cu 16 eq bf byte cu 1 re
+  lb byte
+  lg 0 lg 1 lg 4 ad bg lg 2 lg 3 lg 4 ad bg eq bf no
+  lg 4 cu 1 ad ls 4 ju loop
+  lb no
+  cu 0 re
+fe
+
+fn id-is 3 6
+  cu 0 ls 3
+  lb prefix
+  lg 3 cu 14 eq bf byte
+  lg 0 lg 1 cu 14 ad bg lg 2 cu 8 sr cu 255 an eq bf no
+  lg 0 lg 1 cu 15 ad bg lg 2 cu 255 an eq bf no
+  cu 1 re
+  lb byte
+  lg 0 lg 1 lg 3 ad bg cu 0 eq bf no
+  lg 3 cu 1 ad ls 3 ju prefix
+  lb no
+  cu 0 re
+fe
+
+fn skip-value 2 10
+  lg 0 lg 1 bg ls 2 lg 1 cu 1 ad ls 1
+  lg 2 cu 3 lt bf integer lg 1 re
+  lb integer
+  lg 2 cu 5 lt bf bytes lg 0 lg 1 ca take cu 2097151 an re
+  lb bytes
+  lg 2 cu 5 eq bf reference
+  lg 0 lg 1 ca take ls 3 lg 3 cu 2097151 an lg 3 cu 21 sr ad re
+  lb reference
+  lg 2 cu 6 eq bf list lg 1 cu 16 ad re
+  lb list
+  lg 2 cu 7 eq bf record
+  lg 0 lg 1 ca take ls 3 lg 3 cu 2097151 an ls 1
+  lg 3 cu 21 sr ls 4 cu 0 ls 5
+  lb list-loop
+  lg 5 lg 4 eq bf list-item lg 1 re
+  lb list-item
+  lg 0 lg 1 ca skip-value ls 1 lg 5 cu 1 ad ls 5 ju list-loop
+  lb record
+  lg 2 cu 8 eq bf hole
+  lg 0 lg 1 ca take ls 3 lg 3 cu 2097151 an ls 1
+  lg 3 cu 21 sr ls 4 cu 0 ls 5
+  lb record-loop
+  lg 5 lg 4 eq bf record-item lg 1 re
+  lb record-item
+  lg 1 cu 16 ad ls 1 lg 0 lg 1 ca skip-value ls 1
+  lg 5 cu 1 ad ls 5 ju record-loop
+  lb hole
+  lg 1 cu 16 ad re
+fe
+
+fn entities 1 6
+  cu 8 ls 1 lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an cu 32 ad ls 1
+  lg 0 lg 1 ca take ls 2 lg 2 cu 2097151 an ls 1
+  lg 2 cu 21 sr cu 16 mu lg 1 ad ls 1
+  lg 0 lg 1 ca take ls 2
+  lg 2 cu 21 sr cu 21 sl lg 2 cu 2097151 an or re
+fe
+
+fn next-entity 2 7
+  lg 1 cu 32 ad ls 1 lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an ls 1 lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an ls 1 lg 2 cu 21 sr ls 3 cu 0 ls 4
+  lb loop
+  lg 4 lg 3 eq bf field lg 1 re
+  lb field
+  lg 1 cu 16 ad ls 1 lg 0 lg 1 ca skip-value ls 1
+  lg 4 cu 1 ad ls 4 ju loop
+fe
+
+fn find-entity 3 10
+  lg 0 ca entities ls 3 lg 3 cu 2097151 an ls 4
+  lg 3 cu 21 sr ls 5 cu 0 ls 6
+  lb loop
+  lg 6 lg 5 eq bf item cu 0 re
+  lb item
+  lg 0 lg 4 lg 1 lg 2 ca id-equal bf next lg 4 re
+  lb next
+  lg 0 lg 4 ca next-entity ls 4 lg 6 cu 1 ad ls 6 ju loop
+fe
+
+fn find-field-is 3 9
+  lg 1 cu 32 ad ls 1 lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1 lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1 lg 3 cu 21 sr ls 4 cu 0 ls 5
+  lb loop
+  lg 5 lg 4 eq bf item cu 0 re
+  lb item
+  lg 0 lg 1 lg 2 ca id-is bf next lg 1 cu 17 ad re
+  lb next
+  lg 1 cu 16 ad ls 1 lg 0 lg 1 ca skip-value ls 1
+  lg 5 cu 1 ad ls 5 ju loop
+fe
+
+# declared(buffer, schema-entity, version, field-id-offset) -> bool
+fn declared 4 16
+  lg 0 lg 1 cu 257 ca find-field-is ls 4
+  lg 0 lg 4 ca take ls 5 lg 5 cu 2097151 an ls 6
+  lg 5 cu 21 sr ls 7 cu 0 ls 8
+  lb loop
+  lg 8 lg 7 eq bf item cu 0 re
+  lb item
+  lg 6 cu 1 ad ls 9
+  lg 0 lg 0 lg 9 ca find-entity ls 10
+  lg 0 lg 10 cu 275 ca find-field-is ls 11
+  lg 0 lg 11 ca take cu 21 sr ls 12
+  lg 2 lg 12 lt bf active ju next
+  lb active
+  lg 0 lg 9 lg 0 lg 3 ca id-equal bf next cu 1 re
+  lb next
+  lg 0 lg 6 ca skip-value ls 6 lg 8 cu 1 ad ls 8 ju loop
+fe
+
+fn append-uleb 2 4
+  lb loop
+  lg 1 cu 127 an ls 2 lg 1 cu 7 sr ls 1
+  lg 1 cu 0 eq bf more ju byte
+  lb more
+  lg 2 cu 128 or ls 2
+  lb byte
+  lg 0 lg 2 bp ls 0 lg 1 cu 0 eq bf loop lg 0 re
+fe
+
+fn append-id 2 5
+  cu 0 ls 2
+  lb prefix
+  lg 2 cu 14 eq bf zero
+  lg 0 lg 1 cu 8 sr cu 255 an bp ls 0
+  lg 0 lg 1 cu 255 an bp re
+  lb zero
+  lg 0 cu 0 bp ls 0 lg 2 cu 1 ad ls 2 ju prefix
+fe
+
+fn copy16 3 6
+  cu 0 ls 3
+  lb loop
+  lg 3 cu 16 eq bf byte lg 0 re
+  lb byte
+  lg 0 lg 1 lg 2 lg 3 ad bg bp ls 0
+  lg 3 cu 1 ad ls 3 ju loop
+fe
+
+# disposition(buffer, entity) -> certified(0), unknown(1), unavailable(2).
+fn disposition 2 18
+  lg 0 lg 0 lg 1 cu 16 ad ca find-entity ls 2
+  lg 2 cu 0 eq bf known cu 2 re
+  lb known
+  lg 1 cu 32 ad ls 3 lg 0 lg 3 ca take ls 4
+  lg 4 cu 21 sr ls 5
+  lg 2 cu 32 ad ls 6 lg 0 lg 6 ca take ls 7
+  lg 7 cu 21 sr lg 5 lt bf supported cu 1 re
+  lb supported
+  lg 4 cu 2097151 an ls 8 lg 0 lg 8 ca take ls 9
+  lg 9 cu 2097151 an ls 10 lg 9 cu 21 sr ls 11 cu 0 ls 12
+  lb field-loop
+  lg 12 lg 11 eq bf field cu 0 re
+  lb field
+  lg 0 lg 2 lg 5 lg 10 ca declared bf unknown
+  lg 10 cu 16 ad ls 10 lg 0 lg 10 ca skip-value ls 10
+  lg 12 cu 1 ad ls 12 ju field-loop
+  lb unknown
+  cu 1 re
+fe
+
+fn main 0 24
+  ac cu 2 eq bf invocation
+  cu 0 ag fr ls 0
+  cu 1048576 bn ls 1
+  # Envelope header and Foundation validation-report module identity.
+  lg 1 cu 83 bp ls 1 lg 1 cu 69 bp ls 1 lg 1 cu 77 bp ls 1
+  lg 1 cu 69 bp ls 1 lg 1 cu 75 bp ls 1 lg 1 cu 49 bp ls 1
+  lg 1 cu 13 bp ls 1 lg 1 cu 10 bp ls 1
+  lg 1 cu 1 ca append-uleb ls 1
+  lg 1 cu 16384 ca append-id ls 1
+  # A validation report is a deterministic projection of the validated input
+  # revision and therefore carries that same revision identity.
+  lg 1 lg 0 cu 25 ca copy16 ls 1
+  lg 1 cu 0 ca append-uleb ls 1
+  lg 1 cu 1 ca append-uleb ls 1
+  lg 1 cu 16384 ca append-id ls 1
+  lg 1 cu 31 ca append-id ls 1
+  lg 1 cu 1 ca append-uleb ls 1
+  lg 1 cu 2 ca append-uleb ls 1
+  # validation_report.revision
+  lg 1 cu 8720 ca append-id ls 1
+  lg 1 cu 5 bp ls 1 lg 1 cu 16 ca append-uleb ls 1
+  lg 1 lg 0 cu 25 ca copy16 ls 1
+  # validation_report.results
+  lg 1 cu 8721 ca append-id ls 1 lg 1 cu 7 bp ls 1
+  lg 0 ca entities ls 2 lg 2 cu 2097151 an ls 3
+  lg 2 cu 21 sr ls 4 lg 1 lg 4 ca append-uleb ls 1
+  cu 0 ls 5
+  lb entity-loop
+  lg 5 lg 4 eq bf entity
+  cu 1 ag lg 1 fw re
+  lb entity
+  lg 0 lg 3 ca disposition ls 6
+  lg 1 cu 8 bp ls 1 lg 1 cu 2 ca append-uleb ls 1
+  lg 1 cu 8704 ca append-id ls 1 lg 1 cu 5 bp ls 1
+  lg 1 cu 16 ca append-uleb ls 1 lg 1 lg 0 lg 3 ca copy16 ls 1
+  lg 1 cu 8705 ca append-id ls 1 lg 1 cu 3 bp ls 1
+  lg 1 lg 6 ca append-uleb ls 1
+  lg 0 lg 3 ca next-entity ls 3 lg 5 cu 1 ad ls 5 ju entity-loop
+  lb invocation
+  cu 64 cu 0 di re
+fe
+
+en main
