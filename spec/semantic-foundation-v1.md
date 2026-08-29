@@ -51,13 +51,32 @@ It checks:
 The result for each entity is `certified`, `preserved_unknown`, `unavailable`,
 or `rejected`. Preservation is not certification.
 
+## Validation results
+
+Canonical validation produces one ordered `ValidationResult` record per input
+entity. The record identifies the entity using 16 bytes and encodes disposition
+as `0` certified, `1` preserved unknown, `2` unavailable, or `3` rejected.
+`ValidationReport` identifies the validated revision and carries the ordered
+result records plus structured Diagnostic references. Results are inline
+records so validation does not invent stable entity identities for observations
+about another revision.
+
+The stable schema identities are `...001e` for `ValidationResult` and
+`...001f` for `ValidationReport`. Their fields are `...2200` entity, `...2201`
+disposition, `...2210` revision, `...2211` results, and `...2212` diagnostics.
+
 ## Imports
 
-An import declaration records a module identity, minimum revision identity, and
+An import declaration records a module identity, required revision identity, and
 locally addressable imported schema identities. Resolution is an explicit input
 to validation. Missing imports do not corrupt or discard their entities; those
 entities remain unavailable and cannot satisfy operations requiring certified
 semantics.
+
+V1 requires exact revision identity equality. Opaque revision identities have
+no intrinsic ordering, so calling this field a “minimum revision” would make an
+unverifiable promise. Version ranges and ancestry proofs belong to a later
+package-resolution module with an explicit ordering or ancestry contract.
 
 ## Evolution
 
