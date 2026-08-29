@@ -61,9 +61,10 @@ Substantial software belongs in readable Seme, not assembly.
   byte-identical to the earlier A0 constructions and pass the independent
   validator.
 - The candidate K0 semantic module represents programs, functions, and stable
-  instruction identities in canonical Kernel graphs. Its first checked graph
-  represents a return-42 program without storing derived K0 layout data; the
-  executable lowerer is the next bootstrap rung.
+  instruction identities in canonical Kernel graphs. The first S1-authored
+  semantic lowerer turns its checked return-42 graph into a portable K0 image,
+  derives execution layout rather than storing it canonically, and the frozen
+  executor returns 42.
 - Host assembly tools remain optional construction and cross-check conveniences.
 - The S0 bootstrap compiler is self-reproducing; the semantic Kernel v1 compiler
   is not self-hosted yet.
