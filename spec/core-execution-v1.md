@@ -44,8 +44,9 @@ canonical K0-module Seme plus its derived K0 image. Its runtime interface is:
 interpreter.k0 PROGRAM.seme ARGS.bin RESULT.bin
 ```
 
-`ARGS.bin` is exactly two little-endian signed-64 bit patterns; `RESULT.bin` is
-exactly one. The interpreter resolves the program entry, validates the signed
+For the v1 profile, `ARGS.bin` is exactly two little-endian signed-64 bit
+patterns and `RESULT.bin` is exactly one. The interpreter resolves the program
+entry, validates the signed
 64-bit modular profile, follows stable references, and evaluates ParameterRead
 and IntegerAdd. It rejects malformed inputs or unsupported canonical forms.
 
@@ -54,3 +55,6 @@ ordinary Go. Go constructs the canonical input and checks results, but the
 runtime invocation contains no Go executable, source, AST, toolchain, or Go
 runtime. Passing this gate means the scoped function runs through Seme. It does
 not mean arbitrary Go programs run through Seme.
+
+The interpreter implementation later gained backward-compatible Core Execution
+v2 support. The v1 invocation shape and behavior remain frozen by this gate.

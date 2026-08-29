@@ -11,8 +11,12 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 6 && (os.Args[1] == "write-quota" || os.Args[1] == "check-quota") {
+		quota()
+		return
+	}
 	if len(os.Args) != 5 || (os.Args[1] != "write" && os.Args[1] != "check") {
-		fmt.Fprintln(os.Stderr, "usage: execution-vector write|check A B FILE")
+		fmt.Fprintln(os.Stderr, "usage: execution-vector write|check A B FILE | write-quota|check-quota CURRENT DELTA LIMIT FILE")
 		os.Exit(64)
 	}
 	a := parse(os.Args[2])
@@ -35,6 +39,30 @@ func main() {
 	want := int64(uint64(a) + uint64(b))
 	if got != want {
 		fatal("Seme result for %d + %d is %d, Go result is %d", a, b, got, want)
+	}
+}
+
+func quota() {
+	current := parse(os.Args[2])
+	delta := parse(os.Args[3])
+	limit := parse(os.Args[4])
+	if os.Args[1] == "write-quota" {
+		data := make([]byte, 24)
+		binary.LittleEndian.PutUint64(data[0:8], uint64(current))
+		binary.LittleEndian.PutUint64(data[8:16], uint64(delta))
+		binary.LittleEndian.PutUint64(data[16:24], uint64(limit))
+		check(os.WriteFile(os.Args[5], data, 0o644))
+		return
+	}
+	data, err := os.ReadFile(os.Args[5])
+	check(err)
+	if len(data) != 1 || data[0] > 1 {
+		fatal("quota result must be one canonical boolean byte")
+	}
+	got := data[0] == 1
+	want := current+delta <= limit
+	if got != want {
+		fatal("Seme result for Admit(%d, %d, %d) is %v, Go result is %v", current, delta, limit, got, want)
 	}
 }
 

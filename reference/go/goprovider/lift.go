@@ -16,54 +16,11 @@ import (
 // LiftAdd lifts the deliberately narrow Core Execution v1 Go profile. The
 // returned G1 is a checked construction projection; compiled .seme is authority.
 func LiftAdd(project string, manifest Manifest, moduleG1 []byte, functionName string) (string, string, error) {
-	var declaration *Declaration
-	for i := range manifest.Declarations {
-		if manifest.Declarations[i].Name == functionName {
-			declaration = &manifest.Declarations[i]
-			break
-		}
-	}
-	if declaration == nil {
-		return "", "", fmt.Errorf("provider.execution_unknown_function:%s", functionName)
-	}
-	fset := token.NewFileSet()
-	var parsed []*ast.File
-	for _, file := range manifest.Files {
-		if !strings.HasSuffix(file.Path, ".go") || strings.HasSuffix(file.Path, "_test.go") {
-			continue
-		}
-		node, err := parser.ParseFile(fset, filepath.Join(project, filepath.FromSlash(file.Path)), nil, parser.SkipObjectResolution)
-		if err != nil {
-			return "", "", err
-		}
-		parsed = append(parsed, node)
-	}
-	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
-	config := types.Config{Importer: importer.Default()}
-	pkg, err := config.Check(packagePathOf(declaration.NativeKey), fset, parsed, info)
+	declaration, fn, signature, info, err := resolveFunction(project, manifest, functionName)
 	if err != nil {
 		return "", "", err
 	}
-	var fn *ast.FuncDecl
-	var object *types.Func
-	for _, file := range parsed {
-		for _, item := range file.Decls {
-			candidate, ok := item.(*ast.FuncDecl)
-			if !ok || candidate.Recv != nil || candidate.Name.Name != functionName {
-				continue
-			}
-			candidateObject, ok := info.Defs[candidate.Name].(*types.Func)
-			if ok && candidateObject.Parent() == pkg.Scope() {
-				fn = candidate
-				object = candidateObject
-			}
-		}
-	}
-	if fn == nil {
-		return "", "", fmt.Errorf("provider.execution_unresolved_function:%s", functionName)
-	}
-	signature, ok := object.Type().(*types.Signature)
-	if !ok || signature.Params().Len() != 2 || signature.Results().Len() != 1 || !isInt64(signature.Params().At(0).Type()) || !isInt64(signature.Params().At(1).Type()) || !isInt64(signature.Results().At(0).Type()) {
+	if signature.Params().Len() != 2 || signature.Results().Len() != 1 || !isInt64(signature.Params().At(0).Type()) || !isInt64(signature.Params().At(1).Type()) || !isInt64(signature.Results().At(0).Type()) {
 		return "", "", fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 	}
 	if len(fn.Body.List) != 1 {
@@ -77,33 +34,8 @@ func LiftAdd(project string, manifest Manifest, moduleG1 []byte, functionName st
 	if !ok || add.Op != token.ADD {
 		return "", "", fmt.Errorf("provider.execution_unsupported_expression:%s", functionName)
 	}
-	left, ok := add.X.(*ast.Ident)
-	if !ok {
-		return "", "", fmt.Errorf("provider.execution_unsupported_left:%s", functionName)
-	}
-	right, ok := add.Y.(*ast.Ident)
-	if !ok {
-		return "", "", fmt.Errorf("provider.execution_unsupported_right:%s", functionName)
-	}
-	leftVar, ok := info.Uses[left].(*types.Var)
-	if !ok {
-		return "", "", fmt.Errorf("provider.execution_unresolved_left:%s", functionName)
-	}
-	rightVar, ok := info.Uses[right].(*types.Var)
-	if !ok {
-		return "", "", fmt.Errorf("provider.execution_unresolved_right:%s", functionName)
-	}
-	leftIndex, rightIndex := -1, -1
-	for i := 0; i < 2; i++ {
-		parameter := signature.Params().At(i)
-		if parameter == leftVar {
-			leftIndex = i
-		}
-		if parameter == rightVar {
-			rightIndex = i
-		}
-	}
-	if leftIndex < 0 || rightIndex < 0 {
+	leftIndex, rightIndex, err := resolvedParameterOperands(add.X, add.Y, signature, info)
+	if err != nil {
 		return "", "", fmt.Errorf("provider.execution_nonparameter_add:%s", functionName)
 	}
 	typeID := stableID("execution", "type", "i64")
@@ -123,9 +55,206 @@ func LiftAdd(project string, manifest Manifest, moduleG1 []byte, functionName st
 	}
 	return composeExecutionG1(moduleG1, manifest.Revision, instances), declaration.ID, nil
 }
+
+// LiftAdmit lifts the Core Execution v2 quota-policy profile. The accepted Go
+// body is exactly: return parameter + parameter <= parameter.
+func LiftAdmit(project string, manifest Manifest, moduleG1 []byte, functionName string) (string, string, error) {
+	declaration, fn, signature, info, err := resolveFunction(project, manifest, functionName)
+	if err != nil {
+		return "", "", err
+	}
+	if signature.Params().Len() != 3 || signature.Results().Len() != 1 || !isInt64(signature.Params().At(0).Type()) || !isInt64(signature.Params().At(1).Type()) || !isInt64(signature.Params().At(2).Type()) || !isBool(signature.Results().At(0).Type()) {
+		return "", "", fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
+	}
+	if len(fn.Body.List) != 1 {
+		return "", "", fmt.Errorf("provider.execution_unsupported_body:%s", functionName)
+	}
+	ret, ok := fn.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return "", "", fmt.Errorf("provider.execution_unsupported_return:%s", functionName)
+	}
+	comparison, ok := ret.Results[0].(*ast.BinaryExpr)
+	if !ok || comparison.Op != token.LEQ {
+		return "", "", fmt.Errorf("provider.execution_unsupported_expression:%s", functionName)
+	}
+	addition, ok := comparison.X.(*ast.BinaryExpr)
+	if !ok || addition.Op != token.ADD {
+		return "", "", fmt.Errorf("provider.execution_unsupported_left:%s", functionName)
+	}
+	addLeft, addRight, err := resolvedParameterOperands(addition.X, addition.Y, signature, info)
+	if err != nil {
+		return "", "", fmt.Errorf("provider.execution_nonparameter_add:%s", functionName)
+	}
+	limit, ok := comparison.Y.(*ast.Ident)
+	if !ok {
+		return "", "", fmt.Errorf("provider.execution_unsupported_right:%s", functionName)
+	}
+	limitVar, ok := info.Uses[limit].(*types.Var)
+	if !ok {
+		return "", "", fmt.Errorf("provider.execution_unresolved_right:%s", functionName)
+	}
+	limitIndex := -1
+	for i := 0; i < signature.Params().Len(); i++ {
+		if signature.Params().At(i) == limitVar {
+			limitIndex = i
+		}
+	}
+	if limitIndex < 0 {
+		return "", "", fmt.Errorf("provider.execution_nonparameter_compare:%s", functionName)
+	}
+
+	integerID := stableID("execution", "type", "i64")
+	booleanID := stableID("execution", "type", "bool")
+	parameterIDs := make([]string, 3)
+	readIDs := make([]string, 3)
+	instances := []graphEntity{
+		{integerID, entity(integerID, "00000000000000000000000000009010", []graphField{unsignedField(0x9100, 64), graphField{0x9101, "tr"}, unsignedField(0x9102, 0)})},
+		{booleanID, entity(booleanID, "00000000000000000000000000009020", nil)},
+	}
+	for i := 0; i < 3; i++ {
+		parameterIDs[i] = stableID("execution", declaration.ID, "parameter", strconv.Itoa(i))
+		readIDs[i] = stableID("execution", declaration.ID, "read", strconv.Itoa(i))
+		instances = append(instances,
+			graphEntity{parameterIDs[i], entity(parameterIDs[i], "00000000000000000000000000009012", []graphField{bytesField(0x9120, signature.Params().At(i).Name()), refField(0x9121, integerID), unsignedField(0x9122, uint64(i))})},
+			graphEntity{readIDs[i], entity(readIDs[i], "00000000000000000000000000009013", []graphField{refField(0x9130, parameterIDs[i])})},
+		)
+	}
+	addID := stableID("execution", declaration.ID, "add")
+	comparisonID := stableID("execution", declaration.ID, "less-equal")
+	programID := stableID("execution", declaration.ID, "program")
+	instances = append(instances,
+		graphEntity{addID, entity(addID, "00000000000000000000000000009014", []graphField{refField(0x9140, readIDs[addLeft]), refField(0x9141, readIDs[addRight]), refField(0x9142, integerID)})},
+		graphEntity{comparisonID, entity(comparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, addID), refField(0x9161, readIDs[limitIndex]), refField(0x9162, integerID)})},
+		graphEntity{declaration.ID, entity(declaration.ID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, functionName), refsField(0x9111, parameterIDs), refField(0x9112, booleanID), refField(0x9113, comparisonID)})},
+		graphEntity{programID, entity(programID, "00000000000000000000000000009015", []graphField{refsField(0x9150, []string{declaration.ID}), refField(0x9151, declaration.ID)})},
+	)
+	return composeExecutionG1(moduleG1, manifest.Revision, instances), declaration.ID, nil
+}
+
+// AttachPackageContract composes canonical Package Contract declarations and
+// evidence with a lifted executable graph. Empty dependency/effect lists are
+// explicit claims, not omitted metadata.
+func AttachPackageContract(programG1 string, packageModule []byte, manifest Manifest, functionID string) (string, error) {
+	var declaration *Declaration
+	for i := range manifest.Declarations {
+		if manifest.Declarations[i].ID == functionID {
+			declaration = &manifest.Declarations[i]
+			break
+		}
+	}
+	if declaration == nil {
+		return "", fmt.Errorf("provider.package_unknown_function:%s", functionID)
+	}
+	packageName := packagePathOf(declaration.NativeKey)
+	integerID := stableID("execution", "type", "i64")
+	booleanID := stableID("execution", "type", "bool")
+	packageID := stableID("package", packageName)
+	interfaceID := stableID("package-interface", functionID)
+	runtimeID := stableID("runtime-assumption", packageID, "integer.i64.modular")
+	mappingID := stableID("fidelity", functionID, "core-execution-v2")
+	instances := []graphEntity{
+		{packageID, entity(packageID, "0000000000000000000000000000b010", []graphField{bytesField(0xb100, packageName), bytesField(0xb101, manifest.Revision), refsField(0xb102, []string{interfaceID}), refsField(0xb103, nil), refsField(0xb104, nil), refsField(0xb105, []string{runtimeID}), refsField(0xb106, []string{mappingID})})},
+		{interfaceID, entity(interfaceID, "0000000000000000000000000000b011", []graphField{bytesField(0xb110, declaration.Name), refField(0xb111, functionID), refsField(0xb112, []string{integerID, integerID, integerID}), refField(0xb113, booleanID)})},
+		{runtimeID, entity(runtimeID, "0000000000000000000000000000b013", []graphField{bytesField(0xb130, "integer.i64.modular"), bytesField(0xb131, "signed 64-bit two's-complement wrapping")})},
+		{mappingID, entity(mappingID, "0000000000000000000000000000b014", []graphField{refField(0xb140, functionID), refField(0xb141, functionID), unsignedField(0xb142, 0), bytesField(0xb143, "go/types exact lift; differential Go vectors")})},
+	}
+	instances = append(graphEntities(packageModule), instances...)
+	return composeExecutionG1([]byte(programG1), manifest.Revision, instances), nil
+}
+
+func resolveFunction(project string, manifest Manifest, functionName string) (*Declaration, *ast.FuncDecl, *types.Signature, *types.Info, error) {
+	var declaration *Declaration
+	for i := range manifest.Declarations {
+		if manifest.Declarations[i].Name == functionName {
+			declaration = &manifest.Declarations[i]
+			break
+		}
+	}
+	if declaration == nil {
+		return nil, nil, nil, nil, fmt.Errorf("provider.execution_unknown_function:%s", functionName)
+	}
+	fset := token.NewFileSet()
+	var parsed []*ast.File
+	for _, file := range manifest.Files {
+		if !strings.HasSuffix(file.Path, ".go") || strings.HasSuffix(file.Path, "_test.go") {
+			continue
+		}
+		node, err := parser.ParseFile(fset, filepath.Join(project, filepath.FromSlash(file.Path)), nil, parser.SkipObjectResolution)
+		if err != nil {
+			return nil, nil, nil, nil, err
+		}
+		parsed = append(parsed, node)
+	}
+	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
+	config := types.Config{Importer: importer.Default()}
+	pkg, err := config.Check(packagePathOf(declaration.NativeKey), fset, parsed, info)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
+	var fn *ast.FuncDecl
+	var object *types.Func
+	for _, file := range parsed {
+		for _, item := range file.Decls {
+			candidate, ok := item.(*ast.FuncDecl)
+			if !ok || candidate.Recv != nil || candidate.Name.Name != functionName {
+				continue
+			}
+			candidateObject, ok := info.Defs[candidate.Name].(*types.Func)
+			if ok && candidateObject.Parent() == pkg.Scope() {
+				fn = candidate
+				object = candidateObject
+			}
+		}
+	}
+	if fn == nil {
+		return nil, nil, nil, nil, fmt.Errorf("provider.execution_unresolved_function:%s", functionName)
+	}
+	signature, ok := object.Type().(*types.Signature)
+	if !ok {
+		return nil, nil, nil, nil, fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
+	}
+	return declaration, fn, signature, info, nil
+}
+
+func resolvedParameterOperands(leftExpression, rightExpression ast.Expr, signature *types.Signature, info *types.Info) (int, int, error) {
+	left, ok := leftExpression.(*ast.Ident)
+	if !ok {
+		return -1, -1, fmt.Errorf("unsupported_left")
+	}
+	right, ok := rightExpression.(*ast.Ident)
+	if !ok {
+		return -1, -1, fmt.Errorf("unsupported_right")
+	}
+	leftVar, ok := info.Uses[left].(*types.Var)
+	if !ok {
+		return -1, -1, fmt.Errorf("unresolved_left")
+	}
+	rightVar, ok := info.Uses[right].(*types.Var)
+	if !ok {
+		return -1, -1, fmt.Errorf("unresolved_right")
+	}
+	leftIndex, rightIndex := -1, -1
+	for i := 0; i < signature.Params().Len(); i++ {
+		parameter := signature.Params().At(i)
+		if parameter == leftVar {
+			leftIndex = i
+		}
+		if parameter == rightVar {
+			rightIndex = i
+		}
+	}
+	if leftIndex < 0 || rightIndex < 0 {
+		return -1, -1, fmt.Errorf("nonparameter")
+	}
+	return leftIndex, rightIndex, nil
+}
 func isInt64(value types.Type) bool {
 	basic, ok := value.Underlying().(*types.Basic)
 	return ok && basic.Kind() == types.Int64
+}
+func isBool(value types.Type) bool {
+	basic, ok := value.Underlying().(*types.Basic)
+	return ok && basic.Kind() == types.Bool
 }
 func packagePathOf(nativeKey string) string {
 	parts := strings.Split(nativeKey, "\x00")
@@ -135,6 +264,19 @@ func packagePathOf(nativeKey string) string {
 	return parts[0]
 }
 func composeExecutionG1(module []byte, revision string, instances []graphEntity) string {
+	entities := graphEntities(module)
+	entities = append(entities, instances...)
+	sort.Slice(entities, func(i, j int) bool { return entities[i].id < entities[j].id })
+	var out strings.Builder
+	fmt.Fprintf(&out, "# Generated exact Go to Core Execution v1 lift.\nve 1\nmo %032x\nrv %s\npc 0\nec %s\n", 0x9000, revision, strconv.Itoa(len(entities)))
+	for _, item := range entities {
+		out.WriteString("\n")
+		out.WriteString(item.text)
+	}
+	return out.String()
+}
+
+func graphEntities(module []byte) []graphEntity {
 	var entities []graphEntity
 	var current *graphEntity
 	for _, line := range strings.Split(strings.TrimSpace(string(module)), "\n") {
@@ -147,13 +289,5 @@ func composeExecutionG1(module []byte, revision string, instances []graphEntity)
 			current.text += line + "\n"
 		}
 	}
-	entities = append(entities, instances...)
-	sort.Slice(entities, func(i, j int) bool { return entities[i].id < entities[j].id })
-	var out strings.Builder
-	fmt.Fprintf(&out, "# Generated exact Go to Core Execution v1 lift.\nve 1\nmo %032x\nrv %s\npc 0\nec %s\n", 0x9000, revision, strconv.Itoa(len(entities)))
-	for _, item := range entities {
-		out.WriteString("\n")
-		out.WriteString(item.text)
-	}
-	return out.String()
+	return entities
 }

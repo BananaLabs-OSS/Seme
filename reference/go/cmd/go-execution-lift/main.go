@@ -15,6 +15,8 @@ func main() {
 	manifestPath := flag.String("manifest", "", "Provider v1 manifest")
 	modulePath := flag.String("module", "", "Core Execution v1 module.g1")
 	function := flag.String("function", "Add", "function to lift")
+	profile := flag.String("profile", "add-v1", "exact lift profile: add-v1 or quota-v1")
+	packageModule := flag.String("package-module", "", "optional Package Contract module G1")
 	out := flag.String("out", "", "output G1 path")
 	flag.Parse()
 	if *project == "" || *manifestPath == "" || *modulePath == "" || *out == "" {
@@ -25,8 +27,21 @@ func main() {
 	check(err)
 	module, err := os.ReadFile(*modulePath)
 	check(err)
-	g1, _, err := goprovider.LiftAdd(*project, manifest, module, *function)
+	var g1, functionID string
+	if *profile == "add-v1" {
+		g1, functionID, err = goprovider.LiftAdd(*project, manifest, module, *function)
+	} else if *profile == "quota-v1" {
+		g1, functionID, err = goprovider.LiftAdmit(*project, manifest, module, *function)
+	} else {
+		err = fmt.Errorf("unknown profile %q", *profile)
+	}
 	check(err)
+	if *packageModule != "" {
+		packageBytes, readErr := os.ReadFile(*packageModule)
+		check(readErr)
+		g1, err = goprovider.AttachPackageContract(g1, packageBytes, manifest, functionID)
+		check(err)
+	}
 	check(os.WriteFile(*out, []byte(g1), 0o644))
 }
 func check(err error) {

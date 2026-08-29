@@ -87,9 +87,18 @@ next milestone broadens only as required by the package/application proof.
 
 ## 5. Package and application proof
 
-- Represent one normal package boundary, including effects, runtime assumptions,
-  dependencies, typed interfaces, and fidelity.
-- Run one useful Sessions/Pulp component through the complete path.
+Status: complete for Package Contract v1's scoped quota-policy profile.
+
+- An ordinary Go package remains untouched and exposes a typed policy boundary.
+- Canonical Package entities record the interface, explicitly empty dependency
+  and effect sets, modular-integer runtime assumption, and exact fidelity with
+  evidence.
+- Core Execution v2 independently executes the package policy and matches Go,
+  including signed overflow.
+
+This establishes the package/application contract but is not yet the real Pulp
+workload. The next proof should exercise a nonempty effect and dependency while
+building the first Wasm portability plan.
 
 ## 6. WebAssembly portability proof
 
