@@ -54,6 +54,21 @@ fn append-uleb 2 3
   lg 0 re
 fe
 
+# append-u24(layout, value) -> layout
+fn append-u24 2 3
+  lg 0 lg 1 cu 255 an bp ls 0
+  lg 0 lg 1 cu 8 sr cu 255 an bp ls 0
+  lg 0 lg 1 cu 16 sr cu 255 an bp re
+fe
+
+# layout-offset(layout, instruction-index) -> byte offset
+fn layout-offset 2 5
+  lg 1 cu 3 mu ls 2
+  lg 0 lg 2 bg ls 3
+  lg 0 lg 2 cu 1 ad bg cu 8 sl lg 3 or ls 3
+  lg 0 lg 2 cu 2 ad bg cu 16 sl lg 3 or re
+fe
+
 # id-is(buffer, offset, low-16-bit identity) -> bool
 fn id-is 3 7
   cu 0 ls 3
@@ -83,6 +98,22 @@ fn id-equal 4 7
   ju equal-loop
   lb equal-false
   cu 0 re
+fe
+
+# find an instruction target in the function reference list before limit.
+# Returns its zero-based semantic instruction index.
+fn prior-reference-index 4 7
+  cu 0 ls 4
+  lb prior-reference-loop
+  lg 4 lg 3 eq bf prior-reference-item
+  ca fail re
+  lb prior-reference-item
+  lg 1 lg 4 cu 17 mu ad cu 1 ad ls 5
+  lg 0 lg 5 lg 0 lg 2 ca id-equal bf prior-reference-next
+  lg 4 re
+  lb prior-reference-next
+  lg 4 cu 1 ad ls 4
+  ju prior-reference-loop
 fe
 
 # expect-id(buffer, cursor, low-16-bit identity) -> cursor + 16
@@ -201,6 +232,7 @@ fn main 0 20
   lb instruction-entities-start
   lg 5 cu 2 ad lg 12 eq bf lower-invalid
   cu 1048576 bn ls 8
+  cu 1048576 bn ls 17
   cu 0 ls 11
 
   lb instruction-entity-loop
@@ -208,6 +240,8 @@ fn main 0 20
   ju instructions-finished
 
   lb instruction-entity
+  # Record this semantic instruction's derived byte boundary.
+  lg 17 lg 8 bl ca append-u24 ls 17
   # Reference offset = first tag + (index * 17) + 1.
   lg 4 lg 11 cu 17 mu ad cu 1 ad ls 16
   lg 0 lg 16 lg 0 lg 2 ca id-equal bf lower-invalid
@@ -223,7 +257,28 @@ fn main 0 20
   lg 6 cu 21 sr ls 7
   lg 6 cu 2097151 an ls 2
 
+  # Bootstrap control-flow profile accepts stable backward targets. Forward
+  # targets use the forthcoming monotone refinement pass.
+  lg 7 cu 32 eq bf instruction-branch-false-check
+  ju instruction-with-target
+  lb instruction-branch-false-check
+  lg 7 cu 33 eq bf instruction-operand-check
+  ju instruction-with-target
+
+  lb instruction-with-target
+  lg 15 cu 2 eq bf lower-invalid
+  lg 8 lg 7 bp ls 8
+  lg 0 lg 2 cu 41250 ca expect-id ls 2
+  lg 0 lg 2 cu 6 ca expect-byte ls 2
+  lg 0 lg 4 lg 2 lg 11 ca prior-reference-index ls 18
+  lg 8 lg 18 ca append-uleb ls 8
+  lg 17 lg 18 ca layout-offset ls 19
+  lg 8 lg 19 ca append-uleb ls 8
+  lg 2 cu 16 ad ls 2
+  ju instruction-next
+
   # Operand-bearing straight-line instructions: const.u, local.get, local.set.
+  lb instruction-operand-check
   lg 7 cu 1 eq bf instruction-local-get
   ju instruction-with-operand
   lb instruction-local-get

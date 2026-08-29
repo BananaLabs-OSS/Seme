@@ -65,9 +65,11 @@ and byte layout exist only in the derived image. This is the first complete
 canonical-semantics-to-execution path. A second checked graph derives `20 + 22`
 through separate instruction entities and also executes as 42. A third graph
 stores and reloads 42 through an explicit local, guarding the distinction
-between Program capabilities and Function parameter/local counts. Branches,
-calls, multiple functions, and P2 effects remain required before moving the
-compiler graph onto it.
+between Program capabilities and Function parameter/local counts. The backward
+loop graph uses a stable instruction reference, from which the lowerer derives
+both the K0 target index and byte witness, loops three times, and returns 42.
+Forward branches, calls, multiple functions, and P2 effects remain required
+before moving the compiler graph onto it.
 
 Branch and call lowering will retain semantic references in canonical storage.
 Like the symbolic S1 compiler, the canonical lowerer derives positional indices
