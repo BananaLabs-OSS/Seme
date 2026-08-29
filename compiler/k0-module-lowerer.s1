@@ -1,4 +1,4 @@
-# Bootstrap profile 4 canonical K0-module graph lowerer.
+# Bootstrap profile 5 canonical K0-module graph lowerer.
 # This rung accepts multiple P1 functions and stable semantic control flow.
 ve 3
 cp 7
@@ -205,8 +205,18 @@ fn build-layout 6 20
   lg 12 cu 32 eq bf build-layout-branch-false
   ju build-layout-target
   lb build-layout-branch-false
-  lg 12 cu 33 eq bf build-layout-no-operand
+  lg 12 cu 33 eq bf build-layout-call-check
   ju build-layout-target
+
+  lb build-layout-call-check
+  lg 12 cu 48 eq bf build-layout-no-operand
+  lg 11 cu 2 eq bf build-layout-invalid
+  lg 0 lg 7 cu 41251 ca expect-id ls 7
+  lg 0 lg 7 cu 6 ca expect-byte ls 7
+  lg 7 cu 16 ad ls 7
+  # Function indices are one byte because K0 permits at most 16 functions.
+  lg 13 cu 1 ad ls 13
+  ju build-layout-next
 
   lb build-layout-target
   lg 11 cu 2 eq bf build-layout-invalid
@@ -401,8 +411,19 @@ fn main 0 25
   lg 7 cu 32 eq bf instruction-branch-false-check
   ju instruction-with-target
   lb instruction-branch-false-check
-  lg 7 cu 33 eq bf instruction-operand-check
+  lg 7 cu 33 eq bf instruction-call-check
   ju instruction-with-target
+
+  lb instruction-call-check
+  lg 7 cu 48 eq bf instruction-operand-check
+  lg 15 cu 2 eq bf lower-invalid
+  lg 8 lg 7 bp ls 8
+  lg 0 lg 2 cu 41251 ca expect-id ls 2
+  lg 0 lg 2 cu 6 ca expect-byte ls 2
+  lg 0 lg 3 lg 2 lg 20 ca reference-index ls 18
+  lg 8 lg 18 ca append-uleb ls 8
+  lg 2 cu 16 ad ls 2
+  ju instruction-next
 
   lb instruction-with-target
   lg 15 cu 2 eq bf lower-invalid

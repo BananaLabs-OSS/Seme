@@ -53,7 +53,7 @@ semantic state.
 ## First semantic executable lowering
 
 `k0-module-lowerer.s1` consumes a validated canonical Kernel graph using the K0
-semantic module and derives a portable K0 image. Bootstrap profile 4 accepts
+semantic module and derives a portable K0 image. Bootstrap profile 5 accepts
 multiple P1 functions with arbitrary valid parameter/local counts and
 arbitrary-length instruction lists containing constants, locals, stack/integer
 operations, comparisons, and branches. It checks declared entity counts, K0
@@ -72,10 +72,12 @@ between Program capabilities and Function parameter/local counts. The backward
 loop graph uses a stable instruction reference, from which the lowerer derives
 both the K0 target index and byte witness, loops three times, and returns 42.
 The forward-branch graph proves the corresponding forward reference using four
-monotone layout refinements before emission. Calls and P2 effects remain
-required before moving the compiler graph onto it. The checked
+monotone layout refinements before emission. P2 effects remain required before
+moving the compiler graph onto it. The checked
 two-function graph proves ordered function derivation and entry selection by a
 stable reference; the second function is selected and returns 42.
+The call graph passes two semantic arguments to a separately identified
+function and derives its K0 call index, returning `20 + 22 = 42`.
 
 Branch and call lowering will retain semantic references in canonical storage.
 Like the symbolic S1 compiler, the canonical lowerer derives positional indices
