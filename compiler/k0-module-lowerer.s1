@@ -61,6 +61,17 @@ fn append-u24 2 3
   lg 0 lg 1 cu 16 sr cu 255 an bp re
 fe
 
+fn uleb-width 1 2
+  cu 1 ls 1
+  lb width-loop
+  lg 0 cu 128 lt bf width-more
+  lg 1 re
+  lb width-more
+  lg 0 cu 7 sr ls 0
+  lg 1 cu 1 ad ls 1
+  ju width-loop
+fe
+
 # layout-offset(layout, instruction-index) -> byte offset
 fn layout-offset 2 5
   lg 1 cu 3 mu ls 2
@@ -100,20 +111,19 @@ fn id-equal 4 7
   cu 0 re
 fe
 
-# find an instruction target in the function reference list before limit.
-# Returns its zero-based semantic instruction index.
-fn prior-reference-index 4 7
+# Find an instruction target in the complete function reference list.
+fn reference-index 4 7
   cu 0 ls 4
-  lb prior-reference-loop
-  lg 4 lg 3 eq bf prior-reference-item
+  lb reference-loop
+  lg 4 lg 3 eq bf reference-item
   ca fail re
-  lb prior-reference-item
+  lb reference-item
   lg 1 lg 4 cu 17 mu ad cu 1 ad ls 5
-  lg 0 lg 5 lg 0 lg 2 ca id-equal bf prior-reference-next
+  lg 0 lg 5 lg 0 lg 2 ca id-equal bf reference-next
   lg 4 re
-  lb prior-reference-next
+  lb reference-next
   lg 4 cu 1 ad ls 4
-  ju prior-reference-loop
+  ju reference-loop
 fe
 
 # expect-id(buffer, cursor, low-16-bit identity) -> cursor + 16
@@ -141,6 +151,100 @@ fn expect-uleb 3 5
   lg 3 cu 21 sr lg 2 eq bf expect-uleb-invalid
   lg 3 cu 2097151 an re
   lb expect-uleb-invalid
+  ca fail re
+fe
+
+# Build one monotone instruction layout refinement. Each boundary is u24.
+# build-layout(source, entity-start, count, refs-start, previous, refine)
+fn build-layout 6 20
+  cu 1048576 bn ls 6
+  lg 1 ls 7
+  cu 0 ls 8
+  cu 0 ls 9
+  lb build-layout-loop
+  lg 8 lg 2 eq bf build-layout-item
+  lg 6 lg 9 ca append-u24 re
+
+  lb build-layout-item
+  lg 6 lg 9 ca append-u24 ls 6
+  # entity identity + Instruction schema + version
+  lg 7 cu 16 ad ls 7
+  lg 0 lg 7 cu 40978 ca expect-id ls 7
+  lg 0 lg 7 cu 1 ca expect-uleb ls 7
+  lg 0 lg 7 ca take-uleb ls 10
+  lg 10 cu 21 sr ls 11
+  lg 10 cu 2097151 an ls 7
+  lg 0 lg 7 cu 41248 ca expect-id ls 7
+  lg 0 lg 7 cu 3 ca expect-byte ls 7
+  lg 0 lg 7 ca take-uleb ls 10
+  lg 10 cu 21 sr ls 12
+  lg 10 cu 2097151 an ls 7
+  cu 1 ls 13
+
+  # Numeric-operand instructions use the already canonical operand width.
+  lg 12 cu 1 eq bf build-layout-local-get
+  ju build-layout-operand
+  lb build-layout-local-get
+  lg 12 cu 2 eq bf build-layout-local-set
+  ju build-layout-operand
+  lb build-layout-local-set
+  lg 12 cu 3 eq bf build-layout-branch
+  ju build-layout-operand
+
+  lb build-layout-operand
+  lg 11 cu 2 eq bf build-layout-invalid
+  lg 0 lg 7 cu 41249 ca expect-id ls 7
+  lg 0 lg 7 cu 3 ca expect-byte ls 7
+  lg 7 ls 14
+  lg 0 lg 7 ca take-uleb ls 10
+  lg 10 cu 2097151 an ls 7
+  lg 7 lg 14 su lg 13 ad ls 13
+  ju build-layout-next
+
+  lb build-layout-branch
+  lg 12 cu 32 eq bf build-layout-branch-false
+  ju build-layout-target
+  lb build-layout-branch-false
+  lg 12 cu 33 eq bf build-layout-no-operand
+  ju build-layout-target
+
+  lb build-layout-target
+  lg 11 cu 2 eq bf build-layout-invalid
+  lg 0 lg 7 cu 41250 ca expect-id ls 7
+  lg 0 lg 7 cu 6 ca expect-byte ls 7
+  lg 0 lg 3 lg 7 lg 2 ca reference-index ls 15
+  lg 15 ca uleb-width lg 13 ad ls 13
+  lg 5 cu 0 eq bf build-layout-refined
+  lg 13 cu 1 ad ls 13
+  ju build-layout-target-done
+  lb build-layout-refined
+  lg 4 lg 15 ca layout-offset ca uleb-width lg 13 ad ls 13
+  lb build-layout-target-done
+  lg 7 cu 16 ad ls 7
+  ju build-layout-next
+
+  lb build-layout-no-operand
+  lg 11 cu 1 eq bf build-layout-invalid
+  lg 12 cu 0 eq bf build-layout-drop
+  ju build-layout-next
+  lb build-layout-drop
+  lg 12 cu 4 eq bf build-layout-dup
+  ju build-layout-next
+  lb build-layout-dup
+  lg 12 cu 5 eq bf build-layout-arithmetic-low
+  ju build-layout-next
+  lb build-layout-arithmetic-low
+  lg 12 cu 16 lt bf build-layout-arithmetic-high
+  ju build-layout-invalid
+  lb build-layout-arithmetic-high
+  lg 12 cu 28 lt bf build-layout-invalid
+  ju build-layout-next
+
+  lb build-layout-next
+  lg 9 lg 13 ad ls 9
+  lg 8 cu 1 ad ls 8
+  ju build-layout-loop
+  lb build-layout-invalid
   ca fail re
 fe
 
@@ -231,8 +335,12 @@ fn main 0 20
 
   lb instruction-entities-start
   lg 5 cu 2 ad lg 12 eq bf lower-invalid
+  lg 2 ls 16
+  lg 0 lg 16 lg 5 lg 4 cu 0 cu 0 ca build-layout ls 17
+  lg 0 lg 16 lg 5 lg 4 lg 17 cu 1 ca build-layout ls 17
+  lg 0 lg 16 lg 5 lg 4 lg 17 cu 2 ca build-layout ls 17
+  lg 0 lg 16 lg 5 lg 4 lg 17 cu 3 ca build-layout ls 17
   cu 1048576 bn ls 8
-  cu 1048576 bn ls 17
   cu 0 ls 11
 
   lb instruction-entity-loop
@@ -240,8 +348,6 @@ fn main 0 20
   ju instructions-finished
 
   lb instruction-entity
-  # Record this semantic instruction's derived byte boundary.
-  lg 17 lg 8 bl ca append-u24 ls 17
   # Reference offset = first tag + (index * 17) + 1.
   lg 4 lg 11 cu 17 mu ad cu 1 ad ls 16
   lg 0 lg 16 lg 0 lg 2 ca id-equal bf lower-invalid
@@ -257,8 +363,7 @@ fn main 0 20
   lg 6 cu 21 sr ls 7
   lg 6 cu 2097151 an ls 2
 
-  # Bootstrap control-flow profile accepts stable backward targets. Forward
-  # targets use the forthcoming monotone refinement pass.
+  # Stable targets become derived indices and witnesses from the final layout.
   lg 7 cu 32 eq bf instruction-branch-false-check
   ju instruction-with-target
   lb instruction-branch-false-check
@@ -270,7 +375,7 @@ fn main 0 20
   lg 8 lg 7 bp ls 8
   lg 0 lg 2 cu 41250 ca expect-id ls 2
   lg 0 lg 2 cu 6 ca expect-byte ls 2
-  lg 0 lg 4 lg 2 lg 11 ca prior-reference-index ls 18
+  lg 0 lg 4 lg 2 lg 5 ca reference-index ls 18
   lg 8 lg 18 ca append-uleb ls 8
   lg 17 lg 18 ca layout-offset ls 19
   lg 8 lg 19 ca append-uleb ls 8
