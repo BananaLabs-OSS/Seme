@@ -72,9 +72,18 @@ unchanged-entity equality must be compared independently of source formatting.
 
 ## 4. Independent lowering
 
-- Lower the supported canonical subset without treating Go as authoritative.
-- Keep unsupported constructs explicit as opaque/provider dependencies.
-- Compare behavior with the original Go execution as conformance evidence.
+Complete for the frozen Core Execution v1 profile:
+
+- the Go provider parses and type-checks the exact `int64` parameter-addition
+  subset, then emits language-neutral canonical entities;
+- the Seme-owned canonical interpreter executes those entities without Go at
+  runtime and matches ordinary Go across normal, negative, zero, and signed
+  overflow vectors;
+- unsupported constructs reject explicitly instead of receiving guessed
+  semantics.
+
+This proves the independent-execution contract, not general Go lowering. The
+next milestone broadens only as required by the package/application proof.
 
 ## 5. Package and application proof
 

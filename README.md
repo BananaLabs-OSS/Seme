@@ -97,6 +97,13 @@ projects resolved occurrences, runs the native Go tests, re-imports, and proves
 identity recovery. It validates the provider boundary, not general Go support.
 Run it with `./scripts/check-provider-v1.sh`.
 
+The next proof, [`Core Execution v1`](spec/core-execution-v1.md), exactly lifts
+an ordinary type-checked Go `Add(int64, int64) int64` body into language-neutral
+entities and executes it through a canonical Seme-owned interpreter. Go is used
+as the source oracle, but is absent from the runtime invocation. Unsupported
+bodies reject explicitly; this is an independent execution proof, not a claim
+of general Go execution. Run it with `./scripts/check-execution-v1.sh`.
+
 Above frozen Kernel v1, Semantic Foundation v1 and Patch Module v1 define the
 first versioned schema and transactional-edit contracts. Their checked module
 artifacts and differential conformance gate are under `modules/`, `reference/`,

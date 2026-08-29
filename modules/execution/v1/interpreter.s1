@@ -1,0 +1,259 @@
+# Core Execution v1 canonical interpreter construction source.
+#
+# Runtime interface:
+#   interpreter.k0 PROGRAM.seme ARGS.bin RESULT.bin
+# ARGS.bin contains two little-endian i64 bit patterns. RESULT.bin contains
+# one little-endian i64 bit pattern. Go is not involved in this invocation.
+ve 3
+cp 7
+
+fn fail 0 0
+  cu 65 re
+fe
+
+# Decode canonical ULEB. Return packs cursor in low 21 bits and value above it.
+fn take 2 10
+  cu 0 ls 2 cu 0 ls 3 cu 0 ls 4 lg 0 bl ls 5
+  lb byte
+  lg 1 lg 5 eq bf have ca fail re
+  lb have
+  lg 0 lg 1 bg ls 6 lg 1 cu 1 ad ls 1 lg 6 cu 127 an ls 7
+  lg 3 cu 63 eq bf shift cu 1 lg 7 lt bf shift ca fail re
+  lb shift
+  lg 7 lg 3 sl lg 2 or ls 2 lg 4 cu 1 ad ls 4
+  lg 6 cu 128 an cu 0 eq bf more
+  lg 4 cu 1 eq bf terminal lg 2 cu 21 sl lg 1 or re
+  lb terminal
+  lg 7 cu 0 eq bf done ca fail re
+  lb done
+  lg 2 cu 21 sl lg 1 or re
+  lb more
+  lg 3 cu 7 ad ls 3 cu 63 lg 3 lt bf byte ca fail re
+fe
+
+fn id-equal 4 6
+  cu 0 ls 4
+  lb loop
+  lg 4 cu 16 eq bf byte cu 1 re
+  lb byte
+  lg 0 lg 1 lg 4 ad bg lg 2 lg 3 lg 4 ad bg eq bf no
+  lg 4 cu 1 ad ls 4 ju loop
+  lb no
+  cu 0 re
+fe
+
+# Compare a 128-bit identity with zero-prefix identity ...LOW16.
+fn id-is 3 6
+  cu 0 ls 3
+  lb prefix
+  lg 3 cu 14 eq bf byte
+  lg 0 lg 1 cu 14 ad bg lg 2 cu 8 sr cu 255 an eq bf no
+  lg 0 lg 1 cu 15 ad bg lg 2 cu 255 an eq bf no
+  cu 1 re
+  lb byte
+  lg 0 lg 1 lg 3 ad bg cu 0 eq bf no
+  lg 3 cu 1 ad ls 3 ju prefix
+  lb no
+  cu 0 re
+fe
+
+fn skip-value 2 10
+  lg 0 lg 1 bg ls 2 lg 1 cu 1 ad ls 1
+  lg 2 cu 3 lt bf integer lg 1 re
+  lb integer
+  lg 2 cu 5 lt bf bytes lg 0 lg 1 ca take cu 2097151 an re
+  lb bytes
+  lg 2 cu 5 eq bf reference
+  lg 0 lg 1 ca take ls 3 lg 3 cu 2097151 an lg 3 cu 21 sr ad re
+  lb reference
+  lg 2 cu 6 eq bf list lg 1 cu 16 ad re
+  lb list
+  lg 2 cu 7 eq bf record
+  lg 0 lg 1 ca take ls 3 lg 3 cu 2097151 an ls 1
+  lg 3 cu 21 sr ls 4 cu 0 ls 5
+  lb list-loop
+  lg 5 lg 4 eq bf list-item lg 1 re
+  lb list-item
+  lg 0 lg 1 ca skip-value ls 1 lg 5 cu 1 ad ls 5 ju list-loop
+  lb record
+  lg 2 cu 8 eq bf hole
+  lg 0 lg 1 ca take ls 3 lg 3 cu 2097151 an ls 1
+  lg 3 cu 21 sr ls 4 cu 0 ls 5
+  lb record-loop
+  lg 5 lg 4 eq bf record-item lg 1 re
+  lb record-item
+  lg 1 cu 16 ad ls 1 lg 0 lg 1 ca skip-value ls 1
+  lg 5 cu 1 ad ls 5 ju record-loop
+  lb hole
+  lg 1 cu 16 ad re
+fe
+
+fn entities 1 6
+  cu 8 ls 1 lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an cu 32 ad ls 1
+  lg 0 lg 1 ca take ls 2 lg 2 cu 2097151 an ls 1
+  lg 2 cu 21 sr cu 16 mu lg 1 ad ls 1
+  lg 0 lg 1 ca take ls 2
+  lg 2 cu 21 sr cu 21 sl lg 2 cu 2097151 an or re
+fe
+
+fn next-entity 2 7
+  lg 1 cu 32 ad ls 1 lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an ls 1 lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an ls 1 lg 2 cu 21 sr ls 3 cu 0 ls 4
+  lb loop
+  lg 4 lg 3 eq bf field lg 1 re
+  lb field
+  lg 1 cu 16 ad ls 1 lg 0 lg 1 ca skip-value ls 1
+  lg 4 cu 1 ad ls 4 ju loop
+fe
+
+fn find-entity 3 10
+  lg 0 ca entities ls 3 lg 3 cu 2097151 an ls 4
+  lg 3 cu 21 sr ls 5 cu 0 ls 6
+  lb loop
+  lg 6 lg 5 eq bf item cu 0 re
+  lb item
+  lg 0 lg 4 lg 1 lg 2 ca id-equal bf next lg 4 re
+  lb next
+  lg 0 lg 4 ca next-entity ls 4 lg 6 cu 1 ad ls 6 ju loop
+fe
+
+fn find-schema 2 10
+  lg 0 ca entities ls 2 lg 2 cu 2097151 an ls 3
+  lg 2 cu 21 sr ls 4 cu 0 ls 5
+  lb loop
+  lg 5 lg 4 eq bf item cu 0 re
+  lb item
+  lg 0 lg 3 cu 16 ad lg 1 ca id-is bf next lg 3 re
+  lb next
+  lg 0 lg 3 ca next-entity ls 3 lg 5 cu 1 ad ls 5 ju loop
+fe
+
+# Return cursor immediately after a field's value tag.
+fn find-field-is 3 9
+  lg 1 cu 32 ad ls 1 lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1 lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1 lg 3 cu 21 sr ls 4 cu 0 ls 5
+  lb loop
+  lg 5 lg 4 eq bf item cu 0 re
+  lb item
+  lg 0 lg 1 lg 2 ca id-is bf next lg 1 cu 17 ad re
+  lb next
+  lg 1 cu 16 ad ls 1 lg 0 lg 1 ca skip-value ls 1
+  lg 5 cu 1 ad ls 5 ju loop
+fe
+
+# Load a little-endian uint64 from BUFFER at OFFSET.
+fn load64 2 6
+  cu 0 ls 2 cu 0 ls 3
+  lb loop
+  lg 3 cu 8 eq bf byte lg 2 re
+  lb byte
+  lg 0 lg 1 lg 3 ad bg lg 3 cu 8 mu sl lg 2 or ls 2
+  lg 3 cu 1 ad ls 3 ju loop
+fe
+
+# Evaluate the two expression forms in the frozen v1 execution profile.
+fn eval 3 20
+  lg 0 lg 1 cu 16 ad cu 36883 ca id-is bf add
+  # ParameterRead.parameter -> Parameter.index -> argument slot.
+  lg 0 lg 1 cu 37168 ca find-field-is ls 3
+  lg 3 cu 0 eq bf read-field ca fail re
+  lb read-field
+  lg 0 lg 0 lg 3 ca find-entity ls 4
+  lg 4 cu 0 eq bf parameter ca fail re
+  lb parameter
+  lg 0 lg 4 cu 37154 ca find-field-is ls 5
+  lg 5 cu 0 eq bf index ca fail re
+  lb index
+  lg 0 lg 5 ca take ls 6
+  lg 6 cu 21 sr ls 7
+  lg 7 cu 2 lt cu 0 eq bf index-ok ca fail re
+  lb index-ok
+  lg 2 lg 7 cu 8 mu ca load64 re
+
+  lb add
+  lg 0 lg 1 cu 16 ad cu 36884 ca id-is bf unsupported
+  lg 0 lg 1 cu 37184 ca find-field-is ls 8
+  lg 0 lg 1 cu 37185 ca find-field-is ls 9
+  lg 8 cu 0 eq bf left ca fail re
+  lb left
+  lg 9 cu 0 eq bf right ca fail re
+  lb right
+  lg 0 lg 0 lg 8 ca find-entity ls 10
+  lg 0 lg 0 lg 9 ca find-entity ls 11
+  lg 10 cu 0 eq bf left-found ca fail re
+  lb left-found
+  lg 11 cu 0 eq bf right-found ca fail re
+  lb right-found
+  lg 0 lg 10 lg 2 ca eval ls 12
+  lg 0 lg 11 lg 2 ca eval lg 12 ad re
+  lb unsupported
+  ca fail re
+fe
+
+fn main 0 24
+  ac cu 3 eq bf invocation
+  cu 0 ag fr ls 0 cu 1 ag fr ls 1
+  lg 1 bl cu 16 eq cu 0 eq bf arguments ca fail re
+
+  # Locate the sole entry point and verify the supported i64 profile.
+  lb arguments
+  lg 0 cu 36885 ca find-schema ls 2
+  lg 2 cu 0 eq bf program ca fail re
+  lb program
+  lg 0 lg 2 cu 37201 ca find-field-is ls 3
+  lg 3 cu 0 eq bf entry-field ca fail re
+  lb entry-field
+  lg 0 lg 0 lg 3 ca find-entity ls 4
+  lg 4 cu 0 eq bf entry ca fail re
+  lb entry
+  lg 0 lg 4 cu 16 ad cu 36881 ca id-is cu 0 eq bf function ca fail re
+  lb function
+  lg 0 lg 4 cu 37138 ca find-field-is ls 5
+  lg 5 cu 0 eq bf result-field ca fail re
+  lb result-field
+  lg 0 lg 0 lg 5 ca find-entity ls 6
+  lg 6 cu 0 eq bf type ca fail re
+  lb type
+  lg 0 lg 6 cu 16 ad cu 36880 ca id-is cu 0 eq bf integer-type ca fail re
+  lb integer-type
+  lg 0 lg 6 cu 37120 ca find-field-is ls 7
+  lg 0 lg 7 ca take ls 8
+  lg 8 cu 21 sr cu 64 eq cu 0 eq bf width ca fail re
+  lb width
+  lg 0 lg 6 cu 37121 ca find-field-is ls 9
+  lg 0 lg 9 cu 1 su bg cu 2 eq cu 0 eq bf signed ca fail re
+  lb signed
+  lg 0 lg 6 cu 37122 ca find-field-is ls 10
+  lg 0 lg 10 ca take ls 11
+  lg 11 cu 21 sr cu 0 eq cu 0 eq bf overflow ca fail re
+  lb overflow
+  lg 0 lg 4 cu 37137 ca find-field-is ls 12
+  lg 0 lg 12 ca take ls 13
+  lg 13 cu 21 sr cu 2 eq cu 0 eq bf arity ca fail re
+
+  lb arity
+  lg 0 lg 4 cu 37139 ca find-field-is ls 14
+  lg 14 cu 0 eq bf body-field ca fail re
+  lb body-field
+  lg 0 lg 0 lg 14 ca find-entity ls 15
+  lg 15 cu 0 eq bf body ca fail re
+  lb body
+  lg 0 lg 15 lg 1 ca eval ls 16
+
+  cu 8 bn ls 17 cu 0 ls 18
+  lb output-loop
+  lg 18 cu 8 eq bf output-byte ju output
+  lb output-byte
+  lg 17 lg 16 lg 18 cu 8 mu sr cu 255 an bp ls 17
+  lg 18 cu 1 ad ls 18 ju output-loop
+  lb output
+  cu 2 ag lg 17 fw re
+
+  lb invocation
+  cu 64 re
+fe
+
+en main
