@@ -60,6 +60,8 @@ not affect diagnostic identity or ordering.
 Kinds are `0` entity, `1` field, `2` list element, and `3` nested record field.
 The required location is semantic and remains stable when a textual projection
 is reformatted. Projection-specific source ranges may be derived separately.
+An all-zero identity in a path segment means the validator reached that
+semantic level but the malformed input did not provide a trustworthy identity.
 
 ## DiagnosticReport fields
 
