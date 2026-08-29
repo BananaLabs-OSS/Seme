@@ -96,7 +96,13 @@ A, B, and C are byte-identical. Canonical Seme is therefore authoritative for
 this lowerer now; `k0-module-lowerer.s1` remains as auditable bootstrap history,
 not the continuing source required to reproduce it.
 
-Branch and call lowering will retain semantic references in canonical storage.
+The G1 frontend, Kernel validator, and v0 migrator now follow the same model:
+each has a checked readable `.g1` projection, authoritative canonical `.seme`
+graph, and derived `.k0` executable. Compiler C rebuilds all three executables
+byte-for-byte. Frozen Core 1 records the closed reproduction and continuing-edit
+contract in `FROZEN-CORE-1.md`.
+
+Branch and call lowering retains semantic references in canonical storage.
 Like the symbolic S1 compiler, the canonical lowerer derives positional indices
 and branch witnesses through monotone layout refinement before emission. The K0
 module contract now distinguishes an instruction `target` reference from a
