@@ -1,0 +1,14 @@
+schema_version = 1
+name = "seme-quota"
+version = "1.0.0"
+wasm = "quota-admit.wasm"
+
+provides = []
+consumes = []
+capabilities = ["observability.log"]
+
+shared_memory_groups = []
+dedicated_thread = false
+snapshotable = false
+
+[config]

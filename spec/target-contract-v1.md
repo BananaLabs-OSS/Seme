@@ -152,7 +152,7 @@ effect. It emits:
 - package dependency `go:log`;
 - Foundation effect and capability `observability.log`;
 - target `wasm32-pulp-v1`;
-- an `adapted` rule requiring `pulp.host.log-v1`;
+- an `adapted` rule requiring provider `seme.pulp.log-v1`;
 - an explicit typed Boundary to that host import;
 - canonical evidence and runtime assumptions.
 

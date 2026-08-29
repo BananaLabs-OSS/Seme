@@ -53,7 +53,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	effectID := stableID("effect", "observability.log")
 	runtimeID := stableID("runtime-assumption", packageID, "go.log.Printf")
 	mappingID := stableID("fidelity", declaration.ID, "wasm32-pulp-v1")
-	hostAdapterID := stableID("target-dependency", "pulp.host.log-v1")
+	hostAdapterID := stableID("target-dependency", "seme.pulp.log-v1")
 	targetID := stableID("target", "wasm32-pulp-v1")
 	dependencyRuleID := stableID("target-rule", targetID, dependencyID)
 	effectRuleID := stableID("target-rule", targetID, effectID)
@@ -73,7 +73,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		{capabilityID, entity(capabilityID, "00000000000000000000000000000016", []graphField{bytesField(0x160, "observability.log")})},
 		{effectID, entity(effectID, "00000000000000000000000000000015", []graphField{bytesField(0x150, "observability.log"), refField(0x151, capabilityID)})},
 		{runtimeID, entity(runtimeID, "0000000000000000000000000000b013", []graphField{bytesField(0xb130, "go.log.Printf"), bytesField(0xb131, "formatted process-global logging sink")})},
-		{hostAdapterID, entity(hostAdapterID, "0000000000000000000000000000b013", []graphField{bytesField(0xb130, "pulp.host.log-v1"), bytesField(0xb131, "Wasm host import guarded by observability.log capability")})},
+		{hostAdapterID, entity(hostAdapterID, "0000000000000000000000000000b013", []graphField{bytesField(0xb130, "seme.pulp.log-v1"), bytesField(0xb131, "Wasm host import guarded by observability.log capability")})},
 		{dependencyID, entity(dependencyID, "0000000000000000000000000000b012", []graphField{bytesField(0xb120, "go:log"), bytesField(0xb121, "Go standard library for provider profile"), refField(0xb122, hostAdapterID)})},
 		{interfaceID, entity(interfaceID, "0000000000000000000000000000b011", []graphField{bytesField(0xb110, "Admit"), refField(0xb111, canonicalFunctionID), refsField(0xb112, []string{integerID, integerID, integerID}), refField(0xb113, booleanID)})},
 		{mappingID, entity(mappingID, "0000000000000000000000000000b014", []graphField{refField(0xb140, declaration.ID), refField(0xb141, canonicalFunctionID), unsignedField(0xb142, 2), bytesField(0xb143, "go/types exact decision lift; Pulp host import adapts log.Printf")})},

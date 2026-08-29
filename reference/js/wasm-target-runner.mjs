@@ -11,6 +11,7 @@ const { instance } = await WebAssembly.instantiate(moduleBytes, {
   pulp: {
     log_bool(value) {
       events.push(value !== 0);
+      return 0;
     },
   },
 });
