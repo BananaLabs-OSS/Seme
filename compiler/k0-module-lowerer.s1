@@ -54,6 +54,39 @@ fn append-uleb 2 3
   lg 0 re
 fe
 
+# Copy one canonical full-width ULEB from source to output and return cursor.
+# This preserves all 64 operand bits; take-uleb's packed return is only suitable
+# when the decoded value is independently bounded below 43 bits.
+fn append-source-uleb 3 9
+  cu 0 ls 3
+  cu 0 ls 4
+  lg 0 bl ls 5
+  lb source-uleb-byte
+  lg 1 lg 5 eq bf source-uleb-room
+  ca fail re
+  lb source-uleb-room
+  lg 0 lg 1 bg ls 6
+  lg 2 lg 6 bp ls 2
+  lg 1 cu 1 ad ls 1
+  lg 3 cu 1 ad ls 3
+  lg 6 cu 127 an ls 4
+  lg 3 cu 10 eq bf source-uleb-continuation
+  cu 1 lg 4 lt bf source-uleb-continuation
+  ca fail re
+  lb source-uleb-continuation
+  lg 6 cu 128 an cu 0 eq bf source-uleb-more
+  lg 3 cu 1 eq bf source-uleb-multi
+  lg 1 re
+  lb source-uleb-multi
+  lg 4 cu 0 eq bf source-uleb-done
+  ca fail re
+  lb source-uleb-done
+  lg 1 re
+  lb source-uleb-more
+  cu 10 lg 3 lt bf source-uleb-byte
+  ca fail re
+fe
+
 # append-u24(layout, value) -> layout
 fn append-u24 2 3
   lg 0 lg 1 cu 255 an bp ls 0
@@ -493,10 +526,7 @@ fn main 0 32
   lg 22 lg 7 bp ls 22
   lg 0 lg 2 cu 41249 ca expect-id ls 2
   lg 0 lg 2 cu 3 ca expect-byte ls 2
-  lg 0 lg 2 ca take-uleb ls 6
-  lg 6 cu 21 sr ls 7
-  lg 6 cu 2097151 an ls 2
-  lg 22 lg 7 ca append-uleb ls 22
+  lg 0 lg 2 lg 22 ca append-source-uleb ls 2
   ju instruction-next
 
   lb instruction-no-operand
