@@ -22,6 +22,7 @@ ULEB integers, bounds, strictly ordered parent/entity/field identities,
 recursive lists and records, known value tags, nesting depth, and exact
 end-of-file. With an output path it writes the validated canonical envelope
 byte-for-byte, providing the preservation path for semantics the current
-validator does not interpret. It does not yet interpret the Kernel meta-schema,
-resolve semantic references/imports, migrate revisions, or produce structured
-diagnostics.
+validator does not interpret. A second append-only pass resolves local forward
+references against the complete entity table and rejects dangling references.
+It does not yet interpret the Kernel meta-schema, resolve imported references,
+migrate revisions, or produce structured diagnostics.
