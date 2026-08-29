@@ -11,6 +11,13 @@ and target entity in one Kernel-valid envelope. Its valid, stale-revision,
 failed-precondition, and duplicate-write variants all pass Foundation semantic
 validation before Patch behavior is evaluated.
 
+`apply-candidate.seme` is the authoritative isolated candidate stage. It
+validates the base revision, resolves every operation, evaluates all
+preconditions against the unchanged base, rejects duplicate writes, and only
+then constructs a separate candidate. The candidate deliberately carries an
+all-zero revision placeholder and cannot be published until the canonical
+digest and stamp stages complete.
+
 Reproduce and validate the graph:
 
 ```sh
