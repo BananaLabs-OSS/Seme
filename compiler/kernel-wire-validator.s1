@@ -243,10 +243,12 @@ fn id-less 3 7
   ju id-compare
 fe
 
-# skip-value(buffer, cursor, depth) -> new-cursor
+# skip-value(buffer, cursor, packed-depth-and-reference-buffer) -> new-cursor
 fn skip-value 3 16
   cu 16
   lg 2
+  cu 255
+  an
   lt
   bf value-depth-ok
   ca fail
@@ -329,16 +331,43 @@ fn skip-value 3 16
   cu 6
   eq
   bf value-list
+  lg 3
   lg 1
   cu 16
   ad
-  ls 1
-  lg 3
-  lg 1
   lt
-  bf value-return
+  bf value-reference-room
   ca fail
   re
+
+  lb value-reference-room
+  cu 0
+  ls 7
+  lb value-reference-copy
+  lg 7
+  cu 16
+  eq
+  bf value-reference-byte
+  lg 1
+  cu 16
+  ad
+  re
+  lb value-reference-byte
+  lg 2
+  cu 8
+  sr
+  lg 0
+  lg 1
+  lg 7
+  ad
+  bg
+  bp
+  dr
+  lg 7
+  cu 1
+  ad
+  ls 7
+  ju value-reference-copy
 
   lb value-list
   lg 4
@@ -473,6 +502,40 @@ fn skip-value 3 16
   re
 fe
 
+# id-equal(left-buffer, left-offset, right-buffer, right-offset) -> bool
+fn id-equal 4 7
+  cu 0
+  ls 4
+  lb id-equal-loop
+  lg 4
+  cu 16
+  eq
+  bf id-equal-byte
+  cu 1
+  re
+  lb id-equal-byte
+  lg 0
+  lg 1
+  lg 4
+  ad
+  bg
+  lg 2
+  lg 3
+  lg 4
+  ad
+  bg
+  eq
+  bf id-not-equal
+  lg 4
+  cu 1
+  ad
+  ls 4
+  ju id-equal-loop
+  lb id-not-equal
+  cu 0
+  re
+fe
+
 fn main 0 16
   cu 0
   ag
@@ -483,6 +546,12 @@ fn main 0 16
   lg 0
   bl
   ls 2
+  cu 1048576
+  bn
+  ls 13
+  cu 1048576
+  bn
+  ls 14
   lg 2
   cu 8
   lt
@@ -662,6 +731,29 @@ fn main 0 16
   bf entity-room
   ju envelope-invalid
   lb entity-room
+  cu 0
+  ls 15
+  lb entity-copy-id
+  lg 15
+  cu 16
+  eq
+  bf entity-copy-byte
+  ju entity-order-start
+  lb entity-copy-byte
+  lg 13
+  lg 0
+  lg 1
+  lg 15
+  ad
+  bg
+  bp
+  ls 13
+  lg 15
+  cu 1
+  ad
+  ls 15
+  ju entity-copy-id
+  lb entity-order-start
   lg 11
   cu 0
   eq
@@ -746,7 +838,9 @@ fn main 0 16
   ls 1
   lg 0
   lg 1
-  cu 0
+  lg 14
+  cu 8
+  sl
   ca skip-value
   ls 1
   lg 9
@@ -760,6 +854,65 @@ fn main 0 16
   lg 2
   eq
   bf envelope-invalid
+  # Every collected reference must match one declared entity identity.
+  lg 14
+  bl
+  ls 8
+  lg 13
+  bl
+  ls 9
+  cu 0
+  ls 3
+
+  lb reference-loop
+  lg 3
+  lg 8
+  eq
+  bf reference-item
+  ju references-valid
+
+  lb reference-item
+  cu 0
+  ls 4
+  cu 0
+  ls 5
+  lb reference-search
+  lg 5
+  lg 9
+  eq
+  bf reference-compare
+  lg 4
+  cu 0
+  eq
+  bf reference-next
+  ju envelope-invalid
+
+  lb reference-compare
+  lg 14
+  lg 3
+  lg 13
+  lg 5
+  ca id-equal
+  bf reference-search-next
+  cu 1
+  ls 4
+  ju reference-next
+
+  lb reference-search-next
+  lg 5
+  cu 16
+  ad
+  ls 5
+  ju reference-search
+
+  lb reference-next
+  lg 3
+  cu 16
+  ad
+  ls 3
+  ju reference-loop
+
+  lb references-valid
   ac
   cu 1
   eq
