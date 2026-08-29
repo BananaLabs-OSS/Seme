@@ -16,9 +16,9 @@ func main() {
 	if len(os.Args) == 2 {
 		mode = os.Args[1]
 	} else if len(os.Args) != 1 {
-		fatal("usage: patch-fixture [valid|stale|precondition|duplicate]")
+		fatal("usage: patch-fixture [valid|stale|precondition|duplicate|applied]")
 	}
-	if mode != "valid" && mode != "stale" && mode != "precondition" && mode != "duplicate" {
+	if mode != "valid" && mode != "stale" && mode != "precondition" && mode != "duplicate" && mode != "applied" {
 		fatal("unknown mode")
 	}
 
@@ -44,6 +44,7 @@ func main() {
 	}
 
 	base := id(0x5500)
+	revision := id(0x5500)
 	if mode == "stale" {
 		base = id(0x5501)
 	}
@@ -55,8 +56,13 @@ func main() {
 	if mode == "duplicate" {
 		operations = "li 2\nrf " + id(0x5202) + "\nrf " + id(0x5202)
 	}
+	targetValue := "4772656574696e67" // Greeting
+	if mode == "applied" {
+		revision = id(0)
+		targetValue = "57656c636f6d65" // Welcome
+	}
 
-	fmt.Printf("# Generated Patch Module v1 %s workspace.\nve 1\nmo %s\nrv %s\npc 0\nec 16\n\n", mode, id(0x5000), id(0x5500))
+	fmt.Printf("# Generated Patch Module v1 %s workspace.\nve 1\nmo %s\nrv %s\npc 0\nec 16\n\n", mode, id(0x5000), revision)
 	for _, line := range declarations {
 		fmt.Println(line)
 	}
@@ -87,13 +93,13 @@ fi %s uu 0
 fi %s uu 1
 
 en %s %s 1 1
-fi %s by 4772656574696e67
+fi %s by %s
 `, id(0x5200), id(0x6000),
 		id(0x5201), id(0x5010), id(0x5100), id(0x5200), id(0x5101), base, id(0x5102), operations,
 		id(0x5202), id(0x5011), id(0x5110), id(0x5400), id(0x5111), id(0x5310), id(0x5112), expected, id(0x5113), "57656c636f6d65",
 		id(0x5300), id(0x10), id(0x100), id(0x101), id(0x5310),
 		id(0x5310), id(0x11), id(0x110), id(0x111), id(0x2000), id(0x112), id(0x113),
-		id(0x5400), id(0x5300), id(0x5310))
+		id(0x5400), id(0x5300), id(0x5310), targetValue)
 }
 
 func fatal(message string) {

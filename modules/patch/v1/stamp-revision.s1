@@ -1,0 +1,51 @@
+# Patch Module v1 final revision stamping construction source.
+ve 3
+cp 7
+
+fn main 0 12
+  ac cu 3 eq bf invocation
+  cu 0 ag fr ls 0
+  cu 1 ag fr ls 1
+  lg 1 bl cu 32 eq bf invalid
+  cu 1048576 bn ls 2
+  # Preserve bytes before revision identity.
+  cu 0 ls 3
+  lb prefix-loop
+  lg 3 cu 25 eq bf prefix-byte
+  ju placeholder
+  lb prefix-byte
+  lg 2 lg 0 lg 3 bg bp ls 2
+  lg 3 cu 1 ad ls 3 ju prefix-loop
+  # Candidate revisions must be the isolated all-zero placeholder.
+  lb placeholder
+  cu 0 ls 3
+  lb placeholder-loop
+  lg 3 cu 16 eq bf placeholder-byte
+  ju digest
+  lb placeholder-byte
+  lg 0 cu 25 lg 3 ad bg cu 0 eq bf invalid
+  lg 3 cu 1 ad ls 3 ju placeholder-loop
+  # Revision identity is the first 128 bits of the canonical SHA-256 digest.
+  lb digest
+  cu 0 ls 3
+  lb digest-loop
+  lg 3 cu 16 eq bf digest-byte
+  ju suffix
+  lb digest-byte
+  lg 2 lg 1 lg 3 bg bp ls 2
+  lg 3 cu 1 ad ls 3 ju digest-loop
+  lb suffix
+  lg 0 bl ls 4 cu 41 ls 3
+  lb suffix-loop
+  lg 3 lg 4 eq bf suffix-byte
+  cu 2 ag lg 2 fw re
+  lb suffix-byte
+  lg 2 lg 0 lg 3 bg bp ls 2
+  lg 3 cu 1 ad ls 3 ju suffix-loop
+  lb invalid
+  cu 65 re
+  lb invocation
+  cu 64 re
+fe
+
+en main
