@@ -9,6 +9,90 @@ fn fail 0 0
   cu 65 cu 0 di re
 fe
 
+# fail-context(code, operation-index, target, field, expected, actual) writes
+# an internal staged sidecar when a seventh argument is supplied. Identity
+# offsets and bytes-value cursors are zero when that context is unavailable.
+fn fail-context 6 20
+  ac cu 3 eq bf return
+  cu 0 ag fr ls 15
+  cu 1048576 bn ls 6
+  # Stable one-byte internal reason and little-endian operation index.
+  lg 6 lg 0 bp ls 6
+  cu 0 ls 7
+  lb index-loop
+  lg 7 cu 8 eq bf index-byte
+  ju target
+  lb index-byte
+  lg 6 lg 1 lg 7 cu 8 mu sr cu 255 an bp ls 6
+  lg 7 cu 1 ad ls 7 ju index-loop
+  # Target and field identities are fixed-width; unavailable is all-zero.
+  lb target
+  cu 0 ls 7
+  lb target-loop
+  lg 7 cu 16 eq bf target-byte ju field
+  lb target-byte
+  lg 2 cu 0 eq bf target-present cu 0 ls 8 ju target-put
+  lb target-present
+  lg 15 lg 2 lg 7 ad bg ls 8
+  lb target-put
+  lg 6 lg 8 bp ls 6 lg 7 cu 1 ad ls 7 ju target-loop
+  lb field
+  cu 0 ls 7
+  lb field-loop
+  lg 7 cu 16 eq bf field-byte ju expected
+  lb field-byte
+  lg 3 cu 0 eq bf field-present cu 0 ls 8 ju field-put
+  lb field-present
+  lg 15 lg 3 lg 7 ad bg ls 8
+  lb field-put
+  lg 6 lg 8 bp ls 6 lg 7 cu 1 ad ls 7 ju field-loop
+  # Expected and actual are length-prefixed raw byte values.
+  lb expected
+  cu 0 ls 9 cu 0 ls 10
+  lg 4 cu 0 eq bf expected-known ju expected-length
+  lb expected-known
+  lg 15 lg 4 ca take ls 11 lg 11 cu 2097151 an ls 9
+  lg 11 cu 21 sr ls 10
+  lb expected-length
+  cu 0 ls 7
+  lb expected-length-loop
+  lg 7 cu 8 eq bf expected-length-byte ju expected-copy
+  lb expected-length-byte
+  lg 6 lg 10 lg 7 cu 8 mu sr cu 255 an bp ls 6
+  lg 7 cu 1 ad ls 7 ju expected-length-loop
+  lb expected-copy
+  cu 0 ls 7
+  lb expected-copy-loop
+  lg 7 lg 10 eq bf expected-copy-byte ju actual
+  lb expected-copy-byte
+  lg 6 lg 15 lg 9 lg 7 ad bg bp ls 6
+  lg 7 cu 1 ad ls 7 ju expected-copy-loop
+  lb actual
+  cu 0 ls 12 cu 0 ls 13
+  lg 5 cu 0 eq bf actual-known ju actual-length
+  lb actual-known
+  lg 15 lg 5 ca take ls 14 lg 14 cu 2097151 an ls 12
+  lg 14 cu 21 sr ls 13
+  lb actual-length
+  cu 0 ls 7
+  lb actual-length-loop
+  lg 7 cu 8 eq bf actual-length-byte ju actual-copy
+  lb actual-length-byte
+  lg 6 lg 13 lg 7 cu 8 mu sr cu 255 an bp ls 6
+  lg 7 cu 1 ad ls 7 ju actual-length-loop
+  lb actual-copy
+  cu 0 ls 7
+  lb actual-copy-loop
+  lg 7 lg 13 eq bf actual-copy-byte ju write
+  lb actual-copy-byte
+  lg 6 lg 15 lg 12 lg 7 ad bg bp ls 6
+  lg 7 cu 1 ad ls 7 ju actual-copy-loop
+  lb write
+  cu 2 ag lg 6 fw dr
+  lb return
+  lg 0 re
+fe
+
 fn take 2 10
   cu 0 ls 2 cu 0 ls 3 cu 0 ls 4 lg 0 bl ls 5
   lb byte
@@ -179,6 +263,9 @@ fn replacement 4 22
   lb item
   lg 6 cu 1 ad ls 9 lg 0 lg 0 lg 9 ca find-entity ls 10
   lg 0 lg 10 cu 20752 ca find-field-is ls 11
+  lg 0 lg 11 ca take ls 15
+  lg 15 cu 21 sr cu 16 eq bf invalid
+  lg 15 cu 2097151 an ls 11
   lg 0 lg 11 lg 0 lg 2 ca id-equal bf next
   lg 0 lg 10 cu 20753 ca find-field-is ls 12
   lg 0 lg 12 ca take ls 13 lg 13 cu 21 sr cu 16 eq bf invalid
@@ -199,16 +286,17 @@ fn copy-range 4 7
 fe
 
 fn main 0 40
-  ac cu 2 eq bf invocation
+  ac cu 2 eq ls 39
+  ac cu 3 eq lg 39 or bf invocation
   cu 0 ag fr ls 0 cu 1048576 bn ls 1
   lg 0 cu 20496 ca find-schema ls 2
-  lg 2 cu 0 eq bf patch-known ca fail re
+  lg 2 cu 0 eq bf patch-known cu 86 cu 18446744073709551615 cu 0 cu 0 cu 0 cu 0 ca fail-context re
   lb patch-known
   # Base revision precondition.
   lg 0 lg 2 cu 20737 ca find-field-is ls 3
-  lg 0 lg 3 ca take ls 4 lg 4 cu 21 sr cu 16 eq bf invalid
+  lg 0 lg 3 ca take ls 4 lg 4 cu 21 sr cu 16 eq bf invalid-candidate-global
   lg 4 cu 2097151 an ls 5
-  lg 0 lg 5 lg 0 cu 25 ca id-equal bf invalid
+  lg 0 lg 5 lg 0 cu 25 ca id-equal bf stale
   # Validate all operation preconditions against the unchanged base.
   lg 0 lg 2 cu 20738 ca find-field-is ls 6
   lg 0 lg 6 ca take ls 7 lg 7 cu 2097151 an ls 8
@@ -217,21 +305,28 @@ fn main 0 40
   lg 10 lg 9 eq bf operation ju build
   lb operation
   lg 8 cu 1 ad ls 11 lg 0 lg 0 lg 11 ca find-entity ls 12
-  lg 12 cu 0 eq bf operation-known ca fail re
+  lg 12 cu 0 eq bf operation-known cu 86 lg 10 cu 0 cu 0 cu 0 cu 0 ca fail-context re
   lb operation-known
   lg 0 lg 12 cu 20752 ca find-field-is ls 13
-  lg 0 lg 13 lg 0 lg 13 ca id-equal dr
-  lg 0 lg 0 lg 13 ca find-entity ls 14
-  lg 14 cu 0 eq bf target-known ca fail re
-  lb target-known
+  lg 0 lg 13 ca take ls 16
+  lg 16 cu 21 sr cu 16 eq bf invalid-candidate
+  lg 16 cu 2097151 an ls 13
   lg 0 lg 12 cu 20753 ca find-field-is ls 15
-  lg 0 lg 15 ca take ls 16 lg 16 cu 21 sr cu 16 eq bf invalid
+  lg 0 lg 15 ca take ls 16 lg 16 cu 21 sr cu 16 eq bf invalid-candidate
   lg 16 cu 2097151 an ls 17
+  lg 0 lg 0 lg 13 ca find-entity ls 14
+  lg 14 cu 0 eq bf target-known cu 82 lg 10 lg 13 lg 17 cu 0 cu 0 ca fail-context re
+  lb target-known
   lg 0 lg 14 lg 0 lg 17 ca find-field ls 18
-  lg 18 cu 0 eq bf target-field-known ca fail re
+  lg 18 cu 0 eq bf target-field-known cu 83 lg 10 lg 13 lg 17 cu 0 cu 0 ca fail-context re
   lb target-field-known
   lg 0 lg 12 cu 20754 ca find-field-is ls 19
-  lg 0 lg 18 lg 0 lg 19 ca equal-bytes bf invalid
+  lg 0 lg 18 lg 0 lg 19 ca equal-bytes bf precondition
+  lg 0 lg 12 cu 20755 ca find-field-is ls 26
+  lg 0 lg 26 ca take ls 27
+  lg 27 cu 21 sr cu 0 eq bf replacement-valid
+  cu 86 lg 10 lg 13 lg 17 lg 26 cu 0 ca fail-context re
+  lb replacement-valid
   # No earlier operation may address the same entity field.
   lg 8 ls 20 cu 0 ls 21
   lb duplicate-loop
@@ -239,11 +334,14 @@ fn main 0 40
   lb duplicate-item
   lg 20 cu 1 ad ls 22 lg 0 lg 0 lg 22 ca find-entity ls 23
   lg 0 lg 23 cu 20752 ca find-field-is ls 24
+  lg 0 lg 24 ca take ls 26
+  lg 26 cu 21 sr cu 16 eq bf invalid-candidate
+  lg 26 cu 2097151 an ls 24
   lg 0 lg 24 lg 0 lg 13 ca id-equal bf duplicate-next
   lg 0 lg 23 cu 20753 ca find-field-is ls 25
   lg 0 lg 25 ca take ls 26 lg 26 cu 2097151 an ls 27
   lg 0 lg 27 lg 0 lg 17 ca id-equal bf duplicate-next
-  ca fail re
+  cu 85 lg 10 lg 13 lg 17 cu 0 cu 0 ca fail-context re
   lb duplicate-next
   lg 0 lg 20 ca skip-value ls 20 lg 21 cu 1 ad ls 21 ju duplicate-loop
   lb operation-next
@@ -290,10 +388,16 @@ fn main 0 40
   lg 0 lg 30 ca next-entity ls 30 lg 32 cu 1 ad ls 32 ju entity-loop
   lb output
   cu 1 ag lg 1 fw re
-  lb invalid
-  ca fail re
+  lb stale
+  cu 81 cu 18446744073709551615 cu 0 cu 0 cu 0 cu 0 ca fail-context re
+  lb precondition
+  cu 84 lg 10 lg 13 lg 17 lg 19 lg 18 ca fail-context re
+  lb invalid-candidate
+  cu 86 lg 10 lg 13 lg 17 cu 0 cu 0 ca fail-context re
+  lb invalid-candidate-global
+  cu 86 cu 18446744073709551615 cu 0 cu 0 cu 0 cu 0 ca fail-context re
   lb invocation
-  cu 64 cu 0 di re
+  cu 64 re
 fe
 
 en main

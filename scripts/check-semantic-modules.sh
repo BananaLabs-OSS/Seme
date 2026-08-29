@@ -140,6 +140,9 @@ cmp "$work/foundation-invalid-shape.report.seme" \
     sha256sum -c apply-candidate.k0.sha256
     sha256sum -c apply-candidate.g1.sha256
     sha256sum -c apply-candidate.seme.sha256
+    sha256sum -c diagnostic.k0.sha256
+    sha256sum -c diagnostic.g1.sha256
+    sha256sum -c diagnostic.seme.sha256
     sha256sum -c revision-transcript.k0.sha256
     sha256sum -c revision-transcript.g1.sha256
     sha256sum -c revision-transcript.seme.sha256
@@ -167,6 +170,15 @@ cmp "$patch/apply-candidate.k0" "$work/patch-apply-candidate-lowered.k0"
     "$work/patch-apply-candidate.validated.seme"
 cmp "$patch/apply-candidate.seme" \
     "$work/patch-apply-candidate.validated.seme"
+"$k0" "$repo/bootstrap/s1-compiler.k0" "$patch/diagnostic.s1" \
+    "$work/patch-diagnostic.k0"
+cmp "$patch/diagnostic.k0" "$work/patch-diagnostic.k0"
+"$k0" "$repo/compiler/k0-module-lowerer.k0" \
+    "$patch/diagnostic.seme" "$work/patch-diagnostic-lowered.k0"
+cmp "$patch/diagnostic.k0" "$work/patch-diagnostic-lowered.k0"
+"$k0" "$kernel" "$patch/diagnostic.seme" \
+    "$work/patch-diagnostic.validated.seme"
+cmp "$patch/diagnostic.seme" "$work/patch-diagnostic.validated.seme"
 
 for program in revision-transcript stamp-revision; do
     "$k0" "$repo/bootstrap/s1-compiler.k0" "$patch/$program.s1" \
@@ -180,7 +192,7 @@ for program in revision-transcript stamp-revision; do
     cmp "$patch/$program.seme" "$work/$program-validated.seme"
 done
 
-for mode in valid stale precondition duplicate applied; do
+for mode in valid stale unknown-target unknown-field precondition duplicate invalid-candidate applied; do
     (
         cd "$repo/reference/go"
         go run ./cmd/patch-fixture "$mode"
@@ -214,13 +226,36 @@ cmp "$work/patch-applied.seme" "$work/patch-valid.candidate.seme"
     "$work/patch-valid.published.seme"
 cmp "$work/patch-valid.final.seme" "$work/patch-valid.published.seme"
 
-for mode in stale precondition duplicate; do
+for mode in stale unknown-target unknown-field precondition duplicate invalid-candidate; do
     cp "$work/patch-$mode.seme" "$work/patch-$mode.unchanged.seme"
     cp "$work/patch-$mode.unchanged.seme" "$work/patch-$mode.output.seme"
-    expect_status 65 "$k0" "$patch/apply-candidate.k0" \
-        "$work/patch-$mode.seme" "$work/patch-$mode.output.seme"
+    case "$mode" in
+        stale) internal=81 ;;
+        unknown-target) internal=82 ;;
+        unknown-field) internal=83 ;;
+        precondition) internal=84 ;;
+        duplicate) internal=85 ;;
+        invalid-candidate) internal=86 ;;
+    esac
+    expect_status "$internal" "$k0" "$patch/apply-candidate.k0" \
+        "$work/patch-$mode.seme" "$work/patch-$mode.output.seme" \
+        "$work/patch-$mode.context"
     cmp "$work/patch-$mode.unchanged.seme" \
         "$work/patch-$mode.output.seme"
+    "$k0" "$patch/diagnostic.k0" "$work/patch-$mode.seme" \
+        "$work/patch-$mode.context" "$work/patch-$mode.direct-report.seme"
+    "$k0" "$kernel" "$work/patch-$mode.direct-report.seme"
+    "$k0" "$foundation/validator.k0" \
+        "$work/patch-$mode.direct-report.seme"
+    (cd "$repo/reference/go" && go run ./cmd/patch-diagnostic-check \
+        "$work/patch-$mode.direct-report.seme" "$mode")
+    expect_status 65 "$repo/scripts/apply-patch-v1.sh" \
+        "$work/patch-$mode.seme" "$work/patch-$mode.output.seme" \
+        "$work/patch-$mode.report.seme"
+    cmp "$work/patch-$mode.unchanged.seme" \
+        "$work/patch-$mode.output.seme"
+    cmp "$work/patch-$mode.direct-report.seme" \
+        "$work/patch-$mode.report.seme"
 done
 
 (cd "$repo/reference/go" && go test ./...)

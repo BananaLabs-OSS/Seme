@@ -17,6 +17,14 @@ and Semantic Foundation v1.
 | `00000000000000000000000000005111` | rename.field |
 | `00000000000000000000000000005112` | rename.expected_value |
 | `00000000000000000000000000005113` | rename.replacement |
+| `00000000000000000000000000005601` | patch.stale_revision rule |
+| `00000000000000000000000000005602` | patch.unknown_target rule |
+| `00000000000000000000000000005603` | patch.unknown_field rule |
+| `00000000000000000000000000005604` | patch.precondition_failed rule |
+| `00000000000000000000000000005605` | patch.duplicate_write rule |
+| `00000000000000000000000000005606` | patch.invalid_candidate rule |
+| `00000000000000000000000000005700` | Patch rejection Diagnostic role |
+| `00000000000000000000000000005701` | Patch rejection DiagnosticReport role |
 
 Patch identity is the ordinary Kernel entity identity of a Patch instance.
 
@@ -30,11 +38,15 @@ V1 defines one operation:
 
 ```text
 RenameDeclaration
-  target          reference to the declaration entity
+  target          bytes containing the declaration entity identity
   field           identity of its name field
   expected_value  bytes precondition
   replacement     bytes
 ```
+
+Declaration names are non-empty byte sequences in v1. A rename whose
+replacement is empty reaches candidate validation and rejects with
+`patch.invalid_candidate`.
 
 The operation is intentionally field-addressed. The Patch module does not
 assume that all languages use one universal name field.
@@ -68,7 +80,12 @@ same entity field conflict and reject.
 
 Diagnostics carry the patch revision, target entity where available, operation
 list index, field identity where available, and structured expected/actual
-values.
+values. The canonical report is an ordinary Kernel envelope whose module role
+is `...5701`, whose revision is the rejected workspace revision, and whose
+status is `3` (rejected). Expected and actual are always present as two bytes
+arguments; unavailable values use empty bytes. The Patch applicator returns
+process status `65` after publishing this report and never publishes its
+isolated candidate on rejection.
 
 ## Revision derivation
 

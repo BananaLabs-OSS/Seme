@@ -1,0 +1,229 @@
+# Patch Module v1 canonical rejection diagnostic construction source.
+# argv[0] is the rejected workspace, argv[1] the private failure-context
+# sidecar emitted by apply-candidate, and argv[2] the staged report path.
+ve 3
+cp 7
+
+fn append-uleb 2 4
+  lb loop
+  lg 1 cu 127 an ls 2 lg 1 cu 7 sr ls 1
+  lg 1 cu 0 eq bf more ju byte
+  lb more
+  lg 2 cu 128 or ls 2
+  lb byte
+  lg 0 lg 2 bp ls 0 lg 1 cu 0 eq bf loop lg 0 re
+fe
+
+fn append-id 2 5
+  cu 0 ls 2
+  lb prefix
+  lg 2 cu 14 eq bf zero
+  lg 0 lg 1 cu 8 sr cu 255 an bp ls 0
+  lg 0 lg 1 cu 255 an bp re
+  lb zero
+  lg 0 cu 0 bp ls 0 lg 2 cu 1 ad ls 2 ju prefix
+fe
+
+fn copy 4 7
+  cu 0 ls 4
+  lb loop
+  lg 4 lg 3 eq bf byte lg 0 re
+  lb byte
+  lg 0 lg 1 lg 2 lg 4 ad bg bp ls 0
+  lg 4 cu 1 ad ls 4 ju loop
+fe
+
+# Load a raw little-endian uint64.
+fn load-le64 2 5
+  cu 0 ls 2 cu 0 ls 3
+  lb load
+  lg 3 cu 8 eq bf byte lg 2 re
+  lb byte
+  lg 2 lg 0 lg 1 lg 3 ad bg lg 3 cu 8 mu sl or ls 2
+  lg 3 cu 1 ad ls 3 ju load
+fe
+
+fn main 0 32
+  ac cu 3 eq bf invocation
+  cu 0 ag fr ls 0 cu 1 ag fr ls 1
+  lg 1 bl cu 57 lt bf context-size ju malformed
+  lb context-size
+  cu 1048576 bn ls 2
+  # Envelope.
+  lg 2 cu 83 bp ls 2 lg 2 cu 69 bp ls 2 lg 2 cu 77 bp ls 2
+  lg 2 cu 69 bp ls 2 lg 2 cu 75 bp ls 2 lg 2 cu 49 bp ls 2
+  lg 2 cu 13 bp ls 2 lg 2 cu 10 bp ls 2
+  lg 2 cu 1 ca append-uleb ls 2 lg 2 cu 22273 ca append-id ls 2
+  lg 2 lg 0 cu 25 cu 16 ca copy ls 2
+  lg 2 cu 0 ca append-uleb ls 2 lg 2 cu 3 ca append-uleb ls 2
+
+  # Select stable rule identity from the private reason code 81..86.
+  lg 1 cu 0 bg ls 3
+  lg 3 cu 81 lt bf code-min ju malformed
+  lb code-min
+  cu 86 lg 3 lt bf code-max ju malformed
+  lb code-max
+  lg 3 cu 80 su cu 22016 ad ls 4
+
+  # DiagnosticRule entity.
+  lg 2 lg 4 ca append-id ls 2 lg 2 cu 25 ca append-id ls 2
+  lg 2 cu 1 ca append-uleb ls 2 lg 2 cu 2 ca append-uleb ls 2
+  lg 2 cu 400 ca append-id ls 2 lg 2 cu 5 bp ls 2
+  # Stable symbolic name: common "patch." prefix, then selected suffix.
+  lg 3 cu 81 eq bf name-length-82 cu 20 ls 13 ju name-length
+  lb name-length-82
+  lg 3 cu 82 eq bf name-length-83 cu 20 ls 13 ju name-length
+  lb name-length-83
+  lg 3 cu 83 eq bf name-length-84 cu 19 ls 13 ju name-length
+  lb name-length-84
+  lg 3 cu 84 eq bf name-length-85 cu 25 ls 13 ju name-length
+  lb name-length-85
+  lg 3 cu 85 eq bf name-length-86 cu 21 ls 13 ju name-length
+  lb name-length-86
+  cu 23 ls 13
+  lb name-length
+  lg 2 lg 13 ca append-uleb ls 2
+  lg 2 cu 112 bp ls 2 lg 2 cu 97 bp ls 2 lg 2 cu 116 bp ls 2
+  lg 2 cu 99 bp ls 2 lg 2 cu 104 bp ls 2 lg 2 cu 46 bp ls 2
+  lg 3 cu 81 eq bf name-unknown-target
+  lg 2 cu 115 bp ls 2 lg 2 cu 116 bp ls 2 lg 2 cu 97 bp ls 2
+  lg 2 cu 108 bp ls 2 lg 2 cu 101 bp ls 2 lg 2 cu 95 bp ls 2
+  lg 2 cu 114 bp ls 2 lg 2 cu 101 bp ls 2 lg 2 cu 118 bp ls 2
+  lg 2 cu 105 bp ls 2 lg 2 cu 115 bp ls 2 lg 2 cu 105 bp ls 2
+  lg 2 cu 111 bp ls 2 lg 2 cu 110 bp ls 2 ju name-done
+  lb name-unknown-target
+  lg 3 cu 82 eq bf name-unknown-field
+  lg 2 cu 117 bp ls 2 lg 2 cu 110 bp ls 2 lg 2 cu 107 bp ls 2
+  lg 2 cu 110 bp ls 2 lg 2 cu 111 bp ls 2 lg 2 cu 119 bp ls 2
+  lg 2 cu 110 bp ls 2 lg 2 cu 95 bp ls 2 lg 2 cu 116 bp ls 2
+  lg 2 cu 97 bp ls 2 lg 2 cu 114 bp ls 2 lg 2 cu 103 bp ls 2
+  lg 2 cu 101 bp ls 2 lg 2 cu 116 bp ls 2 ju name-done
+  lb name-unknown-field
+  lg 3 cu 83 eq bf name-precondition
+  lg 2 cu 117 bp ls 2 lg 2 cu 110 bp ls 2 lg 2 cu 107 bp ls 2
+  lg 2 cu 110 bp ls 2 lg 2 cu 111 bp ls 2 lg 2 cu 119 bp ls 2
+  lg 2 cu 110 bp ls 2 lg 2 cu 95 bp ls 2 lg 2 cu 102 bp ls 2
+  lg 2 cu 105 bp ls 2 lg 2 cu 101 bp ls 2 lg 2 cu 108 bp ls 2
+  lg 2 cu 100 bp ls 2 ju name-done
+  lb name-precondition
+  lg 3 cu 84 eq bf name-duplicate
+  lg 2 cu 112 bp ls 2 lg 2 cu 114 bp ls 2 lg 2 cu 101 bp ls 2
+  lg 2 cu 99 bp ls 2 lg 2 cu 111 bp ls 2 lg 2 cu 110 bp ls 2
+  lg 2 cu 100 bp ls 2 lg 2 cu 105 bp ls 2 lg 2 cu 116 bp ls 2
+  lg 2 cu 105 bp ls 2 lg 2 cu 111 bp ls 2 lg 2 cu 110 bp ls 2
+  lg 2 cu 95 bp ls 2 lg 2 cu 102 bp ls 2 lg 2 cu 97 bp ls 2
+  lg 2 cu 105 bp ls 2 lg 2 cu 108 bp ls 2 lg 2 cu 101 bp ls 2
+  lg 2 cu 100 bp ls 2 ju name-done
+  lb name-duplicate
+  lg 3 cu 85 eq bf name-invalid
+  lg 2 cu 100 bp ls 2 lg 2 cu 117 bp ls 2 lg 2 cu 112 bp ls 2
+  lg 2 cu 108 bp ls 2 lg 2 cu 105 bp ls 2 lg 2 cu 99 bp ls 2
+  lg 2 cu 97 bp ls 2 lg 2 cu 116 bp ls 2 lg 2 cu 101 bp ls 2
+  lg 2 cu 95 bp ls 2 lg 2 cu 119 bp ls 2 lg 2 cu 114 bp ls 2
+  lg 2 cu 105 bp ls 2 lg 2 cu 116 bp ls 2 lg 2 cu 101 bp ls 2
+  ju name-done
+  lb name-invalid
+  lg 2 cu 105 bp ls 2 lg 2 cu 110 bp ls 2 lg 2 cu 118 bp ls 2
+  lg 2 cu 97 bp ls 2 lg 2 cu 108 bp ls 2 lg 2 cu 105 bp ls 2
+  lg 2 cu 100 bp ls 2 lg 2 cu 95 bp ls 2 lg 2 cu 99 bp ls 2
+  lg 2 cu 97 bp ls 2 lg 2 cu 110 bp ls 2 lg 2 cu 100 bp ls 2
+  lg 2 cu 105 bp ls 2 lg 2 cu 100 bp ls 2 lg 2 cu 97 bp ls 2
+  lg 2 cu 116 bp ls 2 lg 2 cu 101 bp ls 2
+  lb name-done
+  # Two canonical bytes argument shapes: expected, actual.
+  lg 2 cu 401 ca append-id ls 2 lg 2 cu 7 bp ls 2
+  lg 2 cu 2 ca append-uleb ls 2
+  lg 2 cu 8 bp ls 2 lg 2 cu 1 ca append-uleb ls 2
+  lg 2 cu 8192 ca append-id ls 2 lg 2 cu 3 bp ls 2 lg 2 cu 4 ca append-uleb ls 2
+  lg 2 cu 8 bp ls 2 lg 2 cu 1 ca append-uleb ls 2
+  lg 2 cu 8192 ca append-id ls 2 lg 2 cu 3 bp ls 2 lg 2 cu 4 ca append-uleb ls 2
+
+  # Diagnostic entity.
+  lg 2 cu 22272 ca append-id ls 2 lg 2 cu 26 ca append-id ls 2
+  lg 2 cu 1 ca append-uleb ls 2 lg 2 cu 6 ca append-uleb ls 2
+  lg 2 cu 416 ca append-id ls 2 lg 2 cu 6 bp ls 2 lg 2 lg 4 ca append-id ls 2
+  lg 2 cu 417 ca append-id ls 2 lg 2 cu 5 bp ls 2
+  lg 2 cu 16 ca append-uleb ls 2 lg 2 lg 0 cu 25 cu 16 ca copy ls 2
+  # entity: target identity, or empty when unavailable.
+  lg 2 cu 418 ca append-id ls 2 lg 2 cu 5 bp ls 2
+  cu 0 ls 5 cu 0 ls 6
+  lb target-scan
+  lg 6 cu 16 eq bf target-byte ju target-size
+  lb target-byte
+  lg 5 lg 1 cu 9 lg 6 ad bg or ls 5
+  lg 6 cu 1 ad ls 6 ju target-scan
+  lb target-size
+  lg 5 cu 0 eq bf target-present lg 2 cu 0 ca append-uleb ls 2 ju path
+  lb target-present
+  lg 2 cu 16 ca append-uleb ls 2 lg 2 lg 1 cu 9 cu 16 ca copy ls 2
+
+  # Semantic path: operation index, then target and field when available.
+  lb path
+  lg 2 cu 419 ca append-id ls 2 lg 2 cu 7 bp ls 2
+  cu 0 ls 7
+  lg 1 cu 1 ca load-le64 ls 8
+  lg 8 cu 18446744073709551615 eq bf have-index ju target-count
+  lb have-index
+  lg 7 cu 1 ad ls 7
+  lb target-count
+  lg 5 cu 0 eq bf have-target ju field-scan
+  lb have-target
+  lg 7 cu 1 ad ls 7
+  lb field-scan
+  cu 0 ls 9 cu 0 ls 6
+  lb field-scan-loop
+  lg 6 cu 16 eq bf field-byte ju field-count
+  lb field-byte
+  lg 9 lg 1 cu 25 lg 6 ad bg or ls 9
+  lg 6 cu 1 ad ls 6 ju field-scan-loop
+  lb field-count
+  lg 9 cu 0 eq bf have-field ju path-list
+  lb have-field
+  lg 7 cu 1 ad ls 7
+  lb path-list
+  lg 2 lg 7 ca append-uleb ls 2
+  lg 8 cu 18446744073709551615 eq bf emit-index ju emit-target
+  lb emit-index
+  lg 2 cu 8 bp ls 2 lg 2 cu 2 ca append-uleb ls 2
+  lg 2 cu 8448 ca append-id ls 2 lg 2 cu 3 bp ls 2 lg 2 cu 2 ca append-uleb ls 2
+  lg 2 cu 8450 ca append-id ls 2 lg 2 cu 3 bp ls 2 lg 2 lg 8 ca append-uleb ls 2
+  lb emit-target
+  lg 5 cu 0 eq bf target-record ju emit-field
+  lb target-record
+  lg 2 cu 8 bp ls 2 lg 2 cu 2 ca append-uleb ls 2
+  lg 2 cu 8448 ca append-id ls 2 lg 2 cu 3 bp ls 2 lg 2 cu 0 ca append-uleb ls 2
+  lg 2 cu 8449 ca append-id ls 2 lg 2 cu 5 bp ls 2
+  lg 2 cu 16 ca append-uleb ls 2 lg 2 lg 1 cu 9 cu 16 ca copy ls 2
+  lb emit-field
+  lg 9 cu 0 eq bf field-record ju arguments
+  lb field-record
+  lg 2 cu 8 bp ls 2 lg 2 cu 2 ca append-uleb ls 2
+  lg 2 cu 8448 ca append-id ls 2 lg 2 cu 3 bp ls 2 lg 2 cu 1 ca append-uleb ls 2
+  lg 2 cu 8449 ca append-id ls 2 lg 2 cu 5 bp ls 2
+  lg 2 cu 16 ca append-uleb ls 2 lg 2 lg 1 cu 25 cu 16 ca copy ls 2
+
+  # expected and actual structured byte arguments.
+  lb arguments
+  lg 2 cu 420 ca append-id ls 2 lg 2 cu 7 bp ls 2 lg 2 cu 2 ca append-uleb ls 2
+  lg 2 cu 5 bp ls 2 lg 1 cu 41 ca load-le64 ls 10
+  lg 2 lg 10 ca append-uleb ls 2 lg 2 lg 1 cu 49 lg 10 ca copy ls 2
+  lg 10 cu 49 ad ls 11
+  lg 2 cu 5 bp ls 2 lg 1 lg 11 ca load-le64 ls 12
+  lg 2 lg 12 ca append-uleb ls 2
+  lg 2 lg 1 lg 11 cu 8 ad lg 12 ca copy ls 2
+  lg 2 cu 421 ca append-id ls 2 lg 2 cu 3 bp ls 2 lg 2 cu 0 ca append-uleb ls 2
+
+  # DiagnosticReport entity.
+  lg 2 cu 22273 ca append-id ls 2 lg 2 cu 27 ca append-id ls 2
+  lg 2 cu 1 ca append-uleb ls 2 lg 2 cu 2 ca append-uleb ls 2
+  lg 2 cu 432 ca append-id ls 2 lg 2 cu 3 bp ls 2 lg 2 cu 3 ca append-uleb ls 2
+  lg 2 cu 433 ca append-id ls 2 lg 2 cu 7 bp ls 2 lg 2 cu 1 ca append-uleb ls 2
+  lg 2 cu 6 bp ls 2 lg 2 cu 22272 ca append-id ls 2
+  cu 2 ag lg 2 fw dr cu 0 re
+  lb malformed
+  cu 65 re
+  lb invocation
+  cu 64 re
+fe
+
+en main
