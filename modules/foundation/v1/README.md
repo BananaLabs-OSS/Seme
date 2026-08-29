@@ -26,6 +26,11 @@ preserved-unknown, and unavailable semantics. Rejected reports remain the
 diagnostic companion's responsibility, so successful reporting cannot alter
 acceptance behavior.
 
+Semantic rejection with a result path emits a canonical `DiagnosticReport`
+using the stable `foundation.invalid_semantics` parent rule. The bootstrap
+report deliberately uses unavailable entity/path sentinels; refined rules may
+add exact paths without changing this broad machine-readable classification.
+
 Reproduction, hash, frozen-Kernel, and oracle checks run through:
 
 ```sh

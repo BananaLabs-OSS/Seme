@@ -65,6 +65,12 @@ The stable schema identities are `...001e` for `ValidationResult` and
 `...001f` for `ValidationReport`. Their fields are `...2200` entity, `...2201`
 disposition, `...2210` revision, `...2211` results, and `...2212` diagnostics.
 
+The bootstrap delivery profile allocates module identity `...3200`, parent
+diagnostic rule `...3100` (`foundation.invalid_semantics`), diagnostic role
+identity `...3101`, and report role identity `...3102`. A broad bootstrap
+rejection uses the unavailable entity/path sentinels; later diagnostic rules
+may refine it while retaining `...3100` as their stable parent classification.
+
 ## Imports
 
 An import declaration records a module identity, required revision identity, and
