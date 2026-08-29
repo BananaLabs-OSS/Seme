@@ -111,10 +111,11 @@ enforcement complete for the scoped logging profile.
   executable only when adaptation policy permits it.
 - Exact-only policy produces impossible resolutions rather than dishonest
   exact fidelity.
-- A checked-plan backend emits a deterministic 205-byte Wasm reactor, executes it
+- A checked-plan backend emits a deterministic 262-byte Wasm reactor, executes it
   with the declared logging host import, and matches Go result/effect traces.
-- Actual Pulp loads the same reactor, delivers the granted effect, runs its cell
-  lifecycle, and rejects the identical artifact when the capability is absent.
+- Actual Pulp loads the same reactor once, processes repeated structured quota
+  requests through `pulp_on_call`, returns responses, delivers every granted
+  effect, and rejects the identical artifact when the capability is absent.
 
 - Analyze the transitive package closure against a versioned Wasm target
   contract.

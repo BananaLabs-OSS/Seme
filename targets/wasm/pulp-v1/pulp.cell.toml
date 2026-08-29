@@ -3,7 +3,7 @@ name = "seme-quota"
 version = "1.0.0"
 wasm = "quota-admit.wasm"
 
-provides = []
+provides = ["quota.admit-v1"]
 consumes = []
 capabilities = ["observability.log"]
 
