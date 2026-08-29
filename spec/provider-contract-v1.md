@@ -13,6 +13,26 @@ native project -> ingest -> semantic patch -> project -> native validation
                -> re-ingest -> semantic equivalence
 ```
 
+## Canonical module
+
+Provider Contract v1 is canonical module `...7000`, initial revision `...7001`.
+Its stable schema identities are:
+
+| Identity | Schema |
+|---|---|
+| `...7010` | ProviderProfile |
+| `...7011` | NativeFile |
+| `...7012` | SourceOccurrence |
+| `...7013` | Declaration |
+| `...7014` | IdentityEvidence |
+| `...7015` | OpaqueRegion |
+| `...7016` | IngestionResult |
+| `...7017` | ProjectionReport |
+
+The checked declarations and complete field identities are authoritative in
+`modules/provider/v1/module.seme`. A provider's host manifest is operational
+evidence; the emitted Kernel envelope is canonical semantic authority.
+
 ## Provider declaration
 
 Every provider invocation declares:
@@ -116,3 +136,22 @@ Provider Contract v1 is intentionally specified independently of a host SDK.
 The Go proof supplies the first implementation. A shared SDK should be
 extracted only after a second provider demonstrates which code is independent
 of Go; the Kernel must not absorb accidental assumptions from either adapter.
+
+## First Go conformance profile
+
+The v1 proof profile is deliberately narrow: one ordinary module-root package,
+package-level functions, resolved definition/call occurrences, no generated
+files, no cgo, no methods, no build-tag variants, and one changed native file
+per projected transaction. It uses the installed Go parser, type checker,
+module command, and test command.
+
+The proof executes the rename through canonical Patch Module v1 first. The Go
+provider accepts only a validated committed graph whose sole semantic entity
+change is the target declaration's `declaration.name` field. It then edits only
+the recorded resolved occurrences, syntax-checks the result, validates an
+isolated project copy, and atomically replaces the single declared file.
+
+Run `./scripts/check-provider-v1.sh` for deterministic import, canonical
+Kernel/Foundation validation, Patch execution, fail-closed stale/uncommitted
+cases, native tests, re-import, identity recovery, semantic equivalence, opaque
+preservation, and canonical projection-report evidence.

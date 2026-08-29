@@ -95,6 +95,7 @@ The first ordinary-project dogfood layer is the narrow
 package functions, performs an identity-addressed semantic rename, minimally
 projects resolved occurrences, runs the native Go tests, re-imports, and proves
 identity recovery. It validates the provider boundary, not general Go support.
+Run it with `./scripts/check-provider-v1.sh`.
 
 Above frozen Kernel v1, Semantic Foundation v1 and Patch Module v1 define the
 first versioned schema and transactional-edit contracts. Their checked module

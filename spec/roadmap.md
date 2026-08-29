@@ -42,6 +42,10 @@ Richer semantic-module diagnostics remain versioned work above Kernel v1.
 
 ## 3. Ordinary Go project proof
 
+Status: complete for the explicitly scoped Provider Contract v1 Go profile.
+The gate is `./scripts/check-provider-v1.sh`; broader Go constructs remain
+separate provider-profile work rather than implied support.
+
 The Go toolchain is an optional external ecosystem provider and is not part of
 Seme's repository, trusted bootstrap, or independent reproduction path.
 The first Go provider proves Provider Contract v1; it is not a claim of general
