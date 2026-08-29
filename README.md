@@ -110,6 +110,13 @@ interface, explicit empty dependency/effect sets, a modular-integer runtime
 assumption, and exact-fidelity evidence. Core Execution v2 runs it independently
 and compares its behavior with Go. Run `./scripts/check-application-v1.sh`.
 
+[`Target Contract v1`](spec/target-contract-v1.md) now discovers a real Go
+standard-library logging dependency and `observability.log` effect from an
+untouched package. It emits an honest Wasm/Pulp plan: adapted host import and
+typed boundary when policy permits, impossible when exact-only policy forbids
+adaptation. Run `./scripts/check-target-v1.sh`. Wasm emission and Pulp execution
+remain the next proof.
+
 Above frozen Kernel v1, Semantic Foundation v1 and Patch Module v1 define the
 first versioned schema and transactional-edit contracts. Their checked module
 artifacts and differential conformance gate are under `modules/`, `reference/`,
