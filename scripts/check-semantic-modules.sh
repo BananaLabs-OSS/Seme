@@ -37,4 +37,9 @@ cmp "$work/patch-v1.seme" "$work/patch-v1.validated.seme"
 
 (cd "$repo/reference/go" && go test ./...)
 
+(cd "$repo/reference/go" && go run ./cmd/k0-lift \
+    "$repo/compiler/kernel-wire-validator.k0") > "$work/kernel-validator-lifted.g1"
+"$k0" "$g1" "$work/kernel-validator-lifted.g1" "$work/kernel-validator-lifted.seme"
+cmp "$repo/compiler/kernel-wire-validator.seme" "$work/kernel-validator-lifted.seme"
+
 echo "Semantic modules: Foundation v1 and Patch v1 canonical graphs and reference conformance passed"
