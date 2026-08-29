@@ -49,7 +49,7 @@ func Lower(plan wire.Envelope) ([]byte, error) {
 		return nil, fmt.Errorf("wasm.transport_missing")
 	}
 	transportName, err := field(transportEntity, 0xb130)
-	if err != nil || string(transportName.Bytes) != "pulp.host.log-v1" {
+	if err != nil || string(transportName.Bytes) != "seme.pulp.log-v1" {
 		return nil, fmt.Errorf("wasm.unsupported_transport")
 	}
 	effectName, err := field(effects[0], 0x150)
@@ -184,24 +184,51 @@ func identity(low uint64) wire.ID {
 func module() []byte {
 	var wasm bytes.Buffer
 	wasm.Write([]byte{'\x00', 'a', 's', 'm', '\x01', '\x00', '\x00', '\x00'})
-	section(&wasm, 1, []byte{2, 0x60, 1, 0x7f, 0, 0x60, 3, 0x7e, 0x7e, 0x7e, 1, 0x7f})
+	section(&wasm, 1, []byte{
+		6,
+		0x60, 1, 0x7f, 1, 0x7f,
+		0x60, 3, 0x7e, 0x7e, 0x7e, 1, 0x7f,
+		0x60, 1, 0x7f, 1, 0x7f,
+		0x60, 2, 0x7f, 0x7f, 1, 0x7f,
+		0x60, 2, 0x7f, 0x7f, 1, 0x7f,
+		0x60, 0, 1, 0x7f,
+	})
 	var imports bytes.Buffer
 	uleb(&imports, 1)
 	name(&imports, "pulp")
 	name(&imports, "log_bool")
 	imports.Write([]byte{0, 0})
 	section(&wasm, 2, imports.Bytes())
-	section(&wasm, 3, []byte{1, 1})
+	section(&wasm, 3, []byte{5, 1, 2, 3, 4, 5})
+	section(&wasm, 5, []byte{1, 0, 1})
 	var exports bytes.Buffer
-	uleb(&exports, 1)
+	uleb(&exports, 6)
+	name(&exports, "memory")
+	exports.Write([]byte{2, 0})
 	name(&exports, "admit")
 	exports.Write([]byte{0, 1})
+	name(&exports, "pulp_alloc")
+	exports.Write([]byte{0, 2})
+	name(&exports, "pulp_init")
+	exports.Write([]byte{0, 3})
+	name(&exports, "pulp_step")
+	exports.Write([]byte{0, 4})
+	name(&exports, "pulp_shutdown")
+	exports.Write([]byte{0, 5})
 	section(&wasm, 7, exports.Bytes())
-	body := []byte{1, 1, 0x7f, 0x20, 0, 0x20, 1, 0x7c, 0x20, 2, 0x57, 0x22, 3, 0x10, 0, 0x20, 3, 0x0b}
+	bodies := [][]byte{
+		{1, 1, 0x7f, 0x20, 0, 0x20, 1, 0x7c, 0x20, 2, 0x57, 0x22, 3, 0x10, 0, 0x04, 0x40, 0x00, 0x0b, 0x20, 3, 0x0b},
+		{0, 0x41, 0x80, 0x08, 0x0b},
+		{0, 0x42, 0x28, 0x42, 0x02, 0x42, 0x32, 0x10, 0x01, 0x1a, 0x41, 0, 0x0b},
+		{0, 0x41, 0, 0x0b},
+		{0, 0x41, 0, 0x0b},
+	}
 	var code bytes.Buffer
-	uleb(&code, 1)
-	uleb(&code, uint64(len(body)))
-	code.Write(body)
+	uleb(&code, uint64(len(bodies)))
+	for _, body := range bodies {
+		uleb(&code, uint64(len(body)))
+		code.Write(body)
+	}
 	section(&wasm, 10, code.Bytes())
 	return wasm.Bytes()
 }
