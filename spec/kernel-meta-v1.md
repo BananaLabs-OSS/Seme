@@ -12,7 +12,7 @@ is only an audit convenience; consumers must treat them as opaque.
 
 | Identity | Meaning |
 |---|---|
-| `00000000000000000000000000000001` | kernel module entity |
+| `00000000000000000000000000000001` | frozen Kernel bootstrap module entity |
 | `00000000000000000000000000000010` | Schema |
 | `00000000000000000000000000000011` | Field |
 | `00000000000000000000000000000012` | Module |
@@ -27,6 +27,13 @@ is only an audit convenience; consumers must treat them as opaque.
 | `0000000000000000000000000000001b` | DiagnosticReport |
 | `0000000000000000000000000000001c` | ValueShape |
 | `0000000000000000000000000000001d` | PathSegment |
+| `00000000000000000000000000003000` | Semantic Foundation v1 module entity |
+
+The frozen bootstrap envelope uses module identity `...0001` and contains only
+the seven declarations pinned by Kernel v1. The extensible Semantic Foundation
+envelope uses `...3000`; it may declare the full schema set without activating
+or modifying the Kernel bootstrap special case. Its initial revision identity
+is `00000000000000000000000000003001`.
 
 `Schema` is an instance of itself. Every other row is an entity whose schema is
 `Schema`. This finite self-reference is intentional: the wire decoder can read

@@ -1,6 +1,7 @@
 package foundation
 
 const (
+	ModuleV1ID        ID = "00000000000000000000000000003000"
 	SchemaValueShape  ID = "0000000000000000000000000000001c"
 	SchemaPathSegment ID = "0000000000000000000000000000001d"
 )
