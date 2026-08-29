@@ -72,6 +72,17 @@ values.
 
 ## Revision derivation
 
-The new revision identity is a domain-separated digest of the base revision,
-canonical patch value, and canonical candidate value. The digest identifies the
-immutable revision; stable entity identities remain unchanged.
+The new revision identity is the first 128 bits of SHA-256 over this exact byte
+transcript:
+
+```text
+"seme.patch.revision.v1\0"
+|| base revision identity (16 bytes)
+|| isolated canonical candidate envelope with a zero revision placeholder
+```
+
+Patch v1 workspaces retain the Patch and ordered operation entities unchanged
+inside the isolated candidate, so the final transcript includes both the
+canonical patch value and complete canonical candidate value without a second
+serialization. The digest identifies the immutable revision; stable entity
+identities remain unchanged.

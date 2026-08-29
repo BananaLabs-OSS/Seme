@@ -140,6 +140,12 @@ cmp "$work/foundation-invalid-shape.report.seme" \
     sha256sum -c apply-candidate.k0.sha256
     sha256sum -c apply-candidate.g1.sha256
     sha256sum -c apply-candidate.seme.sha256
+    sha256sum -c revision-transcript.k0.sha256
+    sha256sum -c revision-transcript.g1.sha256
+    sha256sum -c revision-transcript.seme.sha256
+    sha256sum -c stamp-revision.k0.sha256
+    sha256sum -c stamp-revision.g1.sha256
+    sha256sum -c stamp-revision.seme.sha256
 )
 
 (
@@ -162,7 +168,19 @@ cmp "$patch/apply-candidate.k0" "$work/patch-apply-candidate-lowered.k0"
 cmp "$patch/apply-candidate.seme" \
     "$work/patch-apply-candidate.validated.seme"
 
-for mode in valid stale precondition duplicate; do
+for program in revision-transcript stamp-revision; do
+    "$k0" "$repo/bootstrap/s1-compiler.k0" "$patch/$program.s1" \
+        "$work/$program.k0"
+    cmp "$patch/$program.k0" "$work/$program.k0"
+    "$k0" "$repo/compiler/k0-module-lowerer.k0" "$patch/$program.seme" \
+        "$work/$program-lowered.k0"
+    cmp "$patch/$program.k0" "$work/$program-lowered.k0"
+    "$k0" "$kernel" "$patch/$program.seme" \
+        "$work/$program-validated.seme"
+    cmp "$patch/$program.seme" "$work/$program-validated.seme"
+done
+
+for mode in valid stale precondition duplicate applied; do
     (
         cd "$repo/reference/go"
         go run ./cmd/patch-fixture "$mode"
@@ -178,6 +196,23 @@ done
 "$k0" "$repo/compiler/kernel-wire-validator.k0" \
     "$work/patch-valid.candidate.seme"
 "$k0" "$foundation/validator.k0" "$work/patch-valid.candidate.seme"
+cmp "$work/patch-applied.seme" "$work/patch-valid.candidate.seme"
+"$k0" "$patch/revision-transcript.k0" "$work/patch-valid.seme" \
+    "$work/patch-valid.candidate.seme" "$work/patch-valid.transcript"
+"$k0" "$repo/modules/digest/sha256/v1/digest.k0" \
+    "$work/patch-valid.transcript" "$work/patch-valid.digest"
+"$k0" "$patch/stamp-revision.k0" "$work/patch-valid.candidate.seme" \
+    "$work/patch-valid.digest" "$work/patch-valid.final.seme"
+"$k0" "$repo/compiler/kernel-wire-validator.k0" \
+    "$work/patch-valid.final.seme"
+"$k0" "$foundation/validator.k0" "$work/patch-valid.final.seme"
+(cd "$repo/reference/go" && go run ./cmd/patch-result-check \
+    "$work/patch-valid.seme" "$work/patch-valid.candidate.seme" \
+    "$work/patch-valid.final.seme")
+
+"$repo/scripts/apply-patch-v1.sh" "$work/patch-valid.seme" \
+    "$work/patch-valid.published.seme"
+cmp "$work/patch-valid.final.seme" "$work/patch-valid.published.seme"
 
 for mode in stale precondition duplicate; do
     cp "$work/patch-$mode.seme" "$work/patch-$mode.unchanged.seme"

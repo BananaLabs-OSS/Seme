@@ -18,6 +18,13 @@ then constructs a separate candidate. The candidate deliberately carries an
 all-zero revision placeholder and cannot be published until the canonical
 digest and stamp stages complete.
 
+`revision-transcript.seme` constructs the domain-separated revision transcript;
+the canonical portable SHA-256 module hashes it; and `stamp-revision.seme`
+replaces the isolated placeholder with the first 128 digest bits. The
+`scripts/apply-patch-v1.sh` execution adapter stages all artifacts beside the
+requested output and atomically publishes only a completely Kernel- and
+Foundation-validated final workspace.
+
 Reproduce and validate the graph:
 
 ```sh

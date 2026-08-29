@@ -1,0 +1,41 @@
+# Patch Module v1 revision transcript construction source.
+ve 3
+cp 7
+
+fn main 0 10
+  ac cu 3 eq bf invocation
+  cu 0 ag fr ls 0
+  cu 1 ag fr ls 1
+  cu 1048576 bn ls 2
+  # Domain separator: "seme.patch.revision.v1\0".
+  lg 2 cu 115 bp ls 2 lg 2 cu 101 bp ls 2 lg 2 cu 109 bp ls 2
+  lg 2 cu 101 bp ls 2 lg 2 cu 46 bp ls 2 lg 2 cu 112 bp ls 2
+  lg 2 cu 97 bp ls 2 lg 2 cu 116 bp ls 2 lg 2 cu 99 bp ls 2
+  lg 2 cu 104 bp ls 2 lg 2 cu 46 bp ls 2 lg 2 cu 114 bp ls 2
+  lg 2 cu 101 bp ls 2 lg 2 cu 118 bp ls 2 lg 2 cu 105 bp ls 2
+  lg 2 cu 115 bp ls 2 lg 2 cu 105 bp ls 2 lg 2 cu 111 bp ls 2
+  lg 2 cu 110 bp ls 2 lg 2 cu 46 bp ls 2 lg 2 cu 118 bp ls 2
+  lg 2 cu 49 bp ls 2 lg 2 cu 0 bp ls 2
+  # Explicit base revision identity.
+  cu 0 ls 3
+  lb revision-loop
+  lg 3 cu 16 eq bf revision-byte
+  ju candidate
+  lb revision-byte
+  lg 2 lg 0 cu 25 lg 3 ad bg bp ls 2
+  lg 3 cu 1 ad ls 3 ju revision-loop
+  # The isolated candidate contains the canonical Patch and ordered operation
+  # entities as unchanged semantic values, plus the complete candidate state.
+  lb candidate
+  lg 1 bl ls 4 cu 0 ls 3
+  lb candidate-loop
+  lg 3 lg 4 eq bf candidate-byte
+  cu 2 ag lg 2 fw re
+  lb candidate-byte
+  lg 2 lg 1 lg 3 bg bp ls 2
+  lg 3 cu 1 ad ls 3 ju candidate-loop
+  lb invocation
+  cu 64 re
+fe
+
+en main
