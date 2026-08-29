@@ -81,6 +81,10 @@ and a destination realization:
 A mapping records required decisions, dependencies, guards, evidence, and
 diagnostics. Fidelity is never inferred merely from presentation syntax.
 
+The machine-readable contract and deterministic selection rules are defined by
+the external [`target-contract-v1.md`](target-contract-v1.md) module. WebAssembly
+is its first mandatory serious conformance target, but is not a Kernel concept.
+
 ## Canonical state
 
 Canonical state is semantic entities, stable identities, relationships,

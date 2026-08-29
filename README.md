@@ -5,6 +5,9 @@ mechanics are composable semantic modules, packages and runtimes are explicit
 dependencies, and execution targets declare how faithfully they realize those
 semantics.
 
+Seme is target-independent. WebAssembly is the first-class execution target and
+primary portability proof, not the semantic foundation or the only backend.
+
 This repository starts at the independent bootstrap boundary. USIR remains the
 research prototype and behavioral reference; it is not copied into Seme and is
 not part of Seme's trusted build path.
