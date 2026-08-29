@@ -1,0 +1,496 @@
+# Semantic Foundation v1 validator construction source.
+#
+# Input is one Kernel-v1 envelope that has already passed the frozen structural
+# validator. Declarations and instances share the envelope, so every semantic
+# reference remains an ordinary envelope-local Kernel reference. On success the
+# input is preserved at argv[1] when supplied. Semantic rejection returns 65.
+ve 3
+cp 7
+
+fn reject 0 0
+  cu 65 cu 0 di re
+fe
+
+# take(buffer, cursor) -> (value << 21) | cursor. Foundation counts and schema
+# versions are bounded by the one-MiB canonical envelope.
+fn take 2 10
+  cu 0 ls 2
+  cu 0 ls 3
+  cu 0 ls 4
+  lg 0 bl ls 5
+  lb byte
+  lg 1 lg 5 eq bf have
+  ca reject re
+  lb have
+  lg 0 lg 1 bg ls 6
+  lg 1 cu 1 ad ls 1
+  lg 6 cu 127 an ls 7
+  lg 3 cu 63 eq bf shift
+  cu 1 lg 7 lt bf shift
+  ca reject re
+  lb shift
+  lg 7 lg 3 sl lg 2 or ls 2
+  lg 4 cu 1 ad ls 4
+  lg 6 cu 128 an cu 0 eq bf more
+  lg 4 cu 1 eq bf terminal
+  lg 2 cu 21 sl lg 1 or re
+  lb terminal
+  lg 7 cu 0 eq bf done
+  ca reject re
+  lb done
+  lg 2 cu 21 sl lg 1 or re
+  lb more
+  lg 3 cu 7 ad ls 3
+  cu 63 lg 3 lt bf byte
+  ca reject re
+fe
+
+fn id-equal 4 6
+  cu 0 ls 4
+  lb loop
+  lg 4 cu 16 eq bf compare
+  cu 1 re
+  lb compare
+  lg 0 lg 1 lg 4 ad bg
+  lg 2 lg 3 lg 4 ad bg
+  eq bf no
+  lg 4 cu 1 ad ls 4
+  ju loop
+  lb no
+  cu 0 re
+fe
+
+# id-is(buffer, offset, low sixteen bits) is sufficient for the allocated v1
+# Foundation identities. Identities remain opaque to every generic operation.
+fn id-is 3 6
+  cu 0 ls 3
+  lb prefix
+  lg 3 cu 14 eq bf prefix-byte
+  lg 0 lg 1 cu 14 ad bg lg 2 cu 8 sr cu 255 an eq bf no
+  lg 0 lg 1 cu 15 ad bg lg 2 cu 255 an eq bf no
+  cu 1 re
+  lb prefix-byte
+  lg 0 lg 1 lg 3 ad bg cu 0 eq bf no
+  lg 3 cu 1 ad ls 3
+  ju prefix
+  lb no
+  cu 0 re
+fe
+
+# skip-value assumes frozen Kernel structural validation has succeeded.
+fn skip-value 2 10
+  lg 0 lg 1 bg ls 2
+  lg 1 cu 1 ad ls 1
+  lg 2 cu 3 lt bf unsigned
+  lg 1 re
+  lb unsigned
+  lg 2 cu 5 lt bf bytes
+  lg 0 lg 1 ca take cu 2097151 an re
+  lb bytes
+  lg 2 cu 5 eq bf reference
+  lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an lg 3 cu 21 sr ad re
+  lb reference
+  lg 2 cu 6 eq bf list
+  lg 1 cu 16 ad re
+  lb list
+  lg 2 cu 7 eq bf record
+  lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1
+  lg 3 cu 21 sr ls 4
+  cu 0 ls 5
+  lb list-loop
+  lg 5 lg 4 eq bf list-item
+  lg 1 re
+  lb list-item
+  lg 0 lg 1 ca skip-value ls 1
+  lg 5 cu 1 ad ls 5
+  ju list-loop
+  lb record
+  lg 2 cu 8 eq bf hole
+  lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1
+  lg 3 cu 21 sr ls 4
+  cu 0 ls 5
+  lb record-loop
+  lg 5 lg 4 eq bf record-item
+  lg 1 re
+  lb record-item
+  lg 1 cu 16 ad ls 1
+  lg 0 lg 1 ca skip-value ls 1
+  lg 5 cu 1 ad ls 5
+  ju record-loop
+  lb hole
+  lg 1 cu 16 ad re
+fe
+
+# entities(buffer) -> (count << 21) | first-entity cursor
+fn entities 1 6
+  cu 8 ls 1
+  lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an ls 1
+  lg 1 cu 32 ad ls 1
+  lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an ls 1
+  lg 2 cu 21 sr cu 16 mu lg 1 ad ls 1
+  lg 0 lg 1 ca take ls 2
+  lg 2 cu 21 sr cu 21 sl
+  lg 2 cu 2097151 an or re
+fe
+
+# next-entity(buffer, entity-start) -> next entity cursor
+fn next-entity 2 7
+  lg 1 cu 32 ad ls 1
+  lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an ls 1
+  lg 0 lg 1 ca take ls 2
+  lg 2 cu 2097151 an ls 1
+  lg 2 cu 21 sr ls 3
+  cu 0 ls 4
+  lb field-loop
+  lg 4 lg 3 eq bf field
+  lg 1 re
+  lb field
+  lg 1 cu 16 ad ls 1
+  lg 0 lg 1 ca skip-value ls 1
+  lg 4 cu 1 ad ls 4
+  ju field-loop
+fe
+
+# find-entity(buffer, id-buffer, id-offset) -> entity cursor, or zero.
+fn find-entity 3 10
+  lg 0 ca entities ls 3
+  lg 3 cu 2097151 an ls 4
+  lg 3 cu 21 sr ls 5
+  cu 0 ls 6
+  lb loop
+  lg 6 lg 5 eq bf item
+  cu 0 re
+  lb item
+  lg 0 lg 4 lg 1 lg 2 ca id-equal bf next
+  lg 4 re
+  lb next
+  lg 0 lg 4 ca next-entity ls 4
+  lg 6 cu 1 ad ls 6
+  ju loop
+fe
+
+# find-field(buffer, entity, field-id-buffer, field-id-offset) returns the value
+# tag cursor plus one, or zero. Callers inspect the tag at result-1.
+fn find-field 4 10
+  lg 1 cu 32 ad ls 1
+  lg 0 lg 1 ca take ls 4
+  lg 4 cu 2097151 an ls 1
+  lg 0 lg 1 ca take ls 4
+  lg 4 cu 2097151 an ls 1
+  lg 4 cu 21 sr ls 5
+  cu 0 ls 6
+  lb loop
+  lg 6 lg 5 eq bf item
+  cu 0 re
+  lb item
+  lg 0 lg 1 lg 2 lg 3 ca id-equal bf next
+  lg 1 cu 17 ad re
+  lb next
+  lg 1 cu 16 ad ls 1
+  lg 0 lg 1 ca skip-value ls 1
+  lg 6 cu 1 ad ls 6
+  ju loop
+fe
+
+# find-field-is(buffer, entity, low-id) -> value cursor, or zero.
+fn find-field-is 3 9
+  lg 1 cu 32 ad ls 1
+  lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1
+  lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1
+  lg 3 cu 21 sr ls 4
+  cu 0 ls 5
+  lb loop
+  lg 5 lg 4 eq bf item
+  cu 0 re
+  lb item
+  lg 0 lg 1 lg 2 ca id-is bf next
+  lg 1 cu 17 ad re
+  lb next
+  lg 1 cu 16 ad ls 1
+  lg 0 lg 1 ca skip-value ls 1
+  lg 5 cu 1 ad ls 5
+  ju loop
+fe
+
+# find-record-field(buffer, record-payload, id-buffer, id-offset).
+fn find-record-field 4 9
+  lg 0 lg 1 ca take ls 4
+  lg 4 cu 2097151 an ls 1
+  lg 4 cu 21 sr ls 5
+  cu 0 ls 6
+  lb loop
+  lg 6 lg 5 eq bf item
+  cu 0 re
+  lb item
+  lg 0 lg 1 lg 2 lg 3 ca id-equal bf next
+  lg 1 cu 17 ad re
+  lb next
+  lg 1 cu 16 ad ls 1
+  lg 0 lg 1 ca skip-value ls 1
+  lg 6 cu 1 ad ls 6
+  ju loop
+fe
+
+fn find-record-field-is 3 8
+  lg 0 lg 1 ca take ls 3
+  lg 3 cu 2097151 an ls 1
+  lg 3 cu 21 sr ls 4
+  cu 0 ls 5
+  lb loop
+  lg 5 lg 4 eq bf item
+  cu 0 re
+  lb item
+  lg 0 lg 1 lg 2 ca id-is bf next
+  lg 1 cu 17 ad re
+  lb next
+  lg 1 cu 16 ad ls 1
+  lg 0 lg 1 ca skip-value ls 1
+  lg 5 cu 1 ad ls 5
+  ju loop
+fe
+
+# unsigned-at(buffer, value-cursor) -> value. value-cursor is after its tag.
+fn unsigned-at 2 5
+  lg 0 lg 1 cu 1 su bg cu 3 eq bf invalid
+  lg 0 lg 1 ca take cu 21 sr re
+  lb invalid
+  ca reject re
+fe
+
+# Validate one value against a ValueShape record payload.
+fn validate-value 3 18
+  lg 0 lg 1 cu 8192 ca find-record-field-is ls 3
+  lg 3 cu 0 eq bf kind-present
+  ca reject re
+  lb kind-present
+  lg 0 lg 3 ca unsigned-at ls 4
+  lg 4 cu 255 eq bf known
+  cu 0 re
+
+  lb known
+  lg 0 lg 2 bg ls 5
+  lg 4 cu 0 eq bf bool
+  lg 5 cu 0 eq bf invalid
+  cu 0 re
+  lb bool
+  lg 4 cu 1 eq bf unsigned
+  lg 5 cu 1 eq ls 6
+  lg 5 cu 2 eq lg 6 or bf invalid
+  cu 0 re
+  lb unsigned
+  lg 4 cu 2 eq bf signed
+  lg 5 cu 3 eq bf invalid
+  cu 0 re
+  lb signed
+  lg 4 cu 3 eq bf bytes
+  lg 5 cu 4 eq bf invalid
+  cu 0 re
+  lb bytes
+  lg 4 cu 4 eq bf reference
+  lg 5 cu 5 eq bf invalid
+  cu 0 re
+
+  lb reference
+  lg 4 cu 5 eq bf list
+  lg 5 cu 6 eq bf invalid
+  # An optional schema constraint compares the referenced entity's schema.
+  lg 0 lg 1 cu 8193 ca find-record-field-is ls 6
+  lg 6 cu 0 eq bf reference-schema
+  cu 0 re
+  lb reference-schema
+  lg 0 lg 6 cu 1 su bg cu 6 eq bf invalid
+  lg 0 lg 0 lg 2 cu 1 ad ca find-entity ls 7
+  lg 7 cu 0 eq bf reference-target
+  ca reject re
+  lb reference-target
+  lg 0 lg 7 cu 16 ad lg 0 lg 6 ca id-equal bf invalid
+  cu 0 re
+
+  lb list
+  lg 4 cu 6 eq bf record
+  lg 5 cu 7 eq bf invalid
+  lg 0 lg 1 cu 8194 ca find-record-field-is ls 6
+  lg 6 cu 0 eq bf list-shape
+  ca reject re
+  lb list-shape
+  lg 0 lg 6 cu 1 su bg cu 8 eq bf invalid
+  lg 0 lg 2 cu 1 ad ca take ls 7
+  lg 7 cu 2097151 an ls 8
+  lg 7 cu 21 sr ls 9
+  cu 0 ls 10
+  lb list-loop
+  lg 10 lg 9 eq bf list-item
+  cu 0 re
+  lb list-item
+  lg 8 ls 11
+  lg 0 lg 6 lg 11 ca validate-value dr
+  lg 0 lg 11 ca skip-value ls 8
+  lg 10 cu 1 ad ls 10
+  ju list-loop
+
+  lb record
+  lg 4 cu 7 eq bf hole
+  lg 5 cu 8 eq bf invalid
+  lg 0 lg 1 cu 8193 ca find-record-field-is ls 6
+  lg 6 cu 0 eq bf record-schema
+  ca reject re
+  lb record-schema
+  lg 0 lg 6 cu 1 su bg cu 6 eq bf invalid
+  lg 0 lg 0 lg 6 ca find-entity ls 7
+  # An absent imported schema makes the value unavailable, not malformed.
+  lg 7 cu 0 eq bf record-known
+  cu 0 re
+  lb record-known
+  lg 7 cu 32 ad ls 8
+  lg 0 lg 8 ca take cu 21 sr ls 9
+  lg 0 lg 7 lg 9 lg 2 cu 1 ad cu 1 ca validate-fields dr
+  cu 0 re
+
+  lb hole
+  lg 4 cu 8 eq bf invalid
+  lg 5 cu 9 eq bf invalid
+  cu 0 re
+  lb invalid
+  ca reject re
+fe
+
+# validate-fields(buffer, schema-entity, version, container, record-mode)
+# record-mode zero addresses entity fields; one addresses an inline record.
+fn validate-fields 5 24
+  lg 0 lg 1 cu 257 ca find-field-is ls 5
+  lg 5 cu 0 eq bf declarations
+  ca reject re
+  lb declarations
+  lg 0 lg 5 cu 1 su bg cu 7 eq bf invalid
+  lg 0 lg 5 ca take ls 6
+  lg 6 cu 2097151 an ls 7
+  lg 6 cu 21 sr ls 8
+  cu 0 ls 9
+  lb declaration-loop
+  lg 9 lg 8 eq bf declaration
+  cu 0 re
+  lb declaration
+  lg 0 lg 7 bg cu 6 eq bf invalid
+  lg 7 cu 1 ad ls 10
+  lg 0 lg 0 lg 10 ca find-entity ls 11
+  lg 11 cu 0 eq bf field-known
+  ca reject re
+  lb field-known
+  lg 0 lg 11 cu 275 ca find-field-is ls 12
+  lg 12 cu 0 eq bf since-present
+  ca reject re
+  lb since-present
+  lg 0 lg 12 ca unsigned-at ls 13
+  lg 13 cu 0 eq bf since-positive
+  ca reject re
+  lb since-positive
+  lg 2 lg 13 lt bf active
+  ju declaration-next
+
+  lb active
+  lg 0 lg 11 cu 274 ca find-field-is ls 14
+  lg 14 cu 0 eq bf cardinality-present
+  ca reject re
+  lb cardinality-present
+  lg 0 lg 14 ca unsigned-at ls 15
+  cu 2 lg 15 lt bf cardinality-valid
+  ca reject re
+  lb cardinality-valid
+  lg 4 cu 0 eq bf record-value
+  lg 0 lg 3 lg 0 lg 10 ca find-field ls 16
+  ju value-found
+  lb record-value
+  lg 0 lg 3 lg 0 lg 10 ca find-record-field ls 16
+  lb value-found
+  lg 16 cu 0 eq bf present
+  lg 15 cu 0 eq bf declaration-next
+  ca reject re
+
+  lb present
+  lg 0 lg 11 cu 273 ca find-field-is ls 17
+  lg 17 cu 0 eq bf shape-present
+  ca reject re
+  lb shape-present
+  lg 0 lg 17 cu 1 su bg cu 8 eq bf invalid
+  lg 15 cu 2 eq bf single
+  lg 0 lg 16 cu 1 su bg cu 7 eq bf invalid
+  lg 0 lg 16 ca take ls 18
+  lg 18 cu 2097151 an ls 19
+  lg 18 cu 21 sr ls 20
+  cu 0 ls 21
+  lb many-loop
+  lg 21 lg 20 eq bf many-item
+  ju declaration-next
+  lb many-item
+  lg 19 ls 22
+  lg 0 lg 17 lg 22 ca validate-value dr
+  lg 0 lg 22 ca skip-value ls 19
+  lg 21 cu 1 ad ls 21
+  ju many-loop
+
+  lb single
+  lg 0 lg 17 lg 16 cu 1 su ca validate-value dr
+  lb declaration-next
+  lg 0 lg 7 ca skip-value ls 7
+  lg 9 cu 1 ad ls 9
+  ju declaration-loop
+  lb invalid
+  ca reject re
+fe
+
+fn main 0 16
+  ac cu 1 lt bf invocation-ok
+  cu 64 cu 0 di re
+  lb invocation-ok
+  cu 0 ag fr ls 0
+  lg 0 ca entities ls 1
+  lg 1 cu 2097151 an ls 2
+  lg 1 cu 21 sr ls 3
+  cu 0 ls 4
+  lb entity-loop
+  lg 4 lg 3 eq bf entity
+  ju output
+  lb entity
+  # Locate the declaration whose identity equals this entity's schema identity.
+  lg 0 lg 0 lg 2 cu 16 ad ca find-entity ls 5
+  lg 5 cu 0 eq bf schema-known
+  ju entity-next
+  lb schema-known
+  lg 2 cu 32 ad ls 6
+  lg 0 lg 6 ca take ls 7
+  lg 7 cu 21 sr ls 8
+  lg 8 cu 0 eq bf version-positive
+  ca reject re
+  lb version-positive
+  lg 5 cu 32 ad ls 9
+  lg 0 lg 9 ca take ls 10
+  lg 10 cu 21 sr ls 11
+  lg 11 lg 8 lt bf supported-version
+  ju entity-next
+  lb supported-version
+  lg 0 lg 5 lg 8 lg 2 cu 0 ca validate-fields dr
+  lb entity-next
+  lg 0 lg 2 ca next-entity ls 2
+  lg 4 cu 1 ad ls 4
+  ju entity-loop
+
+  lb output
+  ac cu 1 eq bf maybe-output
+  cu 0 re
+  lb maybe-output
+  ac cu 2 eq bf bad-invocation
+  cu 1 ag lg 0 fw
+  re
+  lb bad-invocation
+  cu 64 cu 0 di re
+fe
+
+en main
