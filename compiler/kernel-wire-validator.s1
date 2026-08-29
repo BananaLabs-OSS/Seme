@@ -1,6 +1,6 @@
 # Canonical Kernel wire v1 structural validator, authored in symbolic S1.
 ve 3
-cp 3
+cp 7
 
 fn fail 0 0
   cu 1
@@ -760,7 +760,22 @@ fn main 0 16
   lg 2
   eq
   bf envelope-invalid
+  ac
+  cu 1
+  eq
+  bf envelope-output-count
   cu 0
+  re
+
+  lb envelope-output-count
+  ac
+  cu 2
+  eq
+  bf envelope-invalid
+  cu 1
+  ag
+  lg 0
+  fw
   re
 
   lb envelope-invalid

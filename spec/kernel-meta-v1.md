@@ -106,3 +106,8 @@ must remain byte-identical. A second fixture adds an unknown optional field to
 Counter; an implementation that does not know that field must round-trip it
 unchanged at the semantic-value level. This is the required proof that semantic
 modules extend the graph rather than expanding the kernel.
+
+The checked `external-counter.a0` fixture now proves the structural half of
+this gate: its unknown optional field is accepted and survives a validating
+byte-identical round trip without changing the Kernel validator. Semantic
+schema/import validation remains required before the full extension gate passes.

@@ -20,5 +20,8 @@ the self-hosted bootstrap. Checked S1 compiles it deterministically to
 The current structural profile validates the Kernel v1 envelope, canonical
 ULEB integers, bounds, strictly ordered parent/entity/field identities,
 recursive lists and records, known value tags, nesting depth, and exact
-end-of-file. It does not yet interpret the Kernel meta-schema, resolve semantic
-references/imports, migrate revisions, or produce structured diagnostics.
+end-of-file. With an output path it writes the validated canonical envelope
+byte-for-byte, providing the preservation path for semantics the current
+validator does not interpret. It does not yet interpret the Kernel meta-schema,
+resolve semantic references/imports, migrate revisions, or produce structured
+diagnostics.
