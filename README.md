@@ -68,9 +68,13 @@ Substantial software belongs in readable Seme, not assembly.
 - The K0 semantic lowerer now has canonical Seme source and reproduces itself:
   checked compiler A, self-produced B, and B-produced C are byte-identical. Its
   S1 source is retained only as bootstrap history.
+- Frozen Core 1 closes the Linux-amd64 development loop: the canonical lowerer,
+  G1 frontend, Kernel validator, and migrator rebuild without S0, S1, assembly,
+  Python, or another language toolchain. See
+  [`compiler/FROZEN-CORE-1.md`](compiler/FROZEN-CORE-1.md).
 - Host assembly tools remain optional construction and cross-check conveniences.
-- The S0 bootstrap compiler is self-reproducing; the semantic Kernel v1 compiler
-  is not self-hosted yet.
+- The frozen compiler core is self-hosted. Full Kernel v1 schema semantics and
+  structured diagnostics remain incomplete above that independent floor.
 
 See [`spec/architecture.md`](spec/architecture.md) and
 [`bootstrap/README.md`](bootstrap/README.md).
