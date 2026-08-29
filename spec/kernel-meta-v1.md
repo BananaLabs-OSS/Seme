@@ -1,9 +1,9 @@
-# Kernel meta-schema v1 candidate
+# Seme semantic foundation module v1 candidate
 
-This is the candidate semantic bootstrap for Kernel wire v1. It defines the
-smallest data model needed to interpret schemas and modules. The identities are
-allocated and must never be silently reused, but they are not frozen until the
-Kernel v1 freeze gates pass.
+This is the candidate semantic foundation module represented in frozen Kernel
+wire v1. It defines schemas for higher Seme meaning. Its identities are
+allocated and must never be silently reused, but this module is versioned and
+may mature without reopening the structural Kernel.
 
 Identity literals below are 16-byte hexadecimal values. Their numeric pattern
 is only an audit convenience; consumers must treat them as opaque.
@@ -104,12 +104,13 @@ domain types without changing the wire kernel.
 The fixed expectation in phase 3 is the trusted semantic seed. It contains two
 entity shapes, not a catalogue of language mechanics.
 
-The executable bootstrap slice currently covers Module, Schema, Field,
+The frozen structural bootstrap slice covers Module, Schema, Field,
 schema.fields, field.value_shape, and module.exports. The checked validator
 activates those requirements only for the reserved Kernel module identity,
 verifies all seven declarations and their schema relationships, and rejects an
-incomplete reserved module. Remaining meta-schema declarations stay candidate
-until their field shapes are encoded and validated.
+incomplete reserved module. Remaining foundation declarations stay candidate
+until their field shapes are encoded and validated by the semantic module
+validator. They are not Kernel wire freeze requirements.
 
 ## External-module proof
 

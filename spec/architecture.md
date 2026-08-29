@@ -47,18 +47,18 @@ preservation, semantic edits, generated native output, and behavior under the
 original ecosystem toolchain. Anything weaker is labeled explicitly and may
 remain an opaque native region.
 
-## Kernel boundary
+## Kernel and semantic-foundation boundary
 
-Kernel v1 is limited to:
+Frozen Kernel v1 is limited to:
 
 - stable identity and revision;
 - declarations, references, and structural values;
-- constraints and explicit holes;
-- effects and capabilities;
-- provenance;
-- refinement relationships;
 - versioned module and schema records;
-- deterministic diagnostics and canonical serialization.
+- structural references, holes, and canonical serialization.
+
+Versioned semantic-foundation modules define constraints, effects,
+capabilities, provenance, refinements, and structured diagnostics. Seme owns
+those semantics without hard-coding them into the frozen wire decoder.
 
 Memory models, concurrency, relational semantics, object systems, ECS, UI,
 machine semantics, package ecosystems, and surface grammars are modules—not

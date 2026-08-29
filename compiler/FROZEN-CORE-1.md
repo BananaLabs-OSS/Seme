@@ -91,8 +91,8 @@ The frozen gate covers all checked fixtures in `conformance/g1`,
 
 Frozen Core 1 specifies deterministic bootstrap status diagnostics: `64` invalid
 invocation, `65` malformed/invalid program, and `74` operating-system I/O
-failure. Structured Kernel diagnostics remain a post-handoff Kernel v1 gate and
-must be implemented in canonical Seme without reopening S1 or assembly.
+failure. Structured diagnostics were subsequently completed by the canonical
+located validator and frozen with Kernel v1 without reopening S1 or assembly.
 
 ## Scope
 

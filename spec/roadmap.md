@@ -15,12 +15,11 @@ bootstrap and self-hosting
 
 Completing a later layer does not waive an earlier layer's conformance gates.
 
-## 1. Trustworthy Kernel v1
+## 1. Trustworthy Kernel v1 — complete
 
-The executable gate status and missing conformance groups are tracked in the
-[`Kernel v1 freeze audit`](kernel-v1-freeze-audit.md). A documented identity is
-not counted as implemented until canonical validation and positive/negative
-fixtures prove it.
+The structural Kernel v1 boundary is frozen. The executable evidence is tracked
+in the [`Kernel v1 freeze evaluation`](kernel-v1-freeze-audit.md) and pinned in
+[`KERNEL-V1-FREEZE.md`](../compiler/KERNEL-V1-FREEZE.md).
 
 - Emit deterministic structured diagnostics with stable rule, revision, entity,
   field/list path, and structured argument identities.
@@ -28,17 +27,11 @@ fixtures prove it.
   refinement, unknown-field, and migration conformance.
 - Freeze the canonical format, identities, validation behavior, and migrations.
 
-The diagnostic report shape now has canonical compile/validate/round-trip
-fixtures, and the post-freeze validator emits a report for every current
-rejection path. Diagnostic transport and broad stable rule classification are
-complete. The Kernel gate remains open until entity and field/list locations
-are refined and covered by conformance fixtures.
-
-Located Diagnostics 1 is complete: its canonical validator preserves valid
-inputs exactly, emits canonical reports for the current invalid corpus, carries
-trustworthy revision/entity identities, and records field-level failures with
-the explicit unavailable-identity sentinel. Exact field identity plus nested,
-list, and reference provenance remain part of the open Kernel gate.
+Located Diagnostics 1 is the frozen structural validator: it preserves valid
+inputs exactly, emits canonical reports for the invalid corpus, carries
+trustworthy revision/entity identities, and uses the explicit unavailable
+identity sentinel where malformed input cannot establish a field identity.
+Richer semantic-module diagnostics remain versioned work above Kernel v1.
 
 ## 2. Transactional semantic editing
 
