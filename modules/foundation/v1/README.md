@@ -19,6 +19,13 @@ unknown future versions and unavailable schemas, and preserves successful
 input byte-for-byte. The canonical graph lowers back to the checked K0 image
 exactly.
 
+`reporter.seme` is the authoritative successful-validation reporter. After the
+validator accepts an envelope, it emits a canonical `ValidationReport` with one
+ordered inline result per entity. It distinguishes certified,
+preserved-unknown, and unavailable semantics. Rejected reports remain the
+diagnostic companion's responsibility, so successful reporting cannot alter
+acceptance behavior.
+
 Reproduction, hash, frozen-Kernel, and oracle checks run through:
 
 ```sh
