@@ -111,9 +111,10 @@ B, and C are byte-identical. Named calls, forward labels, and generated return
 epilogues compile to independent programs that return 42.
 
 The compiler constructs four append-only layout tables to derive canonical K0
-branch witnesses without mutable memory or native assistance. Symbol-uniqueness,
-trailing-input, and malformed-source conformance remain freeze gates before S1
-becomes the sole bootstrap authoring floor.
+branch witnesses without mutable memory or native assistance. It rejects
+duplicate function and label identities, unknown calls and labels, integer
+overflow, non-canonical integers, unknown directives, missing structure, and
+non-comment trailing input. Generations B and C agree on those rejection cases.
 
 ## Seed responsibilities
 

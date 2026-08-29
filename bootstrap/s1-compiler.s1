@@ -728,6 +728,8 @@ fe
 
 # count-functions(buffer, cursor-after-header) -> declared function count
 fn count-functions 2 12
+  lg 1
+  ls 8
   cu 0
   ls 2
 
@@ -771,6 +773,16 @@ fn count-functions 2 12
   cu 42
   sr
   ls 1
+  lg 3
+  ls 9
+  # The first declaration index must equal the current declaration index.
+  lg 0
+  lg 8
+  lg 9
+  ca function-index
+  lg 2
+  eq
+  bf count-invalid
   lg 0
   lg 1
   ca next-token
@@ -808,6 +820,10 @@ fn count-functions 2 12
   ju count-invalid
 
   lb count-scan-body
+  lg 0
+  lg 1
+  ca validate-labels
+  dr
   lg 0
   lg 1
   ca scan-body
@@ -915,6 +931,8 @@ fe
 fn label-index 3 10
   cu 0
   ls 3
+  cu 0
+  ls 7
 
   lb label-index-loop
   lg 0
@@ -934,7 +952,15 @@ fn label-index 3 10
   cu 65538
   eq
   bf label-index-label
+  lg 7
+  cu 0
+  eq
+  bf label-index-found
   ju label-index-missing
+
+  lb label-index-found
+  lg 8
+  re
 
   lb label-index-label
   lg 5
@@ -954,8 +980,15 @@ fn label-index 3 10
   lg 2
   ca token-equal
   bf label-index-loop
+  lg 7
+  cu 0
+  eq
+  bf label-index-missing
+  cu 1
+  ls 7
   lg 3
-  re
+  ls 8
+  ju label-index-loop
 
   lb label-index-instruction
   lg 5
@@ -988,6 +1021,74 @@ fn label-index 3 10
   cu 0
   di
   re
+fe
+
+# validate-labels(buffer, function-body-cursor) -> 0
+# Runs once per declaration so ordinary layout scans remain linear.
+fn validate-labels 2 8
+  lg 1
+  ls 3
+
+  lb validate-label-loop
+  lg 0
+  lg 1
+  ca next-token
+  ls 4
+  lg 4
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 4
+  ca token-code
+  ca directive-info
+  ls 5
+  lg 5
+  cu 65538
+  eq
+  bf validate-label-declaration
+  cu 0
+  re
+
+  lb validate-label-declaration
+  lg 5
+  cu 65537
+  eq
+  bf validate-label-instruction
+  lg 0
+  lg 1
+  ca next-token
+  ls 6
+  lg 6
+  cu 42
+  sr
+  ls 1
+  lg 0
+  lg 3
+  lg 6
+  ca label-index
+  dr
+  ju validate-label-loop
+
+  lb validate-label-instruction
+  lg 5
+  cu 255
+  an
+  cu 0
+  eq
+  bf validate-label-operand
+  ju validate-label-loop
+
+  lb validate-label-operand
+  lg 0
+  lg 1
+  ca next-token
+  ls 4
+  lg 4
+  cu 42
+  sr
+  ls 1
+  ju validate-label-loop
 fe
 
 # uleb-width(value) -> canonical encoded byte count
@@ -1750,6 +1851,63 @@ fn main 0 24
   lg 19
   ca append-uleb
   ls 1
+  lg 0
+  bl
+  ls 12
+
+  lb emit-trailing-loop
+  lg 6
+  lg 12
+  eq
+  bf emit-trailing-byte
+  ju emit-write
+
+  lb emit-trailing-byte
+  lg 0
+  lg 6
+  bg
+  ls 7
+  lg 7
+  cu 35
+  eq
+  bf emit-trailing-whitespace
+
+  lb emit-trailing-comment
+  lg 6
+  cu 1
+  ad
+  ls 6
+  lg 6
+  lg 12
+  eq
+  bf emit-trailing-comment-byte
+  ju emit-write
+
+  lb emit-trailing-comment-byte
+  lg 0
+  lg 6
+  bg
+  cu 10
+  eq
+  bf emit-trailing-comment
+  lg 6
+  cu 1
+  ad
+  ls 6
+  ju emit-trailing-loop
+
+  lb emit-trailing-whitespace
+  lg 7
+  cu 33
+  lt
+  bf emit-invalid
+  lg 6
+  cu 1
+  ad
+  ls 6
+  ju emit-trailing-loop
+
+  lb emit-write
   cu 1
   ag
   ls 17
