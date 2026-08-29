@@ -21,6 +21,7 @@ const (
 	List
 	Record
 	Hole
+	Any Kind = 255
 )
 
 const (
@@ -178,7 +179,7 @@ func Validate(module Module, entities map[ID]Entity) ([]Result, error) {
 }
 
 func validateShape(shape Shape) error {
-	if shape.Kind > Hole {
+	if shape.Kind > Hole && shape.Kind != Any {
 		return fmt.Errorf("unknown_kind")
 	}
 	if shape.Kind == List {
@@ -197,6 +198,9 @@ func validateShape(shape Shape) error {
 }
 
 func validateValue(shape Shape, value Value, entities map[ID]Entity, schemas map[ID]Schema) error {
+	if shape.Kind == Any {
+		return nil
+	}
 	if shape.Kind != value.Kind {
 		return fmt.Errorf("kind")
 	}

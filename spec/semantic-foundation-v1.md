@@ -4,6 +4,10 @@ Semantic Foundation v1 is the first versioned module above frozen Kernel v1.
 It gives structural Kernel entities generic schema meaning without adding new
 wire tags or trusted decoder concepts.
 
+Its module identity is `00000000000000000000000000003000` and its initial
+revision identity is `00000000000000000000000000003001`. It must not reuse the
+frozen bootstrap module identity `...0001`.
+
 ## Declarations
 
 A module declares stable identities for schemas and fields. A schema has a
@@ -21,6 +25,9 @@ the referenced schema identity. Lists declare one element shape. Records name a
 schema rather than duplicating its fields. The foundation module allocates
 stable schema identity `0000000000000000000000000000001c` for ValueShape so
 this recursion is ordinary schema data rather than validator special-casing.
+The Foundation-only shape kind `255` means any preserved Kernel value and is
+used where a schema deliberately accepts heterogeneous values, such as
+diagnostic arguments. It is not a new Kernel wire value tag.
 
 ## Validation
 
