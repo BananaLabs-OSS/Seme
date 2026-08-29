@@ -46,6 +46,9 @@ list, and reference provenance remain part of the open Kernel gate.
 
 The Go toolchain is an optional external ecosystem provider and is not part of
 Seme's repository, trusted bootstrap, or independent reproduction path.
+The first Go provider proves Provider Contract v1; it is not a claim of general
+Go support. Later providers must reuse the same patch and reconciliation
+contracts rather than introduce language concepts into the Kernel.
 
 The milestone must demonstrate:
 
