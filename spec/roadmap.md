@@ -126,6 +126,9 @@ enforcement complete for the scoped logging profile.
   the target validates both functions and emits a separate Wasm helper call.
 - Go provider revisions cover recursive module sources, so imported-package
   edits cannot remain hidden behind a valid root-package manifest.
+- The application profile now resolves and lifts the real
+  `Admit -> internal/policy.WithinLimit` package edge from source, preserving it
+  as two canonical and two Wasm functions.
 - Actual Pulp loads the same reactor once, processes repeated structured quota
   requests through `pulp_on_call`, returns responses, delivers every granted
   effect, and rejects the identical artifact when the capability is absent.

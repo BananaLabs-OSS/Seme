@@ -7,6 +7,7 @@ import (
 	"go/types"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // BuildWasmPulpPlan performs the first exact dependency/effect analysis and
@@ -28,7 +29,8 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	if err != nil {
 		return "", err
 	}
-	helperDeclaration, helper, helperSignature, helperInfo, err := resolveFunction(project, manifest, "WithinLimit")
+	helperPackage := packagePathOf(declaration.NativeKey) + "/internal/policy"
+	helperDeclaration, helper, helperSignature, helperInfo, err := resolveImportedFunction(project, manifest, helperPackage, "WithinLimit")
 	if err != nil {
 		return "", err
 	}
@@ -267,9 +269,12 @@ func analyzeLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *type
 	if !ok || len(decisionCall.Args) != 3 {
 		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision")
 	}
-	callee, ok := decisionCall.Fun.(*ast.Ident)
-	calleeObject, resolved := info.Uses[callee].(*types.Func)
-	if !ok || !resolved || calleeObject.Name() != "WithinLimit" {
+	decisionSelector, ok := decisionCall.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision_call")
+	}
+	calleeObject, resolved := info.Uses[decisionSelector.Sel].(*types.Func)
+	if !resolved || calleeObject.Name() != "WithinLimit" || calleeObject.Pkg() == nil || !strings.HasSuffix(calleeObject.Pkg().Path(), "/internal/policy") {
 		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision_call")
 	}
 	for index, name := range []string{"Current", "Delta", "Limit"} {

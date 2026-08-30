@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"go/ast"
-	"go/importer"
 	"go/parser"
 	"go/token"
 	"go/types"
@@ -376,7 +375,7 @@ func declarations(project, packagePath string, files []NativeFile, sources map[s
 		pathFor[parsedFile] = file.Path
 	}
 	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
-	config := types.Config{Importer: importer.Default()}
+	config := types.Config{Importer: newSourceImporter(project, Manifest{Files: files}, packagePath)}
 	pkg, err := config.Check(packagePath, fset, parsed, info)
 	if err != nil {
 		return nil, err
