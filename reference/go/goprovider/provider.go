@@ -135,7 +135,7 @@ func Ingest(options IngestOptions) (Manifest, string, error) {
 		Identity: providerID, ImplementationVersion: "1", Language: "go",
 		LanguageVersion: strings.TrimPrefix(goVersion, "go"), Toolchain: goVersion,
 		Target: strings.Join(strings.Fields(target), "/"), Environment: "ordinary-module",
-		Supported:  []string{"package-level-functions", "resolved-function-occurrences", "identity-preserving-rename"},
+		Supported:  []string{"package-level-functions", "resolved-function-occurrences", "identity-preserving-rename", "module-source-closure-revisions"},
 		Exclusions: []string{"cgo", "generated-files", "build-tag-variants", "methods", "multi-package-projection", "native-concurrent-edits"},
 	}
 	manifest := Manifest{Version: ManifestVersion, Contract: "provider-v1", Provider: providerID, Profile: profile, Revision: revision, Files: files, Declarations: decls}
@@ -362,6 +362,12 @@ func declarations(project, packagePath string, files []NativeFile, sources map[s
 		if !strings.HasSuffix(file.Path, ".go") || strings.HasSuffix(file.Path, "_test.go") {
 			continue
 		}
+		// Provider Contract v1 projects declarations from the selected root
+		// package. Nested package sources are still revision-tracked so imported
+		// semantics cannot change behind stale evidence.
+		if strings.Contains(file.Path, "/") {
+			continue
+		}
 		parsedFile, err := parser.ParseFile(fset, filepath.Join(project, filepath.FromSlash(file.Path)), sources[file.Path], parser.SkipObjectResolution)
 		if err != nil {
 			return nil, err
@@ -525,25 +531,38 @@ func functionFingerprint(fset *token.FileSet, fn *ast.FuncDecl, info *types.Info
 	return hex.EncodeToString(sum[:])
 }
 func nativeFiles(project string) ([]NativeFile, map[string][]byte, error) {
-	entries, err := os.ReadDir(project)
-	if err != nil {
-		return nil, nil, err
-	}
 	var files []NativeFile
 	sources := map[string][]byte{}
-	for _, entry := range entries {
-		if entry.IsDir() || (!strings.HasSuffix(entry.Name(), ".go") && entry.Name() != "go.mod" && entry.Name() != "go.sum") {
-			continue
+	err := filepath.WalkDir(project, func(path string, entry fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
 		}
-		b, err := os.ReadFile(filepath.Join(project, entry.Name()))
+		if entry.IsDir() {
+			if path != project && (entry.Name() == ".git" || entry.Name() == "vendor") {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		relative, err := filepath.Rel(project, path)
 		if err != nil {
-			return nil, nil, err
+			return err
 		}
-		path := filepath.ToSlash(entry.Name())
+		relative = filepath.ToSlash(relative)
+		if !strings.HasSuffix(relative, ".go") && relative != "go.mod" && relative != "go.sum" {
+			return nil
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
 		sum := sha256.Sum256(b)
 		digest := hex.EncodeToString(sum[:])
-		files = append(files, NativeFile{ID: stableID("file", path), Path: path, Digest: digest})
-		sources[path] = b
+		files = append(files, NativeFile{ID: stableID("file", relative), Path: relative, Digest: digest})
+		sources[relative] = b
+		return nil
+	})
+	if err != nil {
+		return nil, nil, err
 	}
 	if len(files) == 0 {
 		return nil, nil, errors.New("provider.no_supported_go_files")

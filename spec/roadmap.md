@@ -124,6 +124,8 @@ enforcement complete for the scoped logging profile.
   source error literals through Seme into Wasm without backend templates.
 - Core Execution v6 preserves the ordinary Go `Admit -> WithinLimit` call edge;
   the target validates both functions and emits a separate Wasm helper call.
+- Go provider revisions cover recursive module sources, so imported-package
+  edits cannot remain hidden behind a valid root-package manifest.
 - Actual Pulp loads the same reactor once, processes repeated structured quota
   requests through `pulp_on_call`, returns responses, delivers every granted
   effect, and rejects the identical artifact when the capability is absent.
