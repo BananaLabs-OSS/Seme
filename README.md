@@ -139,6 +139,8 @@ the Go helper and handler now lower to distinct Wasm functions.
 Provider revisions cover nested module sources, and target analysis resolves
 the real `Admit -> internal/policy.Allows` imported source call through the
 same canonical call and Wasm layers.
+Equivalent helper comparison direction is normalized, while resolved
+parameter identities flow through canonical reads into generated Wasm locals.
 Imported package functions are also first-class provider declarations with
 stable package-qualified identities.
 

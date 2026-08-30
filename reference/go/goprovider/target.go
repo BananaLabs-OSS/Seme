@@ -32,7 +32,8 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	if err != nil {
 		return "", err
 	}
-	if err := validateDecisionHelper(helper, helperSignature, helperInfo); err != nil {
+	helperProfile, err := analyzeDecisionHelper(helper, helperSignature, helperInfo)
+	if err != nil {
 		return "", err
 	}
 	if policy != "allow-adapted" && policy != "exact-only" {
@@ -150,8 +151,8 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		graphEntity{helperReadIDs[0], entity(helperReadIDs[0], "00000000000000000000000000009013", []graphField{refField(0x9130, helperParameterIDs[0])})},
 		graphEntity{helperReadIDs[1], entity(helperReadIDs[1], "00000000000000000000000000009013", []graphField{refField(0x9130, helperParameterIDs[1])})},
 		graphEntity{helperReadIDs[2], entity(helperReadIDs[2], "00000000000000000000000000009013", []graphField{refField(0x9130, helperParameterIDs[2])})},
-		graphEntity{helperAddID, entity(helperAddID, "00000000000000000000000000009014", []graphField{refField(0x9140, helperReadIDs[0]), refField(0x9141, helperReadIDs[1]), refField(0x9142, integerID)})},
-		graphEntity{helperComparisonID, entity(helperComparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, helperAddID), refField(0x9161, helperReadIDs[2]), refField(0x9162, integerID)})},
+		graphEntity{helperAddID, entity(helperAddID, "00000000000000000000000000009014", []graphField{refField(0x9140, helperReadIDs[helperProfile.addLeft]), refField(0x9141, helperReadIDs[helperProfile.addRight]), refField(0x9142, integerID)})},
+		graphEntity{helperComparisonID, entity(helperComparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, helperAddID), refField(0x9161, helperReadIDs[helperProfile.limit]), refField(0x9162, integerID)})},
 		graphEntity{helperFunctionID, entity(helperFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, profile.helperName), refsField(0x9111, helperParameterIDs), refField(0x9112, booleanID), refField(0x9113, helperComparisonID)})},
 		graphEntity{callID, entity(callID, "00000000000000000000000000009060", []graphField{refField(0x9600, helperFunctionID), refsField(0x9601, []string{fieldReadIDs[0], fieldReadIDs[1], fieldReadIDs[2]})})},
 		graphEntity{responseConstructID, entity(responseConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, responseTypeID), refsField(0x9331, []string{callID, fieldReadIDs[3], fieldReadIDs[4]})})},
@@ -335,39 +336,63 @@ func analyzeLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *type
 	return loggedAdmitProfile{errorMessage: errorMessage, helperPackage: calleeObject.Pkg().Path(), helperName: calleeObject.Name()}, nil
 }
 
-func validateDecisionHelper(fn *ast.FuncDecl, signature *types.Signature, info *types.Info) error {
+type decisionExpressionProfile struct {
+	addLeft  int
+	addRight int
+	limit    int
+}
+
+func analyzeDecisionHelper(fn *ast.FuncDecl, signature *types.Signature, info *types.Info) (decisionExpressionProfile, error) {
+	var profile decisionExpressionProfile
 	if signature.Params().Len() != 3 || signature.Results().Len() != 1 || !isBool(signature.Results().At(0).Type()) {
-		return fmt.Errorf("target.unsupported_helper_signature")
+		return profile, fmt.Errorf("target.unsupported_helper_signature")
 	}
 	for index := 0; index < 3; index++ {
 		if !isInt64(signature.Params().At(index).Type()) {
-			return fmt.Errorf("target.unsupported_helper_signature")
+			return profile, fmt.Errorf("target.unsupported_helper_signature")
 		}
 	}
 	if len(fn.Body.List) != 1 {
-		return fmt.Errorf("target.unsupported_helper_body")
+		return profile, fmt.Errorf("target.unsupported_helper_body")
 	}
 	returned, ok := fn.Body.List[0].(*ast.ReturnStmt)
 	if !ok || len(returned.Results) != 1 {
-		return fmt.Errorf("target.unsupported_helper_return")
+		return profile, fmt.Errorf("target.unsupported_helper_return")
 	}
 	comparison, ok := returned.Results[0].(*ast.BinaryExpr)
-	if !ok || comparison.Op != token.LEQ {
-		return fmt.Errorf("target.unsupported_helper_expression")
+	if !ok || (comparison.Op != token.LEQ && comparison.Op != token.GEQ) {
+		return profile, fmt.Errorf("target.unsupported_helper_expression")
 	}
-	addition, ok := comparison.X.(*ast.BinaryExpr)
+	additionExpression, limitExpression := comparison.X, comparison.Y
+	if comparison.Op == token.GEQ {
+		additionExpression, limitExpression = comparison.Y, comparison.X
+	}
+	addition, ok := additionExpression.(*ast.BinaryExpr)
 	if !ok || addition.Op != token.ADD {
-		return fmt.Errorf("target.unsupported_helper_expression")
+		return profile, fmt.Errorf("target.unsupported_helper_expression")
 	}
 	left, right, err := resolvedParameterOperands(addition.X, addition.Y, signature, info)
-	if err != nil || left != 0 || right != 1 {
-		return fmt.Errorf("target.unsupported_helper_addition")
+	if err != nil {
+		return profile, fmt.Errorf("target.unsupported_helper_addition")
 	}
-	limit, ok := comparison.Y.(*ast.Ident)
-	if !ok || info.Uses[limit] != signature.Params().At(2) {
-		return fmt.Errorf("target.unsupported_helper_limit")
+	limit, err := resolvedParameterIndex(limitExpression, signature, info)
+	if err != nil || left == right || left == limit || right == limit {
+		return profile, fmt.Errorf("target.unsupported_helper_limit")
 	}
-	return nil
+	return decisionExpressionProfile{addLeft: left, addRight: right, limit: limit}, nil
+}
+
+func resolvedParameterIndex(expression ast.Expr, signature *types.Signature, info *types.Info) (int, error) {
+	identifier, ok := expression.(*ast.Ident)
+	if !ok {
+		return 0, fmt.Errorf("target.not_parameter")
+	}
+	for index := 0; index < signature.Params().Len(); index++ {
+		if info.Uses[identifier] == signature.Params().At(index) {
+			return index, nil
+		}
+	}
+	return 0, fmt.Errorf("target.not_parameter")
 }
 
 func isEmptyStringComparison(expression *ast.BinaryExpr, parameter *types.Var, fieldName string, info *types.Info) bool {
