@@ -19,8 +19,16 @@ type AdmitResponse struct {
 	Evidence []byte
 }
 
+// AdmitError is the ordinary Go error returned for invalid requests.
+type AdmitError struct{ Message string }
+
+func (e AdmitError) Error() string { return e.Message }
+
 // Admit evaluates the quota policy and records its decision.
 func Admit(request AdmitRequest) (AdmitResponse, error) {
+	if request.Subject == "" {
+		return AdmitResponse{}, AdmitError{Message: "subject required"}
+	}
 	accepted := request.Current+request.Delta <= request.Limit
 	log.Printf("quota.accepted=%t", accepted)
 	return AdmitResponse{Accepted: accepted, Subject: request.Subject, Evidence: request.Evidence}, nil

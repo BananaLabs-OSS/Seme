@@ -38,6 +38,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	canonicalFunctionID := stableID("canonical-function", declaration.ID)
 	requestTypeID := stableID("execution", canonicalFunctionID, "record", "AdmitRequest")
 	responseTypeID := stableID("execution", canonicalFunctionID, "record", "AdmitResponse")
+	errorTypeID := stableID("execution", canonicalFunctionID, "record", "AdmitError")
 	requestFieldIDs := []string{
 		stableID("execution", requestTypeID, "field", "Current"),
 		stableID("execution", requestTypeID, "field", "Delta"),
@@ -51,6 +52,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		stableID("execution", responseTypeID, "field", "Evidence"),
 	}
 	resultTypeID := stableID("execution", canonicalFunctionID, "result", "Admit")
+	errorFieldID := stableID("execution", errorTypeID, "field", "Message")
 	parameterID := stableID("execution", canonicalFunctionID, "parameter", "0")
 	parameterReadID := stableID("execution", canonicalFunctionID, "read", "request")
 	fieldReadIDs := []string{
@@ -64,6 +66,11 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	comparisonID := stableID("execution", canonicalFunctionID, "less-equal")
 	responseConstructID := stableID("execution", canonicalFunctionID, "construct", "AdmitResponse")
 	resultOkID := stableID("execution", canonicalFunctionID, "result-ok")
+	errorMessageID := stableID("execution", canonicalFunctionID, "string", "subject-required")
+	stringIsEmptyID := stableID("execution", canonicalFunctionID, "string-is-empty", "subject")
+	errorConstructID := stableID("execution", canonicalFunctionID, "construct", "AdmitError")
+	resultErrorID := stableID("execution", canonicalFunctionID, "result-error")
+	conditionalID := stableID("execution", canonicalFunctionID, "conditional", "subject-required")
 	packageID := stableID("package", packagePathOf(declaration.NativeKey))
 	interfaceID := stableID("package-interface", declaration.ID)
 	dependencyID := stableID("dependency", packageID, "go:log")
@@ -90,7 +97,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		{booleanID, entity(booleanID, "00000000000000000000000000009020", nil)},
 		{stringID, entity(stringID, "00000000000000000000000000009040", nil)},
 		{bytesID, entity(bytesID, "00000000000000000000000000009041", nil)},
-		{resultTypeID, entity(resultTypeID, "00000000000000000000000000009042", []graphField{refField(0x9400, responseTypeID), refField(0x9401, stringID)})},
+		{resultTypeID, entity(resultTypeID, "00000000000000000000000000009042", []graphField{refField(0x9400, responseTypeID), refField(0x9401, errorTypeID)})},
 		{capabilityID, entity(capabilityID, "00000000000000000000000000000016", []graphField{bytesField(0x160, "observability.log")})},
 		{effectID, entity(effectID, "00000000000000000000000000000015", []graphField{bytesField(0x150, "observability.log"), refField(0x151, capabilityID)})},
 		{runtimeID, entity(runtimeID, "0000000000000000000000000000b013", []graphField{bytesField(0xb130, "go.log.Printf"), bytesField(0xb131, "formatted process-global logging sink")})},
@@ -116,6 +123,8 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		graphEntity{responseFieldIDs[0], entity(responseFieldIDs[0], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Accepted"), refField(0x9311, booleanID), unsignedField(0x9312, 0)})},
 		graphEntity{responseFieldIDs[1], entity(responseFieldIDs[1], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Subject"), refField(0x9311, stringID), unsignedField(0x9312, 1)})},
 		graphEntity{responseFieldIDs[2], entity(responseFieldIDs[2], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Evidence"), refField(0x9311, bytesID), unsignedField(0x9312, 2)})},
+		graphEntity{errorTypeID, entity(errorTypeID, "00000000000000000000000000009030", []graphField{bytesField(0x9300, "AdmitError"), refsField(0x9301, []string{errorFieldID})})},
+		graphEntity{errorFieldID, entity(errorFieldID, "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Message"), refField(0x9311, stringID), unsignedField(0x9312, 0)})},
 		graphEntity{parameterID, entity(parameterID, "00000000000000000000000000009012", []graphField{bytesField(0x9120, signature.Params().At(0).Name()), refField(0x9121, requestTypeID), unsignedField(0x9122, 0)})},
 		graphEntity{parameterReadID, entity(parameterReadID, "00000000000000000000000000009013", []graphField{refField(0x9130, parameterID)})},
 		graphEntity{fieldReadIDs[0], entity(fieldReadIDs[0], "00000000000000000000000000009032", []graphField{refField(0x9320, parameterReadID), refField(0x9321, requestFieldIDs[0])})},
@@ -127,7 +136,12 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		graphEntity{comparisonID, entity(comparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, addID), refField(0x9161, fieldReadIDs[2]), refField(0x9162, integerID)})},
 		graphEntity{responseConstructID, entity(responseConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, responseTypeID), refsField(0x9331, []string{comparisonID, fieldReadIDs[3], fieldReadIDs[4]})})},
 		graphEntity{resultOkID, entity(resultOkID, "00000000000000000000000000009043", []graphField{refField(0x9410, resultTypeID), refField(0x9411, responseConstructID)})},
-		graphEntity{canonicalFunctionID, entity(canonicalFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, "Admit"), refsField(0x9111, []string{parameterID}), refField(0x9112, resultTypeID), refField(0x9113, resultOkID)})},
+		graphEntity{errorMessageID, entity(errorMessageID, "00000000000000000000000000009050", []graphField{bytesField(0x9500, "subject required")})},
+		graphEntity{stringIsEmptyID, entity(stringIsEmptyID, "00000000000000000000000000009051", []graphField{refField(0x9510, fieldReadIDs[3])})},
+		graphEntity{errorConstructID, entity(errorConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, errorTypeID), refsField(0x9331, []string{errorMessageID})})},
+		graphEntity{resultErrorID, entity(resultErrorID, "00000000000000000000000000009044", []graphField{refField(0x9420, resultTypeID), refField(0x9421, errorConstructID)})},
+		graphEntity{conditionalID, entity(conditionalID, "00000000000000000000000000009052", []graphField{refField(0x9520, stringIsEmptyID), refField(0x9521, resultErrorID), refField(0x9522, resultOkID)})},
+		graphEntity{canonicalFunctionID, entity(canonicalFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, "Admit"), refsField(0x9111, []string{parameterID}), refField(0x9112, resultTypeID), refField(0x9113, conditionalID)})},
 	)
 
 	resolutionIDs := []string{dependencyResolutionID, effectResolutionID}
@@ -193,10 +207,23 @@ func validateLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *typ
 		!isNamedRecord(signature.Results().At(0).Type(), "AdmitResponse", []recordField{{"Accepted", isBool}, {"Subject", isString}, {"Evidence", isBytes}}) || !isError(signature.Results().At(1).Type()) {
 		return fmt.Errorf("target.unsupported_signature:Admit")
 	}
-	if len(fn.Body.List) != 3 {
+	if len(fn.Body.List) != 4 {
 		return fmt.Errorf("target.unsupported_body:Admit")
 	}
-	assignment, ok := fn.Body.List[0].(*ast.AssignStmt)
+	request := signature.Params().At(0)
+	guard, ok := fn.Body.List[0].(*ast.IfStmt)
+	if !ok || guard.Init != nil || guard.Else != nil || len(guard.Body.List) != 1 {
+		return fmt.Errorf("target.unsupported_error_guard")
+	}
+	condition, ok := guard.Cond.(*ast.BinaryExpr)
+	if !ok || condition.Op != token.EQL || !isParameterField(condition.X, request, "Subject", info) || !isEmptyString(condition.Y) {
+		return fmt.Errorf("target.unsupported_error_condition")
+	}
+	errorReturn, ok := guard.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(errorReturn.Results) != 2 || !isEmptyRecord(errorReturn.Results[0], "AdmitResponse") || !isErrorRecord(errorReturn.Results[1]) {
+		return fmt.Errorf("target.unsupported_error_return")
+	}
+	assignment, ok := fn.Body.List[1].(*ast.AssignStmt)
 	if !ok || assignment.Tok != token.DEFINE || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
 		return fmt.Errorf("target.unsupported_decision_binding")
 	}
@@ -216,14 +243,13 @@ func validateLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *typ
 	if !ok || addition.Op != token.ADD {
 		return fmt.Errorf("target.unsupported_addition")
 	}
-	request := signature.Params().At(0)
 	if !isParameterField(addition.X, request, "Current", info) || !isParameterField(addition.Y, request, "Delta", info) {
 		return fmt.Errorf("target.nonrecord_addition")
 	}
 	if !isParameterField(comparison.Y, request, "Limit", info) {
 		return fmt.Errorf("target.nonrecord_limit")
 	}
-	expression, ok := fn.Body.List[1].(*ast.ExprStmt)
+	expression, ok := fn.Body.List[2].(*ast.ExprStmt)
 	if !ok {
 		return fmt.Errorf("target.missing_log_effect")
 	}
@@ -251,7 +277,7 @@ func validateLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *typ
 	if !ok || info.Uses[acceptedUse] != acceptedObject {
 		return fmt.Errorf("target.unsupported_log_value")
 	}
-	returned, ok := fn.Body.List[2].(*ast.ReturnStmt)
+	returned, ok := fn.Body.List[3].(*ast.ReturnStmt)
 	if !ok || len(returned.Results) != 2 {
 		return fmt.Errorf("target.unsupported_return")
 	}
@@ -273,6 +299,46 @@ func validateLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *typ
 		return fmt.Errorf("target.unsupported_error_result")
 	}
 	return nil
+}
+
+func isEmptyString(expression ast.Expr) bool {
+	literal, ok := expression.(*ast.BasicLit)
+	if !ok || literal.Kind != token.STRING {
+		return false
+	}
+	value, err := strconv.Unquote(literal.Value)
+	return err == nil && value == ""
+}
+
+func isEmptyRecord(expression ast.Expr, name string) bool {
+	record, ok := expression.(*ast.CompositeLit)
+	if !ok || len(record.Elts) != 0 {
+		return false
+	}
+	typeName, ok := record.Type.(*ast.Ident)
+	return ok && typeName.Name == name
+}
+
+func isErrorRecord(expression ast.Expr) bool {
+	record, ok := expression.(*ast.CompositeLit)
+	if !ok || len(record.Elts) != 1 {
+		return false
+	}
+	typeName, ok := record.Type.(*ast.Ident)
+	if !ok || typeName.Name != "AdmitError" {
+		return false
+	}
+	field, ok := record.Elts[0].(*ast.KeyValueExpr)
+	if !ok {
+		return false
+	}
+	key, keyOK := field.Key.(*ast.Ident)
+	literal, literalOK := field.Value.(*ast.BasicLit)
+	if !keyOK || key.Name != "Message" || !literalOK || literal.Kind != token.STRING {
+		return false
+	}
+	value, err := strconv.Unquote(literal.Value)
+	return err == nil && value == "subject required"
 }
 
 func isKeyedIdentifier(expression ast.Expr, fieldName string, object types.Object, info *types.Info) bool {

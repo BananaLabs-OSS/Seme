@@ -28,12 +28,14 @@ go_provider="$work/go-provider"
 target_plan="$work/target-plan"
 wasm_lower="$work/wasm-lower"
 result_check="$work/wasm-result-check"
+error_check="$work/wasm-error-check"
 (
     cd "$repo/reference/go"
     go build -o "$go_provider" ./cmd/go-provider
     go build -o "$target_plan" ./cmd/target-plan
     go build -o "$wasm_lower" ./cmd/wasm-lower
     go build -o "$result_check" ./cmd/wasm-result-check
+    go build -o "$error_check" ./cmd/wasm-error-check
 )
 
 cp -R "$repo/fixtures/go-target-v1" "$work/original"
@@ -50,7 +52,7 @@ emit_plan() {
         --project "$work/project" --manifest "$work/import/manifest.json" \
         --provider-graph "$work/import/program.g1" \
         --foundation-module "$repo/modules/foundation/v1/module.g1" \
-        --execution-module "$repo/modules/execution/v4/module.g1" \
+        --execution-module "$repo/modules/execution/v5/module.g1" \
         --package-module "$repo/modules/package/v1/module.g1" \
         --target-module "$repo/modules/target/v1/module.g1" \
         --policy "$policy" --out "$output"
@@ -84,6 +86,11 @@ do
     "$result_check" "$1" "$2" "$3" "$result"
     index=$((index + 1))
 done
+
+node "$repo/reference/js/wasm-target-runner.mjs" \
+    "$work/quota-a.wasm" 40 2 50 "" > "$work/error.json"
+"$error_check" "$work/error.json"
+node "$repo/reference/js/wasm-malformed-check.mjs" "$work/quota-a.wasm"
 
 # A valid exact-only plan is deliberately non-executable and cannot be lowered
 # by bypassing target policy.

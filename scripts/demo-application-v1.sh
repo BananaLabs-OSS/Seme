@@ -6,7 +6,7 @@ pulp_repo=${PULP_REPO:-"$repo/../Pulp"}
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-application-demo.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 
-if ! git -C "$pulp_repo" merge-base --is-ancestor 161c9dc HEAD; then
+if ! git -C "$pulp_repo" merge-base --is-ancestor c303c74 HEAD; then
     echo "Pulp does not contain the required Seme application driver" >&2
     exit 65
 fi
@@ -21,7 +21,8 @@ echo
     -manifest "$repo/targets/wasm/pulp-v1/pulp.cell.toml" \
     -request 40,2,50 \
     -request 40,20,50 \
-    -request 9223372036854775807,1,0
+    -request 9223372036854775807,1,0 \
+    -request 40,2,50,
 
 echo
 echo "Capability denial (the identical Wasm must fail before logging):"

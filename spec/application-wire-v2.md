@@ -19,7 +19,15 @@ u32 evidence_length
 ... evidence bytes
 ```
 
+The error response contains:
+
+```text
+u8  result_tag = 1
+u32 message_length
+... UTF-8 message bytes
+```
+
 The Wasm backend derives header offsets and sizes from canonical field order
-and types, emits bounds/length checks, and copies the variable data. This proof
-executes only `ResultOk`; tag 1 and a canonical ResultError payload are reserved
-until the source profile includes a real error-producing branch.
+and types, emits bounds/length checks, and copies the variable data. Both
+`ResultOk` and `ResultError` are executed; the error branch is selected before
+effects when the subject is empty.

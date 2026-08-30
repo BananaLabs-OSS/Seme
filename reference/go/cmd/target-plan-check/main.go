@@ -35,6 +35,10 @@ func main() {
 	bytesTypes := bySchema(graph, 0x9041)
 	resultTypes := bySchema(graph, 0x9042)
 	resultOKs := bySchema(graph, 0x9043)
+	resultErrors := bySchema(graph, 0x9044)
+	stringLiterals := bySchema(graph, 0x9050)
+	stringIsEmpty := bySchema(graph, 0x9051)
+	conditionals := bySchema(graph, 0x9052)
 	effects := bySchema(graph, 0x15)
 	capabilities := bySchema(graph, 0x16)
 	targets := bySchema(graph, 0xc010)
@@ -45,8 +49,9 @@ func main() {
 	boundaries := bySchema(graph, 0xc015)
 	must(len(packages) == 1 && len(dependencies) == 1 && len(mappings) == 1 && len(interfaces) == 1, "package requirement cardinality mismatch")
 	must(len(providerDeclarations) == 1 && len(canonicalFunctions) == 1, "source/canonical function cardinality mismatch")
-	must(len(recordTypes) == 2 && len(recordFields) == 8 && len(fieldReads) == 5 && len(recordConstructs) == 1, "record semantics cardinality mismatch")
-	must(len(stringTypes) == 1 && len(bytesTypes) == 1 && len(resultTypes) == 1 && len(resultOKs) == 1, "variable/result semantics cardinality mismatch")
+	must(len(recordTypes) == 3 && len(recordFields) == 9 && len(fieldReads) == 5 && len(recordConstructs) == 2, "record semantics cardinality mismatch")
+	must(len(stringTypes) == 1 && len(bytesTypes) == 1 && len(resultTypes) == 1 && len(resultOKs) == 1 && len(resultErrors) == 1, "variable/result semantics cardinality mismatch")
+	must(len(stringLiterals) == 1 && len(stringIsEmpty) == 1 && len(conditionals) == 1, "conditional semantics cardinality mismatch")
 	must(len(runtimes) == 2 && len(effects) == 1 && len(capabilities) == 1, "effect/runtime cardinality mismatch")
 	must(len(targets) == 1 && len(requirements) == 2 && len(rules) == 2 && len(resolutions) == 2 && len(plans) == 1, "target plan cardinality mismatch")
 
@@ -69,6 +74,8 @@ func main() {
 	responseType := graph.Entities[field(resultType, 0x9400).Reference]
 	must(requestType.Schema == identity(0x9030) && string(field(requestType, 0x9300).Bytes) == "AdmitRequest", "request record mismatch")
 	must(resultType.Schema == identity(0x9042), "result type mismatch")
+	errorType := graph.Entities[field(resultType, 0x9401).Reference]
+	must(errorType.Schema == identity(0x9030) && string(field(errorType, 0x9300).Bytes) == "AdmitError", "error record mismatch")
 	must(responseType.Schema == identity(0x9030) && string(field(responseType, 0x9300).Bytes) == "AdmitResponse", "response record mismatch")
 	must(len(field(requestType, 0x9301).List) == 5 && len(field(responseType, 0x9301).List) == 3, "record field shape mismatch")
 

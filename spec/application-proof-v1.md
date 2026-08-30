@@ -25,10 +25,13 @@ Application Wire v2 extends the header with subject/evidence lengths and appends
 their bytes. The response begins with a Result tag, then the Boolean decision,
 lengths, and preserved subject/evidence data. Each variable field is bounded to
 4096 bytes. Malformed sizes return status 2. The provider name remains
-`quota.admit-v1`, and the decision retains signed 64-bit modular addition.
+`quota.admit-v1`, and the decision retains signed 64-bit modular addition. An
+empty subject returns the lifted `AdmitError{"subject required"}` as
+`ResultError` before the logging effect.
 
-`./scripts/demo-application-v1.sh` loads one Pulp cell, sends three different
-requests, prints their structured responses, and then runs the identical Wasm
+`./scripts/demo-application-v1.sh` loads one Pulp cell, sends four different
+requests across both Result variants, prints their structured responses, and
+then runs the identical Wasm
 without `observability.log`. The denied call traps before the effect occurs.
 
 The ordinary Go structs are lifted into canonical `RecordType`, `RecordField`,

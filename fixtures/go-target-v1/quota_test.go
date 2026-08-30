@@ -30,4 +30,12 @@ func TestAdmitLogsDecision(t *testing.T) {
 	if got := strings.TrimSpace(output.String()); got != "quota.accepted=true" {
 		t.Fatalf("log output = %q", got)
 	}
+	output.Reset()
+	response, err = Admit(AdmitRequest{Current: 40, Delta: 2, Limit: 50})
+	if err == nil || err.Error() != "subject required" || response.Accepted || response.Subject != "" || response.Evidence != nil {
+		t.Fatalf("missing subject result = (%+v, %v)", response, err)
+	}
+	if output.Len() != 0 {
+		t.Fatalf("invalid request performed logging effect: %q", output.String())
+	}
 }

@@ -10,5 +10,5 @@
 
 This freeze establishes the type vocabulary. The subsequent application proof
 now lifts Go strings/bytes and `(response, error)`, then executes bounded
-Application Wire v2 `ResultOk`. A real `ResultError` source branch remains a
-separate proof obligation and is not claimed by this audit.
+Application Wire v2 `ResultOk`. Core Execution v5 separately completes the real
+source-derived `ResultError` branch without changing this frozen revision.
