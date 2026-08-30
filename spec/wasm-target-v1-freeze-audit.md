@@ -10,6 +10,7 @@
 | Schema-derived codec | pass | Request offsets, request length, response offset, and response length are computed from validated Core Execution v3 RecordType/RecordField entities. |
 | Policy enforcement | pass | The valid exact-only non-executable plan cannot be lowered. |
 | Malformed input | pass | A short Application Wire v2 request returns status 2 without performing an effect. |
+| Source-derived payload | pass | Re-ingesting a changed Go error literal produces a distinct Wasm module returning the changed message. |
 | Native continuity | pass | The ordinary Go source remains byte-for-byte unchanged and passes its tests. |
 
 This freeze covers the scoped module and Node host conformance adapter. The

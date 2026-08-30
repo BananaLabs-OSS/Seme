@@ -31,5 +31,9 @@ func Admit(request AdmitRequest) (AdmitResponse, error) {
 	}
 	accepted := request.Current+request.Delta <= request.Limit
 	log.Printf("quota.accepted=%t", accepted)
-	return AdmitResponse{Accepted: accepted, Subject: request.Subject, Evidence: request.Evidence}, nil
+	return AdmitResponse{
+		Evidence: request.Evidence,
+		Accepted: accepted,
+		Subject:  request.Subject,
+	}, nil
 }

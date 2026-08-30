@@ -39,8 +39,15 @@ The ordinary Go structs are lifted into canonical `RecordType`, `RecordField`,
 that graph and generates its Wasm request loads, response stores, and size
 guards from the canonical field order and scalar widths.
 
+The provider's source analysis is semantic within this bounded profile rather
+than tied to the fixture's spelling. Conformance reverses the empty-string
+comparison, renames the Boolean local, reorders keyed response fields, and
+changes the error literal. Equivalent presentation choices still lift, the
+changed literal is preserved, and the derived Wasm returns that changed text.
+
 This milestone is usable as a bounded technical demo. Input is still driven by
 the proof deployment instead of HTTP, Application Wire v2 supports only its
-current scalar/string/bytes profile, and only the exact quota function shape is supported.
+current scalar/string/bytes profile, and only the quota profile's current
+statement and expression families are supported.
 Those limitations are explicit rather than generalized into a claim of
 arbitrary Go application support.

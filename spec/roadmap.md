@@ -119,6 +119,9 @@ enforcement complete for the scoped logging profile.
 - Core Execution v4 freezes canonical strings, bytes, and Result success/error
   values. Core Execution v5 and the Go provider lift the source guard and
   execute bounded ResultOk and ResultError paths through Application Wire v2.
+- The bounded Go provider accepts semantically equivalent comparison operand
+  order, local names, and keyed-record field order, and propagates changed
+  source error literals through Seme into Wasm without backend templates.
 - Actual Pulp loads the same reactor once, processes repeated structured quota
   requests through `pulp_on_call`, returns responses, delivers every granted
   effect, and rejects the identical artifact when the capability is absent.

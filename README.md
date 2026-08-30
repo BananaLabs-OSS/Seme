@@ -131,7 +131,9 @@ floor. It defines target-independent strings, byte sequences, and explicit
 Go target profile now lifts `string`, `[]byte`, and `(response, error)` into
 those entities. [`Core Execution v5`](spec/core-execution-v5.md) adds the
 minimum canonical conditional semantics needed to execute both bounded
-Application Wire v2 Result variants.
+Application Wire v2 Result variants. Provider conformance proves that local
+names, comparison spelling, and keyed-field source order are not semantic
+authority, while changed error text is preserved through Seme and Wasm.
 
 Above frozen Kernel v1, Semantic Foundation v1 and Patch Module v1 define the
 first versioned schema and transactional-edit contracts. Their checked module
