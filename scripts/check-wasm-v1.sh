@@ -89,8 +89,34 @@ done
 
 node "$repo/reference/js/wasm-target-runner.mjs" \
     "$work/quota-a.wasm" 40 2 50 "" > "$work/error.json"
-"$error_check" "$work/error.json"
+"$error_check" "$work/error.json" "subject required"
 node "$repo/reference/js/wasm-malformed-check.mjs" "$work/quota-a.wasm"
+
+# Prove the backend consumes the lifted graph rather than embedding the fixture
+# message: change the ordinary Go error text, re-ingest, re-plan, lower, and
+# execute the resulting ResultError.
+cp -R "$work/project" "$work/message-project"
+sed 's/subject required/subject missing/g' \
+    "$work/project/quota.go" > "$work/message-project/quota.go"
+sed 's/subject required/subject missing/g' \
+    "$work/project/quota_test.go" > "$work/message-project/quota_test.go"
+(cd "$work/message-project" && go test ./...)
+"$go_provider" ingest \
+    --project "$work/message-project" --module "$repo/modules/provider/v1/module.g1" \
+    --out "$work/message-import"
+"$target_plan" \
+    --project "$work/message-project" --manifest "$work/message-import/manifest.json" \
+    --provider-graph "$work/message-import/program.g1" \
+    --foundation-module "$repo/modules/foundation/v1/module.g1" \
+    --execution-module "$repo/modules/execution/v5/module.g1" \
+    --package-module "$repo/modules/package/v1/module.g1" \
+    --target-module "$repo/modules/target/v1/module.g1" \
+    --policy allow-adapted --out "$work/message.g1"
+"$k0" "$g1" "$work/message.g1" "$work/message.seme"
+"$wasm_lower" "$work/message.seme" "$work/message.wasm"
+node "$repo/reference/js/wasm-target-runner.mjs" \
+    "$work/message.wasm" 40 2 50 "" > "$work/message-error.json"
+"$error_check" "$work/message-error.json" "subject missing"
 
 # A valid exact-only plan is deliberately non-executable and cannot be lowered
 # by bypassing target policy.
@@ -105,4 +131,4 @@ cmp "$work/original/quota.go" "$work/project/quota.go"
 cmp "$work/original/quota_test.go" "$work/project/quota_test.go"
 cmp "$work/original/README.md" "$work/project/README.md"
 
-echo "Wasm target v1: checked Seme plan lowered and executed with adapted logging effect"
+echo "Wasm target v1: source-derived Result variants lowered and executed with adapted logging effect"

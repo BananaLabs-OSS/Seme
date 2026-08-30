@@ -14,15 +14,15 @@ type result struct {
 }
 
 func main() {
-	if len(os.Args) != 2 {
-		fatal("usage: wasm-error-check RESULT.json")
+	if len(os.Args) != 3 {
+		fatal("usage: wasm-error-check RESULT.json EXPECTED-MESSAGE")
 	}
 	data, err := os.ReadFile(os.Args[1])
 	check(err)
 	var got result
 	check(json.Unmarshal(data, &got))
-	if got.Error != "subject required" || len(got.Events) != 0 {
-		fatal("Wasm error/effects = %q/%v, want %q/[]", got.Error, got.Events, "subject required")
+	if got.Error != os.Args[2] || len(got.Events) != 0 {
+		fatal("Wasm error/effects = %q/%v, want %q/[]", got.Error, got.Events, os.Args[2])
 	}
 }
 

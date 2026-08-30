@@ -24,7 +24,8 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	if err != nil {
 		return "", err
 	}
-	if err := validateLoggedAdmit(fn, signature, info); err != nil {
+	profile, err := analyzeLoggedAdmit(fn, signature, info)
+	if err != nil {
 		return "", err
 	}
 	if policy != "allow-adapted" && policy != "exact-only" {
@@ -136,7 +137,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		graphEntity{comparisonID, entity(comparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, addID), refField(0x9161, fieldReadIDs[2]), refField(0x9162, integerID)})},
 		graphEntity{responseConstructID, entity(responseConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, responseTypeID), refsField(0x9331, []string{comparisonID, fieldReadIDs[3], fieldReadIDs[4]})})},
 		graphEntity{resultOkID, entity(resultOkID, "00000000000000000000000000009043", []graphField{refField(0x9410, resultTypeID), refField(0x9411, responseConstructID)})},
-		graphEntity{errorMessageID, entity(errorMessageID, "00000000000000000000000000009050", []graphField{bytesField(0x9500, "subject required")})},
+		graphEntity{errorMessageID, entity(errorMessageID, "00000000000000000000000000009050", []graphField{bytesField(0x9500, profile.errorMessage)})},
 		graphEntity{stringIsEmptyID, entity(stringIsEmptyID, "00000000000000000000000000009051", []graphField{refField(0x9510, fieldReadIDs[3])})},
 		graphEntity{errorConstructID, entity(errorConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, errorTypeID), refsField(0x9331, []string{errorMessageID})})},
 		graphEntity{resultErrorID, entity(resultErrorID, "00000000000000000000000000009044", []graphField{refField(0x9420, resultTypeID), refField(0x9421, errorConstructID)})},
@@ -201,104 +202,118 @@ func composeGraph(module uint64, revision string, entities []graphEntity) (strin
 	return out, nil
 }
 
-func validateLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *types.Info) error {
+type loggedAdmitProfile struct {
+	errorMessage string
+}
+
+func analyzeLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *types.Info) (loggedAdmitProfile, error) {
 	if signature.Params().Len() != 1 || signature.Results().Len() != 2 ||
 		!isNamedRecord(signature.Params().At(0).Type(), "AdmitRequest", []recordField{{"Current", isInt64}, {"Delta", isInt64}, {"Limit", isInt64}, {"Subject", isString}, {"Evidence", isBytes}}) ||
 		!isNamedRecord(signature.Results().At(0).Type(), "AdmitResponse", []recordField{{"Accepted", isBool}, {"Subject", isString}, {"Evidence", isBytes}}) || !isError(signature.Results().At(1).Type()) {
-		return fmt.Errorf("target.unsupported_signature:Admit")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_signature:Admit")
 	}
 	if len(fn.Body.List) != 4 {
-		return fmt.Errorf("target.unsupported_body:Admit")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_body:Admit")
 	}
 	request := signature.Params().At(0)
 	guard, ok := fn.Body.List[0].(*ast.IfStmt)
 	if !ok || guard.Init != nil || guard.Else != nil || len(guard.Body.List) != 1 {
-		return fmt.Errorf("target.unsupported_error_guard")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_error_guard")
 	}
 	condition, ok := guard.Cond.(*ast.BinaryExpr)
-	if !ok || condition.Op != token.EQL || !isParameterField(condition.X, request, "Subject", info) || !isEmptyString(condition.Y) {
-		return fmt.Errorf("target.unsupported_error_condition")
+	if !ok || condition.Op != token.EQL || !isEmptyStringComparison(condition, request, "Subject", info) {
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_error_condition")
 	}
 	errorReturn, ok := guard.Body.List[0].(*ast.ReturnStmt)
-	if !ok || len(errorReturn.Results) != 2 || !isEmptyRecord(errorReturn.Results[0], "AdmitResponse") || !isErrorRecord(errorReturn.Results[1]) {
-		return fmt.Errorf("target.unsupported_error_return")
+	if !ok || len(errorReturn.Results) != 2 || !isEmptyRecord(errorReturn.Results[0], "AdmitResponse") {
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_error_return")
+	}
+	errorMessage, ok := errorRecordMessage(errorReturn.Results[1])
+	if !ok {
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_error_return")
 	}
 	assignment, ok := fn.Body.List[1].(*ast.AssignStmt)
 	if !ok || assignment.Tok != token.DEFINE || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
-		return fmt.Errorf("target.unsupported_decision_binding")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision_binding")
 	}
 	acceptedDefinition, ok := assignment.Lhs[0].(*ast.Ident)
-	if !ok || acceptedDefinition.Name != "accepted" {
-		return fmt.Errorf("target.unsupported_decision_name")
+	if !ok {
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision_name")
 	}
 	acceptedObject, ok := info.Defs[acceptedDefinition].(*types.Var)
 	if !ok || !isBool(acceptedObject.Type()) {
-		return fmt.Errorf("target.unresolved_decision")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unresolved_decision")
 	}
 	comparison, ok := assignment.Rhs[0].(*ast.BinaryExpr)
 	if !ok || comparison.Op != token.LEQ {
-		return fmt.Errorf("target.unsupported_decision")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision")
 	}
 	addition, ok := comparison.X.(*ast.BinaryExpr)
 	if !ok || addition.Op != token.ADD {
-		return fmt.Errorf("target.unsupported_addition")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_addition")
 	}
 	if !isParameterField(addition.X, request, "Current", info) || !isParameterField(addition.Y, request, "Delta", info) {
-		return fmt.Errorf("target.nonrecord_addition")
+		return loggedAdmitProfile{}, fmt.Errorf("target.nonrecord_addition")
 	}
 	if !isParameterField(comparison.Y, request, "Limit", info) {
-		return fmt.Errorf("target.nonrecord_limit")
+		return loggedAdmitProfile{}, fmt.Errorf("target.nonrecord_limit")
 	}
 	expression, ok := fn.Body.List[2].(*ast.ExprStmt)
 	if !ok {
-		return fmt.Errorf("target.missing_log_effect")
+		return loggedAdmitProfile{}, fmt.Errorf("target.missing_log_effect")
 	}
 	call, ok := expression.X.(*ast.CallExpr)
 	if !ok || len(call.Args) != 2 {
-		return fmt.Errorf("target.unsupported_log_call")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_log_call")
 	}
 	selector, ok := call.Fun.(*ast.SelectorExpr)
 	if !ok {
-		return fmt.Errorf("target.unsupported_log_target")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_log_target")
 	}
 	logFunction, ok := info.Uses[selector.Sel].(*types.Func)
 	if !ok || logFunction.Pkg() == nil || logFunction.Pkg().Path() != "log" || logFunction.Name() != "Printf" {
-		return fmt.Errorf("target.unresolved_log_dependency")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unresolved_log_dependency")
 	}
 	format, ok := call.Args[0].(*ast.BasicLit)
 	if !ok || format.Kind != token.STRING {
-		return fmt.Errorf("target.dynamic_log_format")
+		return loggedAdmitProfile{}, fmt.Errorf("target.dynamic_log_format")
 	}
 	formatValue, err := strconv.Unquote(format.Value)
 	if err != nil || formatValue != "quota.accepted=%t" {
-		return fmt.Errorf("target.unsupported_log_format")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_log_format")
 	}
 	acceptedUse, ok := call.Args[1].(*ast.Ident)
 	if !ok || info.Uses[acceptedUse] != acceptedObject {
-		return fmt.Errorf("target.unsupported_log_value")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_log_value")
 	}
 	returned, ok := fn.Body.List[3].(*ast.ReturnStmt)
 	if !ok || len(returned.Results) != 2 {
-		return fmt.Errorf("target.unsupported_return")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_return")
 	}
 	result, ok := returned.Results[0].(*ast.CompositeLit)
 	if !ok || len(result.Elts) != 3 {
-		return fmt.Errorf("target.unsupported_return_value")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_return_value")
 	}
 	typeName, ok := result.Type.(*ast.Ident)
 	if !ok || typeName.Name != "AdmitResponse" {
-		return fmt.Errorf("target.unsupported_return_type")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_return_type")
 	}
-	if !isKeyedIdentifier(result.Elts[0], "Accepted", acceptedObject, info) ||
-		!isKeyedParameterField(result.Elts[1], "Subject", signature.Params().At(0), info) ||
-		!isKeyedParameterField(result.Elts[2], "Evidence", signature.Params().At(0), info) {
-		return fmt.Errorf("target.unsupported_return_field")
+	fields, ok := keyedElements(result.Elts)
+	if !ok || !isKeyedIdentifier(fields["Accepted"], "Accepted", acceptedObject, info) ||
+		!isKeyedParameterField(fields["Subject"], "Subject", signature.Params().At(0), info) ||
+		!isKeyedParameterField(fields["Evidence"], "Evidence", signature.Params().At(0), info) {
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_return_field")
 	}
 	nilResult, ok := returned.Results[1].(*ast.Ident)
 	if !ok || nilResult.Name != "nil" || info.Uses[nilResult] != types.Universe.Lookup("nil") {
-		return fmt.Errorf("target.unsupported_error_result")
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_error_result")
 	}
-	return nil
+	return loggedAdmitProfile{errorMessage: errorMessage}, nil
+}
+
+func isEmptyStringComparison(expression *ast.BinaryExpr, parameter *types.Var, fieldName string, info *types.Info) bool {
+	return isParameterField(expression.X, parameter, fieldName, info) && isEmptyString(expression.Y) ||
+		isEmptyString(expression.X) && isParameterField(expression.Y, parameter, fieldName, info)
 }
 
 func isEmptyString(expression ast.Expr) bool {
@@ -319,26 +334,42 @@ func isEmptyRecord(expression ast.Expr, name string) bool {
 	return ok && typeName.Name == name
 }
 
-func isErrorRecord(expression ast.Expr) bool {
+func errorRecordMessage(expression ast.Expr) (string, bool) {
 	record, ok := expression.(*ast.CompositeLit)
 	if !ok || len(record.Elts) != 1 {
-		return false
+		return "", false
 	}
 	typeName, ok := record.Type.(*ast.Ident)
 	if !ok || typeName.Name != "AdmitError" {
-		return false
+		return "", false
 	}
 	field, ok := record.Elts[0].(*ast.KeyValueExpr)
 	if !ok {
-		return false
+		return "", false
 	}
 	key, keyOK := field.Key.(*ast.Ident)
 	literal, literalOK := field.Value.(*ast.BasicLit)
 	if !keyOK || key.Name != "Message" || !literalOK || literal.Kind != token.STRING {
-		return false
+		return "", false
 	}
 	value, err := strconv.Unquote(literal.Value)
-	return err == nil && value == "subject required"
+	return value, err == nil && value != ""
+}
+
+func keyedElements(elements []ast.Expr) (map[string]ast.Expr, bool) {
+	result := make(map[string]ast.Expr, len(elements))
+	for _, expression := range elements {
+		field, ok := expression.(*ast.KeyValueExpr)
+		if !ok {
+			return nil, false
+		}
+		key, ok := field.Key.(*ast.Ident)
+		if !ok || result[key.Name] != nil {
+			return nil, false
+		}
+		result[key.Name] = expression
+	}
+	return result, true
 }
 
 func isKeyedIdentifier(expression ast.Expr, fieldName string, object types.Object, info *types.Info) bool {

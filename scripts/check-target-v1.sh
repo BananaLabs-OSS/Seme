@@ -98,6 +98,29 @@ do
     "$plan_check" "$work/$policy.seme" "$work/import/manifest.json" "$policy"
 done
 
+# Equivalent Go presentation choices must lift through the same semantic
+# handlers instead of being tied to one handwritten spelling. Reverse the empty
+# comparison, rename the local binding, and change the error payload; the plan
+# must preserve the new source literal.
+cp -R "$work/project" "$work/generalized"
+sed \
+    -e 's/request.Subject == ""/"" == request.Subject/' \
+    -e 's/accepted :=/decision :=/' \
+    -e 's/, accepted)/, decision)/' \
+    -e 's/Accepted: accepted/Accepted: decision/' \
+    -e 's/subject required/subject missing/g' \
+    "$work/project/quota.go" > "$work/generalized/quota.go"
+sed 's/subject required/subject missing/g' \
+    "$work/project/quota_test.go" > "$work/generalized/quota_test.go"
+(cd "$work/generalized" && go test ./...)
+"$go_provider" ingest --project "$work/generalized" --module "$provider_module" --out "$work/generalized-import"
+emit_plan "$work/generalized" "$work/generalized-import/manifest.json" "$work/generalized-import/program.g1" allow-adapted "$work/generalized.g1"
+rg -q '^fi 00000000000000000000000000009500 by 7375626a656374206d697373696e67$' "$work/generalized.g1"
+"$k0" "$g1" "$work/generalized.g1" "$work/generalized.seme"
+"$k0" "$kernel" "$work/generalized.seme"
+"$k0" "$foundation_validator" "$work/generalized.seme"
+"$plan_check" "$work/generalized.seme" "$work/generalized-import/manifest.json" allow-adapted
+
 # A native concurrent edit invalidates the provider evidence even when it would
 # not change the recognized AST profile.
 cp -R "$work/project" "$work/stale"
@@ -124,4 +147,4 @@ cmp "$work/original/quota.go" "$work/project/quota.go"
 cmp "$work/original/quota_test.go" "$work/project/quota_test.go"
 cmp "$work/original/README.md" "$work/project/README.md"
 
-echo "Target Contract v1: Go dependency/effect analysis and honest Wasm/Pulp planning passed"
+echo "Target Contract v1: generalized Go profile analysis and honest Wasm/Pulp planning passed"
