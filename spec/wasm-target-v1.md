@@ -21,7 +21,7 @@ import pulp.log_bool(i32) -> i32
 export memory
 export pulp_alloc / pulp_init / pulp_step / pulp_shutdown
 export pulp_on_call(name, request, response-out) -> status
-internal WithinLimit(i64, i64, i64) -> i32
+internal decision-helper(i64, i64, i64) -> i32
 ```
 
 The imported function is the target realization of the explicitly adapted

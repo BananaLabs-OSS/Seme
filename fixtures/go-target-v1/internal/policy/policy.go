@@ -2,6 +2,6 @@
 // stage. Provider v1 already revision-tracks it before projecting its symbols.
 package policy
 
-func WithinLimit(current, delta, limit int64) bool {
+func Allows(current, delta, limit int64) bool {
 	return current+delta <= limit
 }

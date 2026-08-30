@@ -61,14 +61,14 @@ func Lower(plan wire.Envelope) ([]byte, error) {
 		if nameErr == nil && string(name.Bytes) == "Admit" {
 			entry = function
 		}
-		if nameErr == nil && string(name.Bytes) == "WithinLimit" {
+		if nameErr == nil && string(name.Bytes) != "Admit" {
 			helper = function
 		}
 	}
 	if entry.ID == (wire.ID{}) || helper.ID == (wire.ID{}) {
 		return nil, fmt.Errorf("wasm.function_names")
 	}
-	if err := validateWithinLimit(plan, helper); err != nil {
+	if err := validateDecisionHelper(plan, helper); err != nil {
 		return nil, err
 	}
 	layout, err := validateFunction(plan, entry, helper)
@@ -236,7 +236,7 @@ func validateFunction(graph wire.Envelope, function, helper wire.Entity) (applic
 	return layout, nil
 }
 
-func validateWithinLimit(graph wire.Envelope, function wire.Entity) error {
+func validateDecisionHelper(graph wire.Envelope, function wire.Entity) error {
 	parameters, err := field(function, 0x9111)
 	if err != nil || len(parameters.List) != 3 {
 		return fmt.Errorf("wasm.helper_parameters")

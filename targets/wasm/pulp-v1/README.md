@@ -8,7 +8,7 @@ v4 supplies canonical request/response records, string/bytes fields, and a
 Result type. Application Wire v2 derives three little-endian signed i64 fields,
 bounded UTF-8 subject and evidence bytes, an `Ok` response preserving all
 fields, and an Error response carrying the lifted Go error message.
-Core Execution v6 preserves the ordinary `Admit -> WithinLimit` call as two
+Core Execution v6 preserves the ordinary handler-to-helper call as two
 Wasm functions rather than folding the helper into a target template.
 `scripts/check-wasm-v1.sh` reproduces and executes it.
 

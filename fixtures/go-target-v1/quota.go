@@ -32,7 +32,7 @@ func Admit(request AdmitRequest) (AdmitResponse, error) {
 	if request.Subject == "" {
 		return AdmitResponse{}, AdmitError{Message: "subject required"}
 	}
-	accepted := policy.WithinLimit(request.Current, request.Delta, request.Limit)
+	accepted := policy.Allows(request.Current, request.Delta, request.Limit)
 	log.Printf("quota.accepted=%t", accepted)
 	return AdmitResponse{
 		Evidence: request.Evidence,
