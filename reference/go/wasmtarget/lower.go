@@ -12,8 +12,9 @@ func Lower(plan wire.Envelope) ([]byte, error) {
 	plans := bySchema(plan, 0xc014)
 	boundaries := bySchema(plan, 0xc015)
 	functions := bySchema(plan, 0x9011)
+	calls := bySchema(plan, 0x9060)
 	effects := bySchema(plan, 0x15)
-	if len(plans) != 1 || len(functions) != 2 || len(effects) != 1 {
+	if len(plans) != 1 || len(functions) != 2 || len(calls) != 1 || len(effects) != 1 {
 		return nil, fmt.Errorf("wasm.profile_cardinality")
 	}
 	if value, err := field(plans[0], 0xc144); err != nil || value.Tag != 2 {
@@ -55,18 +56,22 @@ func Lower(plan wire.Envelope) ([]byte, error) {
 	if err != nil || string(effectName.Bytes) != "observability.log" {
 		return nil, fmt.Errorf("wasm.unsupported_effect")
 	}
-	var entry, helper wire.Entity
+	callee, err := field(calls[0], 0x9600)
+	if err != nil {
+		return nil, fmt.Errorf("wasm.call_callee")
+	}
+	helper, ok := plan.Entities[callee.Reference]
+	if !ok || helper.Schema != identity(0x9011) {
+		return nil, fmt.Errorf("wasm.call_callee_missing")
+	}
+	var entry wire.Entity
 	for _, function := range functions {
-		name, nameErr := field(function, 0x9110)
-		if nameErr == nil && string(name.Bytes) == "Admit" {
+		if function.ID != helper.ID {
 			entry = function
 		}
-		if nameErr == nil && string(name.Bytes) != "Admit" {
-			helper = function
-		}
 	}
-	if entry.ID == (wire.ID{}) || helper.ID == (wire.ID{}) {
-		return nil, fmt.Errorf("wasm.function_names")
+	if entry.ID == (wire.ID{}) {
+		return nil, fmt.Errorf("wasm.entry_function")
 	}
 	helperOperands, err := validateDecisionHelper(plan, helper)
 	if err != nil {

@@ -47,7 +47,7 @@ changed literal is preserved, and the derived Wasm returns that changed text.
 
 The decision now lives in imported package `internal/policy`. A source-aware Go
 module importer type-checks that package directly from the tracked closure.
-Core Execution v6 retains `Admit` and `policy.Allows` as separate canonical
+Core Execution v6 retains `Admit` and `policy.WithinLimit` as separate canonical
 Functions connected by `FunctionCall`; lowering emits two Wasm functions and a
 real call instruction. The helper expression analyzer also resolves parameter
 identities and normalizes `sum <= limit` with `limit >= sum`; the canonical
