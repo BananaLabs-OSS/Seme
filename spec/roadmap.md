@@ -129,9 +129,10 @@ enforcement complete for the scoped logging profile.
 - The application profile now resolves and lifts the real
   `Admit -> internal/policy.WithinLimit` package edge from source, preserving it
   as two canonical and two Wasm functions.
-- The helper expression profile resolves operand parameter identities and
-  normalizes equivalent comparison direction; Wasm local reads are derived
-  from the canonical graph rather than assumed parameter positions.
+- The helper expression profile resolves operand parameter identities, ignores
+  presentation-only parentheses, and normalizes equivalent comparison
+  direction; Wasm local reads are derived from the canonical graph rather than
+  assumed parameter positions.
 - Provider ingestion projects package-level function declarations across the
   module with package-qualified stable identities and deterministic evidence.
 - Actual Pulp loads the same reactor once, processes repeated structured quota

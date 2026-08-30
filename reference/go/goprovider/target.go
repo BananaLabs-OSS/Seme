@@ -359,7 +359,7 @@ func analyzeDecisionHelper(fn *ast.FuncDecl, signature *types.Signature, info *t
 	if !ok || len(returned.Results) != 1 {
 		return profile, fmt.Errorf("target.unsupported_helper_return")
 	}
-	comparison, ok := returned.Results[0].(*ast.BinaryExpr)
+	comparison, ok := ast.Unparen(returned.Results[0]).(*ast.BinaryExpr)
 	if !ok || (comparison.Op != token.LEQ && comparison.Op != token.GEQ) {
 		return profile, fmt.Errorf("target.unsupported_helper_expression")
 	}
@@ -367,7 +367,7 @@ func analyzeDecisionHelper(fn *ast.FuncDecl, signature *types.Signature, info *t
 	if comparison.Op == token.GEQ {
 		additionExpression, limitExpression = comparison.Y, comparison.X
 	}
-	addition, ok := additionExpression.(*ast.BinaryExpr)
+	addition, ok := ast.Unparen(additionExpression).(*ast.BinaryExpr)
 	if !ok || addition.Op != token.ADD {
 		return profile, fmt.Errorf("target.unsupported_helper_expression")
 	}
@@ -383,7 +383,7 @@ func analyzeDecisionHelper(fn *ast.FuncDecl, signature *types.Signature, info *t
 }
 
 func resolvedParameterIndex(expression ast.Expr, signature *types.Signature, info *types.Info) (int, error) {
-	identifier, ok := expression.(*ast.Ident)
+	identifier, ok := ast.Unparen(expression).(*ast.Ident)
 	if !ok {
 		return 0, fmt.Errorf("target.not_parameter")
 	}
