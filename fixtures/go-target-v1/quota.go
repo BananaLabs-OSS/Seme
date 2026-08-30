@@ -24,12 +24,6 @@ type AdmitError struct{ Message string }
 
 func (e AdmitError) Error() string { return e.Message }
 
-// WithinLimit is kept separate so Seme must preserve and lower an ordinary
-// Go-to-Go call rather than recognizing one monolithic handler expression.
-func WithinLimit(current, delta, limit int64) bool {
-	return current+delta <= limit
-}
-
 // Admit evaluates the quota policy and records its decision.
 func Admit(request AdmitRequest) (AdmitResponse, error) {
 	if request.Subject == "" {
