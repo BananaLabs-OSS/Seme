@@ -112,7 +112,9 @@ and compares its behavior with Go. Run `./scripts/check-application-v1.sh`.
 
 [`Target Contract v1`](spec/target-contract-v1.md) now discovers a real Go
 standard-library logging dependency and `observability.log` effect from an
-untouched package. It emits an honest Wasm/Pulp plan: adapted host import and
+untouched package. [`Core Execution v3`](spec/core-execution-v3.md) lifts its
+ordinary request and response structs as canonical records and field
+expressions. The target contract emits an honest Wasm/Pulp plan: adapted host import and
 typed boundary when policy permits, impossible when exact-only policy forbids
 adaptation. Run `./scripts/check-target-v1.sh`. Wasm emission follows through
 [`Wasm target v1`](spec/wasm-target-v1.md): a checked-plan backend emits a

@@ -11,7 +11,8 @@ kernel="$repo/compiler/kernel-wire-validator.k0"
 foundation_validator="$repo/modules/foundation/v1/validator.k0"
 provider_module="$repo/modules/provider/v1/module.g1"
 foundation_module="$repo/modules/foundation/v1/module.g1"
-execution_module="$repo/modules/execution/v2/module.g1"
+execution_module="$repo/modules/execution/v3/module.g1"
+execution="$repo/modules/execution/v3"
 package_module="$repo/modules/package/v1/module.g1"
 target="$repo/modules/target/v1"
 
@@ -36,8 +37,20 @@ plan_check="$work/target-plan-check"
     go build -o "$go_provider" ./cmd/go-provider
     go build -o "$target_plan" ./cmd/target-plan
     go build -o "$plan_check" ./cmd/target-plan-check
+    go run ./cmd/execution-module-v3 > "$work/execution-module.g1"
     go run ./cmd/target-module > "$work/target-module.g1"
 )
+
+(
+    cd "$execution"
+    sha256sum -c module.g1.sha256
+    sha256sum -c module.seme.sha256
+)
+cmp "$execution/module.g1" "$work/execution-module.g1"
+"$k0" "$g1" "$work/execution-module.g1" "$work/execution-module.seme"
+cmp "$execution/module.seme" "$work/execution-module.seme"
+"$k0" "$kernel" "$execution/module.seme"
+"$k0" "$foundation_validator" "$execution/module.seme"
 
 (
     cd "$target"

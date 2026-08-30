@@ -17,7 +17,8 @@ func TestAdmitLogsDecision(t *testing.T) {
 		log.SetOutput(oldWriter)
 		log.SetFlags(oldFlags)
 	})
-	if !Admit(40, 2, 50) {
+	response := Admit(AdmitRequest{Current: 40, Delta: 2, Limit: 50})
+	if !response.Accepted {
 		t.Fatal("expected request to be admitted")
 	}
 	if got := strings.TrimSpace(output.String()); got != "quota.accepted=true" {

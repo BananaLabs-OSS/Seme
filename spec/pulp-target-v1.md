@@ -27,6 +27,6 @@ capability; Pulp binds its gated stub, the guest traps on status `99`, and cell
 initialization fails without performing the effect.
 
 This proves actual Pulp request/response execution and capability enforcement
-for one fixed record and scalar effect. It is not yet a general Pulp target
-adapter, schema-driven codec, Component Model package, network input route, or
-production logging extension.
+for one schema-derived record and scalar effect. It is not yet a general Pulp
+target adapter, recursive/variable-width codec, Component Model package,
+network input route, or production logging extension.

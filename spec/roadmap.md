@@ -113,6 +113,9 @@ enforcement complete for the scoped logging profile.
   exact fidelity.
 - A checked-plan backend emits a deterministic 262-byte Wasm reactor, executes it
   with the declared logging host import, and matches Go result/effect traces.
+- Core Execution v3 canonically represents the ordinary Go request/response
+  records, field reads, and response construction; the backend derives its
+  fixed-width codec layout from those entities.
 - Actual Pulp loads the same reactor once, processes repeated structured quota
   requests through `pulp_on_call`, returns responses, delivers every granted
   effect, and rejects the identical artifact when the capability is absent.

@@ -15,7 +15,7 @@ func main() {
 	manifestPath := flag.String("manifest", "", "Provider v1 manifest")
 	providerGraph := flag.String("provider-graph", "", "Provider ingestion G1")
 	foundationModule := flag.String("foundation-module", "", "Foundation module G1")
-	executionModule := flag.String("execution-module", "", "Core Execution v2 module G1")
+	executionModule := flag.String("execution-module", "", "Core Execution module G1")
 	packageModule := flag.String("package-module", "", "Package Contract module G1")
 	targetModule := flag.String("target-module", "", "Target Contract module G1")
 	policy := flag.String("policy", "allow-adapted", "allow-adapted or exact-only")

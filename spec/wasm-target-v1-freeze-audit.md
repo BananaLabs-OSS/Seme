@@ -7,6 +7,7 @@
 | Independent runtime | pass | Runtime command uses Node, Wasm, host adapter, and Application Wire v1 requests with no Go component. |
 | Behavioral fidelity | pass | Result and logging-effect trace match Go over five vectors including modular overflow. |
 | Boundary fidelity | pass | Wasm import realizes the canonical adapted `seme.pulp.log-v1` Boundary and remains labeled adapted. |
+| Schema-derived codec | pass | Request offsets, request length, response offset, and response length are computed from validated Core Execution v3 RecordType/RecordField entities. |
 | Policy enforcement | pass | The valid exact-only non-executable plan cannot be lowered. |
 | Native continuity | pass | The ordinary Go source remains byte-for-byte unchanged and passes its tests. |
 

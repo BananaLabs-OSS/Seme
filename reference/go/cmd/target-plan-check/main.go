@@ -27,6 +27,10 @@ func main() {
 	interfaces := bySchema(graph, 0xb011)
 	providerDeclarations := bySchema(graph, 0x7013)
 	canonicalFunctions := bySchema(graph, 0x9011)
+	recordTypes := bySchema(graph, 0x9030)
+	recordFields := bySchema(graph, 0x9031)
+	fieldReads := bySchema(graph, 0x9032)
+	recordConstructs := bySchema(graph, 0x9033)
 	effects := bySchema(graph, 0x15)
 	capabilities := bySchema(graph, 0x16)
 	targets := bySchema(graph, 0xc010)
@@ -37,6 +41,7 @@ func main() {
 	boundaries := bySchema(graph, 0xc015)
 	must(len(packages) == 1 && len(dependencies) == 1 && len(mappings) == 1 && len(interfaces) == 1, "package requirement cardinality mismatch")
 	must(len(providerDeclarations) == 1 && len(canonicalFunctions) == 1, "source/canonical function cardinality mismatch")
+	must(len(recordTypes) == 2 && len(recordFields) == 4 && len(fieldReads) == 3 && len(recordConstructs) == 1, "record semantics cardinality mismatch")
 	must(len(runtimes) == 2 && len(effects) == 1 && len(capabilities) == 1, "effect/runtime cardinality mismatch")
 	must(len(targets) == 1 && len(requirements) == 2 && len(rules) == 2 && len(resolutions) == 2 && len(plans) == 1, "target plan cardinality mismatch")
 
@@ -53,6 +58,12 @@ func main() {
 	must(field(mappings[0], 0xb140).Reference == providerDeclarations[0].ID, "mapping source is not provider Declaration")
 	must(field(mappings[0], 0xb141).Reference == canonicalFunctions[0].ID, "mapping target is not Core Function")
 	must(field(interfaces[0], 0xb111).Reference == canonicalFunctions[0].ID, "typed interface bypasses canonical Function")
+	must(len(field(interfaces[0], 0xb112).List) == 1, "typed interface request record missing")
+	requestType := graph.Entities[field(interfaces[0], 0xb112).List[0].Reference]
+	responseType := graph.Entities[field(interfaces[0], 0xb113).Reference]
+	must(requestType.Schema == identity(0x9030) && string(field(requestType, 0x9300).Bytes) == "AdmitRequest", "request record mismatch")
+	must(responseType.Schema == identity(0x9030) && string(field(responseType, 0x9300).Bytes) == "AdmitResponse", "response record mismatch")
+	must(len(field(requestType, 0x9301).List) == 3 && len(field(responseType, 0x9301).List) == 1, "record field shape mismatch")
 
 	target := targets[0]
 	must(string(field(target, 0xc100).Bytes) == "wasm32-pulp-v1", "target name mismatch")

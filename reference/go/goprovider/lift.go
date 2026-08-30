@@ -185,7 +185,7 @@ func resolveFunction(project string, manifest Manifest, functionName string) (*D
 		}
 		parsed = append(parsed, node)
 	}
-	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
+	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
 	config := types.Config{Importer: importer.Default()}
 	pkg, err := config.Check(packagePathOf(declaration.NativeKey), fset, parsed, info)
 	if err != nil {
