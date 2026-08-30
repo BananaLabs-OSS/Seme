@@ -1,12 +1,13 @@
 # Wasm/Pulp v1 target artifact
 
-`quota-admit.wasm` is the deterministic 262-byte Pulp reactor derived from the
+`quota-admit.wasm` is the deterministic 388-byte Pulp reactor derived from the
 checked `allow-adapted` Target Contract v1 plan. It imports
 `pulp.log_bool(i32) -> i32`, exports `pulp_on_call`, and implements the Pulp
 cell lifecycle exports and memory contract without a Go runtime. Core Execution
-v3 supplies canonical request/response records; Application Wire v1 derives
-three little-endian signed i64 fields (`current`, `delta`, `limit`) and one
-canonical Boolean response field from those schemas.
+v4 supplies canonical request/response records, string/bytes fields, and a
+Result type. Application Wire v2 derives three little-endian signed i64 fields,
+bounded UTF-8 subject and evidence bytes, and an `Ok` response preserving all
+fields.
 `scripts/check-wasm-v1.sh` reproduces and executes it.
 
 The Node conformance runner checks five request/result/effect vectors. The two

@@ -17,9 +17,15 @@ func TestAdmitLogsDecision(t *testing.T) {
 		log.SetOutput(oldWriter)
 		log.SetFlags(oldFlags)
 	})
-	response := Admit(AdmitRequest{Current: 40, Delta: 2, Limit: 50})
+	response, err := Admit(AdmitRequest{Current: 40, Delta: 2, Limit: 50, Subject: "tenant-a", Evidence: []byte{1, 2, 3}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !response.Accepted {
 		t.Fatal("expected request to be admitted")
+	}
+	if response.Subject != "tenant-a" || !bytes.Equal(response.Evidence, []byte{1, 2, 3}) {
+		t.Fatalf("response did not preserve variable-width fields: %+v", response)
 	}
 	if got := strings.TrimSpace(output.String()); got != "quota.accepted=true" {
 		t.Fatalf("log output = %q", got)

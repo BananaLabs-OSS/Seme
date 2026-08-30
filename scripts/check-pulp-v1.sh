@@ -3,7 +3,7 @@ set -eu
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 pulp_repo=${PULP_REPO:-"$repo/../Pulp"}
-pulp_proof_commit=f4d15bb
+pulp_proof_commit=161c9dc
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-pulp-v1.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 
@@ -31,6 +31,8 @@ fi
 rg -q '\[observability.log\] cell=seme-quota quota.accepted=true' "$work/allowed.log"
 rg -q '\[observability.log\] cell=seme-quota quota.accepted=false' "$work/allowed.log"
 test "$(rg -c '^\[observability.log\]' "$work/allowed.log")" -eq 3
+test "$(rg -o '"subject":"tenant-a"' "$work/allowed.log" | wc -l)" -eq 6
+test "$(rg -o '"evidence":"AQID"' "$work/allowed.log" | wc -l)" -eq 6
 rg -q '"current":40,"delta":2,"limit":50.*"accepted":true' "$work/allowed.log"
 rg -q '"current":40,"delta":20,"limit":50.*"accepted":false' "$work/allowed.log"
 rg -q '"current":9223372036854775807,"delta":1,"limit":0.*"accepted":true' "$work/allowed.log"
