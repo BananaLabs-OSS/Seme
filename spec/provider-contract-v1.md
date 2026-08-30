@@ -139,8 +139,8 @@ of Go; the Kernel must not absorb accidental assumptions from either adapter.
 
 ## First Go conformance profile
 
-The v1 proof profile is deliberately narrow: one ordinary module-root package,
-package-level functions, resolved definition/call occurrences, no generated
+The v1 proof profile is deliberately narrow: ordinary packages within one
+module, package-level functions, resolved definition/call occurrences, no generated
 files, no cgo, no methods, no build-tag variants, and one changed native file
 per projected transaction. It uses the installed Go parser, type checker,
 module command, and test command.
@@ -158,7 +158,7 @@ preservation, and canonical projection-report evidence.
 
 The native revision covers the recursive module source closure: root and
 nested `.go` files plus `go.mod` and `go.sum`, excluding `.git` and `vendor`.
-V1 still projects declarations only from the selected root package, but any
-nested-package edit invalidates prior evidence. Target analysis can resolve and
-type-check a directly imported local helper from this closure; general imported
-declaration projection remains the next provider-contract expansion.
+V1 projects package-level function declarations from every source package in
+the module closure. Target analysis resolves and type-checks a directly
+imported local helper using those package-qualified identities. Reachability
+filtering and general expression lifting remain later expansions.

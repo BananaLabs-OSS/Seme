@@ -7,6 +7,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -184,7 +185,10 @@ func resolveImportedFunction(project string, manifest Manifest, packagePath, fun
 func resolvePackageFunction(project string, manifest Manifest, packagePath, functionName string, declaration *Declaration) (*Declaration, *ast.FuncDecl, *types.Signature, *types.Info, error) {
 	fset := token.NewFileSet()
 	var parsed []*ast.File
-	rootPackage := packagePathOf(manifest.Declarations[0].NativeKey)
+	rootPackage, err := modulePath(project)
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	relativePackage := strings.TrimPrefix(packagePath, rootPackage)
 	relativePackage = strings.TrimPrefix(relativePackage, "/")
 	for _, file := range manifest.Files {
@@ -233,6 +237,20 @@ func resolvePackageFunction(project string, manifest Manifest, packagePath, func
 		return nil, nil, nil, nil, fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 	}
 	return declaration, fn, signature, info, nil
+}
+
+func modulePath(project string) (string, error) {
+	data, err := os.ReadFile(filepath.Join(project, "go.mod"))
+	if err != nil {
+		return "", err
+	}
+	fields := strings.Fields(string(data))
+	for index := 0; index+1 < len(fields); index++ {
+		if fields[index] == "module" {
+			return fields[index+1], nil
+		}
+	}
+	return "", fmt.Errorf("provider.module_path_missing")
 }
 
 type sourceImporter struct {

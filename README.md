@@ -139,6 +139,8 @@ the Go helper and handler now lower to distinct Wasm functions.
 Provider revisions cover nested module sources, and target analysis resolves
 the real `Admit -> internal/policy.WithinLimit` imported source call through the
 same canonical call and Wasm layers.
+Imported package functions are also first-class provider declarations with
+stable package-qualified identities.
 
 Above frozen Kernel v1, Semantic Foundation v1 and Patch Module v1 define the
 first versioned schema and transactional-edit contracts. Their checked module
