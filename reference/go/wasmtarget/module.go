@@ -15,11 +15,12 @@ func module(layout applicationLayout) ([]byte, error) {
 	var wasm bytes.Buffer
 	wasm.Write([]byte{'\x00', 'a', 's', 'm', '\x01', 0, 0, 0})
 	section(&wasm, 1, []byte{
-		4,
+		5,
 		0x60, 1, 0x7f, 1, 0x7f,
 		0x60, 2, 0x7f, 0x7f, 1, 0x7f,
 		0x60, 0, 1, 0x7f,
 		0x60, 6, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 1, 0x7f,
+		0x60, 3, 0x7e, 0x7e, 0x7e, 1, 0x7f,
 	})
 	var imports bytes.Buffer
 	uleb(&imports, 1)
@@ -27,7 +28,7 @@ func module(layout applicationLayout) ([]byte, error) {
 	name(&imports, "log_bool")
 	imports.Write([]byte{0, 0})
 	section(&wasm, 2, imports.Bytes())
-	section(&wasm, 3, []byte{5, 0, 1, 1, 2, 3})
+	section(&wasm, 3, []byte{6, 0, 1, 1, 2, 4, 3})
 	section(&wasm, 5, []byte{1, 0, 1})
 	var globals bytes.Buffer
 	globals.Write([]byte{1, 0x7f, 1, 0x41})
@@ -41,7 +42,7 @@ func module(layout applicationLayout) ([]byte, error) {
 	export(&exports, "pulp_init", 0, 2)
 	export(&exports, "pulp_step", 0, 3)
 	export(&exports, "pulp_shutdown", 0, 4)
-	export(&exports, "pulp_on_call", 0, 5)
+	export(&exports, "pulp_on_call", 0, 6)
 	section(&wasm, 7, exports.Bytes())
 
 	bodies := [][]byte{
@@ -49,6 +50,7 @@ func module(layout applicationLayout) ([]byte, error) {
 		{0, 0x41, 0, 0x0b},
 		{0, 0x41, 0, 0x0b},
 		{0, 0x41, 0, 0x0b},
+		{0, 0x20, 0, 0x20, 1, 0x7c, 0x20, 2, 0x57, 0x0b},
 		providerBody(layout),
 	}
 	var code bytes.Buffer
@@ -103,9 +105,8 @@ func providerBody(layout applicationLayout) []byte {
 	body.Write([]byte{0x36, 2, 0, 0x41, 0, 0x0f, 0x0b})
 	loadRecordI64(&body, 2, layout.requestOffsets[0])
 	loadRecordI64(&body, 2, layout.requestOffsets[1])
-	body.WriteByte(0x7c) // i64.add
 	loadRecordI64(&body, 2, layout.requestOffsets[2])
-	body.Write([]byte{0x57, 0x22, 6, 0x10, 0, 0x04, 0x40, 0x00, 0x0b})
+	body.Write([]byte{0x10, 5, 0x22, 6, 0x10, 0, 0x04, 0x40, 0x00, 0x0b})
 	constI32(&body, 8192) // Result tag: Ok
 	body.Write([]byte{0x41, 0, 0x3a, 0, 0})
 	constI32(&body, 8192+layout.responseBoolOffset)

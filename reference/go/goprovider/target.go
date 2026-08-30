@@ -28,6 +28,13 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	if err != nil {
 		return "", err
 	}
+	helperDeclaration, helper, helperSignature, helperInfo, err := resolveFunction(project, manifest, "WithinLimit")
+	if err != nil {
+		return "", err
+	}
+	if err := validateWithinLimit(helper, helperSignature, helperInfo); err != nil {
+		return "", err
+	}
 	if policy != "allow-adapted" && policy != "exact-only" {
 		return "", fmt.Errorf("target.unsupported_policy:%s", policy)
 	}
@@ -37,6 +44,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	stringID := stableID("execution", "type", "string")
 	bytesID := stableID("execution", "type", "bytes")
 	canonicalFunctionID := stableID("canonical-function", declaration.ID)
+	helperFunctionID := stableID("canonical-function", helperDeclaration.ID)
 	requestTypeID := stableID("execution", canonicalFunctionID, "record", "AdmitRequest")
 	responseTypeID := stableID("execution", canonicalFunctionID, "record", "AdmitResponse")
 	errorTypeID := stableID("execution", canonicalFunctionID, "record", "AdmitError")
@@ -63,8 +71,11 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		stableID("execution", canonicalFunctionID, "field-read", "Subject"),
 		stableID("execution", canonicalFunctionID, "field-read", "Evidence"),
 	}
-	addID := stableID("execution", canonicalFunctionID, "add")
-	comparisonID := stableID("execution", canonicalFunctionID, "less-equal")
+	callID := stableID("execution", canonicalFunctionID, "call", helperFunctionID)
+	helperParameterIDs := []string{stableID("execution", helperFunctionID, "parameter", "0"), stableID("execution", helperFunctionID, "parameter", "1"), stableID("execution", helperFunctionID, "parameter", "2")}
+	helperReadIDs := []string{stableID("execution", helperFunctionID, "read", "0"), stableID("execution", helperFunctionID, "read", "1"), stableID("execution", helperFunctionID, "read", "2")}
+	helperAddID := stableID("execution", helperFunctionID, "add")
+	helperComparisonID := stableID("execution", helperFunctionID, "less-equal")
 	responseConstructID := stableID("execution", canonicalFunctionID, "construct", "AdmitResponse")
 	resultOkID := stableID("execution", canonicalFunctionID, "result-ok")
 	errorMessageID := stableID("execution", canonicalFunctionID, "string", "subject-required")
@@ -105,7 +116,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		{hostAdapterID, entity(hostAdapterID, "0000000000000000000000000000b013", []graphField{bytesField(0xb130, "seme.pulp.log-v1"), bytesField(0xb131, "Wasm host import guarded by observability.log capability")})},
 		{dependencyID, entity(dependencyID, "0000000000000000000000000000b012", []graphField{bytesField(0xb120, "go:log"), bytesField(0xb121, "Go standard library for provider profile"), refField(0xb122, hostAdapterID)})},
 		{interfaceID, entity(interfaceID, "0000000000000000000000000000b011", []graphField{bytesField(0xb110, "Admit"), refField(0xb111, canonicalFunctionID), refsField(0xb112, []string{requestTypeID}), refField(0xb113, resultTypeID)})},
-		{mappingID, entity(mappingID, "0000000000000000000000000000b014", []graphField{refField(0xb140, declaration.ID), refField(0xb141, canonicalFunctionID), unsignedField(0xb142, 2), bytesField(0xb143, "go/types record/string/bytes lift; nil error becomes ResultOk; Pulp host import adapts log.Printf")})},
+		{mappingID, entity(mappingID, "0000000000000000000000000000b014", []graphField{refField(0xb140, declaration.ID), refField(0xb141, canonicalFunctionID), unsignedField(0xb142, 2), bytesField(0xb143, "go/types record/string/bytes/call lift; nil error becomes ResultOk; Pulp host import adapts log.Printf")})},
 		{packageID, entity(packageID, "0000000000000000000000000000b010", []graphField{bytesField(0xb100, packagePathOf(declaration.NativeKey)), bytesField(0xb101, manifest.Revision), refsField(0xb102, []string{interfaceID}), refsField(0xb103, []string{dependencyID}), refsField(0xb104, []string{effectID}), refsField(0xb105, []string{runtimeID}), refsField(0xb106, []string{mappingID})})},
 		{dependencyRequirementID, entity(dependencyRequirementID, "0000000000000000000000000000c011", []graphField{refField(0xc110, dependencyID), unsignedField(0xc111, 1), refsField(0xc112, []string{runtimeID})})},
 		{effectRequirementID, entity(effectRequirementID, "0000000000000000000000000000c011", []graphField{refField(0xc110, effectID), unsignedField(0xc111, 1), refsField(0xc112, []string{runtimeID})})},
@@ -133,9 +144,17 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		graphEntity{fieldReadIDs[2], entity(fieldReadIDs[2], "00000000000000000000000000009032", []graphField{refField(0x9320, parameterReadID), refField(0x9321, requestFieldIDs[2])})},
 		graphEntity{fieldReadIDs[3], entity(fieldReadIDs[3], "00000000000000000000000000009032", []graphField{refField(0x9320, parameterReadID), refField(0x9321, requestFieldIDs[3])})},
 		graphEntity{fieldReadIDs[4], entity(fieldReadIDs[4], "00000000000000000000000000009032", []graphField{refField(0x9320, parameterReadID), refField(0x9321, requestFieldIDs[4])})},
-		graphEntity{addID, entity(addID, "00000000000000000000000000009014", []graphField{refField(0x9140, fieldReadIDs[0]), refField(0x9141, fieldReadIDs[1]), refField(0x9142, integerID)})},
-		graphEntity{comparisonID, entity(comparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, addID), refField(0x9161, fieldReadIDs[2]), refField(0x9162, integerID)})},
-		graphEntity{responseConstructID, entity(responseConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, responseTypeID), refsField(0x9331, []string{comparisonID, fieldReadIDs[3], fieldReadIDs[4]})})},
+		graphEntity{helperParameterIDs[0], entity(helperParameterIDs[0], "00000000000000000000000000009012", []graphField{bytesField(0x9120, helperSignature.Params().At(0).Name()), refField(0x9121, integerID), unsignedField(0x9122, 0)})},
+		graphEntity{helperParameterIDs[1], entity(helperParameterIDs[1], "00000000000000000000000000009012", []graphField{bytesField(0x9120, helperSignature.Params().At(1).Name()), refField(0x9121, integerID), unsignedField(0x9122, 1)})},
+		graphEntity{helperParameterIDs[2], entity(helperParameterIDs[2], "00000000000000000000000000009012", []graphField{bytesField(0x9120, helperSignature.Params().At(2).Name()), refField(0x9121, integerID), unsignedField(0x9122, 2)})},
+		graphEntity{helperReadIDs[0], entity(helperReadIDs[0], "00000000000000000000000000009013", []graphField{refField(0x9130, helperParameterIDs[0])})},
+		graphEntity{helperReadIDs[1], entity(helperReadIDs[1], "00000000000000000000000000009013", []graphField{refField(0x9130, helperParameterIDs[1])})},
+		graphEntity{helperReadIDs[2], entity(helperReadIDs[2], "00000000000000000000000000009013", []graphField{refField(0x9130, helperParameterIDs[2])})},
+		graphEntity{helperAddID, entity(helperAddID, "00000000000000000000000000009014", []graphField{refField(0x9140, helperReadIDs[0]), refField(0x9141, helperReadIDs[1]), refField(0x9142, integerID)})},
+		graphEntity{helperComparisonID, entity(helperComparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, helperAddID), refField(0x9161, helperReadIDs[2]), refField(0x9162, integerID)})},
+		graphEntity{helperFunctionID, entity(helperFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, "WithinLimit"), refsField(0x9111, helperParameterIDs), refField(0x9112, booleanID), refField(0x9113, helperComparisonID)})},
+		graphEntity{callID, entity(callID, "00000000000000000000000000009060", []graphField{refField(0x9600, helperFunctionID), refsField(0x9601, []string{fieldReadIDs[0], fieldReadIDs[1], fieldReadIDs[2]})})},
+		graphEntity{responseConstructID, entity(responseConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, responseTypeID), refsField(0x9331, []string{callID, fieldReadIDs[3], fieldReadIDs[4]})})},
 		graphEntity{resultOkID, entity(resultOkID, "00000000000000000000000000009043", []graphField{refField(0x9410, resultTypeID), refField(0x9411, responseConstructID)})},
 		graphEntity{errorMessageID, entity(errorMessageID, "00000000000000000000000000009050", []graphField{bytesField(0x9500, profile.errorMessage)})},
 		graphEntity{stringIsEmptyID, entity(stringIsEmptyID, "00000000000000000000000000009051", []graphField{refField(0x9510, fieldReadIDs[3])})},
@@ -244,19 +263,19 @@ func analyzeLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *type
 	if !ok || !isBool(acceptedObject.Type()) {
 		return loggedAdmitProfile{}, fmt.Errorf("target.unresolved_decision")
 	}
-	comparison, ok := assignment.Rhs[0].(*ast.BinaryExpr)
-	if !ok || comparison.Op != token.LEQ {
+	decisionCall, ok := assignment.Rhs[0].(*ast.CallExpr)
+	if !ok || len(decisionCall.Args) != 3 {
 		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision")
 	}
-	addition, ok := comparison.X.(*ast.BinaryExpr)
-	if !ok || addition.Op != token.ADD {
-		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_addition")
+	callee, ok := decisionCall.Fun.(*ast.Ident)
+	calleeObject, resolved := info.Uses[callee].(*types.Func)
+	if !ok || !resolved || calleeObject.Name() != "WithinLimit" {
+		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision_call")
 	}
-	if !isParameterField(addition.X, request, "Current", info) || !isParameterField(addition.Y, request, "Delta", info) {
-		return loggedAdmitProfile{}, fmt.Errorf("target.nonrecord_addition")
-	}
-	if !isParameterField(comparison.Y, request, "Limit", info) {
-		return loggedAdmitProfile{}, fmt.Errorf("target.nonrecord_limit")
+	for index, name := range []string{"Current", "Delta", "Limit"} {
+		if !isParameterField(decisionCall.Args[index], request, name, info) {
+			return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision_argument")
+		}
 	}
 	expression, ok := fn.Body.List[2].(*ast.ExprStmt)
 	if !ok {
@@ -309,6 +328,41 @@ func analyzeLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *type
 		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_error_result")
 	}
 	return loggedAdmitProfile{errorMessage: errorMessage}, nil
+}
+
+func validateWithinLimit(fn *ast.FuncDecl, signature *types.Signature, info *types.Info) error {
+	if signature.Params().Len() != 3 || signature.Results().Len() != 1 || !isBool(signature.Results().At(0).Type()) {
+		return fmt.Errorf("target.unsupported_signature:WithinLimit")
+	}
+	for index := 0; index < 3; index++ {
+		if !isInt64(signature.Params().At(index).Type()) {
+			return fmt.Errorf("target.unsupported_signature:WithinLimit")
+		}
+	}
+	if len(fn.Body.List) != 1 {
+		return fmt.Errorf("target.unsupported_body:WithinLimit")
+	}
+	returned, ok := fn.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(returned.Results) != 1 {
+		return fmt.Errorf("target.unsupported_return:WithinLimit")
+	}
+	comparison, ok := returned.Results[0].(*ast.BinaryExpr)
+	if !ok || comparison.Op != token.LEQ {
+		return fmt.Errorf("target.unsupported_expression:WithinLimit")
+	}
+	addition, ok := comparison.X.(*ast.BinaryExpr)
+	if !ok || addition.Op != token.ADD {
+		return fmt.Errorf("target.unsupported_expression:WithinLimit")
+	}
+	left, right, err := resolvedParameterOperands(addition.X, addition.Y, signature, info)
+	if err != nil || left != 0 || right != 1 {
+		return fmt.Errorf("target.unsupported_addition:WithinLimit")
+	}
+	limit, ok := comparison.Y.(*ast.Ident)
+	if !ok || info.Uses[limit] != signature.Params().At(2) {
+		return fmt.Errorf("target.unsupported_limit:WithinLimit")
+	}
+	return nil
 }
 
 func isEmptyStringComparison(expression *ast.BinaryExpr, parameter *types.Var, fieldName string, info *types.Info) bool {

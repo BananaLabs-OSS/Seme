@@ -118,7 +118,7 @@ expressions. The target contract emits an honest Wasm/Pulp plan: adapted host im
 typed boundary when policy permits, impossible when exact-only policy forbids
 adaptation. Run `./scripts/check-target-v1.sh`. Wasm emission follows through
 [`Wasm target v1`](spec/wasm-target-v1.md): a checked-plan backend emits a
-deterministic 471-byte Pulp reactor and compares both Result variants and logging trace
+deterministic 490-byte Pulp reactor and compares both Result variants and logging trace
 with Go. `Pulp target v1` then runs that same reactor through actual Pulp and
 proves repeated dynamic provider calls plus grant/denial behavior. The combined
 milestone is [`Application Proof v1`](spec/application-proof-v1.md). Run
@@ -134,6 +134,8 @@ minimum canonical conditional semantics needed to execute both bounded
 Application Wire v2 Result variants. Provider conformance proves that local
 names, comparison spelling, and keyed-field source order are not semantic
 authority, while changed error text is preserved through Seme and Wasm.
+[`Core Execution v6`](spec/core-execution-v6.md) adds canonical direct calls;
+the Go helper and handler now lower to distinct Wasm functions.
 
 Above frozen Kernel v1, Semantic Foundation v1 and Patch Module v1 define the
 first versioned schema and transactional-edit contracts. Their checked module
