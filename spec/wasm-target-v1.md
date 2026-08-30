@@ -14,7 +14,7 @@ Contract plan. Its deliberately finite profile requires:
 - an `AdmitResponse` RecordType containing an `Accepted` Boolean field.
 
 The backend independently validates those canonical entities and emits a
-deterministic 490-byte WebAssembly Pulp reactor:
+deterministic 493-byte WebAssembly Pulp reactor:
 
 ```text
 import pulp.log_bool(i32) -> i32

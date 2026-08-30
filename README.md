@@ -8,6 +8,27 @@ semantics.
 Seme is target-independent. WebAssembly is the first-class execution target and
 primary portability proof, not the semantic foundation or the only backend.
 
+## Try the usable Go profile
+
+On Linux amd64 with Go and Node installed:
+
+```sh
+./seme doctor
+./seme demo
+```
+
+Against an ordinary project matching the documented profile:
+
+```sh
+./seme build PATH/TO/PROJECT
+./seme run PATH/TO/PROJECT 40 2 50 tenant-a
+```
+
+The command runs the native tests, imports and validates canonical semantics,
+reports fidelity, emits Wasm, and preserves inspectable evidence under
+`PROJECT/.seme/`. It does not rewrite the Go sources. See
+[`Seme CLI v1`](spec/cli-v1.md) for the exact supported surface and outputs.
+
 This repository starts at the independent bootstrap boundary. USIR remains the
 research prototype and behavioral reference; it is not copied into Seme and is
 not part of Seme's trusted build path.
@@ -118,7 +139,7 @@ expressions. The target contract emits an honest Wasm/Pulp plan: adapted host im
 typed boundary when policy permits, impossible when exact-only policy forbids
 adaptation. Run `./scripts/check-target-v1.sh`. Wasm emission follows through
 [`Wasm target v1`](spec/wasm-target-v1.md): a checked-plan backend emits a
-deterministic 490-byte Pulp reactor and compares both Result variants and logging trace
+deterministic 493-byte Pulp reactor and compares both Result variants and logging trace
 with Go. `Pulp target v1` then runs that same reactor through actual Pulp and
 proves repeated dynamic provider calls plus grant/denial behavior. The combined
 milestone is [`Application Proof v1`](spec/application-proof-v1.md). Run
