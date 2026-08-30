@@ -5,6 +5,7 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"strconv"
 )
 
 type goExpressionKind uint8
@@ -23,6 +24,65 @@ type goExpression struct {
 	parameter int
 	left      *goExpression
 	right     *goExpression
+}
+
+func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
+	emitted := make(map[string]graphEntity)
+	var emit func(*goExpression, string) (string, error)
+	emit = func(expression *goExpression, path string) (string, error) {
+		if expression == nil {
+			return "", fmt.Errorf("expression.nil")
+		}
+		switch expression.kind {
+		case goParameterRead:
+			if expression.parameter < 0 || expression.parameter >= len(parameterIDs) {
+				return "", fmt.Errorf("expression.parameter_out_of_range")
+			}
+			id := stableID("execution", owner, "read", strconv.Itoa(expression.parameter))
+			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009013", []graphField{refField(0x9130, parameterIDs[expression.parameter])})}
+			return id, nil
+		case goIntegerAdd, goIntegerLessEqual:
+			left, err := emit(expression.left, path+".left")
+			if err != nil {
+				return "", err
+			}
+			right, err := emit(expression.right, path+".right")
+			if err != nil {
+				return "", err
+			}
+			if expression.kind == goIntegerAdd {
+				id := expressionNodeID(owner, path, "add")
+				emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009014", []graphField{refField(0x9140, left), refField(0x9141, right), refField(0x9142, integerID)})}
+				return id, nil
+			}
+			id := expressionNodeID(owner, path, "less-equal")
+			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009021", []graphField{refField(0x9160, left), refField(0x9161, right), refField(0x9162, integerID)})}
+			return id, nil
+		default:
+			return "", fmt.Errorf("expression.unsupported_kind")
+		}
+	}
+	root, err := emit(expression, "root")
+	if err != nil {
+		return nil, "", err
+	}
+	entities := make([]graphEntity, 0, len(emitted))
+	for _, item := range emitted {
+		entities = append(entities, item)
+	}
+	return entities, root, nil
+}
+
+func expressionNodeID(owner, path, kind string) string {
+	// Preserve the frozen v6 identities for the original decision shape. New
+	// nested nodes use their normalized semantic path and do not renumber peers.
+	if path == "root" && kind == "less-equal" {
+		return stableID("execution", owner, "less-equal")
+	}
+	if path == "root.left" && kind == "add" {
+		return stableID("execution", owner, "add")
+	}
+	return stableID("execution", owner, "expression", path, kind)
 }
 
 func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *types.Info) (*goExpression, error) {
@@ -82,5 +142,5 @@ func matchAddLessEqualParameters(expression *goExpression) (decisionExpressionPr
 	if left == right || left == limit || right == limit {
 		return profile, false
 	}
-	return decisionExpressionProfile{addLeft: left, addRight: right, limit: limit}, true
+	return decisionExpressionProfile{addLeft: left, addRight: right, limit: limit, expression: expression}, true
 }

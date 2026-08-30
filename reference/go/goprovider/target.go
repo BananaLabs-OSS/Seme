@@ -74,9 +74,10 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	}
 	callID := stableID("execution", canonicalFunctionID, "call", helperFunctionID)
 	helperParameterIDs := []string{stableID("execution", helperFunctionID, "parameter", "0"), stableID("execution", helperFunctionID, "parameter", "1"), stableID("execution", helperFunctionID, "parameter", "2")}
-	helperReadIDs := []string{stableID("execution", helperFunctionID, "read", "0"), stableID("execution", helperFunctionID, "read", "1"), stableID("execution", helperFunctionID, "read", "2")}
-	helperAddID := stableID("execution", helperFunctionID, "add")
-	helperComparisonID := stableID("execution", helperFunctionID, "less-equal")
+	helperExpressions, helperBodyID, err := emitCanonicalExpression(helperProfile.expression, helperFunctionID, helperParameterIDs, integerID)
+	if err != nil {
+		return "", err
+	}
 	responseConstructID := stableID("execution", canonicalFunctionID, "construct", "AdmitResponse")
 	resultOkID := stableID("execution", canonicalFunctionID, "result-ok")
 	errorMessageID := stableID("execution", canonicalFunctionID, "string", "subject-required")
@@ -148,12 +149,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		graphEntity{helperParameterIDs[0], entity(helperParameterIDs[0], "00000000000000000000000000009012", []graphField{bytesField(0x9120, helperSignature.Params().At(0).Name()), refField(0x9121, integerID), unsignedField(0x9122, 0)})},
 		graphEntity{helperParameterIDs[1], entity(helperParameterIDs[1], "00000000000000000000000000009012", []graphField{bytesField(0x9120, helperSignature.Params().At(1).Name()), refField(0x9121, integerID), unsignedField(0x9122, 1)})},
 		graphEntity{helperParameterIDs[2], entity(helperParameterIDs[2], "00000000000000000000000000009012", []graphField{bytesField(0x9120, helperSignature.Params().At(2).Name()), refField(0x9121, integerID), unsignedField(0x9122, 2)})},
-		graphEntity{helperReadIDs[0], entity(helperReadIDs[0], "00000000000000000000000000009013", []graphField{refField(0x9130, helperParameterIDs[0])})},
-		graphEntity{helperReadIDs[1], entity(helperReadIDs[1], "00000000000000000000000000009013", []graphField{refField(0x9130, helperParameterIDs[1])})},
-		graphEntity{helperReadIDs[2], entity(helperReadIDs[2], "00000000000000000000000000009013", []graphField{refField(0x9130, helperParameterIDs[2])})},
-		graphEntity{helperAddID, entity(helperAddID, "00000000000000000000000000009014", []graphField{refField(0x9140, helperReadIDs[helperProfile.addLeft]), refField(0x9141, helperReadIDs[helperProfile.addRight]), refField(0x9142, integerID)})},
-		graphEntity{helperComparisonID, entity(helperComparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, helperAddID), refField(0x9161, helperReadIDs[helperProfile.limit]), refField(0x9162, integerID)})},
-		graphEntity{helperFunctionID, entity(helperFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, profile.helperName), refsField(0x9111, helperParameterIDs), refField(0x9112, booleanID), refField(0x9113, helperComparisonID)})},
+		graphEntity{helperFunctionID, entity(helperFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, profile.helperName), refsField(0x9111, helperParameterIDs), refField(0x9112, booleanID), refField(0x9113, helperBodyID)})},
 		graphEntity{callID, entity(callID, "00000000000000000000000000009060", []graphField{refField(0x9600, helperFunctionID), refsField(0x9601, []string{fieldReadIDs[0], fieldReadIDs[1], fieldReadIDs[2]})})},
 		graphEntity{responseConstructID, entity(responseConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, responseTypeID), refsField(0x9331, []string{callID, fieldReadIDs[3], fieldReadIDs[4]})})},
 		graphEntity{resultOkID, entity(resultOkID, "00000000000000000000000000009043", []graphField{refField(0x9410, resultTypeID), refField(0x9411, responseConstructID)})},
@@ -164,6 +160,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		graphEntity{conditionalID, entity(conditionalID, "00000000000000000000000000009052", []graphField{refField(0x9520, stringIsEmptyID), refField(0x9521, resultErrorID), refField(0x9522, resultOkID)})},
 		graphEntity{canonicalFunctionID, entity(canonicalFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, "Admit"), refsField(0x9111, []string{parameterID}), refField(0x9112, resultTypeID), refField(0x9113, conditionalID)})},
 	)
+	instances = append(instances, helperExpressions...)
 
 	resolutionIDs := []string{dependencyResolutionID, effectResolutionID}
 	if policy == "allow-adapted" {
@@ -337,9 +334,10 @@ func analyzeLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *type
 }
 
 type decisionExpressionProfile struct {
-	addLeft  int
-	addRight int
-	limit    int
+	addLeft    int
+	addRight   int
+	limit      int
+	expression *goExpression
 }
 
 func analyzeDecisionHelper(fn *ast.FuncDecl, signature *types.Signature, info *types.Info) (decisionExpressionProfile, error) {
@@ -367,6 +365,7 @@ func analyzeDecisionHelper(fn *ast.FuncDecl, signature *types.Signature, info *t
 	if !ok {
 		return profile, fmt.Errorf("target.unsupported_helper_expression")
 	}
+	profile.expression = expression
 	return profile, nil
 }
 

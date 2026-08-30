@@ -47,7 +47,9 @@ changed literal is preserved, and the derived Wasm returns that changed text.
 Parameter reads, integer addition, and less-or-equal are first analyzed into a
 reusable typed provider expression tree. Legacy execution lifts and target
 planning share that analyzer; each profile separately rejects tree shapes it
-does not yet support.
+does not yet support. Canonical helper expressions are emitted recursively from
+that tree. The allocator preserves the frozen v6 identities for the existing
+decision graph and uses normalized semantic paths for future nested nodes.
 
 The decision now lives in imported package `internal/policy`. A source-aware Go
 module importer type-checks that package directly from the tracked closure.
