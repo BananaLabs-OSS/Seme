@@ -9,7 +9,7 @@ import (
 // validated canonical RecordType graph. The remaining instructions are the
 // deliberately scoped quota target profile, not a source-language template.
 func module(layout applicationLayout) ([]byte, error) {
-	if layout.requestHeaderSize > 65535 || layout.responseHeaderSize > 65535 {
+	if layout.requestHeaderSize > 65535 || layout.responseHeaderSize > 65535 || len(layout.errorMessage) == 0 || len(layout.errorMessage) > 4096 {
 		return nil, fmt.Errorf("wasm.application_layout_too_large")
 	}
 	var wasm bytes.Buffer
@@ -58,6 +58,14 @@ func module(layout applicationLayout) ([]byte, error) {
 		code.Write(body)
 	}
 	section(&wasm, 10, code.Bytes())
+	var data bytes.Buffer
+	uleb(&data, 1)
+	data.WriteByte(0)
+	constI32(&data, 16384)
+	data.WriteByte(0x0b)
+	uleb(&data, uint64(len(layout.errorMessage)))
+	data.Write(layout.errorMessage)
+	section(&wasm, 11, data.Bytes())
 	return wasm.Bytes(), nil
 }
 
@@ -78,6 +86,21 @@ func providerBody(layout applicationLayout) []byte {
 	body.Write([]byte{0x20, 3, 0x41})
 	sleb(&body, int64(layout.requestHeaderSize))
 	body.Write([]byte{0x20, 7, 0x6a, 0x20, 8, 0x6a, 0x47, 0x04, 0x40, 0x41, 2, 0x0f, 0x0b})
+	// Empty subject selects canonical ResultError before the logging effect.
+	body.Write([]byte{0x20, 7, 0x45, 0x04, 0x40})
+	constI32(&body, 8192)
+	body.Write([]byte{0x41, 1, 0x3a, 0, 0})
+	constI32(&body, 8193)
+	constI32(&body, uint64(len(layout.errorMessage)))
+	body.Write([]byte{0x36, 0, 0})
+	constI32(&body, 8197)
+	constI32(&body, 16384)
+	constI32(&body, uint64(len(layout.errorMessage)))
+	body.Write([]byte{0xfc, 0x0a, 0, 0, 0x20, 4})
+	constI32(&body, 8192)
+	body.Write([]byte{0x36, 2, 0, 0x20, 5})
+	constI32(&body, uint64(5+len(layout.errorMessage)))
+	body.Write([]byte{0x36, 2, 0, 0x41, 0, 0x0f, 0x0b})
 	loadRecordI64(&body, 2, layout.requestOffsets[0])
 	loadRecordI64(&body, 2, layout.requestOffsets[1])
 	body.WriteByte(0x7c) // i64.add

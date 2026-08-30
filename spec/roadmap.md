@@ -111,14 +111,14 @@ enforcement complete for the scoped logging profile.
   executable only when adaptation policy permits it.
 - Exact-only policy produces impossible resolutions rather than dishonest
   exact fidelity.
-- A checked-plan backend emits a deterministic 388-byte Wasm reactor, executes it
+- A checked-plan backend emits a deterministic 471-byte Wasm reactor, executes it
   with the declared logging host import, and matches Go result/effect traces.
 - Core Execution v3 canonically represents the ordinary Go request/response
   records, field reads, and response construction; the backend derives its
   codec layout from those entities.
 - Core Execution v4 freezes canonical strings, bytes, and Result success/error
-  values. The Go provider and Application Wire v2 execute the bounded ResultOk
-  path; ResultError construction remains the next fallibility slice.
+  values. Core Execution v5 and the Go provider lift the source guard and
+  execute bounded ResultOk and ResultError paths through Application Wire v2.
 - Actual Pulp loads the same reactor once, processes repeated structured quota
   requests through `pulp_on_call`, returns responses, delivers every granted
   effect, and rejects the identical artifact when the capability is absent.

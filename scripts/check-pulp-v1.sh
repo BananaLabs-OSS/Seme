@@ -3,7 +3,7 @@ set -eu
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 pulp_repo=${PULP_REPO:-"$repo/../Pulp"}
-pulp_proof_commit=161c9dc
+pulp_proof_commit=c303c74
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-pulp-v1.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 
@@ -27,15 +27,17 @@ fi
     -request 40,2,50 \
     -request 40,20,50 \
     -request 9223372036854775807,1,0 \
+    -request 40,2,50, \
     > "$work/allowed.log" 2>&1
 rg -q '\[observability.log\] cell=seme-quota quota.accepted=true' "$work/allowed.log"
 rg -q '\[observability.log\] cell=seme-quota quota.accepted=false' "$work/allowed.log"
 test "$(rg -c '^\[observability.log\]' "$work/allowed.log")" -eq 3
 test "$(rg -o '"subject":"tenant-a"' "$work/allowed.log" | wc -l)" -eq 6
-test "$(rg -o '"evidence":"AQID"' "$work/allowed.log" | wc -l)" -eq 6
+test "$(rg -o '"evidence":"AQID"' "$work/allowed.log" | wc -l)" -eq 7
 rg -q '"current":40,"delta":2,"limit":50.*"accepted":true' "$work/allowed.log"
 rg -q '"current":40,"delta":20,"limit":50.*"accepted":false' "$work/allowed.log"
 rg -q '"current":9223372036854775807,"delta":1,"limit":0.*"accepted":true' "$work/allowed.log"
+rg -q '"subject":"".*"error":"subject required"' "$work/allowed.log"
 rg -q 'shutdown complete.*cell=seme-quota' "$work/allowed.log"
 
 # The identical artifact without the manifest grant receives Pulp's gated stub.
@@ -54,4 +56,4 @@ if rg -q '^\[observability.log\]' "$work/denied.log"; then
     exit 1
 fi
 
-echo "Pulp target v1: repeated structured requests ran with granted effect and trapped when denied"
+echo "Pulp target v1: ResultOk/ResultError requests ran with granted effect and trapped when denied"

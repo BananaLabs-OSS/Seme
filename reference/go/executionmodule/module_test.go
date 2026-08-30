@@ -40,8 +40,27 @@ func TestVersionFourExtendsVersionThree(t *testing.T) {
 	}
 }
 
+func TestVersionFiveExtendsVersionFour(t *testing.T) {
+	v4, err := Declarations(4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v5, err := Declarations(5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v5) != len(v4)+3 {
+		t.Fatalf("v5 schemas = %d, want %d", len(v5), len(v4)+3)
+	}
+	for index := range v4 {
+		if v4[index].ID != v5[index].ID || v4[index].Name != v5[index].Name {
+			t.Fatalf("v4 schema %d changed in v5", index)
+		}
+	}
+}
+
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(5); err == nil {
+	if _, err := Declarations(6); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }

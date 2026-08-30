@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 
-if (process.argv.length !== 6) {
-  console.error("usage: node wasm-target-runner.mjs MODULE.wasm CURRENT DELTA LIMIT");
+if (process.argv.length !== 6 && process.argv.length !== 7) {
+  console.error("usage: node wasm-target-runner.mjs MODULE.wasm CURRENT DELTA LIMIT [SUBJECT]");
   process.exit(64);
 }
 
@@ -15,7 +15,7 @@ const { instance } = await WebAssembly.instantiate(moduleBytes, {
     },
   },
 });
-const subject = new TextEncoder().encode("tenant-a");
+const subject = new TextEncoder().encode(process.argv[6] ?? "tenant-a");
 const evidence = Uint8Array.of(1, 2, 3);
 const requestLength = 32 + subject.length + evidence.length;
 const requestPtr = instance.exports.pulp_alloc(requestLength);
@@ -36,7 +36,15 @@ const status = instance.exports.pulp_on_call(namePtr, 14, requestPtr, requestLen
 if (status !== 0) throw new Error(`pulp_on_call returned ${status}`);
 const responsePtr = memory.getUint32(outPtr, true);
 const responseLen = memory.getUint32(outPtr + 4, true);
-if (memory.getUint8(responsePtr) !== 0) throw new Error("unexpected ResultError");
+const tag = memory.getUint8(responsePtr);
+if (tag === 1) {
+  const messageLength = memory.getUint32(responsePtr + 1, true);
+  if (responseLen !== 5 + messageLength) throw new Error(`invalid error length ${responseLen}`);
+  const error = new TextDecoder().decode(new Uint8Array(instance.exports.memory.buffer, responsePtr + 5, messageLength));
+  process.stdout.write(`${JSON.stringify({ error, events })}\n`);
+  process.exit(0);
+}
+if (tag !== 0) throw new Error(`unknown Result tag ${tag}`);
 const result = memory.getUint8(responsePtr + 1) !== 0;
 const subjectLength = memory.getUint32(responsePtr + 2, true);
 const evidenceLength = memory.getUint32(responsePtr + 6, true);

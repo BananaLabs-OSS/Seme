@@ -8,11 +8,12 @@ Contract plan. Its deliberately finite profile requires:
 - one `seme.pulp.log-v1` Boundary;
 - one canonical Core Function accepting an `AdmitRequest` RecordType;
 - ordered `Current`, `Delta`, and `Limit` signed modular-i64 fields;
-- body semantics exactly `request.Current + request.Delta <= request.Limit`;
+- body semantics selecting `ResultError` for an empty subject and otherwise
+  `ResultOk(request.Current + request.Delta <= request.Limit)`;
 - an `AdmitResponse` RecordType containing an `Accepted` Boolean field.
 
 The backend independently validates those canonical entities and emits a
-deterministic 388-byte WebAssembly Pulp reactor:
+deterministic 471-byte WebAssembly Pulp reactor:
 
 ```text
 import pulp.log_bool(i32) -> i32
@@ -37,11 +38,12 @@ target contract or artifact behavior.
 Application Wire v2 derives fixed-header offsets and variable field positions
 from those canonical record entities. Signed i64 fields are little-endian;
 strings use bounded UTF-8 bytes; byte sequences remain opaque; Result uses an
-explicit tag. The backend constructs Wasm loads, stores, length guards, and
+explicit tag and variant payloads. The backend constructs Wasm loads, stores, length guards, and
 copies from the derived layout.
 
 Conformance executes the artifact in Node's WebAssembly engine with a host
-adapter implementing the declared import. Five request/result/effect traces, including
-signed overflow, match the ordinary Go package. A valid exact-only plan rejects
+adapter implementing the declared import. Five success traces, the source error
+branch, and malformed-input rejection match the ordinary Go package and wire
+contract. A valid exact-only plan rejects
 before artifact production. The Node adapter proves the ABI and effect mapping;
 the same reactor is also executed by actual Pulp in the subsequent target proof.

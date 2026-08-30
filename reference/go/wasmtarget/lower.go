@@ -67,6 +67,7 @@ type applicationLayout struct {
 	requestHeaderSize  uint64
 	responseBoolOffset uint64
 	responseHeaderSize uint64
+	errorMessage       []byte
 }
 
 func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLayout, error) {
@@ -107,7 +108,7 @@ func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLay
 	errorType, errorErr := field(resultType, 0x9401)
 	responseType, responseOK := graph.Entities[okType.Reference]
 	errorTypeEntity, errorOK := graph.Entities[errorType.Reference]
-	if okErr != nil || errorErr != nil || !responseOK || responseType.Schema != identity(0x9030) || !errorOK || errorTypeEntity.Schema != identity(0x9040) {
+	if okErr != nil || errorErr != nil || !responseOK || responseType.Schema != identity(0x9030) || !errorOK || errorTypeEntity.Schema != identity(0x9030) {
 		return layout, fmt.Errorf("wasm.result_profile")
 	}
 	responseFields, err := validateRecord(graph, responseType, "AdmitResponse", []recordFieldProfile{{"Accepted", 0x9020, 1}, {"Subject", 0x9040, 4}, {"Evidence", 0x9041, 4}})
@@ -116,7 +117,53 @@ func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLay
 	}
 	layout.responseBoolOffset = 1 + responseFields[0].offset
 	layout.responseHeaderSize = 1 + responseFields[len(responseFields)-1].offset + responseFields[len(responseFields)-1].size
-	resultOk, err := referenced(graph, function, 0x9113, 0x9043)
+	errorFields, err := validateRecord(graph, errorTypeEntity, "AdmitError", []recordFieldProfile{{"Message", 0x9040, 4}})
+	if err != nil {
+		return layout, err
+	}
+	conditional, err := referenced(graph, function, 0x9113, 0x9052)
+	if err != nil {
+		return layout, err
+	}
+	condition, err := referenced(graph, conditional, 0x9520, 0x9051)
+	if err != nil {
+		return layout, err
+	}
+	conditionLeft, err := referenced(graph, condition, 0x9510, 0x9032)
+	if err != nil {
+		return layout, err
+	}
+	conditionField, conditionFieldErr := field(conditionLeft, 0x9321)
+	if conditionFieldErr != nil || conditionField.Reference != requestFields[3].entity.ID {
+		return layout, fmt.Errorf("wasm.error_condition_field")
+	}
+	resultError, err := referenced(graph, conditional, 0x9521, 0x9044)
+	if err != nil {
+		return layout, err
+	}
+	resultErrorType, typeErr := field(resultError, 0x9420)
+	if typeErr != nil || resultErrorType.Reference != resultType.ID {
+		return layout, fmt.Errorf("wasm.result_error_type")
+	}
+	errorConstruct, err := referenced(graph, resultError, 0x9421, 0x9033)
+	if err != nil {
+		return layout, err
+	}
+	errorConstructType, errorConstructTypeErr := field(errorConstruct, 0x9330)
+	errorValues, errorValuesErr := field(errorConstruct, 0x9331)
+	if errorConstructTypeErr != nil || errorValuesErr != nil || errorConstructType.Reference != errorTypeEntity.ID || len(errorValues.List) != len(errorFields) {
+		return layout, fmt.Errorf("wasm.error_construct")
+	}
+	errorLiteral, ok := graph.Entities[errorValues.List[0].Reference]
+	if !ok || errorLiteral.Schema != identity(0x9050) {
+		return layout, fmt.Errorf("wasm.error_literal")
+	}
+	errorMessage, err := field(errorLiteral, 0x9500)
+	if err != nil || len(errorMessage.Bytes) == 0 || len(errorMessage.Bytes) > 4096 {
+		return layout, fmt.Errorf("wasm.error_message")
+	}
+	layout.errorMessage = append([]byte(nil), errorMessage.Bytes...)
+	resultOk, err := referenced(graph, conditional, 0x9522, 0x9043)
 	if err != nil {
 		return layout, err
 	}
