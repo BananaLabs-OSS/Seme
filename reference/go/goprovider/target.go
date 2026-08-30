@@ -359,40 +359,15 @@ func analyzeDecisionHelper(fn *ast.FuncDecl, signature *types.Signature, info *t
 	if !ok || len(returned.Results) != 1 {
 		return profile, fmt.Errorf("target.unsupported_helper_return")
 	}
-	comparison, ok := ast.Unparen(returned.Results[0]).(*ast.BinaryExpr)
-	if !ok || (comparison.Op != token.LEQ && comparison.Op != token.GEQ) {
-		return profile, fmt.Errorf("target.unsupported_helper_expression")
-	}
-	additionExpression, limitExpression := comparison.X, comparison.Y
-	if comparison.Op == token.GEQ {
-		additionExpression, limitExpression = comparison.Y, comparison.X
-	}
-	addition, ok := ast.Unparen(additionExpression).(*ast.BinaryExpr)
-	if !ok || addition.Op != token.ADD {
-		return profile, fmt.Errorf("target.unsupported_helper_expression")
-	}
-	left, right, err := resolvedParameterOperands(addition.X, addition.Y, signature, info)
+	expression, err := analyzeGoExpression(returned.Results[0], signature, info)
 	if err != nil {
-		return profile, fmt.Errorf("target.unsupported_helper_addition")
+		return profile, fmt.Errorf("target.unsupported_helper_expression")
 	}
-	limit, err := resolvedParameterIndex(limitExpression, signature, info)
-	if err != nil || left == right || left == limit || right == limit {
-		return profile, fmt.Errorf("target.unsupported_helper_limit")
-	}
-	return decisionExpressionProfile{addLeft: left, addRight: right, limit: limit}, nil
-}
-
-func resolvedParameterIndex(expression ast.Expr, signature *types.Signature, info *types.Info) (int, error) {
-	identifier, ok := ast.Unparen(expression).(*ast.Ident)
+	profile, ok = matchAddLessEqualParameters(expression)
 	if !ok {
-		return 0, fmt.Errorf("target.not_parameter")
+		return profile, fmt.Errorf("target.unsupported_helper_expression")
 	}
-	for index := 0; index < signature.Params().Len(); index++ {
-		if info.Uses[identifier] == signature.Params().At(index) {
-			return index, nil
-		}
-	}
-	return 0, fmt.Errorf("target.not_parameter")
+	return profile, nil
 }
 
 func isEmptyStringComparison(expression *ast.BinaryExpr, parameter *types.Var, fieldName string, info *types.Info) bool {

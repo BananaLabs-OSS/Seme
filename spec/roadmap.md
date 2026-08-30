@@ -133,6 +133,10 @@ enforcement complete for the scoped logging profile.
   presentation-only parentheses, and normalizes equivalent comparison
   direction; Wasm local reads are derived from the canonical graph rather than
   assumed parameter positions.
+- A shared recursive Go expression analyzer now separates AST recognition from
+  profile matching for ParameterRead, IntegerAdd, and IntegerLessEqual. New
+  canonical expression forms extend this layer instead of adding another
+  fixture-specific parser.
 - Provider ingestion projects package-level function declarations across the
   module with package-qualified stable identities and deterministic evidence.
 - Actual Pulp loads the same reactor once, processes repeated structured quota
