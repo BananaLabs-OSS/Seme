@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version != 2 && version != 3 {
+	if version < 2 || version > 4 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -38,14 +38,28 @@ func Declarations(version int) ([]Schema, error) {
 		{0x9021, "IntegerLessEqual", []Field{field(0x9160, "integer_less_equal.left", 5, 0, 0), field(0x9161, "integer_less_equal.right", 5, 0, 0), field(0x9162, "integer_less_equal.operand_type", 5, 0x9010, 0)}},
 	}
 	if version == 3 {
+		schemas = append(schemas, recordSchemas()...)
+	}
+	if version == 4 {
+		schemas = append(schemas, recordSchemas()...)
 		schemas = append(schemas,
-			Schema{0x9030, "RecordType", []Field{field(0x9300, "record.name", 4, 0, 0), field(0x9301, "record.fields", 5, 0x9031, 2)}},
-			Schema{0x9031, "RecordField", []Field{field(0x9310, "record_field.name", 4, 0, 0), field(0x9311, "record_field.type", 5, 0, 0), field(0x9312, "record_field.index", 2, 0, 0)}},
-			Schema{0x9032, "FieldRead", []Field{field(0x9320, "field_read.record", 5, 0, 0), field(0x9321, "field_read.field", 5, 0x9031, 0)}},
-			Schema{0x9033, "RecordConstruct", []Field{field(0x9330, "record_construct.type", 5, 0x9030, 0), field(0x9331, "record_construct.values", 5, 0, 2)}},
+			Schema{0x9040, "StringType", nil},
+			Schema{0x9041, "BytesType", nil},
+			Schema{0x9042, "ResultType", []Field{field(0x9400, "result.ok_type", 5, 0, 0), field(0x9401, "result.error_type", 5, 0, 0)}},
+			Schema{0x9043, "ResultOk", []Field{field(0x9410, "result_ok.type", 5, 0x9042, 0), field(0x9411, "result_ok.value", 5, 0, 0)}},
+			Schema{0x9044, "ResultError", []Field{field(0x9420, "result_error.type", 5, 0x9042, 0), field(0x9421, "result_error.error", 5, 0, 0)}},
 		)
 	}
 	return schemas, nil
+}
+
+func recordSchemas() []Schema {
+	return []Schema{
+		{0x9030, "RecordType", []Field{field(0x9300, "record.name", 4, 0, 0), field(0x9301, "record.fields", 5, 0x9031, 2)}},
+		{0x9031, "RecordField", []Field{field(0x9310, "record_field.name", 4, 0, 0), field(0x9311, "record_field.type", 5, 0, 0), field(0x9312, "record_field.index", 2, 0, 0)}},
+		{0x9032, "FieldRead", []Field{field(0x9320, "field_read.record", 5, 0, 0), field(0x9321, "field_read.field", 5, 0x9031, 0)}},
+		{0x9033, "RecordConstruct", []Field{field(0x9330, "record_construct.type", 5, 0x9030, 0), field(0x9331, "record_construct.values", 5, 0, 2)}},
+	}
 }
 
 func Emit(output io.Writer, version int) error {
