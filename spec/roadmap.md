@@ -111,7 +111,7 @@ enforcement complete for the scoped logging profile.
   executable only when adaptation policy permits it.
 - Exact-only policy produces impossible resolutions rather than dishonest
   exact fidelity.
-- A checked-plan backend emits a deterministic 490-byte Wasm reactor, executes it
+- A checked-plan backend emits a deterministic 493-byte Wasm reactor, executes it
   with the declared logging host import, and matches Go result/effect traces.
 - Core Execution v3 canonically represents the ordinary Go request/response
   records, field reads, and response construction; the backend derives its

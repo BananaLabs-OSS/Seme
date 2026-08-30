@@ -1,0 +1,191 @@
+#!/bin/sh
+set -eu
+
+repo=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+
+usage() {
+    cat >&2 <<'EOF'
+Seme — semantic Go-to-Wasm application proof
+
+Usage:
+  ./seme doctor
+  ./seme build PROJECT [OUTPUT.wasm]
+  ./seme run PROJECT CURRENT DELTA LIMIT [SUBJECT]
+  ./seme inspect PROJECT
+  ./seme demo
+
+The current supported application profile is documented by `./seme doctor`.
+Build products and semantic evidence are written to PROJECT/.seme/.
+EOF
+    exit 64
+}
+
+fail() {
+    echo "seme: $*" >&2
+    exit 65
+}
+
+need() {
+    command -v "$1" >/dev/null 2>&1 || fail "missing required tool: $1"
+}
+
+doctor() {
+    failed=0
+    for tool in go node sha256sum; do
+        if command -v "$tool" >/dev/null 2>&1; then
+            printf 'ok   %-12s %s\n' "$tool" "$(command -v "$tool")"
+        else
+            printf 'FAIL %-12s missing\n' "$tool"
+            failed=1
+        fi
+    done
+    if [ -x "$repo/bootstrap/seme-k0-linux-amd64" ]; then
+        echo "ok   Seme kernel  frozen Linux-amd64 bootstrap"
+    else
+        echo "FAIL Seme kernel  missing executable"
+        failed=1
+    fi
+    cat <<'EOF'
+
+Supported application profile:
+  source       Go module, recursively tracked local packages
+  entry        Admit(AdmitRequest) (AdmitResponse, error)
+  helper       three int64 parameters -> bool
+  expressions  parameter reads, integer literals, addition, <= / normalized >=
+  data         int64, bool, string, []byte, records, Result success/error
+  effect       log.Printf adapted to observability.log
+  target       wasm32 Pulp reactor (also runnable with Node)
+
+Unsupported semantics fail explicitly; this is not general Go support.
+EOF
+    [ "$failed" -eq 0 ] || exit 65
+}
+
+build_project() {
+    project=$1
+    output=$2
+    [ -d "$project" ] || fail "project directory does not exist: $project"
+    [ -f "$project/go.mod" ] || fail "project has no go.mod: $project"
+    need go
+    need sha256sum
+
+    state="$project/.seme"
+    mkdir -p "$state"
+    mkdir -p "$(dirname -- "$output")"
+    work=$(mktemp -d "${TMPDIR:-/tmp}/seme-build.XXXXXX")
+    trap 'rm -rf "$work"' EXIT HUP INT TERM
+
+    echo "[1/6] validating native Go project"
+    (cd "$project" && go test ./...)
+    echo "[2/6] importing provider semantics"
+    (cd "$repo/reference/go" && go build -o "$work/go-provider" ./cmd/go-provider)
+    "$work/go-provider" ingest \
+        --project "$project" \
+        --module "$repo/modules/provider/v1/module.g1" \
+        --out "$work/import"
+
+    echo "[3/6] resolving target fidelity and capabilities"
+    (cd "$repo/reference/go" && go build -o "$work/target-plan" ./cmd/target-plan)
+    set +e
+    "$work/target-plan" \
+        --project "$project" \
+        --manifest "$work/import/manifest.json" \
+        --provider-graph "$work/import/program.g1" \
+        --foundation-module "$repo/modules/foundation/v1/module.g1" \
+        --execution-module "$repo/modules/execution/v7/module.g1" \
+        --package-module "$repo/modules/package/v1/module.g1" \
+        --target-module "$repo/modules/target/v1/module.g1" \
+        --policy allow-adapted \
+        --out "$work/plan.g1" 2> "$work/target-error.log"
+    target_status=$?
+    set -e
+    if [ "$target_status" -ne 0 ]; then
+        cat "$work/target-error.log" >&2
+        if grep -q 'target.unsupported_helper_expression' "$work/target-error.log"; then
+            echo "seme: supported helper expressions currently use int64 parameters, integer literals, addition, and <= or >=" >&2
+        elif grep -q 'target.unsupported_helper_signature' "$work/target-error.log"; then
+            echo "seme: supported helpers currently take three int64 values and return bool" >&2
+        elif grep -q 'target.unsupported_' "$work/target-error.log"; then
+            echo "seme: this Go program is outside the current seme-go-quota-v1 profile; run './seme doctor' for the supported surface" >&2
+        fi
+        exit "$target_status"
+    fi
+
+    echo "[4/6] compiling and validating canonical Seme plan"
+    "$repo/bootstrap/seme-k0-linux-amd64" \
+        "$repo/compiler/g1-compiler.k0" "$work/plan.g1" "$work/plan.seme"
+    "$repo/bootstrap/seme-k0-linux-amd64" \
+        "$repo/compiler/kernel-wire-validator.k0" "$work/plan.seme"
+    "$repo/bootstrap/seme-k0-linux-amd64" \
+        "$repo/modules/foundation/v1/validator.k0" "$work/plan.seme"
+
+    echo "[5/6] lowering canonical plan to WebAssembly"
+    (cd "$repo/reference/go" && go build -o "$work/wasm-lower" ./cmd/wasm-lower)
+    "$work/wasm-lower" "$work/plan.seme" "$work/application.wasm"
+
+    echo "[6/6] preserving semantic evidence"
+    cp "$work/import/manifest.json" "$state/manifest.json"
+    cp "$work/import/program.g1" "$state/provider.g1"
+    cp "$work/plan.g1" "$state/plan.g1"
+    cp "$work/plan.seme" "$state/plan.seme"
+    cp "$work/application.wasm" "$output"
+    digest=$(sha256sum "$output" | awk '{print $1}')
+    cat > "$state/report.json" <<EOF
+{
+  "status": "executable",
+  "source": "go",
+  "profile": "seme-go-quota-v1",
+  "execution_semantics": "core-execution-v7",
+  "target": "wasm32-pulp-v1",
+  "fidelity": "adapted",
+  "adaptations": ["go:log -> seme.pulp.log-v1"],
+  "artifact": "$output",
+  "sha256": "$digest"
+}
+EOF
+    echo
+    echo "Built: $output"
+    echo "Evidence: $state/report.json"
+    echo "Fidelity: adapted (Go logging -> capability-controlled Pulp logging)"
+}
+
+command=${1:-}
+case "$command" in
+doctor)
+    [ "$#" -eq 1 ] || usage
+    doctor
+    ;;
+inspect)
+    [ "$#" -eq 2 ] || usage
+    report="$2/.seme/report.json"
+    [ -f "$report" ] || fail "no successful build report at $report"
+    cat "$report"
+    ;;
+build)
+    [ "$#" -ge 2 ] && [ "$#" -le 3 ] || usage
+    project=$2
+    output=${3:-"$project/.seme/application.wasm"}
+    build_project "$project" "$output"
+    ;;
+run)
+    [ "$#" -ge 5 ] && [ "$#" -le 6 ] || usage
+    need node
+    project=$2
+    artifact="$project/.seme/application.wasm"
+    build_project "$project" "$artifact"
+    echo
+    echo "Executing independently from Go:"
+    if [ "$#" -eq 6 ]; then
+        node "$repo/reference/js/wasm-target-runner.mjs" "$artifact" "$3" "$4" "$5" "$6"
+    else
+        node "$repo/reference/js/wasm-target-runner.mjs" "$artifact" "$3" "$4" "$5"
+    fi
+    ;;
+demo)
+    [ "$#" -eq 1 ] || usage
+    "$0" run "$repo/fixtures/go-target-v1" 40 2 50 tenant-a
+    ;;
+*)
+    usage
+    ;;
+esac
