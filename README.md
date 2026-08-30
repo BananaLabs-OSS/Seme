@@ -22,6 +22,7 @@ Against an ordinary project matching the documented profile:
 ```sh
 ./seme build PATH/TO/PROJECT
 ./seme run PATH/TO/PROJECT 40 2 50 tenant-a
+./seme audit PATH/TO/PROJECTS
 ```
 
 The command runs the native tests, imports and validates canonical semantics,
