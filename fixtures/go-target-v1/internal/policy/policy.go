@@ -3,5 +3,5 @@
 package policy
 
 func WithinLimit(current, delta, limit int64) bool {
-	return limit >= delta+current
+	return (limit) >= ((delta) + (current))
 }

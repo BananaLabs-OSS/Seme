@@ -309,11 +309,11 @@ func (loader *sourceImporter) Import(path string) (*types.Package, error) {
 }
 
 func resolvedParameterOperands(leftExpression, rightExpression ast.Expr, signature *types.Signature, info *types.Info) (int, int, error) {
-	left, ok := leftExpression.(*ast.Ident)
+	left, ok := ast.Unparen(leftExpression).(*ast.Ident)
 	if !ok {
 		return -1, -1, fmt.Errorf("unsupported_left")
 	}
-	right, ok := rightExpression.(*ast.Ident)
+	right, ok := ast.Unparen(rightExpression).(*ast.Ident)
 	if !ok {
 		return -1, -1, fmt.Errorf("unsupported_right")
 	}
