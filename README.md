@@ -137,7 +137,7 @@ authority, while changed error text is preserved through Seme and Wasm.
 [`Core Execution v6`](spec/core-execution-v6.md) adds canonical direct calls;
 the Go helper and handler now lower to distinct Wasm functions.
 Provider revisions cover nested module sources, and target analysis resolves
-the real `Admit -> internal/policy.Allows` imported source call through the
+the real `Admit -> internal/policy.WithinLimit` imported source call through the
 same canonical call and Wasm layers.
 Equivalent helper comparison direction is normalized, while resolved
 parameter identities flow through canonical reads into generated Wasm locals.

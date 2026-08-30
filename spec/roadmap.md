@@ -127,7 +127,7 @@ enforcement complete for the scoped logging profile.
 - Go provider revisions cover recursive module sources, so imported-package
   edits cannot remain hidden behind a valid root-package manifest.
 - The application profile now resolves and lifts the real
-  `Admit -> internal/policy.Allows` package edge from source, preserving it
+  `Admit -> internal/policy.WithinLimit` package edge from source, preserving it
   as two canonical and two Wasm functions.
 - The helper expression profile resolves operand parameter identities and
   normalizes equivalent comparison direction; Wasm local reads are derived
