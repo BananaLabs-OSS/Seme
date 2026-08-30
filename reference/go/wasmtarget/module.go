@@ -9,7 +9,7 @@ import (
 // validated canonical RecordType graph. The remaining instructions are the
 // deliberately scoped quota target profile, not a source-language template.
 func module(layout applicationLayout) ([]byte, error) {
-	if layout.requestHeaderSize > 65535 || layout.responseHeaderSize > 65535 || len(layout.errorMessage) == 0 || len(layout.errorMessage) > 4096 {
+	if layout.requestHeaderSize > 65535 || layout.responseHeaderSize > 65535 || len(layout.helperInstructions) == 0 || len(layout.helperInstructions) > 4096 || len(layout.errorMessage) == 0 || len(layout.errorMessage) > 4096 {
 		return nil, fmt.Errorf("wasm.application_layout_too_large")
 	}
 	var wasm bytes.Buffer
@@ -72,7 +72,9 @@ func module(layout applicationLayout) ([]byte, error) {
 }
 
 func helperBody(layout applicationLayout) []byte {
-	return []byte{0, 0x20, layout.helperOperands[0], 0x20, layout.helperOperands[1], 0x7c, 0x20, layout.helperOperands[2], 0x57, 0x0b}
+	body := make([]byte, 1, len(layout.helperInstructions)+2)
+	body = append(body, layout.helperInstructions...)
+	return append(body, 0x0b)
 }
 
 func providerBody(layout applicationLayout) []byte {

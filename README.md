@@ -144,6 +144,8 @@ parameter identities flow through canonical reads into generated Wasm locals.
 The provider performs that work through a shared typed expression analyzer
 rather than separate AST recognizers for each proof command. Canonical emission
 walks the analyzed tree while preserving the existing frozen expression IDs.
+Wasm lowering now walks the resulting integer graph recursively with cycle and
+size guards instead of embedding the helper's instruction sequence.
 Imported package functions are also first-class provider declarations with
 stable package-qualified identities.
 

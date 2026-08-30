@@ -50,6 +50,9 @@ planning share that analyzer; each profile separately rejects tree shapes it
 does not yet support. Canonical helper expressions are emitted recursively from
 that tree. The allocator preserves the frozen v6 identities for the existing
 decision graph and uses normalized semantic paths for future nested nodes.
+Wasm lowering recursively compiles the canonical integer expression graph with
+explicit cycle and size guards; the module builder receives validated helper
+instructions and contains no quota-expression instruction template.
 
 The decision now lives in imported package `internal/policy`. A source-aware Go
 module importer type-checks that package directly from the tracked closure.

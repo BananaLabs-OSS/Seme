@@ -140,6 +140,9 @@ enforcement complete for the scoped logging profile.
 - Canonical helper-expression emission walks that analyzed tree recursively.
   Frozen v6 expression identities remain stable; additional nested nodes use
   deterministic normalized semantic paths rather than source offsets.
+- Wasm helper lowering recursively compiles the canonical integer graph with a
+  node budget and cycle detection. The module builder receives validated
+  instructions instead of embedding the quota expression.
 - Provider ingestion projects package-level function declarations across the
   module with package-qualified stable identities and deterministic evidence.
 - Actual Pulp loads the same reactor once, processes repeated structured quota
