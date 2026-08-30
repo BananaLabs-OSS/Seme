@@ -125,6 +125,10 @@ milestone is [`Application Proof v1`](spec/application-proof-v1.md). Run
 `./scripts/check-wasm-v1.sh` and `./scripts/check-pulp-v1.sh`, or show the whole
 runtime slice with `./scripts/demo-application-v1.sh`.
 
+[`Core Execution v4`](spec/core-execution-v4.md) is the next additive semantic
+floor. It defines target-independent strings, byte sequences, and explicit
+`Result<Ok, Error>` values while preserving frozen v2 and v3 byte-for-byte.
+
 Above frozen Kernel v1, Semantic Foundation v1 and Patch Module v1 define the
 first versioned schema and transactional-edit contracts. Their checked module
 artifacts and differential conformance gate are under `modules/`, `reference/`,

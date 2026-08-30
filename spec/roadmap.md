@@ -116,6 +116,9 @@ enforcement complete for the scoped logging profile.
 - Core Execution v3 canonically represents the ordinary Go request/response
   records, field reads, and response construction; the backend derives its
   fixed-width codec layout from those entities.
+- Core Execution v4 freezes canonical strings, bytes, and Result success/error
+  values. Provider lifting and Application Wire v2 execution remain the next
+  active slice.
 - Actual Pulp loads the same reactor once, processes repeated structured quota
   requests through `pulp_on_call`, returns responses, delivers every granted
   effect, and rejects the identical artifact when the capability is absent.
