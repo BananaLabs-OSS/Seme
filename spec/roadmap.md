@@ -129,6 +129,8 @@ enforcement complete for the scoped logging profile.
 - The application profile now resolves and lifts the real
   `Admit -> internal/policy.WithinLimit` package edge from source, preserving it
   as two canonical and two Wasm functions.
+- Provider ingestion projects package-level function declarations across the
+  module with package-qualified stable identities and deterministic evidence.
 - Actual Pulp loads the same reactor once, processes repeated structured quota
   requests through `pulp_on_call`, returns responses, delivers every granted
   effect, and rejects the identical artifact when the capability is absent.

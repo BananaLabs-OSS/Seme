@@ -134,8 +134,8 @@ func Ingest(options IngestOptions) (Manifest, string, error) {
 		Identity: providerID, ImplementationVersion: "1", Language: "go",
 		LanguageVersion: strings.TrimPrefix(goVersion, "go"), Toolchain: goVersion,
 		Target: strings.Join(strings.Fields(target), "/"), Environment: "ordinary-module",
-		Supported:  []string{"package-level-functions", "resolved-function-occurrences", "identity-preserving-rename", "module-source-closure-revisions"},
-		Exclusions: []string{"cgo", "generated-files", "build-tag-variants", "methods", "multi-package-projection", "native-concurrent-edits"},
+		Supported:  []string{"package-level-functions", "resolved-function-occurrences", "identity-preserving-rename", "module-source-closure-revisions", "multi-package-declarations"},
+		Exclusions: []string{"cgo", "generated-files", "build-tag-variants", "methods", "native-concurrent-edits"},
 	}
 	manifest := Manifest{Version: ManifestVersion, Contract: "provider-v1", Provider: providerID, Profile: profile, Revision: revision, Files: files, Declarations: decls}
 	for _, file := range files {
@@ -354,6 +354,38 @@ func ReadProjectionReport(path string) (ProjectionReport, error) {
 }
 
 func declarations(project, packagePath string, files []NativeFile, sources map[string][]byte, prior *Manifest) ([]Declaration, error) {
+	directories := map[string]bool{"": true}
+	for _, file := range files {
+		if strings.HasSuffix(file.Path, ".go") && !strings.HasSuffix(file.Path, "_test.go") {
+			directory := filepath.ToSlash(filepath.Dir(file.Path))
+			if directory == "." {
+				directory = ""
+			}
+			directories[directory] = true
+		}
+	}
+	ordered := make([]string, 0, len(directories))
+	for directory := range directories {
+		ordered = append(ordered, directory)
+	}
+	sort.Strings(ordered)
+	var out []Declaration
+	for _, directory := range ordered {
+		path := packagePath
+		if directory != "" {
+			path += "/" + directory
+		}
+		items, err := declarationsForPackage(project, path, directory, files, sources, prior)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, nil
+}
+
+func declarationsForPackage(project, packagePath, directory string, files []NativeFile, sources map[string][]byte, prior *Manifest) ([]Declaration, error) {
 	fset := token.NewFileSet()
 	parsed := make([]*ast.File, 0, len(files))
 	pathFor := map[*ast.File]string{}
@@ -361,10 +393,11 @@ func declarations(project, packagePath string, files []NativeFile, sources map[s
 		if !strings.HasSuffix(file.Path, ".go") || strings.HasSuffix(file.Path, "_test.go") {
 			continue
 		}
-		// Provider Contract v1 projects declarations from the selected root
-		// package. Nested package sources are still revision-tracked so imported
-		// semantics cannot change behind stale evidence.
-		if strings.Contains(file.Path, "/") {
+		fileDirectory := filepath.ToSlash(filepath.Dir(file.Path))
+		if fileDirectory == "." {
+			fileDirectory = ""
+		}
+		if fileDirectory != directory {
 			continue
 		}
 		parsedFile, err := parser.ParseFile(fset, filepath.Join(project, filepath.FromSlash(file.Path)), sources[file.Path], parser.SkipObjectResolution)
@@ -375,7 +408,8 @@ func declarations(project, packagePath string, files []NativeFile, sources map[s
 		pathFor[parsedFile] = file.Path
 	}
 	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
-	config := types.Config{Importer: newSourceImporter(project, Manifest{Files: files}, packagePath)}
+	rootPackage := strings.TrimSuffix(packagePath, "/"+directory)
+	config := types.Config{Importer: newSourceImporter(project, Manifest{Files: files}, rootPackage)}
 	pkg, err := config.Check(packagePath, fset, parsed, info)
 	if err != nil {
 		return nil, err

@@ -70,6 +70,7 @@ cp -R "$repo/fixtures/go-target-v1" "$work/project"
 "$go_provider" ingest --project "$work/project" --module "$provider_module" --out "$work/import-repeat"
 cmp "$work/import/manifest.json" "$work/import-repeat/manifest.json"
 cmp "$work/import/program.g1" "$work/import-repeat/program.g1"
+rg -q '"qualified_name": "example.com/seme-quota-log-proof/internal/policy.WithinLimit"' "$work/import/manifest.json"
 
 emit_plan() {
     project=$1
