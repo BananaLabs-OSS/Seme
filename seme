@@ -12,6 +12,7 @@ Usage:
   ./seme build PROJECT [OUTPUT.wasm]
   ./seme run PROJECT CURRENT DELTA LIMIT [SUBJECT]
   ./seme inspect PROJECT
+  ./seme audit PROJECTS_ROOT [OUTPUT.json]
   ./seme demo
 
 The current supported application profile is documented by `./seme doctor`.
@@ -160,6 +161,18 @@ inspect)
     report="$2/.seme/report.json"
     [ -f "$report" ] || fail "no successful build report at $report"
     cat "$report"
+    ;;
+audit)
+    [ "$#" -ge 2 ] && [ "$#" -le 3 ] || usage
+    need go
+    root=$2
+    output=${3:-"$root/.seme/portfolio.json"}
+    work=$(mktemp -d "${TMPDIR:-/tmp}/seme-audit.XXXXXX")
+    trap 'rm -rf "$work"' EXIT HUP INT TERM
+    (cd "$repo/reference/go" && go build -o "$work/project-audit" ./cmd/project-audit)
+    "$work/project-audit" "$root" "$output"
+    echo "Portfolio evidence: $output"
+    echo "Fidelity 'native' means Seme accounts for the project through a runtime island; it does not mean full lifting."
     ;;
 build)
     [ "$#" -ge 2 ] && [ "$#" -le 3 ] || usage

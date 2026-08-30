@@ -8,6 +8,7 @@ bounded Go application profile.
 ./seme build PATH/TO/GO/PROJECT [OUTPUT.wasm]
 ./seme run PATH/TO/GO/PROJECT CURRENT DELTA LIMIT [SUBJECT]
 ./seme inspect PATH/TO/GO/PROJECT
+./seme audit PATH/TO/PROJECTS [OUTPUT.json]
 ./seme demo
 ```
 
@@ -25,6 +26,11 @@ it to Wasm. It preserves these inspectable products under `PROJECT/.seme/`:
 rewritten. Unsupported programs exit with status 65 and retain the stable
 machine diagnostic while adding a human explanation for common profile gaps.
 `inspect` prints the most recent successful build's machine-readable report.
+
+`audit` discovers immediate project directories and build markers up to two
+levels below them. Its JSON report records languages, module/build files,
+available providers, execution strategy, and current fidelity without claiming
+that native-island projects are fully lifted.
 
 This CLI is usable for `seme-go-quota-v1`; it does not claim general Go support.
 `./seme doctor` prints the exact supported surface.

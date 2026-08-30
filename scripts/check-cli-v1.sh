@@ -9,6 +9,13 @@ cp -R "$repo/fixtures/go-target-v1" "$work/project"
 cp -R "$work/project" "$work/original"
 
 "$repo/seme" doctor > "$work/doctor.txt"
+mkdir -p "$work/portfolio/go-project" "$work/portfolio/web-project"
+cp "$work/project/go.mod" "$work/portfolio/go-project/go.mod"
+printf '{"scripts":{}}\n' > "$work/portfolio/web-project/package.json"
+"$repo/seme" audit "$work/portfolio" > "$work/audit.txt"
+rg -q '"total": 2' "$work/portfolio/.seme/portfolio.json"
+rg -q '"go_provider_ready": 1' "$work/portfolio/.seme/portfolio.json"
+rg -q '"provider_required": 1' "$work/portfolio/.seme/portfolio.json"
 "$repo/seme" build "$work/project" "$work/output/application.wasm" > "$work/build.txt"
 
 test -s "$work/output/application.wasm"
