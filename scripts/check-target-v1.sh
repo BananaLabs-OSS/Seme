@@ -127,6 +127,13 @@ cp -R "$work/project" "$work/stale"
 printf '\n// concurrent native edit\n' >> "$work/stale/quota.go"
 expect_status 65 emit_plan "$work/stale" "$work/import/manifest.json" "$work/import/program.g1" allow-adapted "$work/stale.g1"
 
+# Nested package sources participate in the provider revision even before
+# Provider Contract v1 projects their declarations. Dependency edits therefore
+# cannot reuse stale semantic evidence.
+cp -R "$work/project" "$work/stale-dependency"
+printf '\n// concurrent dependency edit\n' >> "$work/stale-dependency/internal/policy/policy.go"
+expect_status 65 emit_plan "$work/stale-dependency" "$work/import/manifest.json" "$work/import/program.g1" allow-adapted "$work/stale-dependency.g1"
+
 # Re-ingested source with a changed observable message remains valid Go but is
 # outside the exact target-analysis profile and must reject rather than receive
 # guessed logging semantics.
@@ -146,6 +153,7 @@ cmp "$work/original/go.mod" "$work/project/go.mod"
 cmp "$work/original/quota.go" "$work/project/quota.go"
 cmp "$work/original/quota_test.go" "$work/project/quota_test.go"
 cmp "$work/original/policy.go" "$work/project/policy.go"
+cmp "$work/original/internal/policy/policy.go" "$work/project/internal/policy/policy.go"
 cmp "$work/original/README.md" "$work/project/README.md"
 
 echo "Target Contract v1: generalized Go profile analysis and honest Wasm/Pulp planning passed"

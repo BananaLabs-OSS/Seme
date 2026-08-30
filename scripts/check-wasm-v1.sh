@@ -130,6 +130,7 @@ cmp "$work/original/go.mod" "$work/project/go.mod"
 cmp "$work/original/quota.go" "$work/project/quota.go"
 cmp "$work/original/quota_test.go" "$work/project/quota_test.go"
 cmp "$work/original/policy.go" "$work/project/policy.go"
+cmp "$work/original/internal/policy/policy.go" "$work/project/internal/policy/policy.go"
 cmp "$work/original/README.md" "$work/project/README.md"
 
 echo "Wasm target v1: source-derived Result variants lowered and executed with adapted logging effect"

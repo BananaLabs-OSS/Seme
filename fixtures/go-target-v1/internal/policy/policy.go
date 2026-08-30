@@ -1,0 +1,7 @@
+// Package policy is the imported-package boundary used by the next lifting
+// stage. Provider v1 already revision-tracks it before projecting its symbols.
+package policy
+
+func WithinLimit(current, delta, limit int64) bool {
+	return current+delta <= limit
+}

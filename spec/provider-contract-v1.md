@@ -155,3 +155,9 @@ Run `./scripts/check-provider-v1.sh` for deterministic import, canonical
 Kernel/Foundation validation, Patch execution, fail-closed stale/uncommitted
 cases, native tests, re-import, identity recovery, semantic equivalence, opaque
 preservation, and canonical projection-report evidence.
+
+The native revision covers the recursive module source closure: root and
+nested `.go` files plus `go.mod` and `go.sum`, excluding `.git` and `vendor`.
+V1 still projects declarations only from the selected root package, but any
+nested-package edit invalidates prior evidence. This is the integrity floor for
+lifting imported declarations next.

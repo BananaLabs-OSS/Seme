@@ -179,6 +179,9 @@ func resolveFunction(project string, manifest Manifest, functionName string) (*D
 		if !strings.HasSuffix(file.Path, ".go") || strings.HasSuffix(file.Path, "_test.go") {
 			continue
 		}
+		if strings.Contains(file.Path, "/") {
+			continue
+		}
 		node, err := parser.ParseFile(fset, filepath.Join(project, filepath.FromSlash(file.Path)), nil, parser.SkipObjectResolution)
 		if err != nil {
 			return nil, nil, nil, nil, err
