@@ -1,7 +1,10 @@
 // Package quota is an ordinary Go package with an observable logging effect.
 package quota
 
-import "log"
+import (
+	"example.com/seme-quota-log-proof/internal/policy"
+	"log"
+)
 
 // AdmitRequest is the application boundary consumed by Admit.
 type AdmitRequest struct {
@@ -29,7 +32,7 @@ func Admit(request AdmitRequest) (AdmitResponse, error) {
 	if request.Subject == "" {
 		return AdmitResponse{}, AdmitError{Message: "subject required"}
 	}
-	accepted := WithinLimit(request.Current, request.Delta, request.Limit)
+	accepted := policy.WithinLimit(request.Current, request.Delta, request.Limit)
 	log.Printf("quota.accepted=%t", accepted)
 	return AdmitResponse{
 		Evidence: request.Evidence,

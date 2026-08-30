@@ -173,13 +173,29 @@ func resolveFunction(project string, manifest Manifest, functionName string) (*D
 	if declaration == nil {
 		return nil, nil, nil, nil, fmt.Errorf("provider.execution_unknown_function:%s", functionName)
 	}
+	return resolvePackageFunction(project, manifest, packagePathOf(declaration.NativeKey), functionName, declaration)
+}
+
+func resolveImportedFunction(project string, manifest Manifest, packagePath, functionName string) (*Declaration, *ast.FuncDecl, *types.Signature, *types.Info, error) {
+	declaration := &Declaration{ID: stableID("declaration", packagePath+"\x00func\x00"+functionName), Name: functionName, NativeKey: packagePath + "\x00func\x00" + functionName}
+	return resolvePackageFunction(project, manifest, packagePath, functionName, declaration)
+}
+
+func resolvePackageFunction(project string, manifest Manifest, packagePath, functionName string, declaration *Declaration) (*Declaration, *ast.FuncDecl, *types.Signature, *types.Info, error) {
 	fset := token.NewFileSet()
 	var parsed []*ast.File
+	rootPackage := packagePathOf(manifest.Declarations[0].NativeKey)
+	relativePackage := strings.TrimPrefix(packagePath, rootPackage)
+	relativePackage = strings.TrimPrefix(relativePackage, "/")
 	for _, file := range manifest.Files {
 		if !strings.HasSuffix(file.Path, ".go") || strings.HasSuffix(file.Path, "_test.go") {
 			continue
 		}
-		if strings.Contains(file.Path, "/") {
+		directory := filepath.ToSlash(filepath.Dir(file.Path))
+		if directory == "." {
+			directory = ""
+		}
+		if directory != relativePackage {
 			continue
 		}
 		node, err := parser.ParseFile(fset, filepath.Join(project, filepath.FromSlash(file.Path)), nil, parser.SkipObjectResolution)
@@ -189,8 +205,8 @@ func resolveFunction(project string, manifest Manifest, functionName string) (*D
 		parsed = append(parsed, node)
 	}
 	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
-	config := types.Config{Importer: importer.Default()}
-	pkg, err := config.Check(packagePathOf(declaration.NativeKey), fset, parsed, info)
+	config := types.Config{Importer: newSourceImporter(project, manifest, rootPackage)}
+	pkg, err := config.Check(packagePath, fset, parsed, info)
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -217,6 +233,61 @@ func resolveFunction(project string, manifest Manifest, functionName string) (*D
 		return nil, nil, nil, nil, fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 	}
 	return declaration, fn, signature, info, nil
+}
+
+type sourceImporter struct {
+	project, root string
+	manifest      Manifest
+	standard      types.Importer
+	cache         map[string]*types.Package
+	loading       map[string]bool
+}
+
+func newSourceImporter(project string, manifest Manifest, root string) *sourceImporter {
+	return &sourceImporter{project: project, root: root, manifest: manifest, standard: importer.Default(), cache: map[string]*types.Package{}, loading: map[string]bool{}}
+}
+
+func (loader *sourceImporter) Import(path string) (*types.Package, error) {
+	if cached := loader.cache[path]; cached != nil {
+		return cached, nil
+	}
+	if loader.loading[path] {
+		return nil, fmt.Errorf("provider.import_cycle:%s", path)
+	}
+	if path != loader.root && !strings.HasPrefix(path, loader.root+"/") {
+		return loader.standard.Import(path)
+	}
+	directory := strings.TrimPrefix(strings.TrimPrefix(path, loader.root), "/")
+	fset := token.NewFileSet()
+	var parsed []*ast.File
+	for _, file := range loader.manifest.Files {
+		if !strings.HasSuffix(file.Path, ".go") || strings.HasSuffix(file.Path, "_test.go") {
+			continue
+		}
+		fileDirectory := filepath.ToSlash(filepath.Dir(file.Path))
+		if fileDirectory == "." {
+			fileDirectory = ""
+		}
+		if fileDirectory != directory {
+			continue
+		}
+		node, err := parser.ParseFile(fset, filepath.Join(loader.project, filepath.FromSlash(file.Path)), nil, parser.SkipObjectResolution)
+		if err != nil {
+			return nil, err
+		}
+		parsed = append(parsed, node)
+	}
+	if len(parsed) == 0 {
+		return nil, fmt.Errorf("provider.imported_package_missing:%s", path)
+	}
+	loader.loading[path] = true
+	defer delete(loader.loading, path)
+	pkg, err := (&types.Config{Importer: loader}).Check(path, fset, parsed, nil)
+	if err != nil {
+		return nil, err
+	}
+	loader.cache[path] = pkg
+	return pkg, nil
 }
 
 func resolvedParameterOperands(leftExpression, rightExpression ast.Expr, signature *types.Signature, info *types.Info) (int, int, error) {

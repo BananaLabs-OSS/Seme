@@ -136,8 +136,9 @@ names, comparison spelling, and keyed-field source order are not semantic
 authority, while changed error text is preserved through Seme and Wasm.
 [`Core Execution v6`](spec/core-execution-v6.md) adds canonical direct calls;
 the Go helper and handler now lower to distinct Wasm functions.
-Provider revisions also cover nested module sources, establishing stale-evidence
-protection for the upcoming imported-package declaration lift.
+Provider revisions cover nested module sources, and target analysis resolves
+the real `Admit -> internal/policy.WithinLimit` imported source call through the
+same canonical call and Wasm layers.
 
 Above frozen Kernel v1, Semantic Foundation v1 and Patch Module v1 define the
 first versioned schema and transactional-edit contracts. Their checked module

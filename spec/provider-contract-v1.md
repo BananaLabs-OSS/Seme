@@ -159,5 +159,6 @@ preservation, and canonical projection-report evidence.
 The native revision covers the recursive module source closure: root and
 nested `.go` files plus `go.mod` and `go.sum`, excluding `.git` and `vendor`.
 V1 still projects declarations only from the selected root package, but any
-nested-package edit invalidates prior evidence. This is the integrity floor for
-lifting imported declarations next.
+nested-package edit invalidates prior evidence. Target analysis can resolve and
+type-check a directly imported local helper from this closure; general imported
+declaration projection remains the next provider-contract expansion.

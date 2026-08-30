@@ -49,7 +49,7 @@ func main() {
 	plans := bySchema(graph, 0xc014)
 	boundaries := bySchema(graph, 0xc015)
 	must(len(packages) == 1 && len(dependencies) == 1 && len(mappings) == 1 && len(interfaces) == 1, "package requirement cardinality mismatch")
-	must(len(providerDeclarations) == 2 && len(canonicalFunctions) == 2 && len(functionCalls) == 1, "source/canonical call graph cardinality mismatch")
+	must(len(providerDeclarations) == 1 && len(canonicalFunctions) == 2 && len(functionCalls) == 1, "source/canonical call graph cardinality mismatch")
 	must(len(recordTypes) == 3 && len(recordFields) == 9 && len(fieldReads) == 5 && len(recordConstructs) == 2, "record semantics cardinality mismatch")
 	must(len(stringTypes) == 1 && len(bytesTypes) == 1 && len(resultTypes) == 1 && len(resultOKs) == 1 && len(resultErrors) == 1, "variable/result semantics cardinality mismatch")
 	must(len(stringLiterals) == 1 && len(stringIsEmpty) == 1 && len(conditionals) == 1, "conditional semantics cardinality mismatch")
