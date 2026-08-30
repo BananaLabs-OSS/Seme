@@ -31,12 +31,12 @@ func LiftAdd(project string, manifest Manifest, moduleG1 []byte, functionName st
 	if !ok || len(ret.Results) != 1 {
 		return "", "", fmt.Errorf("provider.execution_unsupported_return:%s", functionName)
 	}
-	add, ok := ret.Results[0].(*ast.BinaryExpr)
-	if !ok || add.Op != token.ADD {
+	expression, err := analyzeGoExpression(ret.Results[0], signature, info)
+	if err != nil {
 		return "", "", fmt.Errorf("provider.execution_unsupported_expression:%s", functionName)
 	}
-	leftIndex, rightIndex, err := resolvedParameterOperands(add.X, add.Y, signature, info)
-	if err != nil {
+	leftIndex, rightIndex, ok := matchAddParameters(expression)
+	if !ok {
 		return "", "", fmt.Errorf("provider.execution_nonparameter_add:%s", functionName)
 	}
 	typeID := stableID("execution", "type", "i64")
@@ -74,35 +74,15 @@ func LiftAdmit(project string, manifest Manifest, moduleG1 []byte, functionName 
 	if !ok || len(ret.Results) != 1 {
 		return "", "", fmt.Errorf("provider.execution_unsupported_return:%s", functionName)
 	}
-	comparison, ok := ret.Results[0].(*ast.BinaryExpr)
-	if !ok || comparison.Op != token.LEQ {
+	expression, err := analyzeGoExpression(ret.Results[0], signature, info)
+	if err != nil {
 		return "", "", fmt.Errorf("provider.execution_unsupported_expression:%s", functionName)
 	}
-	addition, ok := comparison.X.(*ast.BinaryExpr)
-	if !ok || addition.Op != token.ADD {
-		return "", "", fmt.Errorf("provider.execution_unsupported_left:%s", functionName)
-	}
-	addLeft, addRight, err := resolvedParameterOperands(addition.X, addition.Y, signature, info)
-	if err != nil {
-		return "", "", fmt.Errorf("provider.execution_nonparameter_add:%s", functionName)
-	}
-	limit, ok := comparison.Y.(*ast.Ident)
+	profile, ok := matchAddLessEqualParameters(expression)
 	if !ok {
-		return "", "", fmt.Errorf("provider.execution_unsupported_right:%s", functionName)
+		return "", "", fmt.Errorf("provider.execution_unsupported_expression:%s", functionName)
 	}
-	limitVar, ok := info.Uses[limit].(*types.Var)
-	if !ok {
-		return "", "", fmt.Errorf("provider.execution_unresolved_right:%s", functionName)
-	}
-	limitIndex := -1
-	for i := 0; i < signature.Params().Len(); i++ {
-		if signature.Params().At(i) == limitVar {
-			limitIndex = i
-		}
-	}
-	if limitIndex < 0 {
-		return "", "", fmt.Errorf("provider.execution_nonparameter_compare:%s", functionName)
-	}
+	addLeft, addRight, limitIndex := profile.addLeft, profile.addRight, profile.limit
 
 	integerID := stableID("execution", "type", "i64")
 	booleanID := stableID("execution", "type", "bool")
@@ -308,38 +288,6 @@ func (loader *sourceImporter) Import(path string) (*types.Package, error) {
 	return pkg, nil
 }
 
-func resolvedParameterOperands(leftExpression, rightExpression ast.Expr, signature *types.Signature, info *types.Info) (int, int, error) {
-	left, ok := ast.Unparen(leftExpression).(*ast.Ident)
-	if !ok {
-		return -1, -1, fmt.Errorf("unsupported_left")
-	}
-	right, ok := ast.Unparen(rightExpression).(*ast.Ident)
-	if !ok {
-		return -1, -1, fmt.Errorf("unsupported_right")
-	}
-	leftVar, ok := info.Uses[left].(*types.Var)
-	if !ok {
-		return -1, -1, fmt.Errorf("unresolved_left")
-	}
-	rightVar, ok := info.Uses[right].(*types.Var)
-	if !ok {
-		return -1, -1, fmt.Errorf("unresolved_right")
-	}
-	leftIndex, rightIndex := -1, -1
-	for i := 0; i < signature.Params().Len(); i++ {
-		parameter := signature.Params().At(i)
-		if parameter == leftVar {
-			leftIndex = i
-		}
-		if parameter == rightVar {
-			rightIndex = i
-		}
-	}
-	if leftIndex < 0 || rightIndex < 0 {
-		return -1, -1, fmt.Errorf("nonparameter")
-	}
-	return leftIndex, rightIndex, nil
-}
 func isInt64(value types.Type) bool {
 	basic, ok := value.Underlying().(*types.Basic)
 	return ok && basic.Kind() == types.Int64

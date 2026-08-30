@@ -141,6 +141,8 @@ the real `Admit -> internal/policy.WithinLimit` imported source call through the
 same canonical call and Wasm layers.
 Equivalent helper comparison direction is normalized, while resolved
 parameter identities flow through canonical reads into generated Wasm locals.
+The provider performs that work through a shared typed expression analyzer
+rather than separate AST recognizers for each proof command.
 Imported package functions are also first-class provider declarations with
 stable package-qualified identities.
 

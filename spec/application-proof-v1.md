@@ -44,6 +44,10 @@ than tied to the fixture's spelling. Conformance reverses the empty-string
 comparison, renames the Boolean local, reorders keyed response fields, and
 changes the error literal. Equivalent presentation choices still lift, the
 changed literal is preserved, and the derived Wasm returns that changed text.
+Parameter reads, integer addition, and less-or-equal are first analyzed into a
+reusable typed provider expression tree. Legacy execution lifts and target
+planning share that analyzer; each profile separately rejects tree shapes it
+does not yet support.
 
 The decision now lives in imported package `internal/policy`. A source-aware Go
 module importer type-checks that package directly from the tracked closure.
