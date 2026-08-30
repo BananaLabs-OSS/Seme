@@ -49,7 +49,10 @@ The decision now lives in imported package `internal/policy`. A source-aware Go
 module importer type-checks that package directly from the tracked closure.
 Core Execution v6 retains `Admit` and `policy.Allows` as separate canonical
 Functions connected by `FunctionCall`; lowering emits two Wasm functions and a
-real call instruction.
+real call instruction. The helper expression analyzer also resolves parameter
+identities and normalizes `sum <= limit` with `limit >= sum`; the canonical
+addition operands and limit read, rather than fixed local indexes, drive the
+helper's Wasm body.
 
 This milestone is usable as a bounded technical demo. Input is still driven by
 the proof deployment instead of HTTP, Application Wire v2 supports only its

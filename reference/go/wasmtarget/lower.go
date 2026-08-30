@@ -68,17 +68,20 @@ func Lower(plan wire.Envelope) ([]byte, error) {
 	if entry.ID == (wire.ID{}) || helper.ID == (wire.ID{}) {
 		return nil, fmt.Errorf("wasm.function_names")
 	}
-	if err := validateDecisionHelper(plan, helper); err != nil {
+	helperOperands, err := validateDecisionHelper(plan, helper)
+	if err != nil {
 		return nil, err
 	}
 	layout, err := validateFunction(plan, entry, helper)
 	if err != nil {
 		return nil, err
 	}
+	layout.helperOperands = helperOperands
 	return module(layout)
 }
 
 type applicationLayout struct {
+	helperOperands     [3]byte
 	requestOffsets     [3]uint64
 	requestHeaderSize  uint64
 	responseBoolOffset uint64
@@ -236,57 +239,70 @@ func validateFunction(graph wire.Envelope, function, helper wire.Entity) (applic
 	return layout, nil
 }
 
-func validateDecisionHelper(graph wire.Envelope, function wire.Entity) error {
+func validateDecisionHelper(graph wire.Envelope, function wire.Entity) ([3]byte, error) {
+	var operands [3]byte
 	parameters, err := field(function, 0x9111)
 	if err != nil || len(parameters.List) != 3 {
-		return fmt.Errorf("wasm.helper_parameters")
+		return operands, fmt.Errorf("wasm.helper_parameters")
 	}
 	parameterIDs := make([]wire.ID, 3)
 	for index, reference := range parameters.List {
 		parameter, ok := graph.Entities[reference.Reference]
 		if !ok || parameter.Schema != identity(0x9012) {
-			return fmt.Errorf("wasm.helper_parameter")
+			return operands, fmt.Errorf("wasm.helper_parameter")
 		}
 		position, positionErr := field(parameter, 0x9122)
 		if positionErr != nil || position.Unsigned != uint64(index) || validateIntegerTypeReference(graph, parameter, 0x9121) != nil {
-			return fmt.Errorf("wasm.helper_parameter_type")
+			return operands, fmt.Errorf("wasm.helper_parameter_type")
 		}
 		parameterIDs[index] = parameter.ID
 	}
 	if _, err := referenced(graph, function, 0x9112, 0x9020); err != nil {
-		return fmt.Errorf("wasm.helper_result")
+		return operands, fmt.Errorf("wasm.helper_result")
 	}
 	comparison, err := referenced(graph, function, 0x9113, 0x9021)
 	if err != nil {
-		return err
+		return operands, err
 	}
 	addition, err := referenced(graph, comparison, 0x9160, 0x9014)
 	if err != nil {
-		return err
+		return operands, err
 	}
 	reads := make([]wire.Entity, 3)
 	reads[0], err = referenced(graph, addition, 0x9140, 0x9013)
 	if err != nil {
-		return err
+		return operands, err
 	}
 	reads[1], err = referenced(graph, addition, 0x9141, 0x9013)
 	if err != nil {
-		return err
+		return operands, err
 	}
 	reads[2], err = referenced(graph, comparison, 0x9161, 0x9013)
 	if err != nil {
-		return err
+		return operands, err
 	}
 	if validateIntegerTypeReference(graph, addition, 0x9142) != nil || validateIntegerTypeReference(graph, comparison, 0x9162) != nil {
-		return fmt.Errorf("wasm.helper_integer_type")
+		return operands, fmt.Errorf("wasm.helper_integer_type")
 	}
+	seen := make(map[byte]bool, 3)
 	for index, read := range reads {
 		parameter, readErr := field(read, 0x9130)
-		if readErr != nil || parameter.Reference != parameterIDs[index] {
-			return fmt.Errorf("wasm.helper_parameter_order")
+		if readErr != nil {
+			return operands, fmt.Errorf("wasm.helper_parameter_reference")
 		}
+		matched := false
+		for parameterIndex, parameterID := range parameterIDs {
+			if parameter.Reference == parameterID {
+				operands[index] = byte(parameterIndex)
+				matched = true
+			}
+		}
+		if !matched || seen[operands[index]] {
+			return operands, fmt.Errorf("wasm.helper_parameter_usage")
+		}
+		seen[operands[index]] = true
 	}
-	return nil
+	return operands, nil
 }
 
 type recordFieldProfile struct {

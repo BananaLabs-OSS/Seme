@@ -50,7 +50,7 @@ func module(layout applicationLayout) ([]byte, error) {
 		{0, 0x41, 0, 0x0b},
 		{0, 0x41, 0, 0x0b},
 		{0, 0x41, 0, 0x0b},
-		{0, 0x20, 0, 0x20, 1, 0x7c, 0x20, 2, 0x57, 0x0b},
+		helperBody(layout),
 		providerBody(layout),
 	}
 	var code bytes.Buffer
@@ -69,6 +69,10 @@ func module(layout applicationLayout) ([]byte, error) {
 	data.Write(layout.errorMessage)
 	section(&wasm, 11, data.Bytes())
 	return wasm.Bytes(), nil
+}
+
+func helperBody(layout applicationLayout) []byte {
+	return []byte{0, 0x20, layout.helperOperands[0], 0x20, layout.helperOperands[1], 0x7c, 0x20, layout.helperOperands[2], 0x57, 0x0b}
 }
 
 func providerBody(layout applicationLayout) []byte {

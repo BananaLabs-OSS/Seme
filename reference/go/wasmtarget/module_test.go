@@ -6,7 +6,7 @@ import (
 )
 
 func TestModuleIsDeterministicAndLayoutDerived(t *testing.T) {
-	canonical := applicationLayout{requestOffsets: [3]uint64{0, 8, 16}, requestHeaderSize: 32, responseBoolOffset: 1, responseHeaderSize: 10, errorMessage: []byte("subject required")}
+	canonical := applicationLayout{helperOperands: [3]byte{0, 1, 2}, requestOffsets: [3]uint64{0, 8, 16}, requestHeaderSize: 32, responseBoolOffset: 1, responseHeaderSize: 10, errorMessage: []byte("subject required")}
 	first, err := module(canonical)
 	if err != nil {
 		t.Fatal(err)
@@ -19,13 +19,23 @@ func TestModuleIsDeterministicAndLayoutDerived(t *testing.T) {
 		t.Fatal("equal layouts produced different modules")
 	}
 
-	reordered := applicationLayout{requestOffsets: [3]uint64{0, 16, 8}, requestHeaderSize: 32, responseBoolOffset: 1, responseHeaderSize: 10, errorMessage: []byte("subject required")}
+	reordered := applicationLayout{helperOperands: [3]byte{0, 1, 2}, requestOffsets: [3]uint64{0, 16, 8}, requestHeaderSize: 32, responseBoolOffset: 1, responseHeaderSize: 10, errorMessage: []byte("subject required")}
 	changed, err := module(reordered)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if bytes.Equal(first, changed) {
 		t.Fatal("changed canonical offsets did not change codec")
+	}
+
+	helperReordered := canonical
+	helperReordered.helperOperands = [3]byte{1, 0, 2}
+	changed, err = module(helperReordered)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(first, changed) {
+		t.Fatal("changed canonical helper operands did not change code")
 	}
 }
 

@@ -3,5 +3,5 @@
 package policy
 
 func Allows(current, delta, limit int64) bool {
-	return current+delta <= limit
+	return limit >= delta+current
 }
