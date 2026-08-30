@@ -12,6 +12,6 @@
 Pulp runtime evidence is pinned at commit `f4d15bb`; the conformance gate
 requires that commit in the selected Pulp repository.
 
-The proof uses a dedicated conformance deployment binary in Pulp and a fixed
-versioned request record. Schema-derived codecs and production capability
-providers remain future profiles.
+The proof uses a dedicated conformance deployment binary in Pulp and a
+schema-derived versioned request record. Recursive and variable-width codecs
+and production capability providers remain future profiles.

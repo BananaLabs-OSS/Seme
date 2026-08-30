@@ -55,75 +55,156 @@ func Lower(plan wire.Envelope) ([]byte, error) {
 	if err != nil || string(effectName.Bytes) != "observability.log" {
 		return nil, fmt.Errorf("wasm.unsupported_effect")
 	}
-	if err := validateFunction(plan, functions[0]); err != nil {
+	layout, err := validateFunction(plan, functions[0])
+	if err != nil {
 		return nil, err
 	}
-	return module(), nil
+	return module(layout)
 }
 
-func validateFunction(graph wire.Envelope, function wire.Entity) error {
+type applicationLayout struct {
+	requestOffsets [3]uint64
+	requestSize    uint64
+	responseOffset uint64
+	responseSize   uint64
+}
+
+func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLayout, error) {
+	var layout applicationLayout
 	parameters, err := field(function, 0x9111)
-	if err != nil || len(parameters.List) != 3 {
-		return fmt.Errorf("wasm.function_parameters")
+	if err != nil || len(parameters.List) != 1 {
+		return layout, fmt.Errorf("wasm.function_parameters")
 	}
-	for index, item := range parameters.List {
-		parameter, ok := graph.Entities[item.Reference]
-		if !ok || parameter.Schema != identity(0x9012) {
-			return fmt.Errorf("wasm.parameter_missing")
-		}
-		position, err := field(parameter, 0x9122)
-		if err != nil || position.Unsigned != uint64(index) {
-			return fmt.Errorf("wasm.parameter_order")
-		}
-		if err := validateIntegerTypeReference(graph, parameter, 0x9121); err != nil {
-			return err
-		}
+	parameter, ok := graph.Entities[parameters.List[0].Reference]
+	if !ok || parameter.Schema != identity(0x9012) {
+		return layout, fmt.Errorf("wasm.parameter_missing")
 	}
-	result, err := field(function, 0x9112)
-	if err != nil || graph.Entities[result.Reference].Schema != identity(0x9020) {
-		return fmt.Errorf("wasm.function_result")
+	position, err := field(parameter, 0x9122)
+	if err != nil || position.Unsigned != 0 {
+		return layout, fmt.Errorf("wasm.parameter_order")
 	}
-	body, err := referenced(graph, function, 0x9113, 0x9021)
+	requestType, err := referenced(graph, parameter, 0x9121, 0x9030)
 	if err != nil {
-		return err
+		return layout, err
 	}
-	left, err := referenced(graph, body, 0x9160, 0x9014)
+	requestFields, err := validateRecord(graph, requestType, "AdmitRequest", []recordFieldProfile{{"Current", 0x9010, 8}, {"Delta", 0x9010, 8}, {"Limit", 0x9010, 8}})
 	if err != nil {
-		return err
+		return layout, err
 	}
-	right, err := referenced(graph, body, 0x9161, 0x9013)
+	for index, item := range requestFields {
+		layout.requestOffsets[index] = item.offset
+	}
+	layout.requestSize = requestFields[len(requestFields)-1].offset + requestFields[len(requestFields)-1].size
+	resultValue, err := field(function, 0x9112)
 	if err != nil {
-		return err
+		return layout, fmt.Errorf("wasm.function_result")
 	}
-	if err := validateIntegerTypeReference(graph, body, 0x9162); err != nil {
-		return err
+	responseType, ok := graph.Entities[resultValue.Reference]
+	if !ok || responseType.Schema != identity(0x9030) {
+		return layout, fmt.Errorf("wasm.function_result")
 	}
-	addLeft, err := referenced(graph, left, 0x9140, 0x9013)
+	responseFields, err := validateRecord(graph, responseType, "AdmitResponse", []recordFieldProfile{{"Accepted", 0x9020, 1}})
 	if err != nil {
-		return err
+		return layout, err
 	}
-	addRight, err := referenced(graph, left, 0x9141, 0x9013)
+	layout.responseOffset = responseFields[0].offset
+	layout.responseSize = responseFields[0].size
+	body, err := referenced(graph, function, 0x9113, 0x9033)
 	if err != nil {
-		return err
+		return layout, err
+	}
+	constructedType, err := field(body, 0x9330)
+	if err != nil || constructedType.Reference != responseType.ID {
+		return layout, fmt.Errorf("wasm.response_construct_type")
+	}
+	values, err := field(body, 0x9331)
+	if err != nil || len(values.List) != 1 {
+		return layout, fmt.Errorf("wasm.response_construct_values")
+	}
+	comparison, ok := graph.Entities[values.List[0].Reference]
+	if !ok || comparison.Schema != identity(0x9021) {
+		return layout, fmt.Errorf("wasm.response_value")
+	}
+	left, err := referenced(graph, comparison, 0x9160, 0x9014)
+	if err != nil {
+		return layout, err
+	}
+	right, err := referenced(graph, comparison, 0x9161, 0x9032)
+	if err != nil {
+		return layout, err
+	}
+	if err := validateIntegerTypeReference(graph, comparison, 0x9162); err != nil {
+		return layout, err
+	}
+	addLeft, err := referenced(graph, left, 0x9140, 0x9032)
+	if err != nil {
+		return layout, err
+	}
+	addRight, err := referenced(graph, left, 0x9141, 0x9032)
+	if err != nil {
+		return layout, err
 	}
 	if err := validateIntegerTypeReference(graph, left, 0x9142); err != nil {
-		return err
+		return layout, err
 	}
-	indices := []struct {
+	checks := []struct {
 		entity wire.Entity
-		want   uint64
-	}{{addLeft, 0}, {addRight, 1}, {right, 2}}
-	for _, check := range indices {
-		parameter, err := referenced(graph, check.entity, 0x9130, 0x9012)
+		field  wire.ID
+	}{{addLeft, requestFields[0].entity.ID}, {addRight, requestFields[1].entity.ID}, {right, requestFields[2].entity.ID}}
+	for _, check := range checks {
+		read, err := referenced(graph, check.entity, 0x9320, 0x9013)
 		if err != nil {
-			return err
+			return layout, err
 		}
-		index, err := field(parameter, 0x9122)
-		if err != nil || index.Unsigned != check.want {
-			return fmt.Errorf("wasm.expression_parameter_order")
+		readParameter, err := field(read, 0x9130)
+		selectedField, selectedErr := field(check.entity, 0x9321)
+		if err != nil || selectedErr != nil || readParameter.Reference != parameter.ID || selectedField.Reference != check.field {
+			return layout, fmt.Errorf("wasm.expression_record_field")
 		}
 	}
-	return nil
+	return layout, nil
+}
+
+type recordFieldProfile struct {
+	name   string
+	schema uint64
+	size   uint64
+}
+type recordFieldLayout struct {
+	entity wire.Entity
+	offset uint64
+	size   uint64
+}
+
+func validateRecord(graph wire.Envelope, record wire.Entity, name string, profile []recordFieldProfile) ([]recordFieldLayout, error) {
+	nameValue, err := field(record, 0x9300)
+	fieldsValue, fieldsErr := field(record, 0x9301)
+	if err != nil || fieldsErr != nil || string(nameValue.Bytes) != name || len(fieldsValue.List) != len(profile) {
+		return nil, fmt.Errorf("wasm.record_profile:%s", name)
+	}
+	layout := make([]recordFieldLayout, len(profile))
+	var offset uint64
+	for index, expected := range profile {
+		entity, ok := graph.Entities[fieldsValue.List[index].Reference]
+		if !ok || entity.Schema != identity(0x9031) {
+			return nil, fmt.Errorf("wasm.record_field_missing:%s", expected.name)
+		}
+		fieldName, nameErr := field(entity, 0x9310)
+		fieldType, typeErr := field(entity, 0x9311)
+		fieldIndex, indexErr := field(entity, 0x9312)
+		typeEntity, typeOK := graph.Entities[fieldType.Reference]
+		if nameErr != nil || typeErr != nil || indexErr != nil || string(fieldName.Bytes) != expected.name || fieldIndex.Unsigned != uint64(index) || !typeOK || typeEntity.Schema != identity(expected.schema) {
+			return nil, fmt.Errorf("wasm.record_field_profile:%s", expected.name)
+		}
+		if expected.schema == 0x9010 {
+			if err := validateIntegerTypeReference(graph, entity, 0x9311); err != nil {
+				return nil, err
+			}
+		}
+		layout[index] = recordFieldLayout{entity, offset, expected.size}
+		offset += expected.size
+	}
+	return layout, nil
 }
 
 func validateIntegerTypeReference(graph wire.Envelope, entity wire.Entity, fieldID uint64) error {
@@ -178,35 +259,4 @@ func identity(low uint64) wire.ID {
 	value[14] = byte(low >> 8)
 	value[15] = byte(low)
 	return value
-}
-
-func module() []byte {
-	// Deterministic reactor template for Application Wire v1. The backend has
-	// already validated the complete canonical function above; this target
-	// profile encodes a request as three little-endian i64 fields and a
-	// response as one boolean byte. pulp_on_call is the real Pulp provider ABI.
-	return []byte{
-		0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x1a, 0x04, 0x60,
-		0x01, 0x7f, 0x01, 0x7f, 0x60, 0x02, 0x7f, 0x7f, 0x01, 0x7f, 0x60, 0x00,
-		0x01, 0x7f, 0x60, 0x06, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x7f, 0x01, 0x7f,
-		0x02, 0x11, 0x01, 0x04, 0x70, 0x75, 0x6c, 0x70, 0x08, 0x6c, 0x6f, 0x67,
-		0x5f, 0x62, 0x6f, 0x6f, 0x6c, 0x00, 0x00, 0x03, 0x06, 0x05, 0x00, 0x01,
-		0x01, 0x02, 0x03, 0x05, 0x03, 0x01, 0x00, 0x01, 0x06, 0x07, 0x01, 0x7f,
-		0x01, 0x41, 0x80, 0x08, 0x0b, 0x07, 0x4e, 0x06, 0x06, 0x6d, 0x65, 0x6d,
-		0x6f, 0x72, 0x79, 0x02, 0x00, 0x0a, 0x70, 0x75, 0x6c, 0x70, 0x5f, 0x61,
-		0x6c, 0x6c, 0x6f, 0x63, 0x00, 0x01, 0x09, 0x70, 0x75, 0x6c, 0x70, 0x5f,
-		0x69, 0x6e, 0x69, 0x74, 0x00, 0x02, 0x09, 0x70, 0x75, 0x6c, 0x70, 0x5f,
-		0x73, 0x74, 0x65, 0x70, 0x00, 0x03, 0x0d, 0x70, 0x75, 0x6c, 0x70, 0x5f,
-		0x73, 0x68, 0x75, 0x74, 0x64, 0x6f, 0x77, 0x6e, 0x00, 0x04, 0x0c, 0x70,
-		0x75, 0x6c, 0x70, 0x5f, 0x6f, 0x6e, 0x5f, 0x63, 0x61, 0x6c, 0x6c, 0x00,
-		0x05, 0x0a, 0x67, 0x05, 0x12, 0x01, 0x01, 0x7f, 0x23, 0x00, 0x22, 0x01,
-		0x20, 0x00, 0x6a, 0x41, 0x08, 0x6a, 0x24, 0x00, 0x20, 0x01, 0x0b, 0x04,
-		0x00, 0x41, 0x00, 0x0b, 0x04, 0x00, 0x41, 0x00, 0x0b, 0x04, 0x00, 0x41,
-		0x00, 0x0b, 0x43, 0x01, 0x01, 0x7f, 0x20, 0x03, 0x41, 0x18, 0x47, 0x04,
-		0x40, 0x41, 0x02, 0x0f, 0x0b, 0x20, 0x02, 0x29, 0x03, 0x00, 0x20, 0x02,
-		0x29, 0x03, 0x08, 0x7c, 0x20, 0x02, 0x29, 0x03, 0x10, 0x57, 0x22, 0x06,
-		0x10, 0x00, 0x04, 0x40, 0x00, 0x0b, 0x41, 0x80, 0xc0, 0x00, 0x20, 0x06,
-		0x3a, 0x00, 0x00, 0x20, 0x04, 0x41, 0x80, 0xc0, 0x00, 0x36, 0x02, 0x00,
-		0x20, 0x05, 0x41, 0x01, 0x36, 0x02, 0x00, 0x41, 0x00, 0x0b,
-	}
 }

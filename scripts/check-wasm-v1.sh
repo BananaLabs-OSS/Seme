@@ -50,7 +50,7 @@ emit_plan() {
         --project "$work/project" --manifest "$work/import/manifest.json" \
         --provider-graph "$work/import/program.g1" \
         --foundation-module "$repo/modules/foundation/v1/module.g1" \
-        --execution-module "$repo/modules/execution/v2/module.g1" \
+        --execution-module "$repo/modules/execution/v3/module.g1" \
         --package-module "$repo/modules/package/v1/module.g1" \
         --target-module "$repo/modules/target/v1/module.g1" \
         --policy "$policy" --out "$output"

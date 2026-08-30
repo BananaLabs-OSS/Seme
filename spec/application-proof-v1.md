@@ -12,7 +12,8 @@ ordinary Go quota policy
   -> structured request / Boolean response
 ```
 
-The scoped request is an Application Wire v1 record:
+The scoped request is a canonical Core Execution v3 `RecordType`. Application
+Wire v1 derives this layout from its ordered `RecordField` entities:
 
 | Offset | Field | Type |
 |---:|---|---|
@@ -28,8 +29,13 @@ underlying decision retains Go's signed 64-bit modular addition behavior.
 requests, prints their structured responses, and then runs the identical Wasm
 without `observability.log`. The denied call traps before the effect occurs.
 
-This milestone is usable as a bounded technical demo. The wire layout is still
-a target-profile rule rather than a schema-generated codec, input is driven by
-the proof deployment instead of HTTP, and only the exact quota function shape
-is supported. Those limitations are explicit rather than generalized into a
-claim of arbitrary Go application support.
+The ordinary Go structs are lifted into canonical `RecordType`, `RecordField`,
+`FieldRead`, and `RecordConstruct` entities. The backend independently checks
+that graph and generates its Wasm request loads, response stores, and size
+guards from the canonical field order and scalar widths.
+
+This milestone is usable as a bounded technical demo. Input is still driven by
+the proof deployment instead of HTTP, Application Wire v1 supports only signed
+i64 and Boolean fields, and only the exact quota function shape is supported.
+Those limitations are explicit rather than generalized into a claim of
+arbitrary Go application support.

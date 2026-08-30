@@ -6,9 +6,10 @@ Contract plan. Its deliberately finite profile requires:
 - one executable `wasm32-pulp-v1` plan;
 - two selected `adapted` resolutions for `go:log` and `observability.log`;
 - one `seme.pulp.log-v1` Boundary;
-- one canonical Core Function with three modular signed-i64 parameters;
-- body semantics exactly `parameter[0] + parameter[1] <= parameter[2]`;
-- BooleanType result.
+- one canonical Core Function accepting an `AdmitRequest` RecordType;
+- ordered `Current`, `Delta`, and `Limit` signed modular-i64 fields;
+- body semantics exactly `request.Current + request.Delta <= request.Limit`;
+- an `AdmitResponse` RecordType containing an `Accepted` Boolean field.
 
 The backend independently validates those canonical entities and emits a
 deterministic 262-byte WebAssembly Pulp reactor:
@@ -33,9 +34,11 @@ the canonical Seme graph and rejects unsupported graph shapes. This is an
 implementation layer that can later be lifted/self-hosted without changing the
 target contract or artifact behavior.
 
-Application Wire v1 maps the three canonical parameters to a fixed 24-byte
-little-endian request record and maps the canonical Boolean result to one byte.
-Pulp's provider ABI carries those bytes without interpreting their semantics.
+Application Wire v1 derives field offsets and total sizes from those canonical
+record entities. Its v1 scalar mapping encodes signed i64 fields little-endian
+and Boolean fields as one byte. The backend constructs Wasm loads, stores, and
+length checks from the derived layout; Pulp carries the resulting bytes without
+interpreting their semantics.
 
 Conformance executes the artifact in Node's WebAssembly engine with a host
 adapter implementing the declared import. Five request/result/effect traces, including
