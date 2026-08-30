@@ -50,13 +50,16 @@ planning share that analyzer; each profile separately rejects tree shapes it
 does not yet support. Canonical helper expressions are emitted recursively from
 that tree. The allocator preserves the frozen v6 identities for the existing
 decision graph and uses normalized semantic paths for future nested nodes.
+Core Execution v7 adds typed integer literals. The fixture deliberately nests
+`+ 0` around the imported helper addition, proving recursive source analysis,
+canonical emission, and execution without changing observable behavior.
 Wasm lowering recursively compiles the canonical integer expression graph with
 explicit cycle and size guards; the module builder receives validated helper
 instructions and contains no quota-expression instruction template.
 
 The decision now lives in imported package `internal/policy`. A source-aware Go
 module importer type-checks that package directly from the tracked closure.
-Core Execution v6 retains `Admit` and `policy.WithinLimit` as separate canonical
+Core Execution v7 retains `Admit` and `policy.WithinLimit` as separate canonical
 Functions connected by `FunctionCall`; lowering emits two Wasm functions and a
 real call instruction. The helper expression analyzer also resolves parameter
 identities, ignores presentation-only parentheses, and normalizes

@@ -40,6 +40,8 @@ func main() {
 	stringIsEmpty := bySchema(graph, 0x9051)
 	conditionals := bySchema(graph, 0x9052)
 	functionCalls := bySchema(graph, 0x9060)
+	integerLiterals := bySchema(graph, 0x9070)
+	integerTypes := bySchema(graph, 0x9010)
 	effects := bySchema(graph, 0x15)
 	capabilities := bySchema(graph, 0x16)
 	targets := bySchema(graph, 0xc010)
@@ -53,6 +55,7 @@ func main() {
 	must(len(recordTypes) == 3 && len(recordFields) == 9 && len(fieldReads) == 5 && len(recordConstructs) == 2, "record semantics cardinality mismatch")
 	must(len(stringTypes) == 1 && len(bytesTypes) == 1 && len(resultTypes) == 1 && len(resultOKs) == 1 && len(resultErrors) == 1, "variable/result semantics cardinality mismatch")
 	must(len(stringLiterals) == 1 && len(stringIsEmpty) == 1 && len(conditionals) == 1, "conditional semantics cardinality mismatch")
+	must(len(integerTypes) == 1 && len(integerLiterals) == 1, "integer literal semantics cardinality mismatch")
 	must(len(runtimes) == 2 && len(effects) == 1 && len(capabilities) == 1, "effect/runtime cardinality mismatch")
 	must(len(targets) == 1 && len(requirements) == 2 && len(rules) == 2 && len(resolutions) == 2 && len(plans) == 1, "target plan cardinality mismatch")
 
@@ -74,6 +77,7 @@ func main() {
 	callee := graph.Entities[field(functionCalls[0], 0x9600).Reference]
 	must(callee.Schema == identity(0x9011) && callee.ID != mappingTarget.ID, "call does not reference helper Function")
 	must(len(field(functionCalls[0], 0x9601).List) == 3, "helper call arguments mismatch")
+	must(field(integerLiterals[0], 0x9700).Unsigned == 0 && field(integerLiterals[0], 0x9701).Reference == integerTypes[0].ID, "typed integer literal mismatch")
 	must(len(field(interfaces[0], 0xb112).List) == 1, "typed interface request record missing")
 	requestType := graph.Entities[field(interfaces[0], 0xb112).List[0].Reference]
 	resultType := graph.Entities[field(interfaces[0], 0xb113).Reference]

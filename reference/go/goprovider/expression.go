@@ -14,6 +14,7 @@ const (
 	goParameterRead goExpressionKind = iota + 1
 	goIntegerAdd
 	goIntegerLessEqual
+	goIntegerLiteral
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -22,6 +23,7 @@ const (
 type goExpression struct {
 	kind      goExpressionKind
 	parameter int
+	integer   uint64
 	left      *goExpression
 	right     *goExpression
 }
@@ -40,6 +42,10 @@ func emitCanonicalExpression(expression *goExpression, owner string, parameterID
 			}
 			id := stableID("execution", owner, "read", strconv.Itoa(expression.parameter))
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009013", []graphField{refField(0x9130, parameterIDs[expression.parameter])})}
+			return id, nil
+		case goIntegerLiteral:
+			id := expressionNodeID(owner, path, "integer-literal")
+			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009070", []graphField{unsignedField(0x9700, expression.integer), refField(0x9701, integerID)})}
 			return id, nil
 		case goIntegerAdd, goIntegerLessEqual:
 			left, err := emit(expression.left, path+".left")
@@ -94,6 +100,15 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 			}
 		}
 		return nil, fmt.Errorf("expression.unresolved_parameter")
+	case *ast.BasicLit:
+		if expression.Kind != token.INT {
+			return nil, fmt.Errorf("expression.unsupported_literal")
+		}
+		value, err := strconv.ParseInt(expression.Value, 0, 64)
+		if err != nil {
+			return nil, fmt.Errorf("expression.invalid_integer_literal")
+		}
+		return &goExpression{kind: goIntegerLiteral, integer: uint64(value)}, nil
 	case *ast.BinaryExpr:
 		left, right := expression.X, expression.Y
 		kind := goExpressionKind(0)
@@ -143,4 +158,32 @@ func matchAddLessEqualParameters(expression *goExpression) (decisionExpressionPr
 		return profile, false
 	}
 	return decisionExpressionProfile{addLeft: left, addRight: right, limit: limit, expression: expression}, true
+}
+
+func matchDecisionExpression(expression *goExpression, parameterCount int) bool {
+	if expression == nil || expression.kind != goIntegerLessEqual {
+		return false
+	}
+	seen := make(map[int]bool, parameterCount)
+	var integer func(*goExpression) bool
+	integer = func(expression *goExpression) bool {
+		if expression == nil {
+			return false
+		}
+		switch expression.kind {
+		case goParameterRead:
+			if expression.parameter < 0 || expression.parameter >= parameterCount {
+				return false
+			}
+			seen[expression.parameter] = true
+			return true
+		case goIntegerLiteral:
+			return true
+		case goIntegerAdd:
+			return integer(expression.left) && integer(expression.right)
+		default:
+			return false
+		}
+	}
+	return integer(expression.left) && integer(expression.right) && len(seen) == parameterCount
 }
