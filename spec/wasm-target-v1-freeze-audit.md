@@ -4,7 +4,7 @@
 |---|---|---|
 | Canonical input authority | pass | Backend accepts only the checked executable Target Contract graph and validates the complete supported expression/effect profile. |
 | Deterministic artifact | pass | Two lowerings are byte-identical to the pinned 490-byte Wasm reactor and hash. |
-| Call preservation | pass | `WithinLimit` lowers as a separate Wasm function invoked by the provider function. |
+| Call preservation | pass | The resolved imported helper lowers as a separate Wasm function invoked by the provider function; lowering does not select it by source name. |
 | Independent runtime | pass | Runtime command uses Node, Wasm, host adapter, and Application Wire v2 requests with no Go component. |
 | Behavioral fidelity | pass | ResultOk behavior matches Go over five vectors; empty subject returns ResultError before logging. |
 | Boundary fidelity | pass | Wasm import realizes the canonical adapted `seme.pulp.log-v1` Boundary and remains labeled adapted. |

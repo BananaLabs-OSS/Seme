@@ -122,12 +122,12 @@ enforcement complete for the scoped logging profile.
 - The bounded Go provider accepts semantically equivalent comparison operand
   order, local names, and keyed-record field order, and propagates changed
   source error literals through Seme into Wasm without backend templates.
-- Core Execution v6 preserves the ordinary Go `Admit -> WithinLimit` call edge;
+- Core Execution v6 preserves the ordinary Go handler-to-helper call edge;
   the target validates both functions and emits a separate Wasm helper call.
 - Go provider revisions cover recursive module sources, so imported-package
   edits cannot remain hidden behind a valid root-package manifest.
 - The application profile now resolves and lifts the real
-  `Admit -> internal/policy.WithinLimit` package edge from source, preserving it
+  `Admit -> internal/policy.Allows` package edge from source, preserving it
   as two canonical and two Wasm functions.
 - Provider ingestion projects package-level function declarations across the
   module with package-qualified stable identities and deterministic evidence.

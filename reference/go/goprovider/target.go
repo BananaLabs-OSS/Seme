@@ -7,7 +7,6 @@ import (
 	"go/types"
 	"sort"
 	"strconv"
-	"strings"
 )
 
 // BuildWasmPulpPlan performs the first exact dependency/effect analysis and
@@ -29,12 +28,11 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	if err != nil {
 		return "", err
 	}
-	helperPackage := packagePathOf(declaration.NativeKey) + "/internal/policy"
-	helperDeclaration, helper, helperSignature, helperInfo, err := resolveImportedFunction(project, manifest, helperPackage, "WithinLimit")
+	helperDeclaration, helper, helperSignature, helperInfo, err := resolveImportedFunction(project, manifest, profile.helperPackage, profile.helperName)
 	if err != nil {
 		return "", err
 	}
-	if err := validateWithinLimit(helper, helperSignature, helperInfo); err != nil {
+	if err := validateDecisionHelper(helper, helperSignature, helperInfo); err != nil {
 		return "", err
 	}
 	if policy != "allow-adapted" && policy != "exact-only" {
@@ -154,7 +152,7 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		graphEntity{helperReadIDs[2], entity(helperReadIDs[2], "00000000000000000000000000009013", []graphField{refField(0x9130, helperParameterIDs[2])})},
 		graphEntity{helperAddID, entity(helperAddID, "00000000000000000000000000009014", []graphField{refField(0x9140, helperReadIDs[0]), refField(0x9141, helperReadIDs[1]), refField(0x9142, integerID)})},
 		graphEntity{helperComparisonID, entity(helperComparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, helperAddID), refField(0x9161, helperReadIDs[2]), refField(0x9162, integerID)})},
-		graphEntity{helperFunctionID, entity(helperFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, "WithinLimit"), refsField(0x9111, helperParameterIDs), refField(0x9112, booleanID), refField(0x9113, helperComparisonID)})},
+		graphEntity{helperFunctionID, entity(helperFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, profile.helperName), refsField(0x9111, helperParameterIDs), refField(0x9112, booleanID), refField(0x9113, helperComparisonID)})},
 		graphEntity{callID, entity(callID, "00000000000000000000000000009060", []graphField{refField(0x9600, helperFunctionID), refsField(0x9601, []string{fieldReadIDs[0], fieldReadIDs[1], fieldReadIDs[2]})})},
 		graphEntity{responseConstructID, entity(responseConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, responseTypeID), refsField(0x9331, []string{callID, fieldReadIDs[3], fieldReadIDs[4]})})},
 		graphEntity{resultOkID, entity(resultOkID, "00000000000000000000000000009043", []graphField{refField(0x9410, resultTypeID), refField(0x9411, responseConstructID)})},
@@ -224,7 +222,9 @@ func composeGraph(module uint64, revision string, entities []graphEntity) (strin
 }
 
 type loggedAdmitProfile struct {
-	errorMessage string
+	errorMessage  string
+	helperPackage string
+	helperName    string
 }
 
 func analyzeLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *types.Info) (loggedAdmitProfile, error) {
@@ -274,7 +274,7 @@ func analyzeLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *type
 		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision_call")
 	}
 	calleeObject, resolved := info.Uses[decisionSelector.Sel].(*types.Func)
-	if !resolved || calleeObject.Name() != "WithinLimit" || calleeObject.Pkg() == nil || !strings.HasSuffix(calleeObject.Pkg().Path(), "/internal/policy") {
+	if !resolved || calleeObject.Pkg() == nil {
 		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_decision_call")
 	}
 	for index, name := range []string{"Current", "Delta", "Limit"} {
@@ -332,40 +332,40 @@ func analyzeLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *type
 	if !ok || nilResult.Name != "nil" || info.Uses[nilResult] != types.Universe.Lookup("nil") {
 		return loggedAdmitProfile{}, fmt.Errorf("target.unsupported_error_result")
 	}
-	return loggedAdmitProfile{errorMessage: errorMessage}, nil
+	return loggedAdmitProfile{errorMessage: errorMessage, helperPackage: calleeObject.Pkg().Path(), helperName: calleeObject.Name()}, nil
 }
 
-func validateWithinLimit(fn *ast.FuncDecl, signature *types.Signature, info *types.Info) error {
+func validateDecisionHelper(fn *ast.FuncDecl, signature *types.Signature, info *types.Info) error {
 	if signature.Params().Len() != 3 || signature.Results().Len() != 1 || !isBool(signature.Results().At(0).Type()) {
-		return fmt.Errorf("target.unsupported_signature:WithinLimit")
+		return fmt.Errorf("target.unsupported_helper_signature")
 	}
 	for index := 0; index < 3; index++ {
 		if !isInt64(signature.Params().At(index).Type()) {
-			return fmt.Errorf("target.unsupported_signature:WithinLimit")
+			return fmt.Errorf("target.unsupported_helper_signature")
 		}
 	}
 	if len(fn.Body.List) != 1 {
-		return fmt.Errorf("target.unsupported_body:WithinLimit")
+		return fmt.Errorf("target.unsupported_helper_body")
 	}
 	returned, ok := fn.Body.List[0].(*ast.ReturnStmt)
 	if !ok || len(returned.Results) != 1 {
-		return fmt.Errorf("target.unsupported_return:WithinLimit")
+		return fmt.Errorf("target.unsupported_helper_return")
 	}
 	comparison, ok := returned.Results[0].(*ast.BinaryExpr)
 	if !ok || comparison.Op != token.LEQ {
-		return fmt.Errorf("target.unsupported_expression:WithinLimit")
+		return fmt.Errorf("target.unsupported_helper_expression")
 	}
 	addition, ok := comparison.X.(*ast.BinaryExpr)
 	if !ok || addition.Op != token.ADD {
-		return fmt.Errorf("target.unsupported_expression:WithinLimit")
+		return fmt.Errorf("target.unsupported_helper_expression")
 	}
 	left, right, err := resolvedParameterOperands(addition.X, addition.Y, signature, info)
 	if err != nil || left != 0 || right != 1 {
-		return fmt.Errorf("target.unsupported_addition:WithinLimit")
+		return fmt.Errorf("target.unsupported_helper_addition")
 	}
 	limit, ok := comparison.Y.(*ast.Ident)
 	if !ok || info.Uses[limit] != signature.Params().At(2) {
-		return fmt.Errorf("target.unsupported_limit:WithinLimit")
+		return fmt.Errorf("target.unsupported_helper_limit")
 	}
 	return nil
 }
