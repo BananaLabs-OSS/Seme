@@ -105,7 +105,7 @@ func Ingest(options IngestOptions) (Manifest, string, error) {
 	if err != nil {
 		return Manifest{}, "", err
 	}
-	packagePath, err := goOutput(project, "list", "-f", "{{.ImportPath}}", ".")
+	packagePath, err := goOutput(project, "list", "-m", "-f", "{{.Path}}")
 	if err != nil {
 		return Manifest{}, "", err
 	}
@@ -354,7 +354,7 @@ func ReadProjectionReport(path string) (ProjectionReport, error) {
 }
 
 func declarations(project, packagePath string, files []NativeFile, sources map[string][]byte, prior *Manifest) ([]Declaration, error) {
-	directories := map[string]bool{"": true}
+	directories := map[string]bool{}
 	for _, file := range files {
 		if strings.HasSuffix(file.Path, ".go") && !strings.HasSuffix(file.Path, "_test.go") {
 			directory := filepath.ToSlash(filepath.Dir(file.Path))
