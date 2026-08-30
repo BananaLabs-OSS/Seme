@@ -36,6 +36,32 @@ func TestAnalyzeGoExpressionRejectsUnsupportedOperator(t *testing.T) {
 	}
 }
 
+func TestEmitCanonicalExpressionPreservesFrozenDecisionIdentities(t *testing.T) {
+	expression := &goExpression{kind: goIntegerLessEqual,
+		left: &goExpression{kind: goIntegerAdd,
+			left:  &goExpression{kind: goParameterRead, parameter: 1},
+			right: &goExpression{kind: goParameterRead, parameter: 0}},
+		right: &goExpression{kind: goParameterRead, parameter: 2}}
+	parameters := []string{"p0", "p1", "p2"}
+	entities, root, err := emitCanonicalExpression(expression, "function", parameters, "i64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != stableID("execution", "function", "less-equal") {
+		t.Fatal("root identity changed")
+	}
+	wantAdd := stableID("execution", "function", "add")
+	foundAdd := false
+	for _, item := range entities {
+		if item.id == wantAdd {
+			foundAdd = true
+		}
+	}
+	if !foundAdd || len(entities) != 5 {
+		t.Fatalf("emitted %d entities; frozen add found=%v", len(entities), foundAdd)
+	}
+}
+
 func checkedReturnExpression(t *testing.T, statement string) (ast.Expr, *types.Signature, *types.Info) {
 	t.Helper()
 	fset := token.NewFileSet()

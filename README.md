@@ -142,7 +142,8 @@ same canonical call and Wasm layers.
 Equivalent helper comparison direction is normalized, while resolved
 parameter identities flow through canonical reads into generated Wasm locals.
 The provider performs that work through a shared typed expression analyzer
-rather than separate AST recognizers for each proof command.
+rather than separate AST recognizers for each proof command. Canonical emission
+walks the analyzed tree while preserving the existing frozen expression IDs.
 Imported package functions are also first-class provider declarations with
 stable package-qualified identities.
 

@@ -137,6 +137,9 @@ enforcement complete for the scoped logging profile.
   profile matching for ParameterRead, IntegerAdd, and IntegerLessEqual. New
   canonical expression forms extend this layer instead of adding another
   fixture-specific parser.
+- Canonical helper-expression emission walks that analyzed tree recursively.
+  Frozen v6 expression identities remain stable; additional nested nodes use
+  deterministic normalized semantic paths rather than source offsets.
 - Provider ingestion projects package-level function declarations across the
   module with package-qualified stable identities and deterministic evidence.
 - Actual Pulp loads the same reactor once, processes repeated structured quota
