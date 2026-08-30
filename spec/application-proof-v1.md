@@ -45,6 +45,10 @@ comparison, renames the Boolean local, reorders keyed response fields, and
 changes the error literal. Equivalent presentation choices still lift, the
 changed literal is preserved, and the derived Wasm returns that changed text.
 
+The decision now lives in an ordinary Go `WithinLimit` helper. Core Execution
+v6 retains `Admit` and `WithinLimit` as separate canonical Functions connected
+by `FunctionCall`; lowering emits two Wasm functions and a real call instruction.
+
 This milestone is usable as a bounded technical demo. Input is still driven by
 the proof deployment instead of HTTP, Application Wire v2 supports only its
 current scalar/string/bytes profile, and only the quota profile's current

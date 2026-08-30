@@ -6,20 +6,22 @@ Contract plan. Its deliberately finite profile requires:
 - one executable `wasm32-pulp-v1` plan;
 - two selected `adapted` resolutions for `go:log` and `observability.log`;
 - one `seme.pulp.log-v1` Boundary;
-- one canonical Core Function accepting an `AdmitRequest` RecordType;
+- one canonical entry Function accepting an `AdmitRequest` RecordType and one
+  directly called canonical helper Function;
 - ordered `Current`, `Delta`, and `Limit` signed modular-i64 fields;
 - body semantics selecting `ResultError` for an empty subject and otherwise
   `ResultOk(request.Current + request.Delta <= request.Limit)`;
 - an `AdmitResponse` RecordType containing an `Accepted` Boolean field.
 
 The backend independently validates those canonical entities and emits a
-deterministic 471-byte WebAssembly Pulp reactor:
+deterministic 490-byte WebAssembly Pulp reactor:
 
 ```text
 import pulp.log_bool(i32) -> i32
 export memory
 export pulp_alloc / pulp_init / pulp_step / pulp_shutdown
 export pulp_on_call(name, request, response-out) -> status
+internal WithinLimit(i64, i64, i64) -> i32
 ```
 
 The imported function is the target realization of the explicitly adapted
@@ -28,6 +30,9 @@ contains no Go runtime, source, AST, or package machinery.
 
 The host import returns a status code; nonzero status traps so denial cannot
 silently discard the observable effect.
+
+Core Execution v6 `FunctionCall` lowers to a real Wasm call. The helper owns the
+arithmetic instructions; they are not duplicated in `pulp_on_call`.
 
 The current backend implementation is a small Go-hosted target component. Go is
 used to implement the emitter, not as semantic authority: lowering reads only

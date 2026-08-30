@@ -39,6 +39,7 @@ func main() {
 	stringLiterals := bySchema(graph, 0x9050)
 	stringIsEmpty := bySchema(graph, 0x9051)
 	conditionals := bySchema(graph, 0x9052)
+	functionCalls := bySchema(graph, 0x9060)
 	effects := bySchema(graph, 0x15)
 	capabilities := bySchema(graph, 0x16)
 	targets := bySchema(graph, 0xc010)
@@ -48,7 +49,7 @@ func main() {
 	plans := bySchema(graph, 0xc014)
 	boundaries := bySchema(graph, 0xc015)
 	must(len(packages) == 1 && len(dependencies) == 1 && len(mappings) == 1 && len(interfaces) == 1, "package requirement cardinality mismatch")
-	must(len(providerDeclarations) == 1 && len(canonicalFunctions) == 1, "source/canonical function cardinality mismatch")
+	must(len(providerDeclarations) == 2 && len(canonicalFunctions) == 2 && len(functionCalls) == 1, "source/canonical call graph cardinality mismatch")
 	must(len(recordTypes) == 3 && len(recordFields) == 9 && len(fieldReads) == 5 && len(recordConstructs) == 2, "record semantics cardinality mismatch")
 	must(len(stringTypes) == 1 && len(bytesTypes) == 1 && len(resultTypes) == 1 && len(resultOKs) == 1 && len(resultErrors) == 1, "variable/result semantics cardinality mismatch")
 	must(len(stringLiterals) == 1 && len(stringIsEmpty) == 1 && len(conditionals) == 1, "conditional semantics cardinality mismatch")
@@ -65,9 +66,14 @@ func main() {
 	must(field(effects[0], 0x151).Reference == capabilities[0].ID, "effect capability mismatch")
 	must(string(field(capabilities[0], 0x160).Bytes) == "observability.log", "capability name mismatch")
 	must(field(mappings[0], 0xb142).Unsigned == 2, "package mapping must remain adapted")
-	must(field(mappings[0], 0xb140).Reference == providerDeclarations[0].ID, "mapping source is not provider Declaration")
-	must(field(mappings[0], 0xb141).Reference == canonicalFunctions[0].ID, "mapping target is not Core Function")
-	must(field(interfaces[0], 0xb111).Reference == canonicalFunctions[0].ID, "typed interface bypasses canonical Function")
+	mappingSource := graph.Entities[field(mappings[0], 0xb140).Reference]
+	mappingTarget := graph.Entities[field(mappings[0], 0xb141).Reference]
+	must(mappingSource.Schema == identity(0x7013), "mapping source is not provider Declaration")
+	must(mappingTarget.Schema == identity(0x9011), "mapping target is not Core Function")
+	must(field(interfaces[0], 0xb111).Reference == mappingTarget.ID, "typed interface bypasses canonical Function")
+	callee := graph.Entities[field(functionCalls[0], 0x9600).Reference]
+	must(callee.Schema == identity(0x9011) && callee.ID != mappingTarget.ID, "call does not reference helper Function")
+	must(len(field(functionCalls[0], 0x9601).List) == 3, "helper call arguments mismatch")
 	must(len(field(interfaces[0], 0xb112).List) == 1, "typed interface request record missing")
 	requestType := graph.Entities[field(interfaces[0], 0xb112).List[0].Reference]
 	resultType := graph.Entities[field(interfaces[0], 0xb113).Reference]

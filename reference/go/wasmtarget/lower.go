@@ -13,7 +13,7 @@ func Lower(plan wire.Envelope) ([]byte, error) {
 	boundaries := bySchema(plan, 0xc015)
 	functions := bySchema(plan, 0x9011)
 	effects := bySchema(plan, 0x15)
-	if len(plans) != 1 || len(functions) != 1 || len(effects) != 1 {
+	if len(plans) != 1 || len(functions) != 2 || len(effects) != 1 {
 		return nil, fmt.Errorf("wasm.profile_cardinality")
 	}
 	if value, err := field(plans[0], 0xc144); err != nil || value.Tag != 2 {
@@ -55,7 +55,23 @@ func Lower(plan wire.Envelope) ([]byte, error) {
 	if err != nil || string(effectName.Bytes) != "observability.log" {
 		return nil, fmt.Errorf("wasm.unsupported_effect")
 	}
-	layout, err := validateFunction(plan, functions[0])
+	var entry, helper wire.Entity
+	for _, function := range functions {
+		name, nameErr := field(function, 0x9110)
+		if nameErr == nil && string(name.Bytes) == "Admit" {
+			entry = function
+		}
+		if nameErr == nil && string(name.Bytes) == "WithinLimit" {
+			helper = function
+		}
+	}
+	if entry.ID == (wire.ID{}) || helper.ID == (wire.ID{}) {
+		return nil, fmt.Errorf("wasm.function_names")
+	}
+	if err := validateWithinLimit(plan, helper); err != nil {
+		return nil, err
+	}
+	layout, err := validateFunction(plan, entry, helper)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +86,7 @@ type applicationLayout struct {
 	errorMessage       []byte
 }
 
-func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLayout, error) {
+func validateFunction(graph wire.Envelope, function, helper wire.Entity) (applicationLayout, error) {
 	var layout applicationLayout
 	parameters, err := field(function, 0x9111)
 	if err != nil || len(parameters.List) != 1 {
@@ -183,44 +199,27 @@ func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLay
 	if err != nil || len(values.List) != 3 {
 		return layout, fmt.Errorf("wasm.response_construct_values")
 	}
-	comparison, ok := graph.Entities[values.List[0].Reference]
-	if !ok || comparison.Schema != identity(0x9021) {
+	call, ok := graph.Entities[values.List[0].Reference]
+	if !ok || call.Schema != identity(0x9060) {
 		return layout, fmt.Errorf("wasm.response_value")
 	}
-	left, err := referenced(graph, comparison, 0x9160, 0x9014)
-	if err != nil {
-		return layout, err
+	callee, calleeErr := field(call, 0x9600)
+	arguments, argumentsErr := field(call, 0x9601)
+	if calleeErr != nil || argumentsErr != nil || callee.Reference != helper.ID || len(arguments.List) != 3 {
+		return layout, fmt.Errorf("wasm.helper_call")
 	}
-	right, err := referenced(graph, comparison, 0x9161, 0x9032)
-	if err != nil {
-		return layout, err
-	}
-	if err := validateIntegerTypeReference(graph, comparison, 0x9162); err != nil {
-		return layout, err
-	}
-	addLeft, err := referenced(graph, left, 0x9140, 0x9032)
-	if err != nil {
-		return layout, err
-	}
-	addRight, err := referenced(graph, left, 0x9141, 0x9032)
-	if err != nil {
-		return layout, err
-	}
-	if err := validateIntegerTypeReference(graph, left, 0x9142); err != nil {
-		return layout, err
-	}
-	checks := []struct {
-		entity wire.Entity
-		field  wire.ID
-	}{{addLeft, requestFields[0].entity.ID}, {addRight, requestFields[1].entity.ID}, {right, requestFields[2].entity.ID}}
-	for _, check := range checks {
-		read, err := referenced(graph, check.entity, 0x9320, 0x9013)
+	for index, argument := range arguments.List {
+		expression, exists := graph.Entities[argument.Reference]
+		if !exists || expression.Schema != identity(0x9032) {
+			return layout, fmt.Errorf("wasm.helper_argument")
+		}
+		read, err := referenced(graph, expression, 0x9320, 0x9013)
 		if err != nil {
 			return layout, err
 		}
 		readParameter, err := field(read, 0x9130)
-		selectedField, selectedErr := field(check.entity, 0x9321)
-		if err != nil || selectedErr != nil || readParameter.Reference != parameter.ID || selectedField.Reference != check.field {
+		selectedField, selectedErr := field(expression, 0x9321)
+		if err != nil || selectedErr != nil || readParameter.Reference != parameter.ID || selectedField.Reference != requestFields[index].entity.ID {
 			return layout, fmt.Errorf("wasm.expression_record_field")
 		}
 	}
@@ -235,6 +234,59 @@ func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLay
 		}
 	}
 	return layout, nil
+}
+
+func validateWithinLimit(graph wire.Envelope, function wire.Entity) error {
+	parameters, err := field(function, 0x9111)
+	if err != nil || len(parameters.List) != 3 {
+		return fmt.Errorf("wasm.helper_parameters")
+	}
+	parameterIDs := make([]wire.ID, 3)
+	for index, reference := range parameters.List {
+		parameter, ok := graph.Entities[reference.Reference]
+		if !ok || parameter.Schema != identity(0x9012) {
+			return fmt.Errorf("wasm.helper_parameter")
+		}
+		position, positionErr := field(parameter, 0x9122)
+		if positionErr != nil || position.Unsigned != uint64(index) || validateIntegerTypeReference(graph, parameter, 0x9121) != nil {
+			return fmt.Errorf("wasm.helper_parameter_type")
+		}
+		parameterIDs[index] = parameter.ID
+	}
+	if _, err := referenced(graph, function, 0x9112, 0x9020); err != nil {
+		return fmt.Errorf("wasm.helper_result")
+	}
+	comparison, err := referenced(graph, function, 0x9113, 0x9021)
+	if err != nil {
+		return err
+	}
+	addition, err := referenced(graph, comparison, 0x9160, 0x9014)
+	if err != nil {
+		return err
+	}
+	reads := make([]wire.Entity, 3)
+	reads[0], err = referenced(graph, addition, 0x9140, 0x9013)
+	if err != nil {
+		return err
+	}
+	reads[1], err = referenced(graph, addition, 0x9141, 0x9013)
+	if err != nil {
+		return err
+	}
+	reads[2], err = referenced(graph, comparison, 0x9161, 0x9013)
+	if err != nil {
+		return err
+	}
+	if validateIntegerTypeReference(graph, addition, 0x9142) != nil || validateIntegerTypeReference(graph, comparison, 0x9162) != nil {
+		return fmt.Errorf("wasm.helper_integer_type")
+	}
+	for index, read := range reads {
+		parameter, readErr := field(read, 0x9130)
+		if readErr != nil || parameter.Reference != parameterIDs[index] {
+			return fmt.Errorf("wasm.helper_parameter_order")
+		}
+	}
+	return nil
 }
 
 type recordFieldProfile struct {
