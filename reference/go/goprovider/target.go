@@ -361,11 +361,10 @@ func analyzeDecisionHelper(fn *ast.FuncDecl, signature *types.Signature, info *t
 	if err != nil {
 		return profile, fmt.Errorf("target.unsupported_helper_expression")
 	}
-	profile, ok = matchAddLessEqualParameters(expression)
-	if !ok {
+	if !matchDecisionExpression(expression, signature.Params().Len()) {
 		return profile, fmt.Errorf("target.unsupported_helper_expression")
 	}
-	profile.expression = expression
+	profile = decisionExpressionProfile{expression: expression}
 	return profile, nil
 }
 

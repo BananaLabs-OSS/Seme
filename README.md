@@ -136,6 +136,8 @@ names, comparison spelling, and keyed-field source order are not semantic
 authority, while changed error text is preserved through Seme and Wasm.
 [`Core Execution v6`](spec/core-execution-v6.md) adds canonical direct calls;
 the Go helper and handler now lower to distinct Wasm functions.
+[`Core Execution v7`](spec/core-execution-v7.md) adds typed integer literals;
+the proof executes a source-derived nested `+ 0` through Seme and Wasm.
 Provider revisions cover nested module sources, and target analysis resolves
 the real `Admit -> internal/policy.WithinLimit` imported source call through the
 same canonical call and Wasm layers.

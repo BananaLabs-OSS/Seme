@@ -143,6 +143,9 @@ enforcement complete for the scoped logging profile.
 - Wasm helper lowering recursively compiles the canonical integer graph with a
   node budget and cycle detection. The module builder receives validated
   instructions instead of embedding the quota expression.
+- Core Execution v7 adds typed integer literals. The real Go helper contains a
+  nested `+ 0`, which survives canonical emission and lowers to `i64.const 0`
+  before executing through the unchanged application behavior.
 - Provider ingestion projects package-level function declarations across the
   module with package-qualified stable identities and deterministic evidence.
 - Actual Pulp loads the same reactor once, processes repeated structured quota

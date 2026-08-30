@@ -36,6 +36,30 @@ func TestAnalyzeGoExpressionRejectsUnsupportedOperator(t *testing.T) {
 	}
 }
 
+func TestAnalyzeAndEmitNestedIntegerLiteral(t *testing.T) {
+	expression, signature, info := checkedReturnExpression(t, "return c >= (b+a)+0")
+	analyzed, err := analyzeGoExpression(expression, signature, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !matchDecisionExpression(analyzed, 3) {
+		t.Fatal("nested literal decision did not match")
+	}
+	entities, _, err := emitCanonicalExpression(analyzed, "function", []string{"p0", "p1", "p2"}, "i64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundLiteral := false
+	for _, item := range entities {
+		if item.text != "" && item.id == expressionNodeID("function", "root.left.right", "integer-literal") {
+			foundLiteral = true
+		}
+	}
+	if !foundLiteral {
+		t.Fatal("canonical integer literal was not emitted")
+	}
+}
+
 func TestEmitCanonicalExpressionPreservesFrozenDecisionIdentities(t *testing.T) {
 	expression := &goExpression{kind: goIntegerLessEqual,
 		left: &goExpression{kind: goIntegerAdd,

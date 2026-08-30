@@ -3,6 +3,7 @@
 package wasmtarget
 
 import (
+	"bytes"
 	"fmt"
 
 	"seme.local/reference/wire"
@@ -317,6 +318,15 @@ func lowerHelperInteger(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 		}
 		used[local] = true
 		return []byte{0x20, local}, nil
+	case identity(0x9070):
+		bits, bitsErr := field(expression, 0x9700)
+		if bitsErr != nil || validateIntegerTypeReference(graph, expression, 0x9701) != nil {
+			return nil, fmt.Errorf("wasm.helper_integer_literal")
+		}
+		var instructions bytes.Buffer
+		instructions.WriteByte(0x42) // i64.const
+		sleb(&instructions, int64(bits.Unsigned))
+		return instructions.Bytes(), nil
 	case identity(0x9014):
 		if validateIntegerTypeReference(graph, expression, 0x9142) != nil {
 			return nil, fmt.Errorf("wasm.helper_integer_type")
