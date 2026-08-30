@@ -10,16 +10,16 @@ The scoped Wasm backend emits a Pulp reactor with:
 - `pulp_on_call` implementing provider `quota.admit-v1`;
 - `pulp.log_bool(i32) -> i32` as its only host import.
 
-Each provider request carries `current`, `delta`, and `limit` as a fixed
-little-endian Application Wire v1 record. The response carries the Boolean
-decision. A cell is loaded once and handles repeated calls. The imported effect
+Each provider request carries fixed numeric fields plus bounded subject and
+evidence data through Application Wire v2. The response carries `ResultOk` with
+the Boolean decision and preserved variable-width fields. A cell is loaded once and handles repeated calls. The imported effect
 returns zero when granted; any nonzero status traps, ensuring a capability
 denial cannot silently erase an observable effect.
 
 The Pulp repository supplies a small deployment binary,
 `cmd/pulp-seme-proof`, which registers provider `seme.pulp.log-v1` for
 capability `observability.log` and otherwise uses the normal Pulp runtime.
-That deployment boundary is committed in Pulp through `f4d15bb`.
+That deployment boundary is committed in Pulp through `161c9dc`.
 The allowed manifest proves the real manifest loader, capability registry,
 wazero instantiation, allocation/configuration, init, step loop, effect call,
 signal handling, shutdown, and clean exit. The denied manifest omits the

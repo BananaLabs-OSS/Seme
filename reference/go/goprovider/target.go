@@ -33,6 +33,8 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 
 	integerID := stableID("execution", "type", "i64")
 	booleanID := stableID("execution", "type", "bool")
+	stringID := stableID("execution", "type", "string")
+	bytesID := stableID("execution", "type", "bytes")
 	canonicalFunctionID := stableID("canonical-function", declaration.ID)
 	requestTypeID := stableID("execution", canonicalFunctionID, "record", "AdmitRequest")
 	responseTypeID := stableID("execution", canonicalFunctionID, "record", "AdmitResponse")
@@ -40,18 +42,28 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		stableID("execution", requestTypeID, "field", "Current"),
 		stableID("execution", requestTypeID, "field", "Delta"),
 		stableID("execution", requestTypeID, "field", "Limit"),
+		stableID("execution", requestTypeID, "field", "Subject"),
+		stableID("execution", requestTypeID, "field", "Evidence"),
 	}
-	responseFieldID := stableID("execution", responseTypeID, "field", "Accepted")
+	responseFieldIDs := []string{
+		stableID("execution", responseTypeID, "field", "Accepted"),
+		stableID("execution", responseTypeID, "field", "Subject"),
+		stableID("execution", responseTypeID, "field", "Evidence"),
+	}
+	resultTypeID := stableID("execution", canonicalFunctionID, "result", "Admit")
 	parameterID := stableID("execution", canonicalFunctionID, "parameter", "0")
 	parameterReadID := stableID("execution", canonicalFunctionID, "read", "request")
 	fieldReadIDs := []string{
 		stableID("execution", canonicalFunctionID, "field-read", "Current"),
 		stableID("execution", canonicalFunctionID, "field-read", "Delta"),
 		stableID("execution", canonicalFunctionID, "field-read", "Limit"),
+		stableID("execution", canonicalFunctionID, "field-read", "Subject"),
+		stableID("execution", canonicalFunctionID, "field-read", "Evidence"),
 	}
 	addID := stableID("execution", canonicalFunctionID, "add")
 	comparisonID := stableID("execution", canonicalFunctionID, "less-equal")
 	responseConstructID := stableID("execution", canonicalFunctionID, "construct", "AdmitResponse")
+	resultOkID := stableID("execution", canonicalFunctionID, "result-ok")
 	packageID := stableID("package", packagePathOf(declaration.NativeKey))
 	interfaceID := stableID("package-interface", declaration.ID)
 	dependencyID := stableID("dependency", packageID, "go:log")
@@ -76,13 +88,16 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 	instances := []graphEntity{
 		{integerID, entity(integerID, "00000000000000000000000000009010", []graphField{unsignedField(0x9100, 64), {0x9101, "tr"}, unsignedField(0x9102, 0)})},
 		{booleanID, entity(booleanID, "00000000000000000000000000009020", nil)},
+		{stringID, entity(stringID, "00000000000000000000000000009040", nil)},
+		{bytesID, entity(bytesID, "00000000000000000000000000009041", nil)},
+		{resultTypeID, entity(resultTypeID, "00000000000000000000000000009042", []graphField{refField(0x9400, responseTypeID), refField(0x9401, stringID)})},
 		{capabilityID, entity(capabilityID, "00000000000000000000000000000016", []graphField{bytesField(0x160, "observability.log")})},
 		{effectID, entity(effectID, "00000000000000000000000000000015", []graphField{bytesField(0x150, "observability.log"), refField(0x151, capabilityID)})},
 		{runtimeID, entity(runtimeID, "0000000000000000000000000000b013", []graphField{bytesField(0xb130, "go.log.Printf"), bytesField(0xb131, "formatted process-global logging sink")})},
 		{hostAdapterID, entity(hostAdapterID, "0000000000000000000000000000b013", []graphField{bytesField(0xb130, "seme.pulp.log-v1"), bytesField(0xb131, "Wasm host import guarded by observability.log capability")})},
 		{dependencyID, entity(dependencyID, "0000000000000000000000000000b012", []graphField{bytesField(0xb120, "go:log"), bytesField(0xb121, "Go standard library for provider profile"), refField(0xb122, hostAdapterID)})},
-		{interfaceID, entity(interfaceID, "0000000000000000000000000000b011", []graphField{bytesField(0xb110, "Admit"), refField(0xb111, canonicalFunctionID), refsField(0xb112, []string{requestTypeID}), refField(0xb113, responseTypeID)})},
-		{mappingID, entity(mappingID, "0000000000000000000000000000b014", []graphField{refField(0xb140, declaration.ID), refField(0xb141, canonicalFunctionID), unsignedField(0xb142, 2), bytesField(0xb143, "go/types exact decision lift; Pulp host import adapts log.Printf")})},
+		{interfaceID, entity(interfaceID, "0000000000000000000000000000b011", []graphField{bytesField(0xb110, "Admit"), refField(0xb111, canonicalFunctionID), refsField(0xb112, []string{requestTypeID}), refField(0xb113, resultTypeID)})},
+		{mappingID, entity(mappingID, "0000000000000000000000000000b014", []graphField{refField(0xb140, declaration.ID), refField(0xb141, canonicalFunctionID), unsignedField(0xb142, 2), bytesField(0xb143, "go/types record/string/bytes lift; nil error becomes ResultOk; Pulp host import adapts log.Printf")})},
 		{packageID, entity(packageID, "0000000000000000000000000000b010", []graphField{bytesField(0xb100, packagePathOf(declaration.NativeKey)), bytesField(0xb101, manifest.Revision), refsField(0xb102, []string{interfaceID}), refsField(0xb103, []string{dependencyID}), refsField(0xb104, []string{effectID}), refsField(0xb105, []string{runtimeID}), refsField(0xb106, []string{mappingID})})},
 		{dependencyRequirementID, entity(dependencyRequirementID, "0000000000000000000000000000c011", []graphField{refField(0xc110, dependencyID), unsignedField(0xc111, 1), refsField(0xc112, []string{runtimeID})})},
 		{effectRequirementID, entity(effectRequirementID, "0000000000000000000000000000c011", []graphField{refField(0xc110, effectID), unsignedField(0xc111, 1), refsField(0xc112, []string{runtimeID})})},
@@ -95,17 +110,24 @@ func BuildWasmPulpPlan(project string, manifest Manifest, modules [][]byte, poli
 		graphEntity{requestFieldIDs[0], entity(requestFieldIDs[0], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Current"), refField(0x9311, integerID), unsignedField(0x9312, 0)})},
 		graphEntity{requestFieldIDs[1], entity(requestFieldIDs[1], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Delta"), refField(0x9311, integerID), unsignedField(0x9312, 1)})},
 		graphEntity{requestFieldIDs[2], entity(requestFieldIDs[2], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Limit"), refField(0x9311, integerID), unsignedField(0x9312, 2)})},
-		graphEntity{responseTypeID, entity(responseTypeID, "00000000000000000000000000009030", []graphField{bytesField(0x9300, "AdmitResponse"), refsField(0x9301, []string{responseFieldID})})},
-		graphEntity{responseFieldID, entity(responseFieldID, "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Accepted"), refField(0x9311, booleanID), unsignedField(0x9312, 0)})},
+		graphEntity{requestFieldIDs[3], entity(requestFieldIDs[3], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Subject"), refField(0x9311, stringID), unsignedField(0x9312, 3)})},
+		graphEntity{requestFieldIDs[4], entity(requestFieldIDs[4], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Evidence"), refField(0x9311, bytesID), unsignedField(0x9312, 4)})},
+		graphEntity{responseTypeID, entity(responseTypeID, "00000000000000000000000000009030", []graphField{bytesField(0x9300, "AdmitResponse"), refsField(0x9301, responseFieldIDs)})},
+		graphEntity{responseFieldIDs[0], entity(responseFieldIDs[0], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Accepted"), refField(0x9311, booleanID), unsignedField(0x9312, 0)})},
+		graphEntity{responseFieldIDs[1], entity(responseFieldIDs[1], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Subject"), refField(0x9311, stringID), unsignedField(0x9312, 1)})},
+		graphEntity{responseFieldIDs[2], entity(responseFieldIDs[2], "00000000000000000000000000009031", []graphField{bytesField(0x9310, "Evidence"), refField(0x9311, bytesID), unsignedField(0x9312, 2)})},
 		graphEntity{parameterID, entity(parameterID, "00000000000000000000000000009012", []graphField{bytesField(0x9120, signature.Params().At(0).Name()), refField(0x9121, requestTypeID), unsignedField(0x9122, 0)})},
 		graphEntity{parameterReadID, entity(parameterReadID, "00000000000000000000000000009013", []graphField{refField(0x9130, parameterID)})},
 		graphEntity{fieldReadIDs[0], entity(fieldReadIDs[0], "00000000000000000000000000009032", []graphField{refField(0x9320, parameterReadID), refField(0x9321, requestFieldIDs[0])})},
 		graphEntity{fieldReadIDs[1], entity(fieldReadIDs[1], "00000000000000000000000000009032", []graphField{refField(0x9320, parameterReadID), refField(0x9321, requestFieldIDs[1])})},
 		graphEntity{fieldReadIDs[2], entity(fieldReadIDs[2], "00000000000000000000000000009032", []graphField{refField(0x9320, parameterReadID), refField(0x9321, requestFieldIDs[2])})},
+		graphEntity{fieldReadIDs[3], entity(fieldReadIDs[3], "00000000000000000000000000009032", []graphField{refField(0x9320, parameterReadID), refField(0x9321, requestFieldIDs[3])})},
+		graphEntity{fieldReadIDs[4], entity(fieldReadIDs[4], "00000000000000000000000000009032", []graphField{refField(0x9320, parameterReadID), refField(0x9321, requestFieldIDs[4])})},
 		graphEntity{addID, entity(addID, "00000000000000000000000000009014", []graphField{refField(0x9140, fieldReadIDs[0]), refField(0x9141, fieldReadIDs[1]), refField(0x9142, integerID)})},
 		graphEntity{comparisonID, entity(comparisonID, "00000000000000000000000000009021", []graphField{refField(0x9160, addID), refField(0x9161, fieldReadIDs[2]), refField(0x9162, integerID)})},
-		graphEntity{responseConstructID, entity(responseConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, responseTypeID), refsField(0x9331, []string{comparisonID})})},
-		graphEntity{canonicalFunctionID, entity(canonicalFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, "Admit"), refsField(0x9111, []string{parameterID}), refField(0x9112, responseTypeID), refField(0x9113, responseConstructID)})},
+		graphEntity{responseConstructID, entity(responseConstructID, "00000000000000000000000000009033", []graphField{refField(0x9330, responseTypeID), refsField(0x9331, []string{comparisonID, fieldReadIDs[3], fieldReadIDs[4]})})},
+		graphEntity{resultOkID, entity(resultOkID, "00000000000000000000000000009043", []graphField{refField(0x9410, resultTypeID), refField(0x9411, responseConstructID)})},
+		graphEntity{canonicalFunctionID, entity(canonicalFunctionID, "00000000000000000000000000009011", []graphField{bytesField(0x9110, "Admit"), refsField(0x9111, []string{parameterID}), refField(0x9112, resultTypeID), refField(0x9113, resultOkID)})},
 	)
 
 	resolutionIDs := []string{dependencyResolutionID, effectResolutionID}
@@ -166,9 +188,9 @@ func composeGraph(module uint64, revision string, entities []graphEntity) (strin
 }
 
 func validateLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *types.Info) error {
-	if signature.Params().Len() != 1 || signature.Results().Len() != 1 ||
-		!isNamedRecord(signature.Params().At(0).Type(), "AdmitRequest", []recordField{{"Current", isInt64}, {"Delta", isInt64}, {"Limit", isInt64}}) ||
-		!isNamedRecord(signature.Results().At(0).Type(), "AdmitResponse", []recordField{{"Accepted", isBool}}) {
+	if signature.Params().Len() != 1 || signature.Results().Len() != 2 ||
+		!isNamedRecord(signature.Params().At(0).Type(), "AdmitRequest", []recordField{{"Current", isInt64}, {"Delta", isInt64}, {"Limit", isInt64}, {"Subject", isString}, {"Evidence", isBytes}}) ||
+		!isNamedRecord(signature.Results().At(0).Type(), "AdmitResponse", []recordField{{"Accepted", isBool}, {"Subject", isString}, {"Evidence", isBytes}}) || !isError(signature.Results().At(1).Type()) {
 		return fmt.Errorf("target.unsupported_signature:Admit")
 	}
 	if len(fn.Body.List) != 3 {
@@ -230,27 +252,64 @@ func validateLoggedAdmit(fn *ast.FuncDecl, signature *types.Signature, info *typ
 		return fmt.Errorf("target.unsupported_log_value")
 	}
 	returned, ok := fn.Body.List[2].(*ast.ReturnStmt)
-	if !ok || len(returned.Results) != 1 {
+	if !ok || len(returned.Results) != 2 {
 		return fmt.Errorf("target.unsupported_return")
 	}
 	result, ok := returned.Results[0].(*ast.CompositeLit)
-	if !ok || len(result.Elts) != 1 {
+	if !ok || len(result.Elts) != 3 {
 		return fmt.Errorf("target.unsupported_return_value")
 	}
 	typeName, ok := result.Type.(*ast.Ident)
 	if !ok || typeName.Name != "AdmitResponse" {
 		return fmt.Errorf("target.unsupported_return_type")
 	}
-	field, ok := result.Elts[0].(*ast.KeyValueExpr)
-	if !ok {
+	if !isKeyedIdentifier(result.Elts[0], "Accepted", acceptedObject, info) ||
+		!isKeyedParameterField(result.Elts[1], "Subject", signature.Params().At(0), info) ||
+		!isKeyedParameterField(result.Elts[2], "Evidence", signature.Params().At(0), info) {
 		return fmt.Errorf("target.unsupported_return_field")
+	}
+	nilResult, ok := returned.Results[1].(*ast.Ident)
+	if !ok || nilResult.Name != "nil" || info.Uses[nilResult] != types.Universe.Lookup("nil") {
+		return fmt.Errorf("target.unsupported_error_result")
+	}
+	return nil
+}
+
+func isKeyedIdentifier(expression ast.Expr, fieldName string, object types.Object, info *types.Info) bool {
+	field, ok := expression.(*ast.KeyValueExpr)
+	if !ok {
+		return false
 	}
 	key, keyOK := field.Key.(*ast.Ident)
 	value, valueOK := field.Value.(*ast.Ident)
-	if !keyOK || key.Name != "Accepted" || !valueOK || info.Uses[value] != acceptedObject {
-		return fmt.Errorf("target.unsupported_return_field")
+	return keyOK && key.Name == fieldName && valueOK && info.Uses[value] == object
+}
+
+func isKeyedParameterField(expression ast.Expr, fieldName string, parameter *types.Var, info *types.Info) bool {
+	field, ok := expression.(*ast.KeyValueExpr)
+	if !ok {
+		return false
 	}
-	return nil
+	key, keyOK := field.Key.(*ast.Ident)
+	return keyOK && key.Name == fieldName && isParameterField(field.Value, parameter, fieldName, info)
+}
+
+func isString(value types.Type) bool {
+	basic, ok := value.Underlying().(*types.Basic)
+	return ok && basic.Kind() == types.String
+}
+
+func isBytes(value types.Type) bool {
+	slice, ok := value.Underlying().(*types.Slice)
+	if !ok {
+		return false
+	}
+	basic, ok := slice.Elem().Underlying().(*types.Basic)
+	return ok && basic.Kind() == types.Byte
+}
+
+func isError(value types.Type) bool {
+	return types.Identical(value, types.Universe.Lookup("error").Type())
 }
 
 type recordField struct {

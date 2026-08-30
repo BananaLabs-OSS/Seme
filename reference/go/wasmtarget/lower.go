@@ -63,10 +63,10 @@ func Lower(plan wire.Envelope) ([]byte, error) {
 }
 
 type applicationLayout struct {
-	requestOffsets [3]uint64
-	requestSize    uint64
-	responseOffset uint64
-	responseSize   uint64
+	requestOffsets     [3]uint64
+	requestHeaderSize  uint64
+	responseBoolOffset uint64
+	responseHeaderSize uint64
 }
 
 func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLayout, error) {
@@ -87,29 +87,44 @@ func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLay
 	if err != nil {
 		return layout, err
 	}
-	requestFields, err := validateRecord(graph, requestType, "AdmitRequest", []recordFieldProfile{{"Current", 0x9010, 8}, {"Delta", 0x9010, 8}, {"Limit", 0x9010, 8}})
+	requestFields, err := validateRecord(graph, requestType, "AdmitRequest", []recordFieldProfile{{"Current", 0x9010, 8}, {"Delta", 0x9010, 8}, {"Limit", 0x9010, 8}, {"Subject", 0x9040, 4}, {"Evidence", 0x9041, 4}})
 	if err != nil {
 		return layout, err
 	}
-	for index, item := range requestFields {
+	for index, item := range requestFields[:3] {
 		layout.requestOffsets[index] = item.offset
 	}
-	layout.requestSize = requestFields[len(requestFields)-1].offset + requestFields[len(requestFields)-1].size
+	layout.requestHeaderSize = requestFields[len(requestFields)-1].offset + requestFields[len(requestFields)-1].size
 	resultValue, err := field(function, 0x9112)
 	if err != nil {
 		return layout, fmt.Errorf("wasm.function_result")
 	}
-	responseType, ok := graph.Entities[resultValue.Reference]
-	if !ok || responseType.Schema != identity(0x9030) {
+	resultType, ok := graph.Entities[resultValue.Reference]
+	if !ok || resultType.Schema != identity(0x9042) {
 		return layout, fmt.Errorf("wasm.function_result")
 	}
-	responseFields, err := validateRecord(graph, responseType, "AdmitResponse", []recordFieldProfile{{"Accepted", 0x9020, 1}})
+	okType, okErr := field(resultType, 0x9400)
+	errorType, errorErr := field(resultType, 0x9401)
+	responseType, responseOK := graph.Entities[okType.Reference]
+	errorTypeEntity, errorOK := graph.Entities[errorType.Reference]
+	if okErr != nil || errorErr != nil || !responseOK || responseType.Schema != identity(0x9030) || !errorOK || errorTypeEntity.Schema != identity(0x9040) {
+		return layout, fmt.Errorf("wasm.result_profile")
+	}
+	responseFields, err := validateRecord(graph, responseType, "AdmitResponse", []recordFieldProfile{{"Accepted", 0x9020, 1}, {"Subject", 0x9040, 4}, {"Evidence", 0x9041, 4}})
 	if err != nil {
 		return layout, err
 	}
-	layout.responseOffset = responseFields[0].offset
-	layout.responseSize = responseFields[0].size
-	body, err := referenced(graph, function, 0x9113, 0x9033)
+	layout.responseBoolOffset = 1 + responseFields[0].offset
+	layout.responseHeaderSize = 1 + responseFields[len(responseFields)-1].offset + responseFields[len(responseFields)-1].size
+	resultOk, err := referenced(graph, function, 0x9113, 0x9043)
+	if err != nil {
+		return layout, err
+	}
+	resultOKType, resultTypeErr := field(resultOk, 0x9410)
+	if resultTypeErr != nil || resultOKType.Reference != resultType.ID {
+		return layout, fmt.Errorf("wasm.result_ok_type")
+	}
+	body, err := referenced(graph, resultOk, 0x9411, 0x9033)
 	if err != nil {
 		return layout, err
 	}
@@ -118,7 +133,7 @@ func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLay
 		return layout, fmt.Errorf("wasm.response_construct_type")
 	}
 	values, err := field(body, 0x9331)
-	if err != nil || len(values.List) != 1 {
+	if err != nil || len(values.List) != 3 {
 		return layout, fmt.Errorf("wasm.response_construct_values")
 	}
 	comparison, ok := graph.Entities[values.List[0].Reference]
@@ -160,6 +175,16 @@ func validateFunction(graph wire.Envelope, function wire.Entity) (applicationLay
 		selectedField, selectedErr := field(check.entity, 0x9321)
 		if err != nil || selectedErr != nil || readParameter.Reference != parameter.ID || selectedField.Reference != check.field {
 			return layout, fmt.Errorf("wasm.expression_record_field")
+		}
+	}
+	for index, fieldIndex := range []int{3, 4} {
+		value, ok := graph.Entities[values.List[index+1].Reference]
+		if !ok || value.Schema != identity(0x9032) {
+			return layout, fmt.Errorf("wasm.response_variable_value")
+		}
+		selected, selectedErr := field(value, 0x9321)
+		if selectedErr != nil || selected.Reference != requestFields[fieldIndex].entity.ID {
+			return layout, fmt.Errorf("wasm.response_variable_field")
 		}
 	}
 	return layout, nil

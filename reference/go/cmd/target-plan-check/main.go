@@ -31,6 +31,10 @@ func main() {
 	recordFields := bySchema(graph, 0x9031)
 	fieldReads := bySchema(graph, 0x9032)
 	recordConstructs := bySchema(graph, 0x9033)
+	stringTypes := bySchema(graph, 0x9040)
+	bytesTypes := bySchema(graph, 0x9041)
+	resultTypes := bySchema(graph, 0x9042)
+	resultOKs := bySchema(graph, 0x9043)
 	effects := bySchema(graph, 0x15)
 	capabilities := bySchema(graph, 0x16)
 	targets := bySchema(graph, 0xc010)
@@ -41,7 +45,8 @@ func main() {
 	boundaries := bySchema(graph, 0xc015)
 	must(len(packages) == 1 && len(dependencies) == 1 && len(mappings) == 1 && len(interfaces) == 1, "package requirement cardinality mismatch")
 	must(len(providerDeclarations) == 1 && len(canonicalFunctions) == 1, "source/canonical function cardinality mismatch")
-	must(len(recordTypes) == 2 && len(recordFields) == 4 && len(fieldReads) == 3 && len(recordConstructs) == 1, "record semantics cardinality mismatch")
+	must(len(recordTypes) == 2 && len(recordFields) == 8 && len(fieldReads) == 5 && len(recordConstructs) == 1, "record semantics cardinality mismatch")
+	must(len(stringTypes) == 1 && len(bytesTypes) == 1 && len(resultTypes) == 1 && len(resultOKs) == 1, "variable/result semantics cardinality mismatch")
 	must(len(runtimes) == 2 && len(effects) == 1 && len(capabilities) == 1, "effect/runtime cardinality mismatch")
 	must(len(targets) == 1 && len(requirements) == 2 && len(rules) == 2 && len(resolutions) == 2 && len(plans) == 1, "target plan cardinality mismatch")
 
@@ -60,10 +65,12 @@ func main() {
 	must(field(interfaces[0], 0xb111).Reference == canonicalFunctions[0].ID, "typed interface bypasses canonical Function")
 	must(len(field(interfaces[0], 0xb112).List) == 1, "typed interface request record missing")
 	requestType := graph.Entities[field(interfaces[0], 0xb112).List[0].Reference]
-	responseType := graph.Entities[field(interfaces[0], 0xb113).Reference]
+	resultType := graph.Entities[field(interfaces[0], 0xb113).Reference]
+	responseType := graph.Entities[field(resultType, 0x9400).Reference]
 	must(requestType.Schema == identity(0x9030) && string(field(requestType, 0x9300).Bytes) == "AdmitRequest", "request record mismatch")
+	must(resultType.Schema == identity(0x9042), "result type mismatch")
 	must(responseType.Schema == identity(0x9030) && string(field(responseType, 0x9300).Bytes) == "AdmitResponse", "response record mismatch")
-	must(len(field(requestType, 0x9301).List) == 3 && len(field(responseType, 0x9301).List) == 1, "record field shape mismatch")
+	must(len(field(requestType, 0x9301).List) == 5 && len(field(responseType, 0x9301).List) == 3, "record field shape mismatch")
 
 	target := targets[0]
 	must(string(field(target, 0xc100).Bytes) == "wasm32-pulp-v1", "target name mismatch")

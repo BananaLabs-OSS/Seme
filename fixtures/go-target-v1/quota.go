@@ -5,19 +5,23 @@ import "log"
 
 // AdmitRequest is the application boundary consumed by Admit.
 type AdmitRequest struct {
-	Current int64
-	Delta   int64
-	Limit   int64
+	Current  int64
+	Delta    int64
+	Limit    int64
+	Subject  string
+	Evidence []byte
 }
 
 // AdmitResponse is the application boundary produced by Admit.
 type AdmitResponse struct {
 	Accepted bool
+	Subject  string
+	Evidence []byte
 }
 
 // Admit evaluates the quota policy and records its decision.
-func Admit(request AdmitRequest) AdmitResponse {
+func Admit(request AdmitRequest) (AdmitResponse, error) {
 	accepted := request.Current+request.Delta <= request.Limit
 	log.Printf("quota.accepted=%t", accepted)
-	return AdmitResponse{Accepted: accepted}
+	return AdmitResponse{Accepted: accepted, Subject: request.Subject, Evidence: request.Evidence}, nil
 }

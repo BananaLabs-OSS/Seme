@@ -12,7 +12,7 @@ Contract plan. Its deliberately finite profile requires:
 - an `AdmitResponse` RecordType containing an `Accepted` Boolean field.
 
 The backend independently validates those canonical entities and emits a
-deterministic 262-byte WebAssembly Pulp reactor:
+deterministic 388-byte WebAssembly Pulp reactor:
 
 ```text
 import pulp.log_bool(i32) -> i32
@@ -34,11 +34,11 @@ the canonical Seme graph and rejects unsupported graph shapes. This is an
 implementation layer that can later be lifted/self-hosted without changing the
 target contract or artifact behavior.
 
-Application Wire v1 derives field offsets and total sizes from those canonical
-record entities. Its v1 scalar mapping encodes signed i64 fields little-endian
-and Boolean fields as one byte. The backend constructs Wasm loads, stores, and
-length checks from the derived layout; Pulp carries the resulting bytes without
-interpreting their semantics.
+Application Wire v2 derives fixed-header offsets and variable field positions
+from those canonical record entities. Signed i64 fields are little-endian;
+strings use bounded UTF-8 bytes; byte sequences remain opaque; Result uses an
+explicit tag. The backend constructs Wasm loads, stores, length guards, and
+copies from the derived layout.
 
 Conformance executes the artifact in Node's WebAssembly engine with a host
 adapter implementing the declared import. Five request/result/effect traces, including

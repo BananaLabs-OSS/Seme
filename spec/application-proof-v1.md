@@ -9,7 +9,7 @@ ordinary Go quota policy
   -> canonical Seme function and effect plan
   -> independently generated Wasm reactor
   -> Pulp pulp_on_call provider
-  -> structured request / Boolean response
+  -> structured request / Result response
 ```
 
 The scoped request is a canonical Core Execution v3 `RecordType`. Application
@@ -21,9 +21,11 @@ Wire v1 derives this layout from its ordered `RecordField` entities:
 | 8 | `delta` | little-endian signed i64 |
 | 16 | `limit` | little-endian signed i64 |
 
-The response is exactly one byte: zero for false and one for true. The provider
-name is `quota.admit-v1`. Unsupported request sizes return status 2. The
-underlying decision retains Go's signed 64-bit modular addition behavior.
+Application Wire v2 extends the header with subject/evidence lengths and appends
+their bytes. The response begins with a Result tag, then the Boolean decision,
+lengths, and preserved subject/evidence data. Each variable field is bounded to
+4096 bytes. Malformed sizes return status 2. The provider name remains
+`quota.admit-v1`, and the decision retains signed 64-bit modular addition.
 
 `./scripts/demo-application-v1.sh` loads one Pulp cell, sends three different
 requests, prints their structured responses, and then runs the identical Wasm
@@ -35,7 +37,7 @@ that graph and generates its Wasm request loads, response stores, and size
 guards from the canonical field order and scalar widths.
 
 This milestone is usable as a bounded technical demo. Input is still driven by
-the proof deployment instead of HTTP, Application Wire v1 supports only signed
-i64 and Boolean fields, and only the exact quota function shape is supported.
+the proof deployment instead of HTTP, Application Wire v2 supports only its
+current scalar/string/bytes profile, and only the exact quota function shape is supported.
 Those limitations are explicit rather than generalized into a claim of
 arbitrary Go application support.

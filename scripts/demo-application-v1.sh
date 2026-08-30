@@ -6,7 +6,7 @@ pulp_repo=${PULP_REPO:-"$repo/../Pulp"}
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-application-demo.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 
-if ! git -C "$pulp_repo" merge-base --is-ancestor f4d15bb HEAD; then
+if ! git -C "$pulp_repo" merge-base --is-ancestor 161c9dc HEAD; then
     echo "Pulp does not contain the required Seme application driver" >&2
     exit 65
 fi

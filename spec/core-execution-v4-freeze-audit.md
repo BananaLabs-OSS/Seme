@@ -8,6 +8,7 @@
 | Explicit fallibility | pass | Result type, success construction, and error construction are distinct entities. |
 | Target independence | pass | No encoding, pointer, allocator, Wasm, Pulp, or ABI fields occur in the semantic schemas. |
 
-This freeze establishes the type vocabulary. Go lifting, bounded Application
-Wire v2 encoding, both result branches, and runtime conformance are subsequent
-proof obligations and are not claimed by this audit.
+This freeze establishes the type vocabulary. The subsequent application proof
+now lifts Go strings/bytes and `(response, error)`, then executes bounded
+Application Wire v2 `ResultOk`. A real `ResultError` source branch remains a
+separate proof obligation and is not claimed by this audit.
