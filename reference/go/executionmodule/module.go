@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 7 {
+	if version < 2 || version > 10 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -65,6 +65,22 @@ func Declarations(version int) ([]Schema, error) {
 	if version >= 7 {
 		schemas = append(schemas,
 			Schema{0x9070, "IntegerLiteral", []Field{field(0x9700, "integer_literal.bits", 2, 0, 0), field(0x9701, "integer_literal.type", 5, 0x9010, 0)}},
+		)
+	}
+	if version >= 8 {
+		schemas = append(schemas,
+			Schema{0x9080, "Block", []Field{field(0x9800, "block.statements", 5, 0, 2)}},
+			Schema{0x9081, "Return", []Field{field(0x9810, "return.values", 5, 0, 2)}},
+		)
+	}
+	if version >= 9 {
+		schemas = append(schemas,
+			Schema{0x9090, "IntegerMultiply", []Field{field(0x9900, "integer_multiply.left", 5, 0, 0), field(0x9901, "integer_multiply.right", 5, 0, 0), field(0x9902, "integer_multiply.type", 5, 0x9010, 0)}},
+		)
+	}
+	if version >= 10 {
+		schemas = append(schemas,
+			Schema{0x90a0, "IntegerSubtract", []Field{field(0x9a00, "integer_subtract.left", 5, 0, 0), field(0x9a01, "integer_subtract.right", 5, 0, 0), field(0x9a02, "integer_subtract.type", 5, 0x9010, 0)}},
 		)
 	}
 	return schemas, nil
