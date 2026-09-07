@@ -29,3 +29,6 @@ It is not part of Seme's runtime or trusted bootstrap.
   synchronization race cannot accidentally stage transport files. Four such
   files briefly entered an unpushed local commit; that commit was amended, its
   reflog expired, and its object pruned. The temporary files were removed.
+- Live Language Service v1, the incremental Go session, and the certified
+  canonical builder used only the existing workstation tools documented above.
+  No software was installed and no persistent environment setting changed.
