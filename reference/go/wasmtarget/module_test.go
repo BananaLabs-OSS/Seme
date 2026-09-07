@@ -112,6 +112,29 @@ func TestLowerHelperIntegerPreservesSubtractionOrder(t *testing.T) {
 	}
 }
 
+func TestLowerHelperBooleanAndUsesShortCircuitControlFlow(t *testing.T) {
+	falseID := identity(0x300)
+	trueID := identity(0x301)
+	andID := identity(0x302)
+	graph := wire.Envelope{Entities: map[wire.ID]wire.Entity{
+		falseID: {ID: falseID, Schema: identity(0x90b0), Fields: map[wire.ID]wire.Value{identity(0x9b00): {Tag: 1}}},
+		trueID:  {ID: trueID, Schema: identity(0x90b0), Fields: map[wire.ID]wire.Value{identity(0x9b00): {Tag: 2}}},
+		andID: {ID: andID, Schema: identity(0x90b1), Fields: map[wire.ID]wire.Value{
+			identity(0x9b10): {Tag: 6, Reference: falseID}, identity(0x9b11): {Tag: 6, Reference: trueID},
+		}},
+	}}
+	budget := 8
+	got, err := lowerHelperBoolean(graph, andID, nil, map[byte]bool{}, map[wire.ID]bool{}, &budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// false; if (result i32) { true } else { false }
+	want := []byte{0x41, 0x00, 0x04, 0x7f, 0x41, 0x01, 0x05, 0x41, 0x00, 0x0b}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("instructions = %x, want short-circuit %x", got, want)
+	}
+}
+
 func TestModuleRejectsUnboundedLayout(t *testing.T) {
 	_, err := module(applicationLayout{helperInstructions: []byte{0x41, 0}, requestHeaderSize: 65536, responseHeaderSize: 10, errorMessage: []byte("subject required")})
 	if err == nil {

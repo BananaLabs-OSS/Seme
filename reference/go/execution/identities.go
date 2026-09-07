@@ -14,4 +14,6 @@ const (
 	SchemaReturn          foundation.ID = "00000000000000000000000000009081"
 	SchemaIntegerMultiply foundation.ID = "00000000000000000000000000009090"
 	SchemaIntegerSubtract foundation.ID = "000000000000000000000000000090a0"
+	SchemaBooleanLiteral  foundation.ID = "000000000000000000000000000090b0"
+	SchemaBooleanAnd      foundation.ID = "000000000000000000000000000090b1"
 )

@@ -163,8 +163,30 @@ func TestVersionTenExtendsVersionNineWithIntegerSubtract(t *testing.T) {
 	}
 }
 
+func TestVersionElevenExtendsVersionTenWithBooleanComposition(t *testing.T) {
+	v10, err := Declarations(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v11, err := Declarations(11)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v11) != len(v10)+2 {
+		t.Fatalf("v11 schemas = %d, want %d", len(v11), len(v10)+2)
+	}
+	for index := range v10 {
+		if v10[index].ID != v11[index].ID || v10[index].Name != v11[index].Name {
+			t.Fatalf("v10 schema %d changed in v11", index)
+		}
+	}
+	if v11[len(v10)].Name != "BooleanLiteral" || v11[len(v10)+1].Name != "BooleanAnd" {
+		t.Fatalf("unexpected v11 schemas: %q, %q", v11[len(v10)].Name, v11[len(v10)+1].Name)
+	}
+}
+
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(11); err == nil {
+	if _, err := Declarations(12); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }

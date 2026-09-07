@@ -16,7 +16,7 @@ func LiftStructuredFunction(project string, manifest Manifest, moduleG1 []byte, 
 	if err != nil {
 		return "", "", err
 	}
-	if signature.Results().Len() != 1 || !isInt64(signature.Results().At(0).Type()) {
+	if signature.Results().Len() != 1 || (!isInt64(signature.Results().At(0).Type()) && !isBool(signature.Results().At(0).Type())) {
 		return "", "", fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 	}
 	for index := 0; index < signature.Params().Len(); index++ {
@@ -37,12 +37,17 @@ func LiftStructuredFunction(project string, manifest Manifest, moduleG1 []byte, 
 	}
 
 	integerID := stableID("execution", "type", "i64")
+	resultTypeID := integerID
 	parameterIDs := make([]string, signature.Params().Len())
 	instances := []graphEntity{{integerID, entity(integerID, "00000000000000000000000000009010", []graphField{
 		unsignedField(0x9100, 64),
 		{0x9101, "tr"},
 		unsignedField(0x9102, 0),
 	})}}
+	if isBool(signature.Results().At(0).Type()) {
+		resultTypeID = stableID("execution", "type", "bool")
+		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "00000000000000000000000000009020", nil)})
+	}
 	for index := range parameterIDs {
 		parameterIDs[index] = stableID("execution", declaration.ID, "parameter", strconv.Itoa(index))
 		instances = append(instances, graphEntity{parameterIDs[index], entity(parameterIDs[index], "00000000000000000000000000009012", []graphField{
@@ -63,7 +68,7 @@ func LiftStructuredFunction(project string, manifest Manifest, moduleG1 []byte, 
 		graphEntity{returnID, entity(returnID, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{expressionID})})},
 		graphEntity{blockID, entity(blockID, "00000000000000000000000000009080", []graphField{refsField(0x9800, []string{returnID})})},
 		graphEntity{declaration.ID, entity(declaration.ID, "00000000000000000000000000009011", []graphField{
-			bytesField(0x9110, functionName), refsField(0x9111, parameterIDs), refField(0x9112, integerID), refField(0x9113, blockID),
+			bytesField(0x9110, functionName), refsField(0x9111, parameterIDs), refField(0x9112, resultTypeID), refField(0x9113, blockID),
 		})},
 		graphEntity{programID, entity(programID, "00000000000000000000000000009015", []graphField{
 			refsField(0x9150, []string{declaration.ID}), refField(0x9151, declaration.ID),
