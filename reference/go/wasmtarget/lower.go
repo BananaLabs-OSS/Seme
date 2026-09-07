@@ -5,6 +5,7 @@ package wasmtarget
 import (
 	"bytes"
 	"fmt"
+	"unicode/utf8"
 
 	"seme.local/reference/wire"
 )
@@ -440,6 +441,43 @@ func lowerHelperBoolean(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 		instructions := append(leftInstructions, 0x04, 0x7f)
 		instructions = append(instructions, rightInstructions...)
 		return append(instructions, 0x05, 0x41, 0x00, 0x0b), nil
+	case identity(0x90c1):
+		left, leftErr := field(expression, 0x9c10)
+		right, rightErr := field(expression, 0x9c11)
+		if leftErr != nil || rightErr != nil {
+			return nil, fmt.Errorf("wasm.helper_boolean_or")
+		}
+		leftInstructions, err := lowerHelperBoolean(graph, left.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		rightInstructions, err := lowerHelperBoolean(graph, right.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		// if (result i32) evaluates the right operand only when left is false.
+		instructions := append(leftInstructions, 0x04, 0x7f, 0x41, 0x01, 0x05)
+		instructions = append(instructions, rightInstructions...)
+		return append(instructions, 0x0b), nil
+	case identity(0x90c2):
+		left, leftErr := field(expression, 0x9c20)
+		right, rightErr := field(expression, 0x9c21)
+		if leftErr != nil || rightErr != nil {
+			return nil, fmt.Errorf("wasm.helper_string_equal")
+		}
+		leftText, err := constantUTF8String(graph, left.Reference, map[wire.ID]bool{}, budget)
+		if err != nil {
+			return nil, err
+		}
+		rightText, err := constantUTF8String(graph, right.Reference, map[wire.ID]bool{}, budget)
+		if err != nil {
+			return nil, err
+		}
+		value := byte(0)
+		if bytes.Equal(leftText, rightText) {
+			value = 1
+		}
+		return []byte{0x41, value}, nil
 	case identity(0x9021):
 		left, leftErr := field(expression, 0x9160)
 		right, rightErr := field(expression, 0x9161)
@@ -458,6 +496,47 @@ func lowerHelperBoolean(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 		return append(instructions, 0x57), nil // i64.le_s
 	default:
 		return nil, fmt.Errorf("wasm.helper_boolean_expression")
+	}
+}
+
+func constantUTF8String(graph wire.Envelope, id wire.ID, visiting map[wire.ID]bool, budget *int) ([]byte, error) {
+	if *budget == 0 || visiting[id] {
+		return nil, fmt.Errorf("wasm.helper_string_cycle_or_size")
+	}
+	*budget--
+	visiting[id] = true
+	defer delete(visiting, id)
+	expression, ok := graph.Entities[id]
+	if !ok {
+		return nil, fmt.Errorf("wasm.helper_string_missing")
+	}
+	switch expression.Schema {
+	case identity(0x9050):
+		literal, err := field(expression, 0x9500)
+		if err != nil || literal.Tag != 5 || !utf8.Valid(literal.Bytes) || len(literal.Bytes) > 4096 {
+			return nil, fmt.Errorf("wasm.helper_string_literal")
+		}
+		return append([]byte(nil), literal.Bytes...), nil
+	case identity(0x90c3):
+		left, leftErr := field(expression, 0x9c30)
+		right, rightErr := field(expression, 0x9c31)
+		if leftErr != nil || rightErr != nil {
+			return nil, fmt.Errorf("wasm.helper_string_concat")
+		}
+		leftText, err := constantUTF8String(graph, left.Reference, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		rightText, err := constantUTF8String(graph, right.Reference, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		if len(leftText) > 4096-len(rightText) {
+			return nil, fmt.Errorf("wasm.helper_string_too_large")
+		}
+		return append(leftText, rightText...), nil
+	default:
+		return nil, fmt.Errorf("wasm.helper_string_expression")
 	}
 }
 

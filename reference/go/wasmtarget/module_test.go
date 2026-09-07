@@ -135,6 +135,29 @@ func TestLowerHelperBooleanAndUsesShortCircuitControlFlow(t *testing.T) {
 	}
 }
 
+func TestLowerHelperBooleanOrUsesShortCircuitControlFlow(t *testing.T) {
+	trueID := identity(0x310)
+	falseID := identity(0x311)
+	orID := identity(0x312)
+	graph := wire.Envelope{Entities: map[wire.ID]wire.Entity{
+		trueID:  {ID: trueID, Schema: identity(0x90b0), Fields: map[wire.ID]wire.Value{identity(0x9b00): {Tag: 2}}},
+		falseID: {ID: falseID, Schema: identity(0x90b0), Fields: map[wire.ID]wire.Value{identity(0x9b00): {Tag: 1}}},
+		orID: {ID: orID, Schema: identity(0x90c1), Fields: map[wire.ID]wire.Value{
+			identity(0x9c10): {Tag: 6, Reference: trueID}, identity(0x9c11): {Tag: 6, Reference: falseID},
+		}},
+	}}
+	budget := 8
+	got, err := lowerHelperBoolean(graph, orID, nil, map[byte]bool{}, map[wire.ID]bool{}, &budget)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// true; if (result i32) { true } else { false }
+	want := []byte{0x41, 0x01, 0x04, 0x7f, 0x41, 0x01, 0x05, 0x41, 0x00, 0x0b}
+	if !bytes.Equal(got, want) {
+		t.Fatalf("instructions = %x, want short-circuit %x", got, want)
+	}
+}
+
 func TestModuleRejectsUnboundedLayout(t *testing.T) {
 	_, err := module(applicationLayout{helperInstructions: []byte{0x41, 0}, requestHeaderSize: 65536, responseHeaderSize: 10, errorMessage: []byte("subject required")})
 	if err == nil {

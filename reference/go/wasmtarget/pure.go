@@ -3,6 +3,7 @@ package wasmtarget
 import (
 	"bytes"
 	"fmt"
+	"unicode/utf8"
 
 	"seme.local/reference/wire"
 )
@@ -144,40 +145,82 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if err != nil || bodyValue.Tag != 6 {
 		return nil, PureABI{}, fmt.Errorf("wasm.pure_body")
 	}
-	body, ok := graph.Entities[bodyValue.Reference]
-	if !ok || body.Schema != identity(0x9080) {
-		return nil, PureABI{}, fmt.Errorf("wasm.pure_body")
-	}
-	statements, err := field(body, 0x9800)
-	if err != nil || statements.Tag != 7 || len(statements.List) != 1 || statements.List[0].Tag != 6 {
-		return nil, PureABI{}, fmt.Errorf("wasm.pure_block")
-	}
-	returned, ok := graph.Entities[statements.List[0].Reference]
-	if !ok || returned.Schema != identity(0x9081) {
-		return nil, PureABI{}, fmt.Errorf("wasm.pure_return")
-	}
-	values, err := field(returned, 0x9810)
-	if err != nil || values.Tag != 7 || len(values.List) != 1 || values.List[0].Tag != 6 {
-		return nil, PureABI{}, fmt.Errorf("wasm.pure_return_values")
-	}
 	used := map[byte]bool{}
-	visiting := map[wire.ID]bool{}
 	budget := 4096
-	if err := validatePureExpression(graph, values.List[0].Reference, resultType.name, parameterTypeNames, map[wire.ID]bool{}, &budget); err != nil {
-		return nil, PureABI{}, err
-	}
-	budget = 4096
-	var instructions []byte
-	if resultType.name == "i64" {
-		instructions, err = lowerHelperInteger(graph, values.List[0].Reference, parameterLocals, used, visiting, &budget)
-	} else {
-		instructions, err = lowerHelperBoolean(graph, values.List[0].Reference, parameterLocals, used, visiting, &budget)
-	}
+	instructions, err := lowerPureBlock(graph, bodyValue.Reference, resultType.name, parameterTypeNames, parameterLocals, used, map[wire.ID]bool{}, &budget)
 	if err != nil {
 		return nil, PureABI{}, err
 	}
 	wasm, err := pureModule(parameterTypes, resultType, instructions, abi)
 	return wasm, abi, err
+}
+
+func lowerPureBlock(graph wire.Envelope, id wire.ID, resultType string, parameterTypes map[wire.ID]string, parameterLocals map[wire.ID]byte, used map[byte]bool, visiting map[wire.ID]bool, budget *int) ([]byte, error) {
+	if *budget == 0 || visiting[id] {
+		return nil, fmt.Errorf("wasm.pure_control_cycle_or_size")
+	}
+	*budget--
+	visiting[id] = true
+	defer delete(visiting, id)
+	block, ok := graph.Entities[id]
+	if !ok || block.Schema != identity(0x9080) {
+		return nil, fmt.Errorf("wasm.pure_block")
+	}
+	statements, err := field(block, 0x9800)
+	if err != nil || statements.Tag != 7 || len(statements.List) != 1 || statements.List[0].Tag != 6 {
+		return nil, fmt.Errorf("wasm.pure_block")
+	}
+	statement, ok := graph.Entities[statements.List[0].Reference]
+	if !ok {
+		return nil, fmt.Errorf("wasm.pure_statement_missing")
+	}
+	switch statement.Schema {
+	case identity(0x9081):
+		values, err := field(statement, 0x9810)
+		if err != nil || values.Tag != 7 || len(values.List) != 1 || values.List[0].Tag != 6 {
+			return nil, fmt.Errorf("wasm.pure_return_values")
+		}
+		if err := validatePureExpression(graph, values.List[0].Reference, resultType, parameterTypes, map[wire.ID]bool{}, budget); err != nil {
+			return nil, err
+		}
+		if resultType == "i64" {
+			return lowerHelperInteger(graph, values.List[0].Reference, parameterLocals, used, map[wire.ID]bool{}, budget)
+		}
+		return lowerHelperBoolean(graph, values.List[0].Reference, parameterLocals, used, map[wire.ID]bool{}, budget)
+	case identity(0x90c0):
+		condition, conditionErr := field(statement, 0x9c00)
+		thenValue, thenErr := field(statement, 0x9c01)
+		elseValue, elseErr := field(statement, 0x9c02)
+		if conditionErr != nil || thenErr != nil || elseErr != nil || condition.Tag != 6 || thenValue.Tag != 6 || elseValue.Tag != 6 {
+			return nil, fmt.Errorf("wasm.pure_if_fields")
+		}
+		if err := validatePureExpression(graph, condition.Reference, "bool", parameterTypes, map[wire.ID]bool{}, budget); err != nil {
+			return nil, err
+		}
+		conditionCode, err := lowerHelperBoolean(graph, condition.Reference, parameterLocals, used, map[wire.ID]bool{}, budget)
+		if err != nil {
+			return nil, err
+		}
+		thenCode, err := lowerPureBlock(graph, thenValue.Reference, resultType, parameterTypes, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		elseCode, err := lowerPureBlock(graph, elseValue.Reference, resultType, parameterTypes, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		wasmType := byte(0x7f)
+		if resultType == "i64" {
+			wasmType = 0x7e
+		}
+		instructions := append(conditionCode, 0x04, wasmType)
+		instructions = append(instructions, thenCode...)
+		instructions = append(instructions, 0x05)
+		instructions = append(instructions, elseCode...)
+		return append(instructions, 0x0b), nil
+	default:
+		return nil, fmt.Errorf("wasm.pure_return")
+	}
 }
 
 func pureEncoding(name string) string {
@@ -252,6 +295,27 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 			return fmt.Errorf("wasm.pure_boolean_and_type")
 		}
 		return validatePair(0x9b10, 0x9b11, "bool")
+	case identity(0x90c1):
+		if expected != "bool" {
+			return fmt.Errorf("wasm.pure_boolean_or_type")
+		}
+		return validatePair(0x9c10, 0x9c11, "bool")
+	case identity(0x90c2):
+		if expected != "bool" {
+			return fmt.Errorf("wasm.pure_string_equal_type")
+		}
+		return validatePair(0x9c20, 0x9c21, "string")
+	case identity(0x90c3):
+		if expected != "string" {
+			return fmt.Errorf("wasm.pure_string_concat_type")
+		}
+		return validatePair(0x9c30, 0x9c31, "string")
+	case identity(0x9050):
+		literal, err := field(expression, 0x9500)
+		if expected != "string" || err != nil || literal.Tag != 5 || !utf8.Valid(literal.Bytes) {
+			return fmt.Errorf("wasm.pure_string_literal_type")
+		}
+		return nil
 	default:
 		return fmt.Errorf("wasm.pure_unsupported_expression")
 	}

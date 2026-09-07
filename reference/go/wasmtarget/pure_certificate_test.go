@@ -115,6 +115,42 @@ func TestPureCertificateRejectsExpressionOverBudget(t *testing.T) {
 	}
 }
 
+func TestPureCertificateLowersNestedIfAndUTF8Text(t *testing.T) {
+	graph := certifiedTestGraph()
+	function := graph.Entities[identity(0x2001)]
+	function.Fields[identity(0x9112)] = ref(identity(0x2010))
+	graph.Entities[function.ID] = function
+	thenBlock, elseBlock := identity(0x2100), identity(0x2101)
+	thenReturn, elseReturn := identity(0x2102), identity(0x2103)
+	ifID, equalID, concatID := identity(0x2104), identity(0x2105), identity(0x2106)
+	leftText, suffixText, rightText := identity(0x2107), identity(0x2108), identity(0x2109)
+	trueID, falseID := identity(0x2110), identity(0x2111)
+	graph.Entities[identity(0x2002)] = wire.Entity{ID: identity(0x2002), Schema: identity(0x9080), Fields: map[wire.ID]wire.Value{identity(0x9800): refs(ifID)}}
+	graph.Entities[ifID] = wire.Entity{ID: ifID, Schema: identity(0x90c0), Fields: map[wire.ID]wire.Value{
+		identity(0x9c00): ref(equalID), identity(0x9c01): ref(thenBlock), identity(0x9c02): ref(elseBlock),
+	}}
+	graph.Entities[thenBlock] = wire.Entity{ID: thenBlock, Schema: identity(0x9080), Fields: map[wire.ID]wire.Value{identity(0x9800): refs(thenReturn)}}
+	graph.Entities[elseBlock] = wire.Entity{ID: elseBlock, Schema: identity(0x9080), Fields: map[wire.ID]wire.Value{identity(0x9800): refs(elseReturn)}}
+	graph.Entities[thenReturn] = wire.Entity{ID: thenReturn, Schema: identity(0x9081), Fields: map[wire.ID]wire.Value{identity(0x9810): refs(trueID)}}
+	graph.Entities[elseReturn] = wire.Entity{ID: elseReturn, Schema: identity(0x9081), Fields: map[wire.ID]wire.Value{identity(0x9810): refs(falseID)}}
+	graph.Entities[equalID] = wire.Entity{ID: equalID, Schema: identity(0x90c2), Fields: map[wire.ID]wire.Value{identity(0x9c20): ref(concatID), identity(0x9c21): ref(rightText)}}
+	graph.Entities[concatID] = wire.Entity{ID: concatID, Schema: identity(0x90c3), Fields: map[wire.ID]wire.Value{identity(0x9c30): ref(leftText), identity(0x9c31): ref(suffixText)}}
+	graph.Entities[leftText] = wire.Entity{ID: leftText, Schema: identity(0x9050), Fields: map[wire.ID]wire.Value{identity(0x9500): byteValue("λ")}}
+	graph.Entities[suffixText] = wire.Entity{ID: suffixText, Schema: identity(0x9050), Fields: map[wire.ID]wire.Value{identity(0x9500): byteValue("!")}}
+	graph.Entities[rightText] = wire.Entity{ID: rightText, Schema: identity(0x9050), Fields: map[wire.ID]wire.Value{identity(0x9500): byteValue("λ!")}}
+	graph.Entities[trueID] = wire.Entity{ID: trueID, Schema: identity(0x90b0), Fields: map[wire.ID]wire.Value{identity(0x9b00): {Tag: 2}}}
+	graph.Entities[falseID] = wire.Entity{ID: falseID, Schema: identity(0x90b0), Fields: map[wire.ID]wire.Value{identity(0x9b00): {Tag: 1}}}
+	if _, err := CertifyPureFunction(graph); err != nil {
+		t.Fatal(err)
+	}
+	invalid := graph.Entities[leftText]
+	invalid.Fields[identity(0x9500)] = wire.Value{Tag: 5, Bytes: []byte{0xff}}
+	graph.Entities[leftText] = invalid
+	if _, err := CertifyPureFunction(graph); err == nil || !strings.Contains(err.Error(), "wasm.pure_string_literal_type") {
+		t.Fatalf("invalid UTF-8 error = %v", err)
+	}
+}
+
 func certifiedTestGraph() wire.Envelope {
 	programID, functionID := identity(0x2000), identity(0x2001)
 	blockID, returnID := identity(0x2002), identity(0x2003)

@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 12 {
+	if version < 2 || version > 13 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -87,6 +87,14 @@ func Declarations(version int) ([]Schema, error) {
 		schemas = append(schemas,
 			Schema{0x90b0, "BooleanLiteral", []Field{field(0x9b00, "boolean_literal.value", 1, 0, 0)}},
 			Schema{0x90b1, "BooleanAnd", []Field{field(0x9b10, "boolean_and.left", 5, 0, 0), field(0x9b11, "boolean_and.right", 5, 0, 0)}},
+		)
+	}
+	if version >= 13 {
+		schemas = append(schemas,
+			Schema{0x90c0, "If", []Field{field(0x9c00, "if.condition", 5, 0, 0), field(0x9c01, "if.then", 5, 0x9080, 0), field(0x9c02, "if.else", 5, 0x9080, 0)}},
+			Schema{0x90c1, "BooleanOr", []Field{field(0x9c10, "boolean_or.left", 5, 0, 0), field(0x9c11, "boolean_or.right", 5, 0, 0)}},
+			Schema{0x90c2, "StringEqual", []Field{field(0x9c20, "string_equal.left", 5, 0, 0), field(0x9c21, "string_equal.right", 5, 0, 0)}},
+			Schema{0x90c3, "StringConcat", []Field{field(0x9c30, "string_concat.left", 5, 0, 0), field(0x9c31, "string_concat.right", 5, 0, 0)}},
 		)
 	}
 	return schemas, nil

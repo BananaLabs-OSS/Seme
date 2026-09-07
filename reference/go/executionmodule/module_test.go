@@ -204,8 +204,33 @@ func TestVersionTwelveFreezesGenericPureFunctionProfile(t *testing.T) {
 	}
 }
 
+func TestVersionThirteenAddsControlFlowAndText(t *testing.T) {
+	v12, err := Declarations(12)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v13, err := Declarations(13)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v13) != len(v12)+4 {
+		t.Fatalf("v13 schemas = %d, want %d", len(v13), len(v12)+4)
+	}
+	want := []string{"If", "BooleanOr", "StringEqual", "StringConcat"}
+	for index := range v12 {
+		if v12[index].ID != v13[index].ID || v12[index].Name != v13[index].Name {
+			t.Fatalf("v12 schema %d changed", index)
+		}
+	}
+	for index, name := range want {
+		if v13[len(v12)+index].Name != name {
+			t.Fatalf("v13 schema %d = %q", index, v13[len(v12)+index].Name)
+		}
+	}
+}
+
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(13); err == nil {
+	if _, err := Declarations(14); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }

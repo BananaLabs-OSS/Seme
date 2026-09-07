@@ -20,6 +20,10 @@ const (
 	goIntegerSubtract
 	goBooleanLiteral
 	goBooleanAnd
+	goStringLiteral
+	goBooleanOr
+	goStringEqual
+	goStringConcat
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -30,6 +34,7 @@ type goExpression struct {
 	parameter int
 	integer   uint64
 	boolean   bool
+	text      string
 	left      *goExpression
 	right     *goExpression
 }
@@ -72,6 +77,29 @@ func emitCanonicalExpression(expression *goExpression, owner string, parameterID
 			}
 			id := expressionNodeID(owner, path, "boolean-and")
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090b1", []graphField{refField(0x9b10, left), refField(0x9b11, right)})}
+			return id, nil
+		case goBooleanOr, goStringEqual, goStringConcat:
+			left, err := emit(expression.left, path+".left")
+			if err != nil {
+				return "", err
+			}
+			right, err := emit(expression.right, path+".right")
+			if err != nil {
+				return "", err
+			}
+			kind, schema, leftField, rightField := "boolean-or", "000000000000000000000000000090c1", uint64(0x9c10), uint64(0x9c11)
+			if expression.kind == goStringEqual {
+				kind, schema, leftField, rightField = "string-equal", "000000000000000000000000000090c2", 0x9c20, 0x9c21
+			}
+			if expression.kind == goStringConcat {
+				kind, schema, leftField, rightField = "string-concat", "000000000000000000000000000090c3", 0x9c30, 0x9c31
+			}
+			id := expressionNodeID(owner, path, kind)
+			emitted[id] = graphEntity{id, entity(id, schema, []graphField{refField(leftField, left), refField(rightField, right)})}
+			return id, nil
+		case goStringLiteral:
+			id := expressionNodeID(owner, path, "string-literal")
+			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009050", []graphField{bytesField(0x9500, expression.text)})}
 			return id, nil
 		case goIntegerAdd, goIntegerMultiply, goIntegerSubtract, goIntegerLessEqual:
 			left, err := emit(expression.left, path+".left")
@@ -140,6 +168,13 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 		}
 		return nil, fmt.Errorf("expression.unresolved_parameter")
 	case *ast.BasicLit:
+		if expression.Kind == token.STRING {
+			value, err := strconv.Unquote(expression.Value)
+			if err != nil {
+				return nil, fmt.Errorf("expression.invalid_string_literal")
+			}
+			return &goExpression{kind: goStringLiteral, text: value}, nil
+		}
 		if expression.Kind != token.INT {
 			return nil, fmt.Errorf("expression.unsupported_literal")
 		}
@@ -153,13 +188,25 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 		kind := goExpressionKind(0)
 		switch expression.Op {
 		case token.ADD:
-			kind = goIntegerAdd
+			if isGoStringExpression(expression, info) {
+				kind = goStringConcat
+			} else {
+				kind = goIntegerAdd
+			}
 		case token.MUL:
 			kind = goIntegerMultiply
 		case token.SUB:
 			kind = goIntegerSubtract
 		case token.LAND:
 			kind = goBooleanAnd
+		case token.LOR:
+			kind = goBooleanOr
+		case token.EQL:
+			if isGoStringExpression(expression.X, info) {
+				kind = goStringEqual
+			} else {
+				return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
+			}
 		case token.LEQ:
 			kind = goIntegerLessEqual
 		case token.GEQ:
@@ -182,6 +229,18 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 	}
 }
 
+func isGoStringExpression(expression ast.Expr, info *types.Info) bool {
+	if info == nil {
+		return false
+	}
+	typeOf := info.TypeOf(expression)
+	if typeOf == nil {
+		return false
+	}
+	basic, ok := typeOf.Underlying().(*types.Basic)
+	return ok && (basic.Kind() == types.String || basic.Kind() == types.UntypedString || basic.Info()&types.IsString != 0)
+}
+
 func evaluateBooleanExpression(expression *goExpression, parameters []int64) (bool, error) {
 	if expression == nil {
 		return false, fmt.Errorf("expression.nil")
@@ -195,6 +254,22 @@ func evaluateBooleanExpression(expression *goExpression, parameters []int64) (bo
 			return false, err
 		}
 		return evaluateBooleanExpression(expression.right, parameters)
+	case goBooleanOr:
+		left, err := evaluateBooleanExpression(expression.left, parameters)
+		if err != nil || left {
+			return left, err
+		}
+		return evaluateBooleanExpression(expression.right, parameters)
+	case goStringEqual:
+		left, err := evaluateStringExpression(expression.left)
+		if err != nil {
+			return false, err
+		}
+		right, err := evaluateStringExpression(expression.right)
+		if err != nil {
+			return false, err
+		}
+		return left == right, nil
 	case goIntegerLessEqual:
 		left, err := evaluateIntegerExpression(expression.left, parameters)
 		if err != nil {
@@ -207,6 +282,28 @@ func evaluateBooleanExpression(expression *goExpression, parameters []int64) (bo
 		return left <= right, nil
 	default:
 		return false, fmt.Errorf("expression.not_boolean")
+	}
+}
+
+func evaluateStringExpression(expression *goExpression) (string, error) {
+	if expression == nil {
+		return "", fmt.Errorf("expression.nil")
+	}
+	switch expression.kind {
+	case goStringLiteral:
+		return expression.text, nil
+	case goStringConcat:
+		left, err := evaluateStringExpression(expression.left)
+		if err != nil {
+			return "", err
+		}
+		right, err := evaluateStringExpression(expression.right)
+		if err != nil {
+			return "", err
+		}
+		return left + right, nil
+	default:
+		return "", fmt.Errorf("expression.not_string")
 	}
 }
 
