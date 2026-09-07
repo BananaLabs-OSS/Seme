@@ -202,6 +202,13 @@ different signatures and behaviors as standalone Wasm and through Pulp, with
 exact-length and canonical-Boolean rejection. Run
 `./scripts/check-execution-v12.sh`.
 
+[`Core Execution v13`](spec/core-execution-v13.md) adds explicit total-return
+branching, nested blocks and multiple return sites, short-circuit Boolean OR,
+and bounded exact UTF-8 literal/concatenation/equality expressions. The Go
+provider normalizes fallthrough returns into explicit branches, and the same
+canonical tree runs as standalone Wasm and through Pulp. Run
+`./scripts/check-execution-v13.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

@@ -15,7 +15,7 @@ func main() {
 	manifestPath := flag.String("manifest", "", "Provider v1 manifest")
 	modulePath := flag.String("module", "", "Core Execution v1 module.g1")
 	function := flag.String("function", "Add", "function to lift")
-	profile := flag.String("profile", "add-v1", "exact lift profile: add-v1, quota-v1, or structured-v8")
+	profile := flag.String("profile", "add-v1", "exact lift profile: add-v1, quota-v1, structured-v8, or control-v13")
 	packageModule := flag.String("package-module", "", "optional Package Contract module G1")
 	out := flag.String("out", "", "output G1 path")
 	flag.Parse()
@@ -34,6 +34,8 @@ func main() {
 		g1, functionID, err = goprovider.LiftAdmit(*project, manifest, module, *function)
 	} else if *profile == "structured-v8" {
 		g1, functionID, err = goprovider.LiftStructuredFunction(*project, manifest, module, *function)
+	} else if *profile == "control-v13" {
+		g1, functionID, err = goprovider.LiftControlFunction(*project, manifest, module, *function)
 	} else {
 		err = fmt.Errorf("unknown profile %q", *profile)
 	}

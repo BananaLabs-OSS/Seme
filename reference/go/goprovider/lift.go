@@ -188,7 +188,10 @@ func resolvePackageFunction(project string, manifest Manifest, packagePath, func
 		}
 		parsed = append(parsed, node)
 	}
-	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
+	info := &types.Info{
+		Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{},
+		Types: map[ast.Expr]types.TypeAndValue{}, Selections: map[*ast.SelectorExpr]*types.Selection{},
+	}
 	config := types.Config{Importer: newSourceImporter(project, manifest, rootPackage)}
 	pkg, err := config.Check(packagePath, fset, parsed, info)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"strings"
 	"testing"
 )
 
@@ -121,6 +122,49 @@ func TestEvaluateBooleanAndShortCircuitsRightOperand(t *testing.T) {
 		right: invalidRight}
 	if _, err := evaluateBooleanExpression(notShortCircuited, nil); err == nil {
 		t.Fatal("true left operand incorrectly skipped the invalid right operand")
+	}
+}
+
+func TestAnalyzeEvaluateBooleanOrAndUTF8Strings(t *testing.T) {
+	expression, signature, info := checkedTypedBoolExpression(t, `return flag || ("λ" + "!" == "λ!")`)
+	analyzed, err := analyzeGoExpression(expression, signature, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analyzed.kind != goBooleanOr || analyzed.right.kind != goStringEqual || analyzed.right.left.kind != goStringConcat {
+		t.Fatal("typed text expression did not retain compositional shape")
+	}
+	got, err := evaluateBooleanExpression(analyzed.right, nil)
+	if err != nil || !got {
+		t.Fatalf("UTF-8 expression = %v, %v; want true, nil", got, err)
+	}
+	entities, _, err := emitCanonicalExpression(analyzed, "text-function", []string{"flag"}, "i64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	foundUTF8 := false
+	for _, item := range entities {
+		if strings.Contains(item.text, "by ceb") {
+			foundUTF8 = true
+		}
+	}
+	if !foundUTF8 {
+		t.Fatal("canonical graph did not retain UTF-8 bytes")
+	}
+}
+
+func TestEvaluateBooleanOrShortCircuitsRightOperand(t *testing.T) {
+	invalidRight := &goExpression{kind: goParameterRead, parameter: 99}
+	shortCircuited := &goExpression{kind: goBooleanOr,
+		left: &goExpression{kind: goBooleanLiteral, boolean: true}, right: invalidRight}
+	got, err := evaluateBooleanExpression(shortCircuited, nil)
+	if err != nil || !got {
+		t.Fatalf("true || invalid = %v, %v; want true, nil", got, err)
+	}
+	notShortCircuited := &goExpression{kind: goBooleanOr,
+		left: &goExpression{kind: goBooleanLiteral, boolean: false}, right: invalidRight}
+	if _, err := evaluateBooleanExpression(notShortCircuited, nil); err == nil {
+		t.Fatal("false left operand incorrectly skipped the invalid right operand")
 	}
 }
 
@@ -243,6 +287,23 @@ func checkedInt64ReturnExpression(t *testing.T, statement string) (ast.Expr, *ty
 		t.Fatal(err)
 	}
 	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
+	if _, err := (&types.Config{}).Check("p", fset, []*ast.File{file}, info); err != nil {
+		t.Fatal(err)
+	}
+	function := file.Decls[0].(*ast.FuncDecl)
+	signature := info.Defs[function.Name].Type().(*types.Signature)
+	returned := function.Body.List[0].(*ast.ReturnStmt)
+	return returned.Results[0], signature, info
+}
+
+func checkedTypedBoolExpression(t *testing.T, statement string) (ast.Expr, *types.Signature, *types.Info) {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "expression.go", "package p\nfunc f(flag bool) bool { "+statement+" }", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}}
 	if _, err := (&types.Config{}).Check("p", fset, []*ast.File{file}, info); err != nil {
 		t.Fatal(err)
 	}
