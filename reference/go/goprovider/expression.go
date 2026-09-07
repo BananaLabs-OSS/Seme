@@ -3,6 +3,7 @@ package goprovider
 import (
 	"fmt"
 	"go/ast"
+	"go/constant"
 	"go/token"
 	"go/types"
 	"strconv"
@@ -17,6 +18,8 @@ const (
 	goIntegerLiteral
 	goIntegerMultiply
 	goIntegerSubtract
+	goBooleanLiteral
+	goBooleanAnd
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -26,6 +29,7 @@ type goExpression struct {
 	kind      goExpressionKind
 	parameter int
 	integer   uint64
+	boolean   bool
 	left      *goExpression
 	right     *goExpression
 }
@@ -48,6 +52,26 @@ func emitCanonicalExpression(expression *goExpression, owner string, parameterID
 		case goIntegerLiteral:
 			id := expressionNodeID(owner, path, "integer-literal")
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009070", []graphField{unsignedField(0x9700, expression.integer), refField(0x9701, integerID)})}
+			return id, nil
+		case goBooleanLiteral:
+			id := expressionNodeID(owner, path, "boolean-literal")
+			value := "fa"
+			if expression.boolean {
+				value = "tr"
+			}
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090b0", []graphField{{0x9b00, value}})}
+			return id, nil
+		case goBooleanAnd:
+			left, err := emit(expression.left, path+".left")
+			if err != nil {
+				return "", err
+			}
+			right, err := emit(expression.right, path+".right")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "boolean-and")
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090b1", []graphField{refField(0x9b10, left), refField(0x9b11, right)})}
 			return id, nil
 		case goIntegerAdd, goIntegerMultiply, goIntegerSubtract, goIntegerLessEqual:
 			left, err := emit(expression.left, path+".left")
@@ -111,6 +135,9 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 				return &goExpression{kind: goParameterRead, parameter: index}, nil
 			}
 		}
+		if object, ok := info.Uses[expression].(*types.Const); ok && object.Type() == types.Typ[types.UntypedBool] {
+			return &goExpression{kind: goBooleanLiteral, boolean: constant.BoolVal(object.Val())}, nil
+		}
 		return nil, fmt.Errorf("expression.unresolved_parameter")
 	case *ast.BasicLit:
 		if expression.Kind != token.INT {
@@ -131,6 +158,8 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 			kind = goIntegerMultiply
 		case token.SUB:
 			kind = goIntegerSubtract
+		case token.LAND:
+			kind = goBooleanAnd
 		case token.LEQ:
 			kind = goIntegerLessEqual
 		case token.GEQ:
@@ -150,6 +179,34 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 		return &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}, nil
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
+	}
+}
+
+func evaluateBooleanExpression(expression *goExpression, parameters []int64) (bool, error) {
+	if expression == nil {
+		return false, fmt.Errorf("expression.nil")
+	}
+	switch expression.kind {
+	case goBooleanLiteral:
+		return expression.boolean, nil
+	case goBooleanAnd:
+		left, err := evaluateBooleanExpression(expression.left, parameters)
+		if err != nil || !left {
+			return false, err
+		}
+		return evaluateBooleanExpression(expression.right, parameters)
+	case goIntegerLessEqual:
+		left, err := evaluateIntegerExpression(expression.left, parameters)
+		if err != nil {
+			return false, err
+		}
+		right, err := evaluateIntegerExpression(expression.right, parameters)
+		if err != nil {
+			return false, err
+		}
+		return left <= right, nil
+	default:
+		return false, fmt.Errorf("expression.not_boolean")
 	}
 }
 

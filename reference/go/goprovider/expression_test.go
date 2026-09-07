@@ -80,6 +80,50 @@ func TestAnalyzeEvaluateOrderedNestedIntegerSubtract(t *testing.T) {
 	}
 }
 
+func TestAnalyzeEvaluateBooleanAnd(t *testing.T) {
+	expression, signature, info := checkedReturnExpression(t, "return true && a <= b && false")
+	analyzed, err := analyzeGoExpression(expression, signature, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := evaluateBooleanExpression(analyzed, []int64{1, 2, 0})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got {
+		t.Fatal("boolean expression evaluated true")
+	}
+	entities, root, err := emitCanonicalExpression(analyzed, "boolean-function", []string{"p0", "p1", "p2"}, "i64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != expressionNodeID("boolean-function", "root", "boolean-and") {
+		t.Fatal("root BooleanAnd identity mismatch")
+	}
+	if len(entities) != 7 {
+		t.Fatalf("emitted %d boolean expression entities, want 7", len(entities))
+	}
+}
+
+func TestEvaluateBooleanAndShortCircuitsRightOperand(t *testing.T) {
+	invalidRight := &goExpression{kind: goIntegerLessEqual,
+		left:  &goExpression{kind: goParameterRead, parameter: 99},
+		right: &goExpression{kind: goIntegerLiteral, integer: 0}}
+	shortCircuited := &goExpression{kind: goBooleanAnd,
+		left:  &goExpression{kind: goBooleanLiteral, boolean: false},
+		right: invalidRight}
+	got, err := evaluateBooleanExpression(shortCircuited, nil)
+	if err != nil || got {
+		t.Fatalf("false && invalid = %v, %v; want false, nil", got, err)
+	}
+	notShortCircuited := &goExpression{kind: goBooleanAnd,
+		left:  &goExpression{kind: goBooleanLiteral, boolean: true},
+		right: invalidRight}
+	if _, err := evaluateBooleanExpression(notShortCircuited, nil); err == nil {
+		t.Fatal("true left operand incorrectly skipped the invalid right operand")
+	}
+}
+
 func TestAnalyzeEvaluateNestedIntegerMultiply(t *testing.T) {
 	expression, signature, info := checkedInt64ReturnExpression(t, "return (a + 1) * (b * c)")
 	analyzed, err := analyzeGoExpression(expression, signature, info)

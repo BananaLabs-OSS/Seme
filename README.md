@@ -188,6 +188,13 @@ not yet claim that the legacy complete Wasm application builder can execute a
 v8 structured function. Run `./scripts/check-execution-v9.sh` and
 `./scripts/check-execution-v10.sh`.
 
+[`Core Execution v11`](spec/core-execution-v11.md) adds canonical Boolean
+literals and left-to-right short-circuit conjunction. The Go provider,
+semantic evaluator, and recursive Wasm instruction lowerer compose Boolean
+operations with integer comparisons; malformed canonical Boolean values reject.
+The complete structured-function Wasm application boundary remains tracked as
+unfinished. Run `./scripts/check-execution-v11.sh`.
+
 The planned cross-language architecture and its fidelity rules are recorded in
 the [`language bridge roadmap`](spec/language-bridge-roadmap.md). The generic
 capabilities still to restore above the clean v7 baseline are tracked without

@@ -389,6 +389,70 @@ func lowerHelperInteger(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 	}
 }
 
+func lowerHelperBoolean(graph wire.Envelope, id wire.ID, parameterLocals map[wire.ID]byte, used map[byte]bool, visiting map[wire.ID]bool, budget *int) ([]byte, error) {
+	if *budget == 0 {
+		return nil, fmt.Errorf("wasm.helper_expression_too_large")
+	}
+	*budget--
+	if visiting[id] {
+		return nil, fmt.Errorf("wasm.helper_expression_cycle")
+	}
+	visiting[id] = true
+	defer delete(visiting, id)
+	expression, ok := graph.Entities[id]
+	if !ok {
+		return nil, fmt.Errorf("wasm.helper_expression_missing")
+	}
+	switch expression.Schema {
+	case identity(0x90b0):
+		literal, err := field(expression, 0x9b00)
+		if err != nil || (literal.Tag != 1 && literal.Tag != 2) {
+			return nil, fmt.Errorf("wasm.helper_boolean_literal")
+		}
+		value := byte(0)
+		if literal.Tag == 2 {
+			value = 1
+		}
+		return []byte{0x41, value}, nil // i32.const
+	case identity(0x90b1):
+		left, leftErr := field(expression, 0x9b10)
+		right, rightErr := field(expression, 0x9b11)
+		if leftErr != nil || rightErr != nil {
+			return nil, fmt.Errorf("wasm.helper_boolean_and")
+		}
+		leftInstructions, err := lowerHelperBoolean(graph, left.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		rightInstructions, err := lowerHelperBoolean(graph, right.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		// if (result i32) evaluates the right operand only when left is true.
+		instructions := append(leftInstructions, 0x04, 0x7f)
+		instructions = append(instructions, rightInstructions...)
+		return append(instructions, 0x05, 0x41, 0x00, 0x0b), nil
+	case identity(0x9021):
+		left, leftErr := field(expression, 0x9160)
+		right, rightErr := field(expression, 0x9161)
+		if leftErr != nil || rightErr != nil || validateIntegerTypeReference(graph, expression, 0x9162) != nil {
+			return nil, fmt.Errorf("wasm.helper_integer_comparison")
+		}
+		leftInstructions, err := lowerHelperInteger(graph, left.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		rightInstructions, err := lowerHelperInteger(graph, right.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		instructions := append(leftInstructions, rightInstructions...)
+		return append(instructions, 0x57), nil // i64.le_s
+	default:
+		return nil, fmt.Errorf("wasm.helper_boolean_expression")
+	}
+}
+
 type recordFieldProfile struct {
 	name   string
 	schema uint64
