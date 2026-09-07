@@ -404,6 +404,14 @@ func lowerHelperBoolean(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 		return nil, fmt.Errorf("wasm.helper_expression_missing")
 	}
 	switch expression.Schema {
+	case identity(0x9013):
+		parameter, err := field(expression, 0x9130)
+		local, ok := parameterLocals[parameter.Reference]
+		if err != nil || !ok {
+			return nil, fmt.Errorf("wasm.helper_parameter_reference")
+		}
+		used[local] = true
+		return []byte{0x20, local}, nil
 	case identity(0x90b0):
 		literal, err := field(expression, 0x9b00)
 		if err != nil || (literal.Tag != 1 && literal.Tag != 2) {

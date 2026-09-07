@@ -15,3 +15,7 @@ It is not part of Seme's runtime or trusted bootstrap.
 - The downstream acceptance harness uses `GOWORK=off` per command to isolate
   its small Go module from a platform-specific parent workspace. This is not a
   persistent environment setting.
+- Core v12 validation uses the existing Go, Node, and Pulp installations on the
+  workstation. No dependency or persistent setting was added.
+- The generic Pulp proof runner was made capability-free in Pulp commit
+  `acc66ca`; this is a source change, not an environment change.
