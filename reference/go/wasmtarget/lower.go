@@ -346,6 +346,44 @@ func lowerHelperInteger(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 		}
 		instructions := append(leftInstructions, rightInstructions...)
 		return append(instructions, 0x7c), nil // i64.add
+	case identity(0x9090):
+		if validateIntegerTypeReference(graph, expression, 0x9902) != nil {
+			return nil, fmt.Errorf("wasm.helper_integer_type")
+		}
+		left, leftErr := field(expression, 0x9900)
+		right, rightErr := field(expression, 0x9901)
+		if leftErr != nil || rightErr != nil {
+			return nil, fmt.Errorf("wasm.helper_multiplication")
+		}
+		leftInstructions, err := lowerHelperInteger(graph, left.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		rightInstructions, err := lowerHelperInteger(graph, right.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		instructions := append(leftInstructions, rightInstructions...)
+		return append(instructions, 0x7e), nil // i64.mul
+	case identity(0x90a0):
+		if validateIntegerTypeReference(graph, expression, 0x9a02) != nil {
+			return nil, fmt.Errorf("wasm.helper_integer_type")
+		}
+		left, leftErr := field(expression, 0x9a00)
+		right, rightErr := field(expression, 0x9a01)
+		if leftErr != nil || rightErr != nil {
+			return nil, fmt.Errorf("wasm.helper_subtraction")
+		}
+		leftInstructions, err := lowerHelperInteger(graph, left.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		rightInstructions, err := lowerHelperInteger(graph, right.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		instructions := append(leftInstructions, rightInstructions...)
+		return append(instructions, 0x7d), nil // i64.sub
 	default:
 		return nil, fmt.Errorf("wasm.helper_integer_expression")
 	}

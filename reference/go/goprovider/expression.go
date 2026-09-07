@@ -15,6 +15,8 @@ const (
 	goIntegerAdd
 	goIntegerLessEqual
 	goIntegerLiteral
+	goIntegerMultiply
+	goIntegerSubtract
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -47,7 +49,7 @@ func emitCanonicalExpression(expression *goExpression, owner string, parameterID
 			id := expressionNodeID(owner, path, "integer-literal")
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009070", []graphField{unsignedField(0x9700, expression.integer), refField(0x9701, integerID)})}
 			return id, nil
-		case goIntegerAdd, goIntegerLessEqual:
+		case goIntegerAdd, goIntegerMultiply, goIntegerSubtract, goIntegerLessEqual:
 			left, err := emit(expression.left, path+".left")
 			if err != nil {
 				return "", err
@@ -59,6 +61,16 @@ func emitCanonicalExpression(expression *goExpression, owner string, parameterID
 			if expression.kind == goIntegerAdd {
 				id := expressionNodeID(owner, path, "add")
 				emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009014", []graphField{refField(0x9140, left), refField(0x9141, right), refField(0x9142, integerID)})}
+				return id, nil
+			}
+			if expression.kind == goIntegerMultiply {
+				id := expressionNodeID(owner, path, "multiply")
+				emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009090", []graphField{refField(0x9900, left), refField(0x9901, right), refField(0x9902, integerID)})}
+				return id, nil
+			}
+			if expression.kind == goIntegerSubtract {
+				id := expressionNodeID(owner, path, "subtract")
+				emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090a0", []graphField{refField(0x9a00, left), refField(0x9a01, right), refField(0x9a02, integerID)})}
 				return id, nil
 			}
 			id := expressionNodeID(owner, path, "less-equal")
@@ -115,6 +127,10 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 		switch expression.Op {
 		case token.ADD:
 			kind = goIntegerAdd
+		case token.MUL:
+			kind = goIntegerMultiply
+		case token.SUB:
+			kind = goIntegerSubtract
 		case token.LEQ:
 			kind = goIntegerLessEqual
 		case token.GEQ:
@@ -134,6 +150,43 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 		return &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}, nil
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
+	}
+}
+
+// evaluateIntegerExpression is the provider-neutral differential oracle for
+// the bounded integer expression vocabulary. uint64 arithmetic makes the
+// declared i64 modular overflow behavior explicit and independent of host
+// signed-overflow rules.
+func evaluateIntegerExpression(expression *goExpression, parameters []int64) (int64, error) {
+	if expression == nil {
+		return 0, fmt.Errorf("expression.nil")
+	}
+	switch expression.kind {
+	case goParameterRead:
+		if expression.parameter < 0 || expression.parameter >= len(parameters) {
+			return 0, fmt.Errorf("expression.parameter_out_of_range")
+		}
+		return parameters[expression.parameter], nil
+	case goIntegerLiteral:
+		return int64(expression.integer), nil
+	case goIntegerAdd, goIntegerMultiply, goIntegerSubtract:
+		left, err := evaluateIntegerExpression(expression.left, parameters)
+		if err != nil {
+			return 0, err
+		}
+		right, err := evaluateIntegerExpression(expression.right, parameters)
+		if err != nil {
+			return 0, err
+		}
+		if expression.kind == goIntegerAdd {
+			return int64(uint64(left) + uint64(right)), nil
+		}
+		if expression.kind == goIntegerMultiply {
+			return int64(uint64(left) * uint64(right)), nil
+		}
+		return int64(uint64(left) - uint64(right)), nil
+	default:
+		return 0, fmt.Errorf("expression.not_integer")
 	}
 }
 
@@ -179,7 +232,7 @@ func matchDecisionExpression(expression *goExpression, parameterCount int) bool 
 			return true
 		case goIntegerLiteral:
 			return true
-		case goIntegerAdd:
+		case goIntegerAdd, goIntegerMultiply, goIntegerSubtract:
 			return integer(expression.left) && integer(expression.right)
 		default:
 			return false

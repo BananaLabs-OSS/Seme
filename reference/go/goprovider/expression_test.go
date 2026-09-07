@@ -30,9 +30,97 @@ func TestAnalyzeGoExpressionNormalizesPresentation(t *testing.T) {
 }
 
 func TestAnalyzeGoExpressionRejectsUnsupportedOperator(t *testing.T) {
-	expression, signature, info := checkedReturnExpression(t, "return a*b <= c")
+	expression, signature, info := checkedReturnExpression(t, "return a/b <= c")
 	if _, err := analyzeGoExpression(expression, signature, info); err == nil {
-		t.Fatal("multiplication was accepted")
+		t.Fatal("division was accepted before its semantic revision")
+	}
+}
+
+func TestAnalyzeEvaluateOrderedNestedIntegerSubtract(t *testing.T) {
+	expression, signature, info := checkedInt64ReturnExpression(t, "return (a - b) - (c * 2)")
+	analyzed, err := analyzeGoExpression(expression, signature, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name       string
+		parameters []int64
+		want       int64
+	}{
+		{"left associativity", []int64{20, 3, 4}, 9},
+		{"operand order", []int64{3, 20, 4}, -25},
+		{"negative", []int64{-4, -9, 2}, 1},
+		{"modular underflow", []int64{-9223372036854775808, 1, 0}, 9223372036854775807},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := evaluateIntegerExpression(analyzed, test.parameters)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("evaluate = %d, want %d", got, test.want)
+			}
+		})
+	}
+	entities, root, err := emitCanonicalExpression(analyzed, "subtract-function", []string{"p0", "p1", "p2"}, "i64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != expressionNodeID("subtract-function", "root", "subtract") {
+		t.Fatal("root subtraction identity mismatch")
+	}
+	foundLeft := false
+	for _, entity := range entities {
+		if entity.id == expressionNodeID("subtract-function", "root.left", "subtract") {
+			foundLeft = true
+		}
+	}
+	if !foundLeft {
+		t.Fatal("nested ordered subtraction was not emitted")
+	}
+}
+
+func TestAnalyzeEvaluateNestedIntegerMultiply(t *testing.T) {
+	expression, signature, info := checkedInt64ReturnExpression(t, "return (a + 1) * (b * c)")
+	analyzed, err := analyzeGoExpression(expression, signature, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name       string
+		parameters []int64
+		want       int64
+	}{
+		{"ordinary", []int64{2, 3, 4}, 36},
+		{"negative", []int64{-4, 5, 2}, -30},
+		{"zero", []int64{9, 0, 7}, 0},
+		{"modular overflow", []int64{9223372036854775807, 1, 1}, -9223372036854775808},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := evaluateIntegerExpression(analyzed, test.parameters)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != test.want {
+				t.Fatalf("evaluate = %d, want %d", got, test.want)
+			}
+		})
+	}
+	entities, root, err := emitCanonicalExpression(analyzed, "multiply-function", []string{"p0", "p1", "p2"}, "i64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if root != expressionNodeID("multiply-function", "root", "multiply") {
+		t.Fatal("root multiplication identity mismatch")
+	}
+	multiplyCount := 0
+	for _, entity := range entities {
+		if entity.id == root || entity.id == expressionNodeID("multiply-function", "root.right", "multiply") {
+			multiplyCount++
+		}
+	}
+	if multiplyCount != 2 {
+		t.Fatalf("emitted %d expected multiplication nodes", multiplyCount)
 	}
 }
 
@@ -90,6 +178,23 @@ func checkedReturnExpression(t *testing.T, statement string) (ast.Expr, *types.S
 	t.Helper()
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "expression.go", "package p\nfunc f(a, b, c int64) bool { "+statement+" }", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
+	if _, err := (&types.Config{}).Check("p", fset, []*ast.File{file}, info); err != nil {
+		t.Fatal(err)
+	}
+	function := file.Decls[0].(*ast.FuncDecl)
+	signature := info.Defs[function.Name].Type().(*types.Signature)
+	returned := function.Body.List[0].(*ast.ReturnStmt)
+	return returned.Results[0], signature, info
+}
+
+func checkedInt64ReturnExpression(t *testing.T, statement string) (ast.Expr, *types.Signature, *types.Info) {
+	t.Helper()
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "expression.go", "package p\nfunc f(a, b, c int64) int64 { "+statement+" }", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

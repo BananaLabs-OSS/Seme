@@ -173,6 +173,19 @@ size guards instead of embedding the helper's instruction sequence.
 Imported package functions are also first-class provider declarations with
 stable package-qualified identities.
 
+[`Core Execution v8`](spec/core-execution-v8.md) begins the compositional
+statement layer with provider-neutral ordered blocks and returns. Its bounded
+Go proof lifts a typed function as `Function -> Block -> Return -> expression`
+without selecting behavior by application or function name, while regenerating
+the frozen v2-v7 modules byte-for-byte. Run
+`./scripts/check-execution-v8.sh`.
+
+The planned cross-language architecture and its fidelity rules are recorded in
+the [`language bridge roadmap`](spec/language-bridge-roadmap.md). The generic
+capabilities still to restore above the clean v7 baseline are tracked without
+claim inflation in the
+[`Core semantic restoration ledger`](spec/core-restoration-ledger.md).
+
 Above frozen Kernel v1, Semantic Foundation v1 and Patch Module v1 define the
 first versioned schema and transactional-edit contracts. Their checked module
 artifacts and differential conformance gate are under `modules/`, `reference/`,

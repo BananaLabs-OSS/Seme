@@ -97,8 +97,74 @@ func TestVersionSevenExtendsVersionSix(t *testing.T) {
 	}
 }
 
+func TestVersionEightExtendsVersionSevenWithStructuredBodies(t *testing.T) {
+	v7, err := Declarations(7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v8, err := Declarations(8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v8) != len(v7)+2 {
+		t.Fatalf("v8 schemas = %d, want %d", len(v8), len(v7)+2)
+	}
+	for index := range v7 {
+		if v7[index].ID != v8[index].ID || v7[index].Name != v8[index].Name {
+			t.Fatalf("v7 schema %d changed in v8", index)
+		}
+	}
+	if v8[len(v7)].Name != "Block" || v8[len(v7)+1].Name != "Return" {
+		t.Fatalf("unexpected v8 schemas: %q, %q", v8[len(v7)].Name, v8[len(v7)+1].Name)
+	}
+}
+
+func TestVersionNineExtendsVersionEightWithIntegerMultiply(t *testing.T) {
+	v8, err := Declarations(8)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v9, err := Declarations(9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v9) != len(v8)+1 {
+		t.Fatalf("v9 schemas = %d, want %d", len(v9), len(v8)+1)
+	}
+	for index := range v8 {
+		if v8[index].ID != v9[index].ID || v8[index].Name != v9[index].Name {
+			t.Fatalf("v8 schema %d changed in v9", index)
+		}
+	}
+	if v9[len(v8)].Name != "IntegerMultiply" {
+		t.Fatalf("unexpected v9 schema %q", v9[len(v8)].Name)
+	}
+}
+
+func TestVersionTenExtendsVersionNineWithIntegerSubtract(t *testing.T) {
+	v9, err := Declarations(9)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v10, err := Declarations(10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v10) != len(v9)+1 {
+		t.Fatalf("v10 schemas = %d, want %d", len(v10), len(v9)+1)
+	}
+	for index := range v9 {
+		if v9[index].ID != v10[index].ID || v9[index].Name != v10[index].Name {
+			t.Fatalf("v9 schema %d changed in v10", index)
+		}
+	}
+	if v10[len(v9)].Name != "IntegerSubtract" {
+		t.Fatalf("unexpected v10 schema %q", v10[len(v9)].Name)
+	}
+}
+
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(8); err == nil {
+	if _, err := Declarations(11); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
