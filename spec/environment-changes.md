@@ -17,6 +17,11 @@ It is not part of Seme's runtime or trusted bootstrap.
   persistent environment setting.
 - Core v12 validation uses the existing Go, Node, and Pulp installations on the
   workstation. No dependency or persistent setting was added.
+- The semantic-module gate requires the existing GNU `timeout` command. Each
+  subprocess has a 120-second limit by default; a single invocation may change
+  that limit with the `SEME_SEMANTIC_STEP_TIMEOUT` environment variable. This
+  is a per-command setting, not a persistent environment change, and no package
+  was installed for it.
 - The generic Pulp proof runner was made capability-free in Pulp commit
   `acc66ca`; this is a source change, not an environment change.
 - Syncthing may create transient `.syncthing.*.tmp` siblings while transferring

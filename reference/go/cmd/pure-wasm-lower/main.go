@@ -3,6 +3,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,10 +16,16 @@ func main() {
 	if len(os.Args) != 4 {
 		fatal(fmt.Errorf("usage: pure-wasm-lower PROGRAM.seme OUTPUT.wasm ABI.json"))
 	}
-	graph, err := wire.Read(os.Args[1])
+	program, err := os.ReadFile(os.Args[1])
 	fatal(err)
-	wasm, abi, err := wasmtarget.LowerPureFunction(graph)
+	graph, err := wire.Decode(program)
 	fatal(err)
+	certificate, err := wasmtarget.CertifyPureFunction(graph)
+	fatal(err)
+	wasm, abi, err := wasmtarget.LowerCertifiedPureFunction(certificate)
+	fatal(err)
+	abi.ProgramSHA256 = fmt.Sprintf("%x", sha256.Sum256(program))
+	abi.ArtifactSHA256 = fmt.Sprintf("%x", sha256.Sum256(wasm))
 	fatal(os.WriteFile(os.Args[2], wasm, 0o644))
 	encoded, err := json.MarshalIndent(abi, "", "  ")
 	fatal(err)
