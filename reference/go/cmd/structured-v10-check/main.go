@@ -33,8 +33,11 @@ func main() {
 	}
 	returned := graph.Entities[statements[0].Reference]
 	values := value(returned, 0x9810).List
+	if len(values) != 1 {
+		fatal("Return does not contain exactly one value")
+	}
 	root := graph.Entities[values[0].Reference]
-	if len(values) != 1 || root.Schema != identity(0x90a0) {
+	if root.Schema != identity(0x90a0) {
 		fatal("Return root is not IntegerSubtract")
 	}
 	left := referenced(graph, root, 0x9a00)
