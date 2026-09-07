@@ -31,3 +31,26 @@ the semantic signature.
 The emitted Wasm exports memory and the standard Pulp allocator, lifecycle, and
 provider-call functions. It runs directly in a WebAssembly runtime and through
 Pulp's normal manifest, cell, allocation, and provider dispatch path.
+
+## Certification boundary
+
+Raw graphs do not enter Wasm emission. The v12 pure-function certificate first
+checks program membership, entry identity, ordered unique parameters,
+Block/Return legality, reachable-expression purity, expression and return
+types, reference shapes, cycles, and a 4096-node traversal budget. Lowering
+accepts only the resulting opaque executable-plan certificate. See
+[`Core v12 pure-function certification`](core-execution-v12-certification.md).
+
+The target ABI manifest binds canonical module, revision, program, and function
+identities; canonical-program and Wasm-artifact SHA-256 digests; provider,
+target, fidelity, and ABI version; and each field's index, offset, size, type,
+and encoding. These bindings prevent a layout file from being silently paired
+with another canonical program or artifact.
+
+The bounded allocation arena rejects zero, oversized, overflowing, and
+exhausted allocations. `pulp_free` reclaims only the current top allocation;
+foreign or out-of-order frees are ignored. Pulp serializes calls to a cell and
+releases allocations in reverse order after copying the response.
+Free validates the pointer's complete arena bounds and a nonzero bounded size
+before addition, so a near-`2^32` forged pointer cannot wrap into the current
+arena top and corrupt subsequent allocation state.

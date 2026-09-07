@@ -1,10 +1,44 @@
 {
+  "contract": "seme.pure-abi/v1",
+  "provider": "seme.function-v1",
+  "target": "wasm32-pulp-reactor-v1",
+  "fidelity": "exact",
+  "canonical_module": "00000000000000000000000000009000",
+  "canonical_revision": "720ca2132730f5338325ec050ce12593",
+  "canonical_program": "80df8e811d573b75d3333bfbb041f663",
+  "function": "809403fde975d7b31fac13bcd7b1970f",
+  "program_sha256": "8a640d18ec4e550c03df2059bc8d847aafd0a6302d1c7bd082536afb6047adca",
+  "artifact_sha256": "50536c599946edcbd0520508fa10020a77d360d48ca536792cf8528a691bd3f0",
   "request_size": 17,
   "response_size": 1,
   "parameters": [
-    "bool",
-    "i64",
-    "i64"
+    {
+      "index": 0,
+      "type": "bool",
+      "offset": 0,
+      "size": 1,
+      "encoding": "canonical-u8-0-or-1"
+    },
+    {
+      "index": 1,
+      "type": "i64",
+      "offset": 1,
+      "size": 8,
+      "encoding": "little-endian-twos-complement-i64-modular"
+    },
+    {
+      "index": 2,
+      "type": "i64",
+      "offset": 9,
+      "size": 8,
+      "encoding": "little-endian-twos-complement-i64-modular"
+    }
   ],
-  "result": "bool"
+  "result": {
+    "index": 0,
+    "type": "bool",
+    "offset": 0,
+    "size": 1,
+    "encoding": "canonical-u8-0-or-1"
+  }
 }

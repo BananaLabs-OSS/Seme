@@ -23,5 +23,9 @@ for (const encoded of process.argv.slice(3)) {
   const responseLength = view.getUint32(outputPointer + 4, true);
   const response = Buffer.from(new Uint8Array(api.memory.buffer, responsePointer, responseLength)).toString("hex");
   console.log(JSON.stringify({ request: encoded, status, response }));
+  if (responseLength !== 0) api.pulp_free(responsePointer, responseLength);
+  api.pulp_free(outputPointer, 8);
+  if (request.length !== 0) api.pulp_free(requestPointer, request.length);
+  api.pulp_free(providerPointer, provider.length);
 }
 if (api.pulp_shutdown() !== 0) throw new Error("pulp_shutdown failed");

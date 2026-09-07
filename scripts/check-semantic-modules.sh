@@ -3,9 +3,67 @@ set -eu
 
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-modules.XXXXXX")
-trap 'rm -rf "$work"' EXIT HUP INT TERM
 
-k0="$repo/bootstrap/seme-k0-linux-amd64"
+cleanup() {
+    rm -rf "$work"
+}
+
+stop() {
+    status=$1
+    trap - EXIT HUP INT TERM
+    cleanup
+    exit "$status"
+}
+
+trap cleanup EXIT
+trap 'stop 129' HUP
+trap 'stop 130' INT
+trap 'stop 143' TERM
+
+k0_bin="$repo/bootstrap/seme-k0-linux-amd64"
+# A malformed or unexpectedly expensive bootstrap program must fail this gate
+# with a located diagnostic instead of occupying a worker indefinitely. GNU
+# timeout runs the child in its own process group by default, so its hard-stop
+# also covers descendants and does not leave an orphan after the grace period.
+step_timeout=${SEME_SEMANTIC_STEP_TIMEOUT:-120}
+case "$step_timeout" in
+    ''|*[!0-9]*)
+        echo "SEME_SEMANTIC_STEP_TIMEOUT must be a positive integer" >&2
+        exit 64
+        ;;
+    0)
+        echo "SEME_SEMANTIC_STEP_TIMEOUT must be greater than zero" >&2
+        exit 64
+        ;;
+esac
+if ! command -v timeout >/dev/null 2>&1; then
+    echo "semantic-module gate requires GNU timeout" >&2
+    exit 69
+fi
+
+run_k0() (
+    program=$1
+    shift
+    echo "semantic-module step: $(basename "$program")" >&2
+    if timeout --kill-after=5s "${step_timeout}s" \
+        "$k0_bin" "$program" "$@"; then
+        status=0
+    else
+        status=$?
+    fi
+    case "$status" in
+        124|137)
+            echo "semantic-module step timed out after ${step_timeout}s: $program" >&2
+            return 70
+            ;;
+    esac
+    return "$status"
+)
+
+# Existing invocations deliberately continue to use the variable as a command;
+# shell function lookup preserves their expected statuses while adding bounded
+# supervision in one place.
+k0=run_k0
 g1="$repo/compiler/g1-compiler.k0"
 kernel="$repo/compiler/kernel-wire-validator-located.k0"
 patch="$repo/modules/patch/v1"
