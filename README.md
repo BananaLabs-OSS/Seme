@@ -195,6 +195,13 @@ operations with integer comparisons; malformed canonical Boolean values reject.
 The complete structured-function Wasm application boundary remains tracked as
 unfinished. Run `./scripts/check-execution-v11.sh`.
 
+[`Core Execution v12`](spec/core-execution-v12.md) closes that bounded runtime
+gap with a canonical-graph-driven pure-function ABI. Parameter and result
+layouts are derived from canonical i64/Boolean types; the same backend executes
+different signatures and behaviors as standalone Wasm and through Pulp, with
+exact-length and canonical-Boolean rejection. Run
+`./scripts/check-execution-v12.sh`.
+
 The planned cross-language architecture and its fidelity rules are recorded in
 the [`language bridge roadmap`](spec/language-bridge-roadmap.md). The generic
 capabilities still to restore above the clean v7 baseline are tracked without

@@ -20,7 +20,7 @@ func LiftStructuredFunction(project string, manifest Manifest, moduleG1 []byte, 
 		return "", "", fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 	}
 	for index := 0; index < signature.Params().Len(); index++ {
-		if !isInt64(signature.Params().At(index).Type()) {
+		if !isInt64(signature.Params().At(index).Type()) && !isBool(signature.Params().At(index).Type()) {
 			return "", "", fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 		}
 	}
@@ -44,15 +44,26 @@ func LiftStructuredFunction(project string, manifest Manifest, moduleG1 []byte, 
 		{0x9101, "tr"},
 		unsignedField(0x9102, 0),
 	})}}
+	needsBooleanType := isBool(signature.Results().At(0).Type())
+	for index := 0; index < signature.Params().Len(); index++ {
+		needsBooleanType = needsBooleanType || isBool(signature.Params().At(index).Type())
+	}
+	booleanID := stableID("execution", "type", "bool")
 	if isBool(signature.Results().At(0).Type()) {
-		resultTypeID = stableID("execution", "type", "bool")
-		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "00000000000000000000000000009020", nil)})
+		resultTypeID = booleanID
+	}
+	if needsBooleanType {
+		instances = append(instances, graphEntity{booleanID, entity(booleanID, "00000000000000000000000000009020", nil)})
 	}
 	for index := range parameterIDs {
+		parameterTypeID := integerID
+		if isBool(signature.Params().At(index).Type()) {
+			parameterTypeID = booleanID
+		}
 		parameterIDs[index] = stableID("execution", declaration.ID, "parameter", strconv.Itoa(index))
 		instances = append(instances, graphEntity{parameterIDs[index], entity(parameterIDs[index], "00000000000000000000000000009012", []graphField{
 			bytesField(0x9120, signature.Params().At(index).Name()),
-			refField(0x9121, integerID),
+			refField(0x9121, parameterTypeID),
 			unsignedField(0x9122, uint64(index)),
 		})})
 	}
