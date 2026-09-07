@@ -180,6 +180,14 @@ without selecting behavior by application or function name, while regenerating
 the frozen v2-v7 modules byte-for-byte. Run
 `./scripts/check-execution-v8.sh`.
 
+[`Core Execution v9`](spec/core-execution-v9.md) adds compositional signed-i64
+multiplication, and [`Core Execution v10`](spec/core-execution-v10.md) adds
+ordered subtraction. Their bounded proofs cover recursive analysis, canonical
+emission, modular native parity, and guarded Wasm instruction lowering. They do
+not yet claim that the legacy complete Wasm application builder can execute a
+v8 structured function. Run `./scripts/check-execution-v9.sh` and
+`./scripts/check-execution-v10.sh`.
+
 The planned cross-language architecture and its fidelity rules are recorded in
 the [`language bridge roadmap`](spec/language-bridge-roadmap.md). The generic
 capabilities still to restore above the clean v7 baseline are tracked without
