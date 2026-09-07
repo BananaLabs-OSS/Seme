@@ -202,6 +202,21 @@ different signatures and behaviors as standalone Wasm and through Pulp, with
 exact-length and canonical-Boolean rejection. Run
 `./scripts/check-execution-v12.sh`.
 
+[`Live Language Service v1`](spec/live-language-service-v1.md) defines the
+provider-neutral incremental editing boundary: document identity, monotonic
+client revisions, content digests, diagnostics, semantic source mappings, and
+retention of the last valid canonical revision while an edit is incomplete.
+The bounded [`Go incremental session v1`](spec/go-incremental-session-v1.md)
+parses and type-checks complete in-memory package snapshots, compositionally
+lifts supported functions, rejects stale revisions, and executes the resulting
+canonical graph. Run `./scripts/check-language-service-v1.sh` and
+`./scripts/check-go-session-v1.sh`.
+
+[`Certified canonical build v1`](scripts/CANONICAL-BUILD-V1.md) accepts pinned
+canonical bytes and emits a certified Wasm artifact and bound ABI evidence
+without accepting a source tree or provider input. Run
+`./scripts/check-certified-canonical-v1.sh`.
+
 The planned cross-language architecture and its fidelity rules are recorded in
 the [`language bridge roadmap`](spec/language-bridge-roadmap.md). The generic
 capabilities still to restore above the clean v7 baseline are tracked without
