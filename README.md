@@ -212,6 +212,12 @@ lifts supported functions, rejects stale revisions, and executes the resulting
 canonical graph. Run `./scripts/check-language-service-v1.sh` and
 `./scripts/check-go-session-v1.sh`.
 
+[`Language service JSON-lines v1`](spec/language-service-jsonl-v1.md) exposes
+that incremental session as a deterministic, bounded, zero-write process with
+multiple isolated sessions and correlated `initialize`, `update`, and
+`snapshot` requests. Artifact publication remains a separate authority. Run
+`./scripts/check-language-service-jsonl-v1.sh`.
+
 [`Certified canonical build v1`](scripts/CANONICAL-BUILD-V1.md) accepts pinned
 canonical bytes and emits a certified Wasm artifact and bound ABI evidence
 without accepting a source tree or provider input. Run
