@@ -19,3 +19,8 @@ It is not part of Seme's runtime or trusted bootstrap.
   workstation. No dependency or persistent setting was added.
 - The generic Pulp proof runner was made capability-free in Pulp commit
   `acc66ca`; this is a source change, not an environment change.
+- Syncthing may create transient `.syncthing.*.tmp` siblings while transferring
+  checked artifacts from the workstation. That pattern is now ignored so a
+  synchronization race cannot accidentally stage transport files. Four such
+  files briefly entered an unpushed local commit; that commit was amended, its
+  reflog expired, and its object pruned. The temporary files were removed.
