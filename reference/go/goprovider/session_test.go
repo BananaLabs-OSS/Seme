@@ -150,6 +150,28 @@ func TestIncrementalSessionLiftsClosedFunctionCalls(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsCompositionalRecords(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v16/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/records", Entry: "Label", Files: map[string]string{
+		"records.go": "package records\ntype Item struct { Name string; Enabled bool }\nfunc Label(name string) string { item := Item{Name: name, Enabled: true}; return item.Name }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("record result = %#v", result)
+	}
+	for _, schema := range []string{"00000000000000000000000000009030", "00000000000000000000000000009031", "00000000000000000000000000009032", "00000000000000000000000000009033"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("record schema %s missing", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
 	if err != nil {

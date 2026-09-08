@@ -140,7 +140,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	if len(diagnostics) != 0 || len(files) != len(paths) {
 		return "", nil, sortedDiagnostics(diagnostics)
 	}
-	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}}
+	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
 	config := types.Config{Importer: importer.Default(), Error: func(err error) {
 		diagnostics = append(diagnostics, typeDiagnostic(err))
 	}}
@@ -182,10 +182,54 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 		{booleanID, entity(booleanID, "00000000000000000000000000009020", nil)},
 		{stringID, entity(stringID, "00000000000000000000000000009040", nil)},
 	}
+	records := make(map[*types.Named]goRecordInfo)
+	for identifier, object := range info.Defs {
+		typeName, ok := object.(*types.TypeName)
+		if !ok {
+			continue
+		}
+		named, namedOK := typeName.Type().(*types.Named)
+		if !namedOK {
+			continue
+		}
+		structure, structOK := named.Underlying().(*types.Struct)
+		if !structOK || structure.NumFields() == 0 {
+			continue
+		}
+		recordID := stableID("execution", "record", snapshot.PackagePath, identifier.Name)
+		record := goRecordInfo{id: recordID, fields: map[*types.Var]string{}}
+		fieldIDs := make([]string, structure.NumFields())
+		var fieldEntities []graphEntity
+		valid := true
+		for index := 0; index < structure.NumFields(); index++ {
+			field := structure.Field(index)
+			typeID := integerID
+			if isBool(field.Type()) {
+				typeID = booleanID
+			} else if isPureString(field.Type()) {
+				typeID = stringID
+			} else if !isInt64(field.Type()) {
+				valid = false
+				break
+			}
+			fieldID := stableID("execution", recordID, "field", strconv.Itoa(index))
+			fieldIDs[index] = fieldID
+			record.fields[field] = fieldID
+			record.ordered = append(record.ordered, field)
+			fieldEntities = append(fieldEntities, graphEntity{fieldID, entity(fieldID, "00000000000000000000000000009031", []graphField{
+				bytesField(0x9310, field.Name()), refField(0x9311, typeID), unsignedField(0x9312, uint64(index)),
+			})})
+		}
+		if valid {
+			records[named] = record
+			instances = append(instances, fieldEntities...)
+			instances = append(instances, graphEntity{recordID, entity(recordID, "00000000000000000000000000009030", []graphField{bytesField(0x9300, identifier.Name), refsField(0x9301, fieldIDs)})})
+		}
+	}
 	var functionIDs []string
 	var sources []SourceIdentity
 	for _, function := range functions {
-		entities, source, diagnostic := liftSessionFunction(function, integerID, booleanID, stringID, functionObjects)
+		entities, source, diagnostic := liftSessionFunction(function, integerID, booleanID, stringID, functionObjects, records)
 		if diagnostic != nil {
 			diagnostics = append(diagnostics, *diagnostic)
 			continue
@@ -224,7 +268,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	return composeExecutionG1(moduleG1, revision, instances), sources, sortedDiagnostics(diagnostics)
 }
 
-func liftSessionFunction(function sessionFunction, integerID, booleanID, stringID string, functions map[types.Object]string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
+func liftSessionFunction(function sessionFunction, integerID, booleanID, stringID string, functions map[types.Object]string, records map[*types.Named]goRecordInfo) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 	position := function.fset.Position(function.fn.Pos())
 	diagnostic := func(code, message string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 		return nil, SourceIdentity{}, &SessionDiagnostic{Code: code, Message: message, File: function.file, Line: position.Line, Column: position.Column, Severity: "warning"}
@@ -240,7 +284,7 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	} else if !isInt64(function.sig.Results().At(0).Type()) {
 		return diagnostic("session.unsupported_result_type", "supported result types are int64, bool, and string")
 	}
-	block, err := analyzeGoBlockWithCalls(function.fn.Body.List, function.sig, function.info, functions)
+	block, err := analyzeGoBlockWithProgram(function.fn.Body.List, function.sig, function.info, functions, records)
 	if err != nil {
 		return diagnostic("session.unsupported_function_body", err.Error())
 	}

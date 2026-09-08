@@ -26,22 +26,27 @@ const (
 	goStringConcat
 	goLocalRead
 	goFunctionCall
+	goRecordConstruct
+	goFieldRead
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
 // Go AST details out of canonical emission and normalizes equivalent source
 // spellings before a target profile decides which tree shapes it supports.
 type goExpression struct {
-	kind      goExpressionKind
-	parameter int
-	local     int
-	integer   uint64
-	boolean   bool
-	text      string
-	left      *goExpression
-	right     *goExpression
-	callee    string
-	arguments []*goExpression
+	kind       goExpressionKind
+	parameter  int
+	local      int
+	integer    uint64
+	boolean    bool
+	text       string
+	left       *goExpression
+	right      *goExpression
+	callee     string
+	arguments  []*goExpression
+	recordType string
+	field      string
+	values     []*goExpression
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -85,6 +90,26 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := expressionNodeID(owner, path, "function-call")
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009060", []graphField{refField(0x9600, expression.callee), refsField(0x9601, arguments)})}
+			return id, nil
+		case goRecordConstruct:
+			values := make([]string, len(expression.values))
+			for index, value := range expression.values {
+				id, err := emit(value, path+".field."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+				values[index] = id
+			}
+			id := expressionNodeID(owner, path, "record-construct")
+			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009033", []graphField{refField(0x9330, expression.recordType), refsField(0x9331, values)})}
+			return id, nil
+		case goFieldRead:
+			record, err := emit(expression.left, path+".record")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "field-read")
+			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009032", []graphField{refField(0x9320, record), refField(0x9321, expression.field)})}
 			return id, nil
 		case goIntegerLiteral:
 			id := expressionNodeID(owner, path, "integer-literal")
@@ -196,6 +221,16 @@ func analyzeGoExpressionWithLocals(expression ast.Expr, signature *types.Signatu
 }
 
 func analyzeGoExpressionWithContext(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string) (*goExpression, error) {
+	return analyzeGoExpressionWithProgram(expression, signature, info, locals, functions, nil)
+}
+
+type goRecordInfo struct {
+	id      string
+	fields  map[*types.Var]string
+	ordered []*types.Var
+}
+
+func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goExpression, error) {
 	switch expression := ast.Unparen(expression).(type) {
 	case *ast.Ident:
 		for index := 0; index < signature.Params().Len(); index++ {
@@ -258,11 +293,11 @@ func analyzeGoExpressionWithContext(expression ast.Expr, signature *types.Signat
 		default:
 			return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
 		}
-		analyzedLeft, err := analyzeGoExpressionWithContext(left, signature, info, locals, functions)
+		analyzedLeft, err := analyzeGoExpressionWithProgram(left, signature, info, locals, functions, records)
 		if err != nil {
 			return nil, err
 		}
-		analyzedRight, err := analyzeGoExpressionWithContext(right, signature, info, locals, functions)
+		analyzedRight, err := analyzeGoExpressionWithProgram(right, signature, info, locals, functions, records)
 		if err != nil {
 			return nil, err
 		}
@@ -275,13 +310,79 @@ func analyzeGoExpressionWithContext(expression ast.Expr, signature *types.Signat
 		}
 		arguments := make([]*goExpression, len(expression.Args))
 		for index, argument := range expression.Args {
-			analyzed, err := analyzeGoExpressionWithContext(argument, signature, info, locals, functions)
+			analyzed, err := analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records)
 			if err != nil {
 				return nil, err
 			}
 			arguments[index] = analyzed
 		}
 		return &goExpression{kind: goFunctionCall, callee: callee, arguments: arguments}, nil
+	case *ast.CompositeLit:
+		named, ok := info.TypeOf(expression).(*types.Named)
+		record, exists := records[named]
+		if !ok || !exists || len(expression.Elts) != len(record.ordered) {
+			return nil, fmt.Errorf("expression.unsupported_record_construct")
+		}
+		values := make([]*goExpression, len(record.ordered))
+		seen := make(map[*types.Var]bool, len(values))
+		for sourceIndex, element := range expression.Elts {
+			fieldIndex := sourceIndex
+			valueExpression := element
+			if keyed, keyedOK := element.(*ast.KeyValueExpr); keyedOK {
+				identifier, identifierOK := keyed.Key.(*ast.Ident)
+				fieldIndex = -1
+				for index, field := range record.ordered {
+					if identifierOK && field.Name() == identifier.Name {
+						fieldIndex = index
+						break
+					}
+				}
+				if fieldIndex < 0 {
+					return nil, fmt.Errorf("expression.unknown_record_field")
+				}
+				valueExpression = keyed.Value
+			}
+			field := record.ordered[fieldIndex]
+			if seen[field] {
+				return nil, fmt.Errorf("expression.duplicate_record_field")
+			}
+			seen[field] = true
+			value, err := analyzeGoExpressionWithProgram(valueExpression, signature, info, locals, functions, records)
+			if err != nil {
+				return nil, err
+			}
+			values[fieldIndex] = value
+		}
+		for _, value := range values {
+			if value == nil {
+				return nil, fmt.Errorf("expression.missing_record_field")
+			}
+		}
+		return &goExpression{kind: goRecordConstruct, recordType: record.id, values: values}, nil
+	case *ast.SelectorExpr:
+		selection := info.Selections[expression]
+		if selection == nil {
+			return nil, fmt.Errorf("expression.unsupported_selector")
+		}
+		field, ok := selection.Obj().(*types.Var)
+		if !ok {
+			return nil, fmt.Errorf("expression.unsupported_selector")
+		}
+		var fieldID string
+		for _, record := range records {
+			if id, exists := record.fields[field]; exists {
+				fieldID = id
+				break
+			}
+		}
+		if fieldID == "" {
+			return nil, fmt.Errorf("expression.unknown_record_field")
+		}
+		record, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records)
+		if err != nil {
+			return nil, err
+		}
+		return &goExpression{kind: goFieldRead, left: record, field: fieldID}, nil
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}

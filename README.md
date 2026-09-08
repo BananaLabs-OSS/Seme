@@ -238,6 +238,12 @@ target certifies membership and an acyclic call graph, then realizes calls by
 safe target-side inlining before standalone and Pulp execution. Run
 `./scripts/check-execution-v16.sh`.
 
+[`Core Execution v17`](spec/core-execution-v17.md) restores the existing
+record vocabulary to the generic pipeline. Go structs/composite literals/field
+reads and JavaScript typedefs/plain objects/property reads converge on the same
+canonical records, project without drift, and execute as internal immutable
+values through Wasm and Pulp. Run `./scripts/check-execution-v17.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

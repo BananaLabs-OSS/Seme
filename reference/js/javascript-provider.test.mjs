@@ -5,6 +5,7 @@ import { liftJavaScript } from "./javascript-provider.mjs";
 
 const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v14/module.g1", import.meta.url), "utf8");
 const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.g1", import.meta.url), "utf8");
+const moduleV16G1 = fs.readFileSync(new URL("../../modules/execution/v16/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -82,4 +83,17 @@ export function Render(left, right) { const joined = combine(left, right); retur
   const canonical = liftJavaScript({ source, moduleG1, packagePath: "example.test/calls", revision: 1 });
   assert.equal((canonical.match(/^en [0-9a-f]{32} 00000000000000000000000000009011 /gm) || []).length, 3);
   assert.equal((canonical.match(/^en [0-9a-f]{32} 00000000000000000000000000009060 /gm) || []).length, 4);
+});
+
+test("lifts structural objects as canonical records", () => {
+  const source = `
+/** @typedef {Object} Item
+ * @property {string} Name
+ * @property {boolean} Enabled
+ */
+/** @param {string} name @returns {string} */
+export function Label(name) { const item = { Name: name, Enabled: true }; return item.Name; }
+`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV16G1, packagePath: "example.test/records", revision: 1 });
+  for (const recordSchema of ["9030", "9031", "9032", "9033"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${recordSchema}`));
 });

@@ -164,6 +164,10 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if err != nil {
 		return nil, PureABI{}, err
 	}
+	graph, err = normalizePureRecords(graph, bodyValue.Reference)
+	if err != nil {
+		return nil, PureABI{}, err
+	}
 	if hasStrings {
 		abi.Contract = "seme.pure-abi/v2"
 		abi.Provider = "seme.function-v2"

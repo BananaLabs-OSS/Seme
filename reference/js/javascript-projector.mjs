@@ -18,6 +18,10 @@ const schema = {
   bindLocal: "000000000000000000000000000090d1",
   localRead: "000000000000000000000000000090d2",
   call: "00000000000000000000000000009060",
+  recordType: "00000000000000000000000000009030",
+  recordField: "00000000000000000000000000009031",
+  fieldRead: "00000000000000000000000000009032",
+  recordConstruct: "00000000000000000000000000009033",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -28,13 +32,28 @@ export function projectJavaScript(canonicalG1) {
   const functionIDs = references(field(programs[0], 0x9150));
   if (!functionIDs.includes(entryID) || functionIDs.length === 0) fail("javascript_projection.entry_membership");
   const functions = new Map(functionIDs.map((id) => [id, required(graph, id, schema.function)]));
+  const records = new Map();
+  for (const entity of graph.values()) {
+    if (entity.schema !== schema.recordType) continue;
+    const name = text(field(entity, 0x9300));
+    if (!/^[A-Za-z_$][\w$]*$/.test(name)) fail("javascript_projection.invalid_record_name");
+    const fields = references(field(entity, 0x9301)).map((fieldID, index) => {
+      const recordField = required(graph, fieldID, schema.recordField);
+      const position = unsigned(field(recordField, 0x9312));
+      if (position !== BigInt(index)) fail("javascript_projection.record_field_order");
+      return { id: fieldID, name: text(field(recordField, 0x9310)), type: typeName(reference(field(recordField, 0x9311)), graph) };
+    });
+    records.set(entity.id, { id: entity.id, name, fields });
+  }
   const names = new Map();
   for (const [id, fn] of functions) {
     const name = text(field(fn, 0x9110));
     if (!/^[A-Za-z_$][\w$]*$/.test(name) || [...names.values()].includes(name)) fail("javascript_projection.invalid_function_name");
     names.set(id, name);
   }
-  return functionIDs.map((id) => projectFunction(id, functions.get(id), id === entryID, { graph, functions, names })).join("\n");
+  const typedefs = [...records.values()].map((record) => ["/**", ` * @typedef {Object} ${record.name}`, ...record.fields.map((item) => ` * @property {${item.type}} ${item.name}`), " */"].join("\n")).join("\n\n");
+  const body = functionIDs.map((id) => projectFunction(id, functions.get(id), id === entryID, { graph, functions, names, records })).join("\n");
+  return typedefs ? `${typedefs}\n\n${body}` : body;
 }
 
 function projectFunction(functionID, fn, exported, program) {
@@ -106,6 +125,19 @@ function projectExpression(id, context) {
     const arguments_ = references(field(expression, 0x9601)).map((argument) => projectExpression(argument, context));
     return `${context.names.get(callee)}(${arguments_.join(", ")})`;
   }
+  if (expression.schema === schema.recordConstruct) {
+    const record = context.records.get(reference(field(expression, 0x9330)));
+    const values = references(field(expression, 0x9331));
+    if (!record || values.length !== record.fields.length) fail("javascript_projection.record_construct");
+    return `{ ${record.fields.map((item, index) => `${item.name}: ${projectExpression(values[index], context)}`).join(", ")} }`;
+  }
+  if (expression.schema === schema.fieldRead) {
+    const fieldID = reference(field(expression, 0x9321));
+    const record = [...context.records.values()].find((item) => item.fields.some((candidate) => candidate.id === fieldID));
+    const recordField = record?.fields.find((item) => item.id === fieldID);
+    if (!recordField) fail("javascript_projection.record_field");
+    return `${projectExpression(reference(field(expression, 0x9320)), context)}.${recordField.name}`;
+  }
   const binary = new Map([
     [schema.boolAnd, [0x9b10, 0x9b11, "&&"]],
     [schema.boolOr, [0x9c10, 0x9c11, "||"]],
@@ -121,6 +153,7 @@ function typeName(id, graph) {
   const type = required(graph, id);
   if (type.schema === schema.stringType) return "string";
   if (type.schema === schema.boolType) return "boolean";
+  if (type.schema === schema.recordType) return text(field(type, 0x9300));
   fail("javascript_projection.unsupported_type");
 }
 
@@ -161,6 +194,11 @@ function field(entity, id) {
   return value;
 }
 function atom(value) { return value[0]; }
+function unsigned(value) {
+  const match = /^uu (\d+)$/.exec(atom(value));
+  if (!match) fail("javascript_projection.invalid_unsigned");
+  return BigInt(match[1]);
+}
 function reference(value) {
   const match = /^rf ([0-9a-f]{32})$/.exec(atom(value));
   if (!match) fail("javascript_projection.invalid_reference");
