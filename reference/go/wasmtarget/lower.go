@@ -520,6 +520,79 @@ func lowerHelperInteger(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 			instructions = append(instructions, 0x7c)
 		}
 		return instructions, nil
+	case identity(0x90f9):
+		collection, err := field(expression, 0x9f90)
+		if err != nil || collection.Tag != 6 {
+			return nil, fmt.Errorf("wasm.helper_collection_length")
+		}
+		collectionEntity, ok := graph.Entities[collection.Reference]
+		if !ok {
+			return nil, fmt.Errorf("wasm.helper_collection_length")
+		}
+		if collectionEntity.Schema == identity(0x90f3) {
+			values, err := fixedI64ArrayValues(graph, collection.Reference)
+			if err != nil {
+				return nil, err
+			}
+			var constant bytes.Buffer
+			constant.WriteByte(0x42)
+			sleb(&constant, int64(len(values)))
+			return constant.Bytes(), nil
+		}
+		parameter, err := field(collectionEntity, 0x9130)
+		local, exists := parameterLocals[parameter.Reference]
+		if err != nil || collectionEntity.Schema != identity(0x9013) || !exists {
+			return nil, fmt.Errorf("wasm.helper_collection_length")
+		}
+		parameterEntity := graph.Entities[parameter.Reference]
+		typeValue, err := field(parameterEntity, 0x9121)
+		valueType, typeErr := pureType(graph, typeValue.Reference)
+		if err != nil || typeErr != nil {
+			return nil, fmt.Errorf("wasm.helper_collection_length_type")
+		}
+		used[local] = true
+		if valueType.name == "slice:i64" {
+			return []byte{0x20, local, 0x42, 0x20, 0x88}, nil
+		}
+		if strings.HasPrefix(valueType.name, "fixed-array:i64:") {
+			var constant bytes.Buffer
+			constant.WriteByte(0x42)
+			sleb(&constant, int64(valueType.size/8))
+			return constant.Bytes(), nil
+		}
+		return nil, fmt.Errorf("wasm.helper_collection_length_type")
+	case identity(0x90fa):
+		collection, collectionErr := field(expression, 0x9fa0)
+		index, indexErr := field(expression, 0x9fa1)
+		if collectionErr != nil || indexErr != nil || collection.Tag != 6 || index.Tag != 6 {
+			return nil, fmt.Errorf("wasm.helper_dynamic_index")
+		}
+		collectionEntity, ok := graph.Entities[collection.Reference]
+		if !ok || collectionEntity.Schema != identity(0x9013) {
+			return nil, fmt.Errorf("wasm.helper_dynamic_index_collection")
+		}
+		parameter, err := field(collectionEntity, 0x9130)
+		local, exists := parameterLocals[parameter.Reference]
+		if err != nil || !exists {
+			return nil, fmt.Errorf("wasm.helper_dynamic_index_parameter")
+		}
+		parameterEntity := graph.Entities[parameter.Reference]
+		typeValue, err := field(parameterEntity, 0x9121)
+		valueType, typeErr := pureType(graph, typeValue.Reference)
+		if err != nil || typeErr != nil || valueType.name != "slice:i64" {
+			return nil, fmt.Errorf("wasm.helper_dynamic_index_type")
+		}
+		indexCode, err := lowerHelperInteger(graph, index.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		instructions := append([]byte{}, indexCode...)
+		instructions = append(instructions, 0x20, local, 0x42, 0x20, 0x88, 0x5a, 0x04, 0x40, 0x00, 0x0b)
+		instructions = append(instructions, 0x20, local, 0xa7)
+		instructions = append(instructions, indexCode...)
+		instructions = append(instructions, 0xa7, 0x41, 0x03, 0x74, 0x6a, 0x29, 0x03, 0x00)
+		used[local] = true
+		return instructions, nil
 	default:
 		return nil, fmt.Errorf("wasm.helper_integer_expression")
 	}

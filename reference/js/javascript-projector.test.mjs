@@ -13,6 +13,7 @@ const moduleV20G1 = fs.readFileSync(new URL("../../modules/execution/v20/module.
 const moduleV21G1 = fs.readFileSync(new URL("../../modules/execution/v21/module.g1", import.meta.url), "utf8");
 const moduleV22G1 = fs.readFileSync(new URL("../../modules/execution/v22/module.g1", import.meta.url), "utf8");
 const moduleV23G1 = fs.readFileSync(new URL("../../modules/execution/v23/module.g1", import.meta.url), "utf8");
+const moduleV24G1 = fs.readFileSync(new URL("../../modules/execution/v24/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -166,5 +167,16 @@ export function Sum(values) { return values.reduce((total, value) => total + val
   const projected = projectJavaScript(first);
   assert.match(projected, /@param \{bigint\[\]\} values/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV23G1, packagePath: "example.test/slice", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts collection queries", () => {
+  const source = `/** @param {bigint[]} values @param {bigint} fallback @returns {bigint} */
+export function LastOr(values, fallback) { if (values.length <= 0n) return fallback; return values[values.length - 1]; }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV24G1, packagePath: "example.test/query", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /values\.length/);
+  assert.match(projected, /values\[\(values\.length - 1\)\]/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV24G1, packagePath: "example.test/query", revision: 1 });
   assert.equal(second, first);
 });

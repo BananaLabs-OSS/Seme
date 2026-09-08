@@ -327,6 +327,26 @@ func TestIncrementalSessionLiftsRuntimeSizedSliceFold(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/query", Entry: "LastOr", Files: map[string]string{
+		"query.go": "package query\nfunc LastOr(values []int64, fallback int64) int64 { if len(values) <= 0 { return fallback }; return values[len(values)-1] }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("query result = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "000000000000000000000000000090f9") || !strings.Contains(result.CanonicalG1, "000000000000000000000000000090fa") {
+		t.Fatal("collection query schemas missing")
+	}
+}
+
 func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
 	if err != nil {
