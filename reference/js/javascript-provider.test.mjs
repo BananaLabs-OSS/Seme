@@ -143,3 +143,11 @@ export function Pick(first, second, third, index) { return [first, second, third
   assert.match(canonical, /000000000000000000000000000090f3/);
   assert.match(canonical, /000000000000000000000000000090f4/);
 });
+
+test("lifts a fixed i64 array parameter", () => {
+  const source = `/** @param {bigint[3]} values @param {bigint} index @returns {bigint} */
+export function Pick(values, index) { return values[index]; }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array-boundary", revision: 1 });
+  assert.match(canonical, /000000000000000000000000000090f2/);
+  assert.match(canonical, /000000000000000000000000000090f4/);
+});

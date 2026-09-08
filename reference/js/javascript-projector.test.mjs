@@ -135,3 +135,14 @@ export function Pick(first, second, third, index) { return [first, second, third
   const second = liftJavaScript({ source: projected, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array", revision: 1 });
   assert.equal(second, first);
 });
+
+test("projects and re-lifts a fixed array parameter", () => {
+  const source = `/** @param {bigint[3]} values @param {bigint} index @returns {bigint} */
+export function Pick(values, index) { return values[index]; }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array-boundary", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /@param \{bigint\[3\]\} values/);
+  assert.match(projected, /return values\[index\];/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array-boundary", revision: 1 });
+  assert.equal(second, first);
+});

@@ -112,6 +112,7 @@ persistent environment configuration was installed or changed.
 Core v21 used only the existing workstation Go 1.26 toolchain, Node 22,
 repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. New
 module artifacts were generated on the workstation and copied into the Seme
-repository after checksum verification. No software, dependency, global
-setting, SSH setting, or persistent environment configuration was installed or
-changed.
+repository after checksum verification. The follow-on fixed-array boundary
+gate reused those same tools and an automatically removed archived Pulp tree.
+No software, dependency, global setting, SSH setting, or persistent environment
+configuration was installed or changed.

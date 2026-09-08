@@ -190,12 +190,19 @@ function projectExpression(id, context) {
     return `${projectExpression(reference(field(expression, 0x9320)), context)}.${recordField.name}`;
   }
   if (expression.schema === schema.indexRead) {
-    const collection = required(context.graph, reference(field(expression, 0x9f40)), schema.fixedArrayConstruct);
-    const type = required(context.graph, reference(field(collection, 0x9f30)), schema.fixedArrayType);
-    if (reference(field(type, 0x9f20)) !== [...context.graph.values()].find((item) => item.schema === schema.integerType)?.id) fail("javascript_projection.fixed_array_element_type");
-    const values = references(field(collection, 0x9f31));
-    if (BigInt(values.length) !== unsigned(field(type, 0x9f21))) fail("javascript_projection.fixed_array_length");
-    return `[${values.map((value) => projectExpression(value, context)).join(", ")}][${projectExpression(reference(field(expression, 0x9f41)), context)}]`;
+    const collectionID = reference(field(expression, 0x9f40));
+    const collection = required(context.graph, collectionID);
+    let rendered;
+    if (collection.schema === schema.fixedArrayConstruct) {
+      const type = required(context.graph, reference(field(collection, 0x9f30)), schema.fixedArrayType);
+      if (reference(field(type, 0x9f20)) !== [...context.graph.values()].find((item) => item.schema === schema.integerType)?.id) fail("javascript_projection.fixed_array_element_type");
+      const values = references(field(collection, 0x9f31));
+      if (BigInt(values.length) !== unsigned(field(type, 0x9f21))) fail("javascript_projection.fixed_array_length");
+      rendered = `[${values.map((value) => projectExpression(value, context)).join(", ")}]`;
+    } else {
+      rendered = projectExpression(collectionID, context);
+    }
+    return `${rendered}[${projectExpression(reference(field(expression, 0x9f41)), context)}]`;
   }
   const binary = new Map([
     [schema.boolAnd, [0x9b10, 0x9b11, "&&"]],
@@ -214,6 +221,13 @@ function typeName(id, graph) {
   if (type.schema === schema.stringType) return "string";
   if (type.schema === schema.boolType) return "boolean";
   if (type.schema === schema.recordType) return text(field(type, 0x9300));
+	if (type.schema === schema.fixedArrayType) {
+		const element = required(graph, reference(field(type, 0x9f20)));
+		if (element.schema !== schema.integerType) fail("javascript_projection.fixed_array_element_type");
+		const length = unsigned(field(type, 0x9f21));
+		if (length < 1n || length > 32n) fail("javascript_projection.fixed_array_length");
+		return `bigint[${length}]`;
+	}
   fail("javascript_projection.unsupported_type");
 }
 
