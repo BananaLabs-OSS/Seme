@@ -6,6 +6,41 @@ import (
 	"testing"
 )
 
+func TestIncrementalSessionLiftsMutableClosureWithExplicitStateThreading(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v29/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package closure
+type Counter func(int64) int64
+func MakeCounter(start int64) Counter {
+ value := start
+ return func(delta int64) int64 { value = value + delta; return value }
+}
+func Run(start, first, second int64) int64 {
+ counter := MakeCounter(start)
+ counter(first)
+ return counter(second)
+}
+`
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/mutable-closure", Entry: "Run", Files: map[string]string{"counter.go": source}})
+	if !result.Valid {
+		t.Fatalf("result = %#v", result)
+	}
+	for _, schema := range []string{"0000000000000000000000000000a030", "0000000000000000000000000000a031", "0000000000000000000000000000a032", "0000000000000000000000000000a033", "0000000000000000000000000000a034", "0000000000000000000000000000a035", "0000000000000000000000000000a006", "0000000000000000000000000000a007"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("canonical graph lacks schema %s", schema)
+		}
+	}
+	if got := strings.Count(result.CanonicalG1, " 0000000000000000000000000000a035 1 2"); got != 2 {
+		t.Fatalf("stateful call count = %d, want 2", got)
+	}
+}
+
 func TestIncrementalSessionLiftsReturnedImmutableClosure(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v28/module.g1")
 	if err != nil {

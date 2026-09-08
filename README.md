@@ -328,6 +328,13 @@ independent environments execute through deterministic Wasm and pinned Pulp,
 including a portable returned-closure ABI. Run
 `./scripts/check-execution-v28.sh`.
 
+[`Core Execution v29`](spec/core-execution-v29.md) adds explicit mutable
+captures, ordered capture updates, mutable closure construction, and stateful
+indirect calls. Native Go and JavaScript closure mutation becomes explicit
+state-transition threading in canonical Seme; repeated calls and independent
+environments agree through deterministic Wasm and pinned Pulp. Run
+`./scripts/check-execution-v29.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

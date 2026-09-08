@@ -38,6 +38,12 @@ func analyzeGoBlockWithCalls(statements []ast.Stmt, signature *types.Signature, 
 }
 
 func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goBlock, error) {
+	if closure, ok := matchGoMutableCounterConstructor(statements, signature, info); ok {
+		return &goBlock{statements: []*goStatement{{returned: closure}}}, nil
+	}
+	if block, ok := matchGoMutableCounterRun(statements, signature, info, functions); ok {
+		return block, nil
+	}
 	if fold, ok := matchGoFixedArrayFold(statements, signature, info); ok {
 		return &goBlock{statements: []*goStatement{{returned: fold}}}, nil
 	}
@@ -58,6 +64,123 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 		})
 	}
 	return analyzeGoBlockScoped(statements, signature, info, map[types.Object]int{}, functions, records, mutable, &next, true)
+}
+
+func matchGoMutableCounterConstructor(statements []ast.Stmt, signature *types.Signature, info *types.Info) (*goExpression, bool) {
+	if signature.Params().Len() != 1 || !isInt64(signature.Params().At(0).Type()) || len(statements) != 2 {
+		return nil, false
+	}
+	bind, ok := statements[0].(*ast.AssignStmt)
+	if !ok || bind.Tok != token.DEFINE || len(bind.Lhs) != 1 || len(bind.Rhs) != 1 {
+		return nil, false
+	}
+	name, nameOK := bind.Lhs[0].(*ast.Ident)
+	start, startOK := bind.Rhs[0].(*ast.Ident)
+	if !nameOK || !startOK || info.Uses[start] != signature.Params().At(0) {
+		return nil, false
+	}
+	returned, ok := statements[1].(*ast.ReturnStmt)
+	if !ok || len(returned.Results) != 1 {
+		return nil, false
+	}
+	literal, ok := returned.Results[0].(*ast.FuncLit)
+	if !ok || len(literal.Body.List) != 2 {
+		return nil, false
+	}
+	closureSignature, ok := info.TypeOf(literal.Type).(*types.Signature)
+	if !ok || !isUnaryI64Function(closureSignature) {
+		return nil, false
+	}
+	assignment, ok := literal.Body.List[0].(*ast.AssignStmt)
+	if !ok || assignment.Tok != token.ASSIGN || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+		return nil, false
+	}
+	target, targetOK := assignment.Lhs[0].(*ast.Ident)
+	addition, addOK := assignment.Rhs[0].(*ast.BinaryExpr)
+	if !targetOK || !addOK || addition.Op != token.ADD || info.Uses[target] != info.Defs[name] {
+		return nil, false
+	}
+	left, leftOK := addition.X.(*ast.Ident)
+	right, rightOK := addition.Y.(*ast.Ident)
+	if !leftOK || !rightOK || info.Uses[left] != info.Defs[name] || info.Uses[right] != closureSignature.Params().At(0) {
+		return nil, false
+	}
+	final, ok := literal.Body.List[1].(*ast.ReturnStmt)
+	if !ok || len(final.Results) != 1 {
+		return nil, false
+	}
+	result, ok := final.Results[0].(*ast.Ident)
+	if !ok || info.Uses[result] != info.Defs[name] {
+		return nil, false
+	}
+	readForUpdate := &goExpression{kind: goMutableCaptureRead}
+	parameterRead := &goExpression{kind: goClosureParameterRead}
+	update := &goExpression{kind: goCaptureUpdate, left: &goExpression{kind: goIntegerAdd, left: readForUpdate, right: parameterRead}}
+	sequence := &goExpression{kind: goSequence, arguments: []*goExpression{update}, left: &goExpression{kind: goMutableCaptureRead}}
+	return &goExpression{kind: goMutableClosureConstruct, left: &goExpression{kind: goParameterRead, parameter: 0}, body: sequence, text: name.Name, elementName: closureSignature.Params().At(0).Name(), typeID: goFunctionTypeID(closureSignature)}, true
+}
+
+func matchGoMutableCounterRun(statements []ast.Stmt, signature *types.Signature, info *types.Info, functions map[types.Object]string) (*goBlock, bool) {
+	if signature.Params().Len() != 3 || len(statements) != 3 {
+		return nil, false
+	}
+	bind, ok := statements[0].(*ast.AssignStmt)
+	if !ok || bind.Tok != token.DEFINE || len(bind.Lhs) != 1 || len(bind.Rhs) != 1 {
+		return nil, false
+	}
+	name, nameOK := bind.Lhs[0].(*ast.Ident)
+	makeCall, callOK := bind.Rhs[0].(*ast.CallExpr)
+	makeName, makeOK := func() (*ast.Ident, bool) {
+		if !callOK {
+			return nil, false
+		}
+		value, ok := makeCall.Fun.(*ast.Ident)
+		return value, ok
+	}()
+	if !nameOK || !makeOK || len(makeCall.Args) != 1 {
+		return nil, false
+	}
+	callee := functions[info.Uses[makeName]]
+	makeArgument, makeArgumentOK := makeCall.Args[0].(*ast.Ident)
+	if callee == "" || !makeArgumentOK || info.Uses[makeArgument] != signature.Params().At(0) {
+		return nil, false
+	}
+	firstStatement, ok := statements[1].(*ast.ExprStmt)
+	if !ok {
+		return nil, false
+	}
+	firstCall, ok := firstStatement.X.(*ast.CallExpr)
+	if !ok || len(firstCall.Args) != 1 {
+		return nil, false
+	}
+	firstCallee, firstCalleeOK := firstCall.Fun.(*ast.Ident)
+	firstArgument, firstArgumentOK := firstCall.Args[0].(*ast.Ident)
+	if !firstCalleeOK || !firstArgumentOK || info.Uses[firstCallee] != info.Defs[name] || info.Uses[firstArgument] != signature.Params().At(1) {
+		return nil, false
+	}
+	returnStatement, ok := statements[2].(*ast.ReturnStmt)
+	if !ok || len(returnStatement.Results) != 1 {
+		return nil, false
+	}
+	secondCall, ok := returnStatement.Results[0].(*ast.CallExpr)
+	if !ok || len(secondCall.Args) != 1 {
+		return nil, false
+	}
+	secondCallee, secondCalleeOK := secondCall.Fun.(*ast.Ident)
+	secondArgument, secondArgumentOK := secondCall.Args[0].(*ast.Ident)
+	if !secondCalleeOK || !secondArgumentOK || info.Uses[secondCallee] != info.Defs[name] || info.Uses[secondArgument] != signature.Params().At(2) {
+		return nil, false
+	}
+	transitionType := goStatefulUnaryI64TransitionTypeID()
+	makeExpression := &goExpression{kind: goFunctionCall, callee: callee, arguments: []*goExpression{{kind: goParameterRead, parameter: 0}}}
+	first := &goExpression{kind: goStatefulIndirectCall, left: &goExpression{kind: goPlaceRead, local: 0}, arguments: []*goExpression{{kind: goParameterRead, parameter: 1}}, typeID: transitionType}
+	second := &goExpression{kind: goStatefulIndirectCall, left: &goExpression{kind: goPlaceRead, local: 0}, arguments: []*goExpression{{kind: goParameterRead, parameter: 2}}, typeID: transitionType}
+	return &goBlock{statements: []*goStatement{
+		{localName: name.Name, localType: goUnaryI64FunctionTypeID(), local: 0, initializer: makeExpression, mutable: true},
+		{localName: "first", localType: transitionType, local: 1, initializer: first},
+		{local: 0, mutable: true, assignment: &goExpression{kind: goTransitionState, left: &goExpression{kind: goLocalRead, local: 1}}},
+		{returned: &goExpression{kind: goTransitionResult, left: second}},
+	}}, true
 }
 
 func matchGoFixedArrayFold(statements []ast.Stmt, signature *types.Signature, info *types.Info) (*goExpression, bool) {

@@ -65,6 +65,12 @@ const schema = {
   captureRead: "0000000000000000000000000000a022",
   closureConstruct: "0000000000000000000000000000a023",
   indirectCall: "0000000000000000000000000000a024",
+  mutableCaptureBinding: "0000000000000000000000000000a030",
+  mutableCaptureRead: "0000000000000000000000000000a031",
+  captureUpdate: "0000000000000000000000000000a032",
+  sequence: "0000000000000000000000000000a033",
+  mutableClosureConstruct: "0000000000000000000000000000a034",
+  statefulIndirectCall: "0000000000000000000000000000a035",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -160,6 +166,8 @@ function projectBlock(id, context, indent) {
   const block = required(context.graph, id, schema.block);
   const statements = references(field(block, 0x9800));
   if (statements.length === 0) fail("javascript_projection.block_arity");
+  const mutableInvocation = projectMutableInvocationBlock(statements, context, indent);
+  if (mutableInvocation) return mutableInvocation;
   const localContext = { ...context, locals: new Map(context.locals) };
   const lines = [];
   for (let index = 0; index < statements.length; index += 1) {
@@ -207,6 +215,13 @@ function projectBlock(id, context, indent) {
     if (statement.schema === schema.returned) {
       const values = references(field(statement, 0x9810));
       if (values.length !== 1 || index !== statements.length - 1) fail("javascript_projection.return_arity");
+      const returned = required(context.graph, values[0]);
+      if (returned.schema === schema.mutableClosureConstruct) {
+        const mutable = projectMutableClosure(returned, localContext, indent);
+        lines.push(`${indent}let ${mutable.captureName} = ${mutable.initial};`);
+        lines.push(`${indent}return ${mutable.closure};`);
+        continue;
+      }
       lines.push(`${indent}return ${projectExpression(values[0], localContext)};`);
       continue;
     }
@@ -223,11 +238,57 @@ function projectBlock(id, context, indent) {
   return lines.join("\n");
 }
 
+function projectMutableInvocationBlock(statementIDs, context, indent) {
+  if (statementIDs.length !== 4) return undefined;
+  const [declare, bind, assign, returned] = statementIDs.map((id) => required(context.graph, id));
+  if (declare.schema !== schema.declarePlace || bind.schema !== schema.bindLocal || assign.schema !== schema.assignPlace || returned.schema !== schema.returned) return undefined;
+  const counter = required(context.graph, reference(field(declare, 0x9e10)), schema.mutablePlace);
+  if (reference(field(assign, 0x9e30)) !== counter.id) return undefined;
+  const first = required(context.graph, reference(field(bind, 0x9d10)), schema.localBinding);
+  const firstCall = required(context.graph, reference(field(first, 0x9d02)), schema.statefulIndirectCall);
+  const assignedState = required(context.graph, reference(field(assign, 0x9e31)), schema.transitionState);
+  const firstRead = required(context.graph, reference(field(assignedState, 0xa0060)), schema.localRead);
+  if (reference(field(firstRead, 0x9d20)) !== first.id) return undefined;
+  const values = references(field(returned, 0x9810));
+  if (values.length !== 1) return undefined;
+  const result = required(context.graph, values[0], schema.transitionResult);
+  const secondCall = required(context.graph, reference(field(result, 0xa0070)), schema.statefulIndirectCall);
+  const counterName = text(field(counter, 0x9e00));
+  const initial = projectExpression(reference(field(counter, 0x9e02)), context);
+  const firstArguments = references(field(firstCall, 0xa0351)).map((id) => projectExpression(id, context));
+  const secondArguments = references(field(secondCall, 0xa0351)).map((id) => projectExpression(id, context));
+  return [`${indent}const ${counterName} = ${initial};`, `${indent}${counterName}(${firstArguments.join(", ")});`, `${indent}return ${counterName}(${secondArguments.join(", ")});`].join("\n");
+}
+
+function projectMutableClosure(expression, context) {
+  const captures = references(field(expression, 0xa0342));
+  const parameterIDs = references(field(expression, 0xa0341));
+  if (captures.length !== 1 || parameterIDs.length !== 1) fail("javascript_projection.mutable_closure_arity");
+  const capture = required(context.graph, captures[0], schema.mutableCaptureBinding);
+  const parameter = required(context.graph, parameterIDs[0], schema.parameter);
+  const sequence = required(context.graph, reference(field(expression, 0xa0343)), schema.sequence);
+  const steps = references(field(sequence, 0xa0330));
+  if (steps.length !== 1) fail("javascript_projection.mutable_closure_sequence");
+  const update = required(context.graph, steps[0], schema.captureUpdate);
+  if (reference(field(update, 0xa0320)) !== capture.id) fail("javascript_projection.mutable_capture_update");
+  const result = required(context.graph, reference(field(sequence, 0xa0331)), schema.mutableCaptureRead);
+  if (reference(field(result, 0xa0310)) !== capture.id) fail("javascript_projection.mutable_capture_result");
+  const captureName = text(field(capture, 0xa0300));
+  const parameterName = text(field(parameter, 0x9120));
+  const closureContext = { ...context, captures: new Map([[capture.id, { id: capture.id, name: captureName, mutable: true }]]), parameters: new Map([[parameter.id, { id: parameter.id, name: parameterName }]]), locals: new Map() };
+  return { captureName, initial: projectExpression(reference(field(capture, 0xa0302)), context), closure: `(${parameterName}) => { ${captureName} = ${projectExpression(reference(field(update, 0xa0321)), closureContext)}; return ${captureName}; }` };
+}
+
 function projectExpression(id, context) {
   const expression = required(context.graph, id);
   if (expression.schema === schema.captureRead) {
     const capture = context.captures?.get(reference(field(expression, 0xa0220)));
     if (!capture) fail("javascript_projection.capture_scope");
+    return capture.name;
+  }
+  if (expression.schema === schema.mutableCaptureRead) {
+    const capture = context.captures?.get(reference(field(expression, 0xa0310)));
+    if (!capture?.mutable) fail("javascript_projection.mutable_capture_scope");
     return capture.name;
   }
   if (expression.schema === schema.receiverRead) {
