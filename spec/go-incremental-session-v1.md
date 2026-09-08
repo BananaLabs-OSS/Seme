@@ -31,12 +31,19 @@ Unsupported but well-typed declarations produce located warnings; supported
 declarations may still form a valid canonical subset. Unsupported source is not
 inserted into the canonical graph or rewritten.
 
-The bounded v1 lift accepts package functions with `int64` and `bool`
-parameters, one `int64` or `bool` result, a v13 total-return conditional body,
-and the current compositional expression vocabulary. Fallthrough after a
-terminal `if` is normalized to an explicit canonical else block. It does not yet resolve sibling
-in-memory packages, imported module dependencies, methods, locals, effects,
-multiple returns, or build-tag variants.
+The bounded v1 lift accepts package functions with `int64`, `bool`, and
+`string` parameters, one result of one of those types, a v13 total-return
+conditional body, and the current compositional expression vocabulary.
+Fallthrough after a terminal `if` is normalized to an explicit canonical else
+block. It does not yet resolve sibling in-memory packages, imported module
+dependencies, methods, locals, effects, multiple returns, or build-tag
+variants.
+
+When supplied the v14 execution module, a live snapshot containing text
+parameters or a text result lowers through the exact variable-width
+`seme.pure-abi/v2` profile. The acceptance gate executes a multibyte result
+from the session-emitted canonical graph; this is the same graph path used for
+scalar live edits rather than a separate source-shaped translation.
 
 The session API is safe for concurrent callers, but revision ordering—not
 arrival time—determines acceptance. Equal snapshots with equal package path and

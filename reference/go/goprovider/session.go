@@ -171,14 +171,16 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	sort.Slice(functions, func(left, right int) bool { return functions[left].id < functions[right].id })
 	integerID := stableID("execution", "type", "i64")
 	booleanID := stableID("execution", "type", "bool")
+	stringID := stableID("execution", "type", "string")
 	instances := []graphEntity{
 		{integerID, entity(integerID, "00000000000000000000000000009010", []graphField{unsignedField(0x9100, 64), {0x9101, "tr"}, unsignedField(0x9102, 0)})},
 		{booleanID, entity(booleanID, "00000000000000000000000000009020", nil)},
+		{stringID, entity(stringID, "00000000000000000000000000009040", nil)},
 	}
 	var functionIDs []string
 	var sources []SourceIdentity
 	for _, function := range functions {
-		entities, source, diagnostic := liftSessionFunction(function, integerID, booleanID)
+		entities, source, diagnostic := liftSessionFunction(function, integerID, booleanID, stringID)
 		if diagnostic != nil {
 			diagnostics = append(diagnostics, *diagnostic)
 			continue
@@ -201,7 +203,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	return composeExecutionG1(moduleG1, revision, instances), sources, sortedDiagnostics(diagnostics)
 }
 
-func liftSessionFunction(function sessionFunction, integerID, booleanID string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
+func liftSessionFunction(function sessionFunction, integerID, booleanID, stringID string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 	position := function.fset.Position(function.fn.Pos())
 	diagnostic := func(code, message string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 		return nil, SourceIdentity{}, &SessionDiagnostic{Code: code, Message: message, File: function.file, Line: position.Line, Column: position.Column, Severity: "warning"}
@@ -212,8 +214,10 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID string) 
 	resultTypeID := integerID
 	if isBool(function.sig.Results().At(0).Type()) {
 		resultTypeID = booleanID
+	} else if isPureString(function.sig.Results().At(0).Type()) {
+		resultTypeID = stringID
 	} else if !isInt64(function.sig.Results().At(0).Type()) {
-		return diagnostic("session.unsupported_result_type", "supported result types are int64 and bool")
+		return diagnostic("session.unsupported_result_type", "supported result types are int64, bool, and string")
 	}
 	block, err := analyzeGoBlock(function.fn.Body.List, function.sig, function.info)
 	if err != nil {
@@ -225,8 +229,10 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID string) 
 		parameterTypeID := integerID
 		if isBool(function.sig.Params().At(index).Type()) {
 			parameterTypeID = booleanID
+		} else if isPureString(function.sig.Params().At(index).Type()) {
+			parameterTypeID = stringID
 		} else if !isInt64(function.sig.Params().At(index).Type()) {
-			return diagnostic("session.unsupported_parameter_type", "supported parameter types are int64 and bool")
+			return diagnostic("session.unsupported_parameter_type", "supported parameter types are int64, bool, and string")
 		}
 		parameterIDs[index] = stableID("execution", function.id, "parameter", strconv.Itoa(index))
 		instances = append(instances, graphEntity{parameterIDs[index], entity(parameterIDs[index], "00000000000000000000000000009012", []graphField{
