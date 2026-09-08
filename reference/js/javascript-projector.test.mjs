@@ -1,0 +1,29 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+import test from "node:test";
+import { liftJavaScript } from "./javascript-provider.mjs";
+import { projectJavaScript } from "./javascript-projector.mjs";
+
+const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v14/module.g1", import.meta.url), "utf8");
+const source = `/**
+ * @param {string} left
+ * @param {string} right
+ * @returns {string}
+ */
+export function Join(left, right) {
+  if (left === "") return right;
+  return left + "λ" + right;
+}`;
+
+test("projects canonical text control to native JavaScript and re-lifts", () => {
+  const canonical = liftJavaScript({ source, moduleG1, packagePath: "example.test/project", revision: 1 });
+  const projected = projectJavaScript(canonical);
+  assert.match(projected, /export function Join\(left, right\)/);
+  assert.match(projected, /left === ""/);
+  const relifted = liftJavaScript({ source: projected, moduleG1, packagePath: "example.test/project", revision: 1 });
+  assert.equal(relifted.split("\n").slice(1).join("\n"), canonical.split("\n").slice(1).join("\n"));
+});
+
+test("projection rejects a graph without one executable program", () => {
+  assert.throws(() => projectJavaScript(moduleG1), /javascript_projection\.requires_one_program/);
+});

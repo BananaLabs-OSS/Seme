@@ -218,8 +218,9 @@ allocation, standalone Wasm, and capability-free Pulp execution are checked by
 [`JavaScript Provider v1`](spec/javascript-provider-v1.md) is the first direct
 non-Go source lift. A deliberately bounded, explicitly typed native JavaScript
 function and its idiomatic Go equivalent compile to byte-identical canonical
-Seme, then the JavaScript-derived graph executes through ABI v2 Wasm. Ambiguous
-or coercive JavaScript rejects instead of being guessed. Run
+Seme, then the JavaScript-derived graph executes through ABI v2 Wasm. The same
+graph projects back to native JavaScript and re-lifts without semantic drift.
+Ambiguous or coercive JavaScript rejects instead of being guessed. Run
 `./scripts/check-javascript-provider-v1.sh`.
 
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
