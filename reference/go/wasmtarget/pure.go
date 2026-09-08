@@ -395,9 +395,102 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 			return fmt.Errorf("wasm.index_read_collection")
 		}
 		return validatePureExpression(graph, index.Reference, "i64", parameterTypes, visiting, budget)
+	case identity(0x90f7):
+		if expected != "i64" {
+			return fmt.Errorf("wasm.fold_result_type")
+		}
+		collection, initial, accumulator, element, body, err := foldFields(graph, expression)
+		if err != nil {
+			return err
+		}
+		if _, _, err := fixedI64Collection(graph, collection, parameterTypes); err != nil {
+			return err
+		}
+		if err := validatePureExpression(graph, initial, "i64", parameterTypes, visiting, budget); err != nil {
+			return err
+		}
+		return validateI64AddFoldBody(graph, body, accumulator, element)
 	default:
 		return fmt.Errorf("wasm.pure_unsupported_expression")
 	}
+}
+
+func foldFields(graph wire.Envelope, fold wire.Entity) (wire.ID, wire.ID, wire.ID, wire.ID, wire.ID, error) {
+	fields := make([]wire.ID, 5)
+	for index, fieldID := range []uint64{0x9f70, 0x9f71, 0x9f72, 0x9f73, 0x9f74} {
+		value, err := field(fold, fieldID)
+		if err != nil || value.Tag != 6 {
+			return wire.ID{}, wire.ID{}, wire.ID{}, wire.ID{}, wire.ID{}, fmt.Errorf("wasm.fold_fields")
+		}
+		fields[index] = value.Reference
+	}
+	if fields[2] == fields[3] {
+		return wire.ID{}, wire.ID{}, wire.ID{}, wire.ID{}, wire.ID{}, fmt.Errorf("wasm.fold_binding_alias")
+	}
+	for _, id := range fields[2:4] {
+		binding, ok := graph.Entities[id]
+		if !ok || binding.Schema != identity(0x90f5) {
+			return wire.ID{}, wire.ID{}, wire.ID{}, wire.ID{}, wire.ID{}, fmt.Errorf("wasm.fold_binding")
+		}
+		name, nameErr := field(binding, 0x9f50)
+		typeValue, typeErr := field(binding, 0x9f51)
+		if nameErr != nil || typeErr != nil || name.Tag != 5 || len(name.Bytes) == 0 || typeValue.Tag != 6 {
+			return wire.ID{}, wire.ID{}, wire.ID{}, wire.ID{}, wire.ID{}, fmt.Errorf("wasm.fold_binding_fields")
+		}
+		type_, err := pureType(graph, typeValue.Reference)
+		if err != nil || type_.name != "i64" {
+			return wire.ID{}, wire.ID{}, wire.ID{}, wire.ID{}, wire.ID{}, fmt.Errorf("wasm.fold_binding_type")
+		}
+	}
+	return fields[0], fields[1], fields[2], fields[3], fields[4], nil
+}
+
+func validateI64AddFoldBody(graph wire.Envelope, bodyID, accumulatorID, elementID wire.ID) error {
+	body, ok := graph.Entities[bodyID]
+	if !ok || body.Schema != identity(0x9014) || validateIntegerTypeReference(graph, body, 0x9142) != nil {
+		return fmt.Errorf("wasm.fold_body")
+	}
+	left, leftErr := field(body, 0x9140)
+	right, rightErr := field(body, 0x9141)
+	if leftErr != nil || rightErr != nil || left.Tag != 6 || right.Tag != 6 {
+		return fmt.Errorf("wasm.fold_body")
+	}
+	for _, expectedRead := range []struct {
+		id        wire.ID
+		bindingID wire.ID
+	}{
+		{id: left.Reference, bindingID: accumulatorID},
+		{id: right.Reference, bindingID: elementID},
+	} {
+		read, ok := graph.Entities[expectedRead.id]
+		if !ok || read.Schema != identity(0x90f6) {
+			return fmt.Errorf("wasm.fold_binding_read")
+		}
+		binding, err := field(read, 0x9f60)
+		if err != nil || binding.Tag != 6 || binding.Reference != expectedRead.bindingID {
+			return fmt.Errorf("wasm.fold_binding_scope")
+		}
+	}
+	return nil
+}
+
+func fixedI64Collection(graph wire.Envelope, collectionID wire.ID, parameterTypes map[wire.ID]string) ([]wire.ID, wire.ID, error) {
+	collection, ok := graph.Entities[collectionID]
+	if !ok {
+		return nil, wire.ID{}, fmt.Errorf("wasm.fold_collection")
+	}
+	if collection.Schema == identity(0x90f3) {
+		values, err := fixedI64ArrayValues(graph, collectionID)
+		return values, wire.ID{}, err
+	}
+	if collection.Schema != identity(0x9013) {
+		return nil, wire.ID{}, fmt.Errorf("wasm.fold_collection")
+	}
+	parameter, err := field(collection, 0x9130)
+	if err != nil || parameter.Tag != 6 || !strings.HasPrefix(parameterTypes[parameter.Reference], "fixed-array:i64:") {
+		return nil, wire.ID{}, fmt.Errorf("wasm.fold_collection_type")
+	}
+	return nil, parameter.Reference, nil
 }
 
 func fixedI64ArrayValues(graph wire.Envelope, constructID wire.ID) ([]wire.ID, error) {
@@ -407,7 +500,7 @@ func fixedI64ArrayValues(graph wire.Envelope, constructID wire.ID) ([]wire.ID, e
 	}
 	typeValue, typeErr := field(construct, 0x9f30)
 	valuesValue, valuesErr := field(construct, 0x9f31)
-	if typeErr != nil || valuesErr != nil || typeValue.Tag != 6 || valuesValue.Tag != 7 || len(valuesValue.List) == 0 || len(valuesValue.List) > 32 {
+	if typeErr != nil || valuesErr != nil || typeValue.Tag != 6 || valuesValue.Tag != 7 || len(valuesValue.List) > 32 {
 		return nil, fmt.Errorf("wasm.fixed_array_fields")
 	}
 	arrayType, ok := graph.Entities[typeValue.Reference]
@@ -451,7 +544,7 @@ func pureType(graph wire.Envelope, id wire.ID) (pureValueType, error) {
 	case identity(0x90f2):
 		element, elementErr := field(entity, 0x9f20)
 		length, lengthErr := field(entity, 0x9f21)
-		if elementErr != nil || lengthErr != nil || element.Tag != 6 || length.Tag != 3 || length.Unsigned == 0 || length.Unsigned > 32 {
+		if elementErr != nil || lengthErr != nil || element.Tag != 6 || length.Tag != 3 || length.Unsigned > 32 {
 			return pureValueType{}, fmt.Errorf("wasm.fixed_array_type")
 		}
 		elementType, err := pureType(graph, element.Reference)

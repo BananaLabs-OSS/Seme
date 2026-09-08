@@ -10,6 +10,7 @@ const moduleV18G1 = fs.readFileSync(new URL("../../modules/execution/v18/module.
 const moduleV19G1 = fs.readFileSync(new URL("../../modules/execution/v19/module.g1", import.meta.url), "utf8");
 const moduleV20G1 = fs.readFileSync(new URL("../../modules/execution/v20/module.g1", import.meta.url), "utf8");
 const moduleV21G1 = fs.readFileSync(new URL("../../modules/execution/v21/module.g1", import.meta.url), "utf8");
+const moduleV22G1 = fs.readFileSync(new URL("../../modules/execution/v22/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -150,4 +151,13 @@ export function Pick(values, index) { return values[index]; }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array-boundary", revision: 1 });
   assert.match(canonical, /000000000000000000000000000090f2/);
   assert.match(canonical, /000000000000000000000000000090f4/);
+});
+
+test("lifts reduce as typed deterministic fold bindings", () => {
+  const source = `/** @param {bigint[3]} values @returns {bigint} */
+export function Sum(values) { return values.reduce((total, value) => total + value, 0n); }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV22G1, packagePath: "example.test/fold", revision: 1 });
+  assert.match(canonical, /000000000000000000000000000090f5/);
+  assert.match(canonical, /000000000000000000000000000090f6/);
+  assert.match(canonical, /000000000000000000000000000090f7/);
 });

@@ -116,3 +116,11 @@ repository after checksum verification. The follow-on fixed-array boundary
 gate reused those same tools and an automatically removed archived Pulp tree.
 No software, dependency, global setting, SSH setting, or persistent environment
 configuration was installed or changed.
+
+## 2026-09-08 — Core v22 fold verification
+
+Core v22 used only the existing workstation Go 1.26 toolchain, Node 22,
+repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. Its
+gate builds only in automatically removed temporary directories. No software,
+dependency, global setting, SSH setting, or persistent environment
+configuration was installed or changed.

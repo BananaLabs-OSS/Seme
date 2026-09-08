@@ -285,6 +285,28 @@ func TestIncrementalSessionLiftsFixedArrayParameter(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsRangeAsDeterministicFold(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v22/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/fold", Entry: "Sum", Files: map[string]string{
+		"fold.go": "package fold\nfunc Sum(values [3]int64) int64 { total := int64(0); for _, value := range values { total += value }; return total }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("fold result = %#v", result)
+	}
+	for _, schema := range []string{"000000000000000000000000000090f5", "000000000000000000000000000090f6", "000000000000000000000000000090f7"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("fold schema %s missing", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
 	if err != nil {

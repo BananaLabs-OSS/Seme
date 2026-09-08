@@ -31,28 +31,35 @@ const (
 	goPlaceRead
 	goFixedArrayConstruct
 	goIndexRead
+	goIterationBindingRead
+	goFold
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
 // Go AST details out of canonical emission and normalizes equivalent source
 // spellings before a target profile decides which tree shapes it supports.
 type goExpression struct {
-	kind       goExpressionKind
-	parameter  int
-	local      int
-	integer    uint64
-	boolean    bool
-	text       string
-	left       *goExpression
-	right      *goExpression
-	callee     string
-	arguments  []*goExpression
-	recordType string
-	field      string
-	values     []*goExpression
-	mutable    bool
-	arrayType  string
-	arrayLen   uint64
+	kind        goExpressionKind
+	parameter   int
+	local       int
+	integer     uint64
+	boolean     bool
+	text        string
+	left        *goExpression
+	right       *goExpression
+	callee      string
+	arguments   []*goExpression
+	recordType  string
+	field       string
+	values      []*goExpression
+	mutable     bool
+	arrayType   string
+	arrayLen    uint64
+	initial     *goExpression
+	body        *goExpression
+	bindingID   string
+	accName     string
+	elementName string
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -150,6 +157,35 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			id := expressionNodeID(owner, path, "index-read")
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090f4", []graphField{refField(0x9f40, collection), refField(0x9f41, index)})}
 			return id, nil
+		case goIterationBindingRead:
+			if expression.bindingID == "" {
+				return "", fmt.Errorf("expression.iteration_binding_missing")
+			}
+			id := expressionNodeID(owner, path, "iteration-binding-read")
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090f6", []graphField{refField(0x9f60, expression.bindingID)})}
+			return id, nil
+		case goFold:
+			collection, err := emit(expression.left, path+".collection")
+			if err != nil {
+				return "", err
+			}
+			initial, err := emit(expression.initial, path+".initial")
+			if err != nil {
+				return "", err
+			}
+			accumulatorID := expressionNodeID(owner, path, "fold-accumulator-binding")
+			elementID := expressionNodeID(owner, path, "fold-element-binding")
+			assignFoldBinding(expression.body, "accumulator", accumulatorID)
+			assignFoldBinding(expression.body, "element", elementID)
+			body, err := emit(expression.body, path+".body")
+			if err != nil {
+				return "", err
+			}
+			emitted[accumulatorID] = graphEntity{accumulatorID, entity(accumulatorID, "000000000000000000000000000090f5", []graphField{bytesField(0x9f50, expression.accName), refField(0x9f51, integerID)})}
+			emitted[elementID] = graphEntity{elementID, entity(elementID, "000000000000000000000000000090f5", []graphField{bytesField(0x9f50, expression.elementName), refField(0x9f51, integerID)})}
+			id := expressionNodeID(owner, path, "fold")
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090f7", []graphField{refField(0x9f70, collection), refField(0x9f71, initial), refField(0x9f72, accumulatorID), refField(0x9f73, elementID), refField(0x9f74, body)})}
+			return id, nil
 		case goIntegerLiteral:
 			id := expressionNodeID(owner, path, "integer-literal")
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009070", []graphField{unsignedField(0x9700, expression.integer), refField(0x9701, integerID)})}
@@ -237,6 +273,17 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 		entities = append(entities, item)
 	}
 	return entities, root, nil
+}
+
+func assignFoldBinding(expression *goExpression, role, id string) {
+	if expression == nil {
+		return
+	}
+	if expression.kind == goIterationBindingRead && expression.text == role {
+		expression.bindingID = id
+	}
+	assignFoldBinding(expression.left, role, id)
+	assignFoldBinding(expression.right, role, id)
 }
 
 func expressionNodeID(owner, path, kind string) string {
@@ -362,7 +409,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		return &goExpression{kind: goFunctionCall, callee: callee, arguments: arguments}, nil
 	case *ast.CompositeLit:
 		if array, ok := info.TypeOf(expression).Underlying().(*types.Array); ok {
-			if array.Len() <= 0 || array.Len() > 32 || !isInt64(array.Elem()) || int64(len(expression.Elts)) != array.Len() {
+			if array.Len() < 0 || array.Len() > 32 || !isInt64(array.Elem()) || int64(len(expression.Elts)) != array.Len() {
 				return nil, fmt.Errorf("expression.unsupported_fixed_array")
 			}
 			values := make([]*goExpression, len(expression.Elts))

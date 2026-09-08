@@ -78,7 +78,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
 function readSignature(comments, fn) {
   const comment = [...comments].reverse().find((item) => item.type === "Block" && item.end <= fn.start && sourceGapIsWhitespace(item.end, fn.start, fn));
   if (!comment || !comment.value.startsWith("*")) fail("javascript.missing_jsdoc", fn.loc.start);
-  const parameters = [...comment.value.matchAll(/@param\s+\{(string|boolean|bigint|bigint\[(?:[1-9]|[12]\d|3[0-2])\])\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
+  const parameters = [...comment.value.matchAll(/@param\s+\{(string|boolean|bigint|bigint\[(?:[0-9]|[12]\d|3[0-2])\])\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
   const result = comment.value.match(/@returns?\s+\{(string|boolean|bigint)\}/);
   if (!result) fail("javascript.missing_result_type", fn.loc.start);
   return { parameters, result: semanticType(result[1]) };
@@ -217,6 +217,28 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 }
 
 function emitExpression(node, owner, path, context, expected) {
+	if (node.type === "CallExpression" && expected === "i64" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.name === "reduce" && node.arguments.length === 2) {
+		const collectionType = inferExpressionType(node.callee.object, context);
+		const callback = node.arguments[0];
+		if (!collectionType.startsWith("array:i64:") || callback.type !== "ArrowFunctionExpression" || callback.async || callback.params.length !== 2 || callback.params.some((item) => item.type !== "Identifier") || callback.body.type !== "BinaryExpression" || callback.body.operator !== "+") fail("javascript.fold_shape", node.loc.start);
+		const [accumulator, element] = callback.params;
+		if (callback.body.left.type !== "Identifier" || callback.body.left.name !== accumulator.name || callback.body.right.type !== "Identifier" || callback.body.right.name !== element.name) fail("javascript.fold_body", callback.body.loc.start);
+		const collection = emitExpression(node.callee.object, owner, `${path}.collection`, context, collectionType);
+		const initial = emitExpression(node.arguments[1], owner, `${path}.initial`, context, "i64");
+		const accumulatorID = expressionID(owner, path, "fold-accumulator-binding");
+		const elementID = expressionID(owner, path, "fold-element-binding");
+		const leftID = expressionID(owner, `${path}.body.left`, "iteration-binding-read");
+		const rightID = expressionID(owner, `${path}.body.right`, "iteration-binding-read");
+		const bodyID = expressionID(owner, `${path}.body`, "add");
+		context.entities.push(graphEntity(accumulatorID, entity(accumulatorID, "000000000000000000000000000090f5", [[0x9f50, bytes(accumulator.name)], [0x9f51, ref(ids.i64)]])));
+		context.entities.push(graphEntity(elementID, entity(elementID, "000000000000000000000000000090f5", [[0x9f50, bytes(element.name)], [0x9f51, ref(ids.i64)]])));
+		context.entities.push(graphEntity(leftID, entity(leftID, "000000000000000000000000000090f6", [[0x9f60, ref(accumulatorID)]])));
+		context.entities.push(graphEntity(rightID, entity(rightID, "000000000000000000000000000090f6", [[0x9f60, ref(elementID)]])));
+		context.entities.push(graphEntity(bodyID, entity(bodyID, "00000000000000000000000000009014", [[0x9140, ref(leftID)], [0x9141, ref(rightID)], [0x9142, ref(ids.i64)]])));
+		const id = expressionID(owner, path, "fold");
+		context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f7", [[0x9f70, ref(collection.id)], [0x9f71, ref(initial.id)], [0x9f72, ref(accumulatorID)], [0x9f73, ref(elementID)], [0x9f74, ref(bodyID)]])));
+		return { id, type: "i64" };
+	}
 	if (node.type === "MemberExpression" && node.computed && expected === "i64" && node.object.type === "Identifier") {
 		const parameterIndex = context.parameterNames.indexOf(node.object.name);
 		const arrayType = parameterIndex >= 0 ? context.parameterTypes[parameterIndex] : undefined;
@@ -228,7 +250,7 @@ function emitExpression(node, owner, path, context, expected) {
 		return { id, type: "i64" };
 	}
 	if (node.type === "MemberExpression" && node.computed && node.object.type === "ArrayExpression" && expected === "i64") {
-		if (node.object.elements.length === 0 || node.object.elements.length > 32 || node.object.elements.some((item) => !item || item.type === "SpreadElement")) fail("javascript.fixed_array_shape", node.loc.start);
+		if (node.object.elements.length > 32 || node.object.elements.some((item) => !item || item.type === "SpreadElement")) fail("javascript.fixed_array_shape", node.loc.start);
 		const length = node.object.elements.length;
 		const arrayType = stableID("execution", "type", "fixed-array", "i64", String(length));
 		const values = node.object.elements.map((item, index) => emitExpression(item, owner, `${path}.collection.element.${index}`, context, "i64"));
@@ -265,6 +287,12 @@ function emitExpression(node, owner, path, context, expected) {
     context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090b0", [[0x9b00, node.value ? "tr" : "fa"]])));
     return { id, type: "bool" };
   }
+	if (node.type === "Literal" && typeof node.value === "bigint" && expected === "i64") {
+		if (node.value < -(1n << 63n) || node.value > (1n << 63n) - 1n) fail("javascript.i64_literal_range", node.loc.start);
+		const id = expressionID(owner, path, "integer-literal");
+		context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009070", [[0x9700, `uu ${BigInt.asUintN(64, node.value)}`], [0x9701, ref(ids.i64)]])));
+		return { id, type: "i64" };
+	}
   if (node.type === "ObjectExpression" && expected.startsWith("record:")) {
     const record = context.recordsByName.get(expected.slice("record:".length));
     if (!record || node.properties.length !== record.fields.length) fail("javascript.record_shape", node.loc.start);
@@ -304,6 +332,7 @@ function emitExpression(node, owner, path, context, expected) {
   }
   const operator = node.operator;
   const table = {
+	"+:i64": ["add", "00000000000000000000000000009014", 0x9140, 0x9141, "i64"],
     "+:string": ["string-concat", "000000000000000000000000000090c3", 0x9c30, 0x9c31, "string"],
     "===:bool": ["string-equal", "000000000000000000000000000090c2", 0x9c20, 0x9c21, "string"],
     "&&:bool": ["boolean-and", "000000000000000000000000000090b1", 0x9b10, 0x9b11, "bool"],
