@@ -110,6 +110,7 @@ type sessionFunction struct {
 	info     *types.Info
 	file     string
 	fset     *token.FileSet
+	method   bool
 }
 
 func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, []SourceIdentity, []SessionDiagnostic) {
@@ -151,7 +152,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	for _, file := range files {
 		for _, declaration := range file.Decls {
 			fn, ok := declaration.(*ast.FuncDecl)
-			if !ok || fn.Recv != nil {
+			if !ok {
 				continue
 			}
 			object, ok := info.Defs[fn.Name].(*types.Func)
@@ -163,9 +164,14 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 				continue
 			}
 			position := fset.Position(fn.Pos())
+			declarationID := stableID("session-declaration", snapshot.PackagePath, fn.Name.Name)
+			if fn.Recv != nil {
+				receiverName := receiverTypeName(signature.Recv().Type())
+				declarationID = stableID("session-method", snapshot.PackagePath, receiverName, fn.Name.Name)
+			}
 			functions = append(functions, sessionFunction{
-				id: stableID("session-declaration", snapshot.PackagePath, fn.Name.Name), name: fn.Name.Name,
-				fn: fn, sig: signature, info: info, file: filepath.ToSlash(position.Filename), fset: fset,
+				id: declarationID, name: fn.Name.Name,
+				fn: fn, sig: signature, info: info, file: filepath.ToSlash(position.Filename), fset: fset, method: fn.Recv != nil,
 			})
 		}
 	}
@@ -235,7 +241,9 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 			continue
 		}
 		instances = append(instances, entities...)
-		functionIDs = append(functionIDs, function.id)
+		if !function.method {
+			functionIDs = append(functionIDs, function.id)
+		}
 		sources = append(sources, source)
 	}
 	if len(functionIDs) == 0 {
@@ -276,15 +284,29 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	if function.sig.Results().Len() != 1 {
 		return diagnostic("session.unsupported_function_shape", "supported functions require one result")
 	}
+	resultType := function.sig.Results().At(0).Type()
 	resultTypeID := integerID
-	if isBool(function.sig.Results().At(0).Type()) {
+	transitionState, transitionResult, isTransition := goTransitionTypes(resultType)
+	if isTransition {
+		var ok bool
+		resultTypeID, ok = goSupportedTypeID(resultType, integerID, booleanID, stringID, records)
+		if !ok {
+			return diagnostic("session.unsupported_result_type", "transition state and result types must be supported")
+		}
+	} else if isBool(resultType) {
 		resultTypeID = booleanID
 	} else if isPureString(function.sig.Results().At(0).Type()) {
 		resultTypeID = stringID
 	} else if isI64Slice(function.sig.Results().At(0).Type()) {
 		resultTypeID = stableID("execution", "type", "slice", "i64")
-	} else if !isInt64(function.sig.Results().At(0).Type()) {
-		return diagnostic("session.unsupported_result_type", "supported result types are int64, bool, string, and i64 slices")
+	} else if _, named := resultType.(*types.Named); named {
+		var ok bool
+		resultTypeID, ok = goSupportedTypeID(resultType, integerID, booleanID, stringID, records)
+		if !ok {
+			return diagnostic("session.unsupported_result_type", "unsupported record result")
+		}
+	} else if !isInt64(resultType) {
+		return diagnostic("session.unsupported_result_type", "supported result types are int64, bool, string, records, i64 slices, and state transitions")
 	}
 	block, err := analyzeGoBlockWithProgram(function.fn.Body.List, function.sig, function.info, functions, records)
 	if err != nil {
@@ -292,6 +314,14 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	}
 	parameterIDs := make([]string, function.sig.Params().Len())
 	var instances []graphEntity
+	if isTransition {
+		stateTypeID, stateOK := goSupportedTypeID(transitionState, integerID, booleanID, stringID, records)
+		valueTypeID, valueOK := goSupportedTypeID(transitionResult, integerID, booleanID, stringID, records)
+		if !stateOK || !valueOK {
+			return diagnostic("session.unsupported_result_type", "unsupported transition type arguments")
+		}
+		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a004", []graphField{refField(0xa0040, stateTypeID), refField(0xa0041, valueTypeID)})})
+	}
 	if isI64Slice(function.sig.Results().At(0).Type()) {
 		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
 	}
@@ -311,6 +341,12 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 			if !hasGraphEntity(instances, parameterTypeID) {
 				instances = append(instances, graphEntity{parameterTypeID, entity(parameterTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
 			}
+		} else if named, ok := function.sig.Params().At(index).Type().(*types.Named); ok {
+			record, exists := records[named]
+			if !exists {
+				return diagnostic("session.unsupported_parameter_type", "unsupported named parameter type")
+			}
+			parameterTypeID = record.id
 		} else if !isInt64(function.sig.Params().At(index).Type()) {
 			return diagnostic("session.unsupported_parameter_type", "supported parameter types are int64, bool, string, fixed i64 arrays, and i64 slices")
 		}
@@ -323,13 +359,104 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	if err != nil {
 		return diagnostic("session.expression_emission", err.Error())
 	}
-	instances = append(instances, graphEntity{function.id, entity(function.id, "00000000000000000000000000009011", []graphField{
-		bytesField(0x9110, function.name), refsField(0x9111, parameterIDs), refField(0x9112, resultTypeID), refField(0x9113, bodyID),
-	})})
+	if function.method {
+		receiverTypeID, ok := goSupportedTypeID(function.sig.Recv().Type(), integerID, booleanID, stringID, records)
+		if !ok {
+			return diagnostic("session.unsupported_receiver_type", "value receiver must have a supported record type")
+		}
+		receiverID := goReceiverID(function.sig)
+		instances = append(instances,
+			graphEntity{receiverID, entity(receiverID, "0000000000000000000000000000a000", []graphField{bytesField(0xa0000, "self"), refField(0xa0001, receiverTypeID)})},
+			graphEntity{function.id, entity(function.id, "0000000000000000000000000000a002", []graphField{bytesField(0xa0020, function.name), refField(0xa0021, receiverID), refsField(0xa0022, parameterIDs), refField(0xa0023, resultTypeID), refField(0xa0024, bodyID)})},
+		)
+	} else {
+		instances = append(instances, graphEntity{function.id, entity(function.id, "00000000000000000000000000009011", []graphField{
+			bytesField(0x9110, function.name), refsField(0x9111, parameterIDs), refField(0x9112, resultTypeID), refField(0x9113, bodyID),
+		})})
+	}
 	start := function.fset.Position(function.fn.Pos())
 	end := function.fset.Position(function.fn.End())
-	source := SourceIdentity{ID: function.id, Kind: "function", Name: function.name, Document: function.file, Start: start.Offset, End: end.Offset, Line: start.Line, Column: start.Column}
+	kind := "function"
+	if function.method {
+		kind = "method"
+	}
+	source := SourceIdentity{ID: function.id, Kind: kind, Name: function.name, Document: function.file, Start: start.Offset, End: end.Offset, Line: start.Line, Column: start.Column}
 	return instances, source, nil
+}
+
+func goReceiverID(signature *types.Signature) string {
+	receiver := signature.Recv()
+	return stableID("execution", "receiver", receiver.Pkg().Path(), receiverTypeName(receiver.Type()))
+}
+
+func receiverTypeName(value types.Type) string {
+	if pointer, ok := value.(*types.Pointer); ok {
+		value = pointer.Elem()
+	}
+	if named, ok := value.(*types.Named); ok && named.Obj() != nil {
+		return named.Obj().Name()
+	}
+	return types.TypeString(value, nil)
+}
+
+func goTransitionTypes(value types.Type) (types.Type, types.Type, bool) {
+	named, ok := value.(*types.Named)
+	if !ok || named.Obj() == nil || named.Obj().Name() != "Transition" || named.TypeArgs() == nil || named.TypeArgs().Len() != 2 {
+		return nil, nil, false
+	}
+	structure, ok := named.Underlying().(*types.Struct)
+	if !ok || structure.NumFields() != 2 || structure.Field(0).Name() != "State" || structure.Field(1).Name() != "Result" {
+		return nil, nil, false
+	}
+	state, result := named.TypeArgs().At(0), named.TypeArgs().At(1)
+	if !types.Identical(structure.Field(0).Type(), state) || !types.Identical(structure.Field(1).Type(), result) {
+		return nil, nil, false
+	}
+	return state, result, true
+}
+
+func goTransitionTypeID(state, result types.Type) string {
+	return stableID("execution", "type", "state-transition", goSemanticTypeIdentity(state), goSemanticTypeIdentity(result))
+}
+
+func goSemanticTypeIdentity(value types.Type) string {
+	if isInt64(value) {
+		return stableID("execution", "type", "i64")
+	}
+	if isBool(value) {
+		return stableID("execution", "type", "bool")
+	}
+	if isPureString(value) {
+		return stableID("execution", "type", "string")
+	}
+	if named, ok := value.(*types.Named); ok && named.Obj() != nil && named.Obj().Pkg() != nil {
+		return stableID("execution", "record", named.Obj().Pkg().Path(), named.Obj().Name())
+	}
+	return types.TypeString(value, func(pkg *types.Package) string { return pkg.Path() })
+}
+
+func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, records map[*types.Named]goRecordInfo) (string, bool) {
+	if isInt64(value) {
+		return integerID, true
+	}
+	if isBool(value) {
+		return booleanID, true
+	}
+	if isPureString(value) {
+		return stringID, true
+	}
+	if isI64Slice(value) {
+		return stableID("execution", "type", "slice", "i64"), true
+	}
+	if state, result, ok := goTransitionTypes(value); ok {
+		return goTransitionTypeID(state, result), true
+	}
+	if named, ok := value.(*types.Named); ok {
+		if record, exists := records[named]; exists {
+			return record.id, true
+		}
+	}
+	return "", false
 }
 
 func snapshotDigest(snapshot DocumentSnapshot) string {

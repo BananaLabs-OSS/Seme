@@ -46,6 +46,14 @@ const schema = {
   dynamicIndexRead: "000000000000000000000000000090fa",
   collectionAppend: "000000000000000000000000000090fb",
   collectionUpdate: "000000000000000000000000000090fc",
+  receiverBinding: "0000000000000000000000000000a000",
+  receiverRead: "0000000000000000000000000000a001",
+  method: "0000000000000000000000000000a002",
+  methodCall: "0000000000000000000000000000a003",
+  transitionType: "0000000000000000000000000000a004",
+  stateTransition: "0000000000000000000000000000a005",
+  transitionState: "0000000000000000000000000000a006",
+  transitionResult: "0000000000000000000000000000a007",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -56,6 +64,7 @@ export function projectJavaScript(canonicalG1) {
   const functionIDs = references(field(programs[0], 0x9150));
   if (!functionIDs.includes(entryID) || functionIDs.length === 0) fail("javascript_projection.entry_membership");
   const functions = new Map(functionIDs.map((id) => [id, required(graph, id, schema.function)]));
+  const methods = new Map([...graph.values()].filter((entity) => entity.schema === schema.method).map((entity) => [entity.id, entity]));
   const records = new Map();
   for (const entity of graph.values()) {
     if (entity.schema !== schema.recordType) continue;
@@ -75,9 +84,37 @@ export function projectJavaScript(canonicalG1) {
     if (!/^[A-Za-z_$][\w$]*$/.test(name) || [...names.values()].includes(name)) fail("javascript_projection.invalid_function_name");
     names.set(id, name);
   }
+  const program = { graph, functions, names, records, methods };
   const typedefs = [...records.values()].map((record) => ["/**", ` * @typedef {Object} ${record.name}`, ...record.fields.map((item) => ` * @property {${item.type}} ${item.name}`), " */"].join("\n")).join("\n\n");
-  const body = functionIDs.map((id) => projectFunction(id, functions.get(id), id === entryID, { graph, functions, names, records })).join("\n");
-  return typedefs ? `${typedefs}\n\n${body}` : body;
+  const classes = [...records.values()].map((record) => projectClass(record, program)).filter(Boolean).join("\n");
+  const body = functionIDs.map((id) => projectFunction(id, functions.get(id), id === entryID, program)).join("\n");
+  return [typedefs, classes, body].filter(Boolean).join("\n\n");
+}
+
+function projectClass(record, program) {
+  const methods = [...program.methods.entries()].filter(([, method]) => {
+    const receiver = required(program.graph, reference(field(method, 0xa0021)), schema.receiverBinding);
+    return reference(field(receiver, 0xa0001)) === record.id;
+  });
+  if (!methods.length) return "";
+  const constructor = `  constructor(${record.fields.map((item) => item.name).join(", ")}) {\n${record.fields.map((item) => `    this.${item.name} = ${item.name};`).join("\n")}\n  }`;
+  return `class ${record.name} {\n${constructor}\n\n${methods.map(([id, method]) => projectMethod(id, method, program)).join("\n\n")}\n}`;
+}
+
+function projectMethod(methodID, method, program) {
+  const name = text(field(method, 0xa0020));
+  if (!/^[A-Za-z_$][\w$]*$/.test(name)) fail("javascript_projection.invalid_method_name");
+  const receiver = required(program.graph, reference(field(method, 0xa0021)), schema.receiverBinding);
+  const parameterIDs = references(field(method, 0xa0022));
+  const parameters = parameterIDs.map((id) => {
+    const parameter = required(program.graph, id, schema.parameter);
+    return { id, name: text(field(parameter, 0x9120)), type: typeName(reference(field(parameter, 0x9121)), program.graph) };
+  });
+  const result = typeName(reference(field(method, 0xa0023)), program.graph);
+  const context = { ...program, receiver: { id: receiver.id, name: "this" }, parameters: new Map(parameters.map((item) => [item.id, item])), locals: new Map() };
+  const body = projectBlock(reference(field(method, 0xa0024)), context, "    ");
+  const jsdoc = ["  /**", ...parameters.map((item) => `   * @param {${item.type}} ${item.name}`), `   * @returns {${result}}`, "   */"].join("\n");
+  return `${jsdoc}\n  ${name}(${parameters.map((item) => item.name).join(", ")}) {\n${body}\n  }`;
 }
 
 function projectFunction(functionID, fn, exported, program) {
@@ -165,6 +202,10 @@ function projectBlock(id, context, indent) {
 
 function projectExpression(id, context) {
   const expression = required(context.graph, id);
+  if (expression.schema === schema.receiverRead) {
+    if (!context.receiver || reference(field(expression, 0xa0010)) !== context.receiver.id) fail("javascript_projection.receiver_scope");
+    return context.receiver.name;
+  }
   if (expression.schema === schema.read) {
     const parameter = context.parameters.get(reference(field(expression, 0x9130)));
     if (!parameter) fail("javascript_projection.unknown_parameter");
@@ -214,6 +255,18 @@ function projectExpression(id, context) {
 	if (expression.schema === schema.collectionUpdate) {
 		return `${projectExpression(reference(field(expression, 0x9fc0)), context)}.with(Number(${projectExpression(reference(field(expression, 0x9fc1)), context)}), ${projectExpression(reference(field(expression, 0x9fc2)), context)})`;
 	}
+  if (expression.schema === schema.methodCall) {
+    const methodID = reference(field(expression, 0xa0031));
+    const method = context.methods.get(methodID);
+    if (!method) fail("javascript_projection.method_outside_program");
+    const arguments_ = references(field(expression, 0xa0032)).map((argument) => projectExpression(argument, context));
+    return `${projectExpression(reference(field(expression, 0xa0030)), context)}.${text(field(method, 0xa0020))}(${arguments_.join(", ")})`;
+  }
+  if (expression.schema === schema.stateTransition) {
+    return `{ state: ${projectExpression(reference(field(expression, 0xa0051)), context)}, result: ${projectExpression(reference(field(expression, 0xa0052)), context)} }`;
+  }
+  if (expression.schema === schema.transitionState) return `${projectExpression(reference(field(expression, 0xa0060)), context)}.state`;
+  if (expression.schema === schema.transitionResult) return `${projectExpression(reference(field(expression, 0xa0070)), context)}.result`;
   if (expression.schema === schema.stringLiteral) return JSON.stringify(text(field(expression, 0x9500)));
   if (expression.schema === schema.boolLiteral) return atom(field(expression, 0x9b00)) === "tr" ? "true" : "false";
   if (expression.schema === schema.call) {
@@ -226,6 +279,11 @@ function projectExpression(id, context) {
     const record = context.records.get(reference(field(expression, 0x9330)));
     const values = references(field(expression, 0x9331));
     if (!record || values.length !== record.fields.length) fail("javascript_projection.record_construct");
+    const hasMethods = [...context.methods.values()].some((method) => {
+      const receiver = required(context.graph, reference(field(method, 0xa0021)), schema.receiverBinding);
+      return reference(field(receiver, 0xa0001)) === record.id;
+    });
+    if (hasMethods) return `new ${record.name}(${values.map((value) => projectExpression(value, context)).join(", ")})`;
     return `{ ${record.fields.map((item, index) => `${item.name}: ${projectExpression(values[index], context)}`).join(", ")} }`;
   }
   if (expression.schema === schema.fieldRead) {
@@ -295,6 +353,7 @@ function typeName(id, graph) {
 		if (element.schema !== schema.integerType) fail("javascript_projection.slice_element_type");
 		return "bigint[]";
 	}
+  if (type.schema === schema.transitionType) return `Transition<${typeName(reference(field(type, 0xa0040)), graph)},${typeName(reference(field(type, 0xa0041)), graph)}>`;
   fail("javascript_projection.unsupported_type");
 }
 

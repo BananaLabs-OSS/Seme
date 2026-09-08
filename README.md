@@ -300,6 +300,12 @@ and JavaScript forms converge canonically; projection remains native, and
 alias-safe bounded results agree through standalone Wasm and Pulp. Run
 `./scripts/check-execution-v25.sh`.
 
+[`Core Execution v26`](spec/core-execution-v26.md) adds receiver-bound methods
+and explicit updated-state-plus-result transitions. Native Go value receivers
+and JavaScript class methods converge on byte-identical canonical meaning and
+execute through Wasm and Pulp without mutating the receiver. Run
+`./scripts/check-execution-v26.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

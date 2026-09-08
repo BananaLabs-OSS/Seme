@@ -839,7 +839,9 @@ func bySchema(graph wire.Envelope, low uint64) []wire.Entity {
 }
 func identity(low uint64) wire.ID {
 	var value wire.ID
-	value[14] = byte(low >> 8)
-	value[15] = byte(low)
+	for index := 15; index >= 8; index-- {
+		value[index] = byte(low)
+		low >>= 8
+	}
 	return value
 }

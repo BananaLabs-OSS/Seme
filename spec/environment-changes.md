@@ -155,3 +155,13 @@ gate and cumulative v20-v25 gates were instead run in an automatically removed
 local copy with only its copied Go version declarations changed to 1.25. No
 software, dependency, global setting, SSH setting, or persistent environment
 configuration was installed or changed.
+
+## 2026-09-08 — Core v26 method-transition verification
+
+Core v26 used only existing Go and Node toolchains, the repository-local Acorn
+dependency, Seme bootstrap, and pinned Pulp source. The workstation remained
+unreachable at the network layer, so the complete gate ran in an automatically
+removed local copy using the existing Go 1.25.6 toolchain; only copied Go
+version declarations were adjusted from 1.26 to 1.25. No repository dependency,
+software, global setting, SSH setting, or persistent environment configuration
+was installed or changed.

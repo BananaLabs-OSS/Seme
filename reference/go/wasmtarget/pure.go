@@ -107,6 +107,11 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if err != nil || functionName.Tag != 5 {
 		return nil, PureABI{}, fmt.Errorf("wasm.pure_function_name")
 	}
+	if result, resultErr := field(function, 0x9112); resultErr == nil && result.Tag == 6 {
+		if resultEntity, exists := graph.Entities[result.Reference]; exists && resultEntity.Schema == identity(0xa004) {
+			return certifyPureTransitionFunction(graph, programs[0], function)
+		}
+	}
 	parametersValue, err := field(function, 0x9111)
 	if err != nil || parametersValue.Tag != 7 || len(parametersValue.List) > 32 {
 		return nil, PureABI{}, fmt.Errorf("wasm.pure_parameters")
