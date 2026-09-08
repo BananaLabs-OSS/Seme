@@ -229,8 +229,27 @@ func TestVersionThirteenAddsControlFlowAndText(t *testing.T) {
 	}
 }
 
+func TestVersionFourteenFreezesVariableWidthStringABIProfile(t *testing.T) {
+	v13, err := Declarations(13)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v14, err := Declarations(14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v14) != len(v13) {
+		t.Fatalf("v14 schema count = %d, want %d", len(v14), len(v13))
+	}
+	for index := range v13 {
+		if v13[index].ID != v14[index].ID || v13[index].Name != v14[index].Name {
+			t.Fatalf("v13 schema %d changed", index)
+		}
+	}
+}
+
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(14); err == nil {
+	if _, err := Declarations(15); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }

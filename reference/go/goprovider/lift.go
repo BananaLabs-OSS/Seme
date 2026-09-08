@@ -299,6 +299,10 @@ func isBool(value types.Type) bool {
 	basic, ok := value.Underlying().(*types.Basic)
 	return ok && basic.Kind() == types.Bool
 }
+func isPureString(value types.Type) bool {
+	basic, ok := value.Underlying().(*types.Basic)
+	return ok && basic.Kind() == types.String
+}
 func packagePathOf(nativeKey string) string {
 	parts := strings.Split(nativeKey, "\x00")
 	if len(parts) == 0 {

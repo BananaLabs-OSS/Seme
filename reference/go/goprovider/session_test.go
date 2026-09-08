@@ -87,3 +87,33 @@ func TestIncrementalSessionLiftsSupportedDeclarationsAndReportsOpaqueOnes(t *tes
 		t.Fatal("equal snapshots did not produce deterministic state")
 	}
 }
+
+func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	valid := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/control", Files: map[string]string{
+		"control.go": "package control\nfunc Choose(enabled bool, value int64) int64 {\nif enabled { return value + 1 }\nreturn value - 1\n}\n",
+	}})
+	if !valid.Valid || valid.LastValidRevision != 1 || len(valid.Sources) != 1 || valid.Sources[0].Name != "Choose" {
+		t.Fatalf("control result = %#v", valid)
+	}
+	if !strings.Contains(valid.CanonicalG1, "000000000000000000000000000090c0") {
+		t.Fatal("canonical control node missing")
+	}
+	baseline := valid.CanonicalG1
+	invalid := session.Apply(DocumentSnapshot{Revision: 2, PackagePath: "example.test/control", Files: map[string]string{
+		"control.go": "package control\nfunc Choose(enabled bool, value int64) int64 {\nif enabled { return value + 1 }\n}\n",
+	}})
+	if !invalid.Accepted || invalid.Valid || invalid.LastValidRevision != 1 || invalid.CanonicalG1 != baseline || len(invalid.Sources) != 1 {
+		t.Fatalf("invalid control edit = %#v", invalid)
+	}
+	if len(invalid.Diagnostics) == 0 || invalid.Diagnostics[0].Code != "go.type" || invalid.Diagnostics[0].Line == 0 {
+		t.Fatalf("control diagnostic = %#v", invalid.Diagnostics)
+	}
+}

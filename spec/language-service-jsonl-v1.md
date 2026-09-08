@@ -40,6 +40,11 @@ last valid canonical graph and source mappings. A stale update is rejected and
 also reports that retained graph. This is the existing incremental-session
 behavior; the transport does not reinterpret it.
 
+With the v13 execution module, an update may contain bounded total-return
+branching and closed text expressions. The process transcript gate exercises a
+nested branch with UTF-8 string concatenation and equality, then proves invalid
+edit retention and stale rejection against that last-valid graph.
+
 Responses sort diagnostics by location and code, and mappings by semantic
 identity. Identical request transcripts and module bytes therefore produce
 byte-identical response transcripts.
