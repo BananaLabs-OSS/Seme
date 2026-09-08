@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 25 {
+	if version < 2 || version > 26 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -154,6 +154,18 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0x90fc, "CollectionUpdate", []Field{field(0x9fc0, "collection_update.collection", 5, 0, 0), field(0x9fc1, "collection_update.index", 5, 0, 0), field(0x9fc2, "collection_update.value", 5, 0, 0)}},
 		)
 	}
+	if version >= 26 {
+		schemas = append(schemas,
+			Schema{0xa000, "ReceiverBinding", []Field{field(0xa0000, "receiver.name", 4, 0, 0), field(0xa0001, "receiver.type", 5, 0, 0)}},
+			Schema{0xa001, "ReceiverRead", []Field{field(0xa0010, "receiver_read.receiver", 5, 0xa000, 0)}},
+			Schema{0xa002, "Method", []Field{field(0xa0020, "method.name", 4, 0, 0), field(0xa0021, "method.receiver", 5, 0xa000, 0), field(0xa0022, "method.params", 5, 0x9012, 2), field(0xa0023, "method.result", 5, 0, 0), field(0xa0024, "method.body", 5, 0, 0)}},
+			Schema{0xa003, "MethodCall", []Field{field(0xa0030, "call.receiver", 5, 0, 0), field(0xa0031, "call.method", 5, 0xa002, 0), field(0xa0032, "call.arguments", 5, 0, 2)}},
+			Schema{0xa004, "StateTransitionType", []Field{field(0xa0040, "transition_type.state", 5, 0, 0), field(0xa0041, "transition_type.result", 5, 0, 0)}},
+			Schema{0xa005, "StateTransition", []Field{field(0xa0050, "transition.type", 5, 0xa004, 0), field(0xa0051, "transition.state", 5, 0, 0), field(0xa0052, "transition.result", 5, 0, 0)}},
+			Schema{0xa006, "TransitionState", []Field{field(0xa0060, "state.value", 5, 0, 0)}},
+			Schema{0xa007, "TransitionResult", []Field{field(0xa0070, "result.value", 5, 0, 0)}},
+		)
+	}
 	return schemas, nil
 }
 
@@ -176,6 +188,9 @@ func Emit(output io.Writer, version int) error {
 		fields = append(fields, schema.Fields...)
 	}
 	sort.Slice(fields, func(i, j int) bool { return fields[i].ID < fields[j].ID })
+	if version >= 26 {
+		return emitOrdered(output, version, schemas, fields)
+	}
 	fmt.Fprintf(output, "# Generated construction projection for Core Execution Semantics v%d.\nve 1\nmo %s\nrv %s\npc 1\n%s\nec %d\n\n", version, id(0x9000), id(uint64(0x9000+version)), id(0x9001), 1+len(schemas)+len(fields))
 	fmt.Fprintf(output, "en %s %s %d 2\nfi %s by %s\nfi %s li %d\n", id(0x9000), id(0x12), version, id(0x120), text(fmt.Sprintf("core-execution-v%d", version)), id(0x122), len(schemas)+len(fields))
 	for _, schema := range schemas {
@@ -189,6 +204,36 @@ func Emit(output io.Writer, version int) error {
 	}
 	for _, field := range fields {
 		emitField(output, field)
+	}
+	return nil
+}
+
+type declaration struct {
+	id     uint64
+	schema *Schema
+	field  *Field
+}
+
+func emitOrdered(output io.Writer, version int, schemas []Schema, fields []Field) error {
+	declarations := make([]declaration, 0, len(schemas)+len(fields))
+	for index := range schemas {
+		declarations = append(declarations, declaration{id: schemas[index].ID, schema: &schemas[index]})
+	}
+	for index := range fields {
+		declarations = append(declarations, declaration{id: fields[index].ID, field: &fields[index]})
+	}
+	sort.Slice(declarations, func(i, j int) bool { return declarations[i].id < declarations[j].id })
+	fmt.Fprintf(output, "# Generated construction projection for Core Execution Semantics v%d.\nve 1\nmo %s\nrv %s\npc 1\n%s\nec %d\n\n", version, id(0x9000), id(uint64(0x9000+version)), id(0x9001), 1+len(declarations))
+	fmt.Fprintf(output, "en %s %s %d 2\nfi %s by %s\nfi %s li %d\n", id(0x9000), id(0x12), version, id(0x120), text(fmt.Sprintf("core-execution-v%d", version)), id(0x122), len(declarations))
+	for _, item := range declarations {
+		fmt.Fprintf(output, "rf %s\n", id(item.id))
+	}
+	for _, item := range declarations {
+		if item.schema != nil {
+			emitSchema(output, *item.schema)
+		} else {
+			emitField(output, *item.field)
+		}
 	}
 	return nil
 }
