@@ -346,8 +346,28 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(26); err == nil {
+	if _, err := Declarations(27); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersion26AddsMethodsAndExplicitTransitions(t *testing.T) {
+	previous, err := Declarations(25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(26)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+8 {
+		t.Fatalf("schema count = %d, want %d", len(current), len(previous)+8)
+	}
+	want := []uint64{0xa000, 0xa001, 0xa002, 0xa003, 0xa004, 0xa005, 0xa006, 0xa007}
+	for index, id := range want {
+		if current[len(previous)+index].ID != id {
+			t.Fatalf("schema %d = %x, want %x", index, current[len(previous)+index].ID, id)
+		}
 	}
 }
 
