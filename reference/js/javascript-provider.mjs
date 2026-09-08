@@ -29,6 +29,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
   const functionsByName = new Map(descriptions.map((item) => [item.fn.id.name, item]));
   if (functionsByName.size !== descriptions.length) fail("javascript.duplicate_function");
   const recordsByName = readRecords(comments, packagePath);
+  const declaredEffects = new Set();
   const entities = [
     graphEntity(ids.i64, entity(ids.i64, "00000000000000000000000000009010", [[0x9100, "uu 64"], [0x9101, "tr"], [0x9102, "uu 0"]])),
     graphEntity(ids.bool, entity(ids.bool, "00000000000000000000000000009020", [])),
@@ -54,7 +55,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
       ])));
       return parameterID;
     });
-    const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName };
+    const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName, declaredEffects };
     const bodyID = emitBlock(fn.body.body, "body", context, signature.result, true);
     entities.push(graphEntity(functionID, entity(functionID, "00000000000000000000000000009011", [
       [0x9110, bytes(fn.id.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(ids[signature.result])], [0x9113, ref(bodyID)],
@@ -131,6 +132,23 @@ function emitBlock(statements, path, context, resultType, requireReturn = true) 
       const value = emitExpression(assignment.right, `${context.functionID}:${path}:assignment:${index}`, "root", localContext, local.type);
       const statementID = stableID("execution", context.functionID, statementPath, "assign-place");
       context.entities.push(graphEntity(statementID, entity(statementID, "000000000000000000000000000090e3", [[0x9e30, ref(local.id)], [0x9e31, ref(value.id)]])));
+      statementIDs.push(statementID);
+      continue;
+    }
+    if (current.type === "ExpressionStatement" && current.expression.type === "CallExpression") {
+      const call = current.expression;
+      const consoleLog = call.callee.type === "MemberExpression" && !call.callee.computed && call.callee.object.type === "Identifier" && call.callee.object.name === "console" && call.callee.property.type === "Identifier" && call.callee.property.name === "log";
+      if (!consoleLog || call.arguments.length !== 1) fail("javascript.unsupported_effect", current.loc.start);
+      const argument = emitExpression(call.arguments[0], `${context.functionID}:${path}:effect:${index}:0`, "root", localContext, "bool");
+      const capabilityID = stableID("capability", "observability.log");
+      const effectID = stableID("effect", "observability.log");
+      if (!context.declaredEffects.has(effectID)) {
+        context.entities.push(graphEntity(capabilityID, entity(capabilityID, "00000000000000000000000000000016", [[0x160, bytes("observability.log")]])));
+        context.entities.push(graphEntity(effectID, entity(effectID, "00000000000000000000000000000015", [[0x150, bytes("observability.log")], [0x151, ref(capabilityID)]])));
+        context.declaredEffects.add(effectID);
+      }
+      const statementID = stableID("execution", context.functionID, statementPath, "effect-invoke");
+      context.entities.push(graphEntity(statementID, entity(statementID, "000000000000000000000000000090f1", [[0x9f10, ref(effectID)], [0x9f11, refs([argument.id])]])));
       statementIDs.push(statementID);
       continue;
     }

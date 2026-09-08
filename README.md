@@ -260,6 +260,13 @@ The durable status, verified evidence, honest limits, environment state, and
 recommended resumption point through v19 are recorded in the
 [`Core v19 development checkpoint`](spec/development-checkpoint-v19.md).
 
+[`Core Execution v20`](spec/core-execution-v20.md) adds ordered Foundation
+effect invocation without placing capabilities or host APIs in Core. Bounded
+Go logging and JavaScript console adapters converge on one canonical effect;
+the generated Wasm records adapted fidelity and the required capability,
+executes ordered observations through Pulp when granted, and traps without an
+effect when denied. Run `./scripts/check-execution-v20.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

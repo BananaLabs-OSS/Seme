@@ -9,23 +9,24 @@ import (
 )
 
 type PureABI struct {
-	Contract           string         `json:"contract"`
-	Provider           string         `json:"provider"`
-	Target             string         `json:"target"`
-	Fidelity           string         `json:"fidelity"`
-	CanonicalModule    string         `json:"canonical_module"`
-	CanonicalRevision  string         `json:"canonical_revision"`
-	CanonicalProgram   string         `json:"canonical_program"`
-	Function           string         `json:"function"`
-	ProgramSHA256      string         `json:"program_sha256,omitempty"`
-	ArtifactSHA256     string         `json:"artifact_sha256,omitempty"`
-	RequestSize        uint64         `json:"request_size"`
-	ResponseSize       uint64         `json:"response_size"`
-	FixedHeaderSize    uint64         `json:"fixed_header_size,omitempty"`
-	MaximumRequestSize uint64         `json:"maximum_request_size,omitempty"`
-	VariablePayload    bool           `json:"variable_payload,omitempty"`
-	Parameters         []PureABIField `json:"parameters"`
-	Result             PureABIField   `json:"result"`
+	Contract             string         `json:"contract"`
+	Provider             string         `json:"provider"`
+	Target               string         `json:"target"`
+	Fidelity             string         `json:"fidelity"`
+	CanonicalModule      string         `json:"canonical_module"`
+	CanonicalRevision    string         `json:"canonical_revision"`
+	CanonicalProgram     string         `json:"canonical_program"`
+	Function             string         `json:"function"`
+	ProgramSHA256        string         `json:"program_sha256,omitempty"`
+	ArtifactSHA256       string         `json:"artifact_sha256,omitempty"`
+	RequestSize          uint64         `json:"request_size"`
+	ResponseSize         uint64         `json:"response_size"`
+	FixedHeaderSize      uint64         `json:"fixed_header_size,omitempty"`
+	MaximumRequestSize   uint64         `json:"maximum_request_size,omitempty"`
+	VariablePayload      bool           `json:"variable_payload,omitempty"`
+	RequiredCapabilities []string       `json:"required_capabilities,omitempty"`
+	Parameters           []PureABIField `json:"parameters"`
+	Result               PureABIField   `json:"result"`
 }
 
 type PureABIField struct {
@@ -53,6 +54,7 @@ type PureFunctionCertificate struct {
 func (certificate PureFunctionCertificate) ABI() PureABI {
 	abi := certificate.abi
 	abi.Parameters = append([]PureABIField(nil), certificate.abi.Parameters...)
+	abi.RequiredCapabilities = append([]string(nil), certificate.abi.RequiredCapabilities...)
 	return abi
 }
 
@@ -168,6 +170,9 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if err != nil {
 		return nil, PureABI{}, err
 	}
+	if len(bySchema(graph, 0x90f1)) > 0 {
+		return certifyPureEffectFunction(graph, bodyValue.Reference, parameterTypes, resultType, parameterTypeNames, parameterLocals, abi)
+	}
 	hasState := len(bySchema(graph, 0x90e0))+len(bySchema(graph, 0x90e1))+len(bySchema(graph, 0x90e2))+len(bySchema(graph, 0x90e3))+len(bySchema(graph, 0x90e4))+len(bySchema(graph, 0x90f0)) > 0
 	if hasStrings || hasState {
 		abi.Contract = "seme.pure-abi/v2"
@@ -186,7 +191,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if err != nil {
 		return nil, PureABI{}, err
 	}
-	wasm, err := pureModule(parameterTypes, resultType, instructions, abi)
+	wasm, err := pureModule(parameterTypes, resultType, instructions, abi, false)
 	return wasm, abi, err
 }
 
@@ -382,7 +387,7 @@ func pureType(graph wire.Envelope, id wire.ID) (pureValueType, error) {
 	}
 }
 
-func pureModule(parameters []pureValueType, result pureValueType, expression []byte, abi PureABI) ([]byte, error) {
+func pureModule(parameters []pureValueType, result pureValueType, expression []byte, abi PureABI, effectImport bool) ([]byte, error) {
 	if len(expression) == 0 || abi.RequestSize > 65535 || abi.ResponseSize > 8 {
 		return nil, fmt.Errorf("wasm.pure_layout")
 	}
@@ -401,6 +406,16 @@ func pureModule(parameters []pureValueType, result pureValueType, expression []b
 	functionType(&types, parameterWasm, []byte{result.wasm})
 	functionType(&types, []byte{0x7f, 0x7f}, nil)
 	section(&wasm, 1, types.Bytes())
+	functionOffset := uint64(0)
+	if effectImport {
+		var imports bytes.Buffer
+		uleb(&imports, 1)
+		name(&imports, "pulp")
+		name(&imports, "log_bool")
+		imports.Write([]byte{0, 0})
+		section(&wasm, 2, imports.Bytes())
+		functionOffset = 1
+	}
 	section(&wasm, 3, []byte{7, 0, 5, 3, 3, 2, 4, 1})
 	section(&wasm, 5, []byte{1, 0, 1})
 	var globals bytes.Buffer
@@ -411,18 +426,18 @@ func pureModule(parameters []pureValueType, result pureValueType, expression []b
 	var exports bytes.Buffer
 	uleb(&exports, 7)
 	export(&exports, "memory", 2, 0)
-	export(&exports, "pulp_alloc", 0, 0)
-	export(&exports, "pulp_free", 0, 1)
-	export(&exports, "pulp_init", 0, 2)
-	export(&exports, "pulp_step", 0, 3)
-	export(&exports, "pulp_shutdown", 0, 4)
-	export(&exports, "pulp_on_call", 0, 6)
+	export(&exports, "pulp_alloc", 0, functionOffset+0)
+	export(&exports, "pulp_free", 0, functionOffset+1)
+	export(&exports, "pulp_init", 0, functionOffset+2)
+	export(&exports, "pulp_step", 0, functionOffset+3)
+	export(&exports, "pulp_shutdown", 0, functionOffset+4)
+	export(&exports, "pulp_on_call", 0, functionOffset+6)
 	section(&wasm, 7, exports.Bytes())
 	bodies := [][]byte{
 		pureAllocatorBody(), pureFreeBody(),
 		{0, 0x41, 0, 0x0b}, {0, 0x41, 0, 0x0b}, {0, 0x41, 0, 0x0b},
 		append(append([]byte{0}, expression...), 0x0b),
-		pureProviderBody(parameters, result, abi),
+		pureProviderBody(parameters, result, abi, byte(functionOffset+5)),
 	}
 	var code bytes.Buffer
 	uleb(&code, uint64(len(bodies)))
@@ -474,7 +489,7 @@ func functionType(output *bytes.Buffer, parameters, results []byte) {
 	output.Write(results)
 }
 
-func pureProviderBody(parameters []pureValueType, result pureValueType, abi PureABI) []byte {
+func pureProviderBody(parameters []pureValueType, result pureValueType, abi PureABI, helperIndex byte) []byte {
 	var body bytes.Buffer
 	body.Write([]byte{1, 1, result.wasm}) // one result temporary at local 6
 	body.Write([]byte{0x20, 3, 0x41})
@@ -500,7 +515,7 @@ func pureProviderBody(parameters []pureValueType, result pureValueType, abi Pure
 		uleb(&body, offset)
 		offset += parameter.size
 	}
-	body.Write([]byte{0x10, 5, 0x21, 6})
+	body.Write([]byte{0x10, helperIndex, 0x21, 6})
 	constI32(&body, 8192)
 	body.Write([]byte{0x20, 6})
 	if result.name == "i64" {

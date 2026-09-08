@@ -346,7 +346,21 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(20); err == nil {
+	if _, err := Declarations(21); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersionTwentyAddsEffectInvocation(t *testing.T) {
+	previous, err := Declarations(19)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(current)-1].Name != "EffectInvoke" {
+		t.Fatalf("v20 declarations = %#v", current[len(previous):])
 	}
 }
