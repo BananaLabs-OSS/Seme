@@ -75,20 +75,28 @@ func normalizeLocalBlock(graph *wire.Envelope, id wire.ID, inherited map[wire.ID
 			if nameErr != nil || name.Tag != 5 || typeErr != nil || typeValue.Tag != 6 || initializerErr != nil || initializer.Tag != 6 {
 				return fmt.Errorf("wasm.pure_local_binding_fields")
 			}
+			valueTypeName := ""
 			valueType, typeErr := pureType(*graph, typeValue.Reference)
-			if typeErr != nil {
+			if typeErr == nil {
+				valueTypeName = valueType.name
+			} else if recordType, ok := graph.Entities[typeValue.Reference]; ok && recordType.Schema == identity(0x9030) {
+				valueTypeName = "record"
+			} else {
 				return typeErr
 			}
 			if err := normalizeLocalExpression(graph, initializer.Reference, visible, map[wire.ID]bool{}, budget); err != nil {
 				return err
 			}
-			if !containsExpressionSchema(*graph, initializer.Reference, identity(0x9060), map[wire.ID]bool{}) {
+			containsDeferred := containsExpressionSchema(*graph, initializer.Reference, identity(0x9060), map[wire.ID]bool{}) ||
+				containsExpressionSchema(*graph, initializer.Reference, identity(0x9032), map[wire.ID]bool{}) ||
+				containsExpressionSchema(*graph, initializer.Reference, identity(0x9033), map[wire.ID]bool{})
+			if !containsDeferred {
 				checkBudget := 4096
-				if err := validatePureExpression(*graph, initializer.Reference, valueType.name, parameterTypes, map[wire.ID]bool{}, &checkBudget); err != nil {
+				if err := validatePureExpression(*graph, initializer.Reference, valueTypeName, parameterTypes, map[wire.ID]bool{}, &checkBudget); err != nil {
 					return err
 				}
 			}
-			visible[binding.ID] = localInitializer{expression: initializer.Reference, valueType: valueType.name}
+			visible[binding.ID] = localInitializer{expression: initializer.Reference, valueType: valueTypeName}
 			seen[binding.ID] = true
 			continue
 		}
@@ -215,6 +223,16 @@ func expressionChildren(entity wire.Entity) []wire.ID {
 			for _, argument := range arguments.List {
 				if argument.Tag == 6 {
 					children = append(children, argument.Reference)
+				}
+			}
+		}
+	case identity(0x9032):
+		fields = []wire.ID{identity(0x9320)}
+	case identity(0x9033):
+		if values, ok := entity.Fields[identity(0x9331)]; ok && values.Tag == 7 {
+			for _, value := range values.List {
+				if value.Tag == 6 {
+					children = append(children, value.Reference)
 				}
 			}
 		}

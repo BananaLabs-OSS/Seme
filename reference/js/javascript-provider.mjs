@@ -28,11 +28,21 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
   }).sort((left, right) => left.id.localeCompare(right.id));
   const functionsByName = new Map(descriptions.map((item) => [item.fn.id.name, item]));
   if (functionsByName.size !== descriptions.length) fail("javascript.duplicate_function");
+  const recordsByName = readRecords(comments, packagePath);
   const entities = [
     graphEntity(ids.i64, entity(ids.i64, "00000000000000000000000000009010", [[0x9100, "uu 64"], [0x9101, "tr"], [0x9102, "uu 0"]])),
     graphEntity(ids.bool, entity(ids.bool, "00000000000000000000000000009020", [])),
     graphEntity(ids.string, entity(ids.string, "00000000000000000000000000009040", [])),
   ];
+  for (const record of [...recordsByName.values()].sort((left, right) => left.id.localeCompare(right.id))) {
+    const fieldIDs = record.fields.map((field, index) => {
+      const id = stableID("execution", record.id, "field", String(index));
+      field.id = id;
+      entities.push(graphEntity(id, entity(id, "00000000000000000000000000009031", [[0x9310, bytes(field.name)], [0x9311, ref(ids[field.type])], [0x9312, `uu ${index}`]])));
+      return id;
+    });
+    entities.push(graphEntity(record.id, entity(record.id, "00000000000000000000000000009030", [[0x9300, bytes(record.name)], [0x9301, refs(fieldIDs)]])));
+  }
   for (const description of descriptions) {
     const { fn, signature, id: functionID } = description;
     const parameterIDs = fn.params.map((parameter, index) => {
@@ -44,7 +54,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
       ])));
       return parameterID;
     });
-    const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName };
+    const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName };
     const bodyID = emitBlock(fn.body.body, "body", context, signature.result);
     entities.push(graphEntity(functionID, entity(functionID, "00000000000000000000000000009011", [
       [0x9110, bytes(fn.id.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(ids[signature.result])], [0x9113, ref(bodyID)],
@@ -72,6 +82,25 @@ function readSignature(comments, fn) {
 function sourceGapIsWhitespace(_end, _start, _fn) { return true; }
 function semanticType(type) { return type === "boolean" ? "bool" : type === "bigint" ? "i64" : "string"; }
 
+function readRecords(comments, packagePath) {
+  const records = new Map();
+  for (const comment of comments) {
+    const declaration = comment.value.match(/@typedef\s+\{Object\}\s+([A-Za-z_$][\w$]*)/);
+    if (!declaration) continue;
+    const fields = [...comment.value.matchAll(/@property\s+\{(string|boolean|bigint)\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
+    if (!fields.length || records.has(declaration[1])) fail("javascript.invalid_record_typedef");
+    records.set(declaration[1], { name: declaration[1], id: stableID("execution", "record", packagePath, declaration[1]), fields });
+  }
+  return records;
+}
+
+function typeID(type, context) {
+  if (ids[type]) return ids[type];
+  const record = context.recordsByName.get(type.slice("record:".length));
+  if (!type.startsWith("record:") || !record) fail("javascript.unknown_type");
+  return record.id;
+}
+
 function emitBlock(statements, path, context, resultType) {
   const localContext = { ...context, locals: new Map(context.locals) };
   const statementIDs = [];
@@ -86,7 +115,7 @@ function emitBlock(statements, path, context, resultType) {
       const local = localContext.nextLocal.value++;
       const bindingID = stableID("execution", context.functionID, path, "local", String(local));
       const initializer = emitExpression(declaration.init, `${context.functionID}:${path}:local:${local}`, "root", localContext, valueType);
-      context.entities.push(graphEntity(bindingID, entity(bindingID, "000000000000000000000000000090d0", [[0x9d00, bytes(declaration.id.name)], [0x9d01, ref(ids[valueType])], [0x9d02, ref(initializer.id)]])));
+      context.entities.push(graphEntity(bindingID, entity(bindingID, "000000000000000000000000000090d0", [[0x9d00, bytes(declaration.id.name)], [0x9d01, ref(typeID(valueType, context))], [0x9d02, ref(initializer.id)]])));
       const statementID = stableID("execution", context.functionID, statementPath, "bind-local");
       context.entities.push(graphEntity(statementID, entity(statementID, "000000000000000000000000000090d1", [[0x9d10, ref(bindingID)]])));
       statementIDs.push(statementID);
@@ -155,6 +184,35 @@ function emitExpression(node, owner, path, context, expected) {
     context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090b0", [[0x9b00, node.value ? "tr" : "fa"]])));
     return { id, type: "bool" };
   }
+  if (node.type === "ObjectExpression" && expected.startsWith("record:")) {
+    const record = context.recordsByName.get(expected.slice("record:".length));
+    if (!record || node.properties.length !== record.fields.length) fail("javascript.record_shape", node.loc.start);
+    const source = new Map();
+    for (const property of node.properties) {
+      if (property.type !== "Property" || property.computed || property.kind !== "init" || property.method) fail("javascript.record_property", property.loc.start);
+      const name = property.key.type === "Identifier" ? property.key.name : property.key.value;
+      if (typeof name !== "string" || source.has(name)) fail("javascript.record_property", property.loc.start);
+      source.set(name, property.value);
+    }
+    const values = record.fields.map((field, index) => {
+      const value = source.get(field.name);
+      if (!value) fail("javascript.record_field_missing", node.loc.start);
+      return emitExpression(value, owner, `${path}.field.${index}`, context, field.type);
+    });
+    const id = expressionID(owner, path, "record-construct");
+    context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009033", [[0x9330, ref(record.id)], [0x9331, refs(values.map((item) => item.id))]])));
+    return { id, type: expected };
+  }
+  if (node.type === "MemberExpression" && !node.computed && node.object.type === "Identifier" && node.property.type === "Identifier") {
+    const local = context.locals.get(node.object.name);
+    const record = local?.type?.startsWith("record:") ? context.recordsByName.get(local.type.slice("record:".length)) : undefined;
+    const field = record?.fields.find((item) => item.name === node.property.name);
+    if (!record || !field || field.type !== expected) fail("javascript.record_field_read", node.loc.start);
+    const base = emitExpression(node.object, owner, `${path}.record`, context, local.type);
+    const id = expressionID(owner, path, "field-read");
+    context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009032", [[0x9320, ref(base.id)], [0x9321, ref(field.id)]])));
+    return { id, type: expected };
+  }
   if (node.type === "CallExpression" && node.callee.type === "Identifier" && !node.optional) {
     const callee = context.functionsByName.get(node.callee.name);
     if (!callee || callee.signature.result !== expected || callee.signature.parameters.length !== node.arguments.length) fail("javascript.unsupported_call", node.loc.start);
@@ -189,6 +247,11 @@ function inferExpressionType(node, context) {
   }
   if (node.type === "Literal" && typeof node.value === "string") return "string";
   if (node.type === "Literal" && typeof node.value === "boolean") return "bool";
+  if (node.type === "ObjectExpression") {
+    const names = new Set(node.properties.map((property) => property.key?.name ?? property.key?.value));
+    const matches = [...context.recordsByName.values()].filter((record) => record.fields.length === names.size && record.fields.every((field) => names.has(field.name)));
+    if (matches.length === 1) return `record:${matches[0].name}`;
+  }
   if (node.type === "CallExpression" && node.callee.type === "Identifier") {
     const callee = context.functionsByName.get(node.callee.name);
     if (callee) return callee.signature.result;

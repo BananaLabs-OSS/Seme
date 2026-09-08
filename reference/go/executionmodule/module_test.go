@@ -292,8 +292,27 @@ func TestVersionSixteenFreezesMultiFunctionCallProfile(t *testing.T) {
 	}
 }
 
+func TestVersionSeventeenFreezesCompositionalRecordProfile(t *testing.T) {
+	v16, err := Declarations(16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v17, err := Declarations(17)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v17) != len(v16) {
+		t.Fatalf("v17 schema count = %d, want %d", len(v17), len(v16))
+	}
+	for index := range v16 {
+		if v16[index].ID != v17[index].ID || v16[index].Name != v17[index].Name {
+			t.Fatalf("v16 schema %d changed", index)
+		}
+	}
+}
+
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(17); err == nil {
+	if _, err := Declarations(18); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }

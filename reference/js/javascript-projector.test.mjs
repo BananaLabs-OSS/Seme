@@ -6,6 +6,7 @@ import { projectJavaScript } from "./javascript-projector.mjs";
 
 const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v14/module.g1", import.meta.url), "utf8");
 const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.g1", import.meta.url), "utf8");
+const moduleV16G1 = fs.readFileSync(new URL("../../modules/execution/v16/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -60,5 +61,22 @@ export function Render(left, right) { const joined = combine(left, right); retur
   assert.match(projected, /export function Render\(left, right\)/);
   assert.match(projected, /combine\(left, right\)/);
   const second = liftJavaScript({ source: projected, moduleG1, packagePath: "example.test/calls", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts canonical records as structural objects", () => {
+  const source = `
+/** @typedef {Object} Item
+ * @property {string} Name
+ * @property {boolean} Enabled
+ */
+/** @param {string} name @returns {string} */
+export function Label(name) { const item = { Name: name, Enabled: true }; return item.Name; }
+`;
+  const first = liftJavaScript({ source, moduleG1: moduleV16G1, packagePath: "example.test/records", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /@typedef \{Object\} Item/);
+  assert.match(projected, /const item = \{ Name: name, Enabled: true \}/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV16G1, packagePath: "example.test/records", revision: 1 });
   assert.equal(second, first);
 });

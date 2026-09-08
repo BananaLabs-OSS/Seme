@@ -233,6 +233,41 @@ func certifiedLocalTestGraph() wire.Envelope {
 	return graph
 }
 
+func TestPureCertificateAcceptsInternalRecordSelection(t *testing.T) {
+	graph := certifiedRecordTestGraph()
+	if _, err := CertifyPureFunction(graph); err != nil {
+		t.Fatal(err)
+	}
+	read := graph.Entities[identity(0x2304)]
+	read.Fields[identity(0x9321)] = ref(identity(0x2399))
+	graph.Entities[read.ID] = read
+	if _, err := CertifyPureFunction(graph); err == nil || !strings.Contains(err.Error(), "wasm.pure_record_field_membership") {
+		t.Fatalf("error = %v", err)
+	}
+}
+
+func certifiedRecordTestGraph() wire.Envelope {
+	graph := certifiedTestGraph()
+	recordType, recordField := identity(0x2300), identity(0x2301)
+	construct, read := identity(0x2303), identity(0x2304)
+	graph.Entities[recordField] = wire.Entity{ID: recordField, Schema: identity(0x9031), Fields: map[wire.ID]wire.Value{
+		identity(0x9310): byteValue("Value"), identity(0x9311): ref(identity(0x2008)), identity(0x9312): unsigned(0),
+	}}
+	graph.Entities[recordType] = wire.Entity{ID: recordType, Schema: identity(0x9030), Fields: map[wire.ID]wire.Value{
+		identity(0x9300): byteValue("Item"), identity(0x9301): refs(recordField),
+	}}
+	graph.Entities[construct] = wire.Entity{ID: construct, Schema: identity(0x9033), Fields: map[wire.ID]wire.Value{
+		identity(0x9330): ref(recordType), identity(0x9331): refs(identity(0x2007)),
+	}}
+	graph.Entities[read] = wire.Entity{ID: read, Schema: identity(0x9032), Fields: map[wire.ID]wire.Value{
+		identity(0x9320): ref(construct), identity(0x9321): ref(recordField),
+	}}
+	returned := graph.Entities[identity(0x2003)]
+	returned.Fields[identity(0x9810)] = refs(read)
+	graph.Entities[returned.ID] = returned
+	return graph
+}
+
 func testParameter(id wire.ID, name string, valueType wire.ID, index uint64) wire.Entity {
 	return wire.Entity{ID: id, Schema: identity(0x9012), Fields: map[wire.ID]wire.Value{
 		identity(0x9120): byteValue(name), identity(0x9121): ref(valueType), identity(0x9122): unsigned(index),
