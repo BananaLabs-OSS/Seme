@@ -140,3 +140,18 @@ repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. Its
 gate builds and executes only in automatically removed temporary directories.
 No software, dependency, global setting, SSH setting, or persistent environment
 configuration was installed or changed.
+
+## 2026-09-08 — Core v25 immutable-collection verification
+
+Core v25 used only existing Go and Node toolchains, the repository-local Acorn
+dependency, Seme bootstrap, and pinned Pulp source. During workstation network
+unavailability, generation and focused checks used the existing local Go 1.25.6
+toolchain with an automatically removed temporary module-file copy; the
+repository module declaration and machine configuration were not changed. The
+acceptance gate is specified to use the existing workstation Go 1.26 toolchain
+and builds only in automatically removed temporary directories. At this
+checkpoint the workstation was unreachable at the network layer, so the full
+gate and cumulative v20-v25 gates were instead run in an automatically removed
+local copy with only its copied Go version declarations changed to 1.25. No
+software, dependency, global setting, SSH setting, or persistent environment
+configuration was installed or changed.

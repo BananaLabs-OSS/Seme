@@ -347,6 +347,26 @@ func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsImmutableCollectionResults(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v25/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/update", Entry: "UpdateAndAppend", Files: map[string]string{
+		"update.go": "package update\nimport \"slices\"\nfunc UpdateAndAppend(values []int64, index int64, replacement int64, appended int64) []int64 { return append(slices.Replace(slices.Clone(values), int(index), int(index)+1, replacement), appended) }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("update result = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "000000000000000000000000000090fb") || !strings.Contains(result.CanonicalG1, "000000000000000000000000000090fc") {
+		t.Fatal("collection result schemas missing")
+	}
+}
+
 func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
 	if err != nil {

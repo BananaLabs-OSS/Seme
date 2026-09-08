@@ -14,6 +14,7 @@ const moduleV21G1 = fs.readFileSync(new URL("../../modules/execution/v21/module.
 const moduleV22G1 = fs.readFileSync(new URL("../../modules/execution/v22/module.g1", import.meta.url), "utf8");
 const moduleV23G1 = fs.readFileSync(new URL("../../modules/execution/v23/module.g1", import.meta.url), "utf8");
 const moduleV24G1 = fs.readFileSync(new URL("../../modules/execution/v24/module.g1", import.meta.url), "utf8");
+const moduleV25G1 = fs.readFileSync(new URL("../../modules/execution/v25/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -178,5 +179,15 @@ export function LastOr(values, fallback) { if (values.length <= 0n) return fallb
   assert.match(projected, /values\.length/);
   assert.match(projected, /values\[\(values\.length - 1\)\]/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV24G1, packagePath: "example.test/query", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts immutable collection results", () => {
+  const source = `/** @param {bigint[]} values @param {bigint} index @param {bigint} replacement @param {bigint} appended @returns {bigint[]} */
+export function UpdateAndAppend(values, index, replacement, appended) { return values.with(Number(index), replacement).concat([appended]); }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV25G1, packagePath: "example.test/update", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /\.with\(Number\(index\), replacement\)\.concat\(\[appended\]\)/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV25G1, packagePath: "example.test/update", revision: 1 });
   assert.equal(second, first);
 });

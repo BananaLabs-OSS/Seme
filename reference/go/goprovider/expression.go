@@ -35,6 +35,8 @@ const (
 	goFold
 	goCollectionLength
 	goDynamicIndexRead
+	goCollectionAppend
+	goCollectionUpdate
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -207,6 +209,34 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := expressionNodeID(owner, path, "dynamic-index-read")
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090fa", []graphField{refField(0x9fa0, collection), refField(0x9fa1, index)})}
+			return id, nil
+		case goCollectionAppend:
+			collection, err := emit(expression.left, path+".collection")
+			if err != nil {
+				return "", err
+			}
+			value, err := emit(expression.right, path+".value")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "collection-append")
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090fb", []graphField{refField(0x9fb0, collection), refField(0x9fb1, value)})}
+			return id, nil
+		case goCollectionUpdate:
+			collection, err := emit(expression.left, path+".collection")
+			if err != nil {
+				return "", err
+			}
+			index, err := emit(expression.initial, path+".index")
+			if err != nil {
+				return "", err
+			}
+			value, err := emit(expression.right, path+".value")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "collection-update")
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090fc", []graphField{refField(0x9fc0, collection), refField(0x9fc1, index), refField(0x9fc2, value)})}
 			return id, nil
 		case goIntegerLiteral:
 			id := expressionNodeID(owner, path, "integer-literal")
@@ -416,6 +446,20 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		return &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}, nil
 	case *ast.CallExpr:
 		identifier, ok := ast.Unparen(expression.Fun).(*ast.Ident)
+		if ok && identifier.Name == "int" && info.Uses[identifier] == types.Universe.Lookup("int") && len(expression.Args) == 1 && isInt64(info.TypeOf(expression.Args[0])) {
+			return analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+		}
+		if ok && identifier.Name == "append" && info.Uses[identifier] == types.Universe.Lookup("append") && len(expression.Args) == 2 && !expression.Ellipsis.IsValid() && isI64Slice(info.TypeOf(expression.Args[0])) && isInt64(info.TypeOf(expression.Args[1])) {
+			collection, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			value, err := analyzeGoExpressionWithProgram(expression.Args[1], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			return &goExpression{kind: goCollectionAppend, left: collection, right: value}, nil
+		}
 		if ok && identifier.Name == "len" && info.Uses[identifier] == types.Universe.Lookup("len") && len(expression.Args) == 1 && !expression.Ellipsis.IsValid() {
 			underlying := info.TypeOf(expression.Args[0]).Underlying()
 			array, arrayOK := underlying.(*types.Array)
@@ -428,6 +472,42 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				return nil, err
 			}
 			return &goExpression{kind: goCollectionLength, left: collection}, nil
+		}
+		if selector, selectorOK := ast.Unparen(expression.Fun).(*ast.SelectorExpr); selectorOK && isSlicesFunction(info, selector, "Clone") && len(expression.Args) == 1 && !expression.Ellipsis.IsValid() && isI64Slice(info.TypeOf(expression.Args[0])) {
+			return analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+		}
+		if selector, selectorOK := ast.Unparen(expression.Fun).(*ast.SelectorExpr); selectorOK && isSlicesFunction(info, selector, "Replace") && len(expression.Args) == 4 && !expression.Ellipsis.IsValid() && isI64Slice(info.TypeOf(expression.Args[0])) && isInt64(info.TypeOf(expression.Args[3])) {
+			indexName, indexOK := goI64IndexIdentifier(expression.Args[1], info)
+			end, endOK := ast.Unparen(expression.Args[2]).(*ast.BinaryExpr)
+			endIndex, endIndexOK := func() (*ast.Ident, bool) {
+				if !endOK {
+					return nil, false
+				}
+				return goI64IndexIdentifier(end.X, info)
+			}()
+			one, oneOK := func() (*ast.BasicLit, bool) {
+				if !endOK {
+					return nil, false
+				}
+				value, ok := ast.Unparen(end.Y).(*ast.BasicLit)
+				return value, ok
+			}()
+			if !indexOK || !endIndexOK || !oneOK || end.Op != token.ADD || one.Kind != token.INT || one.Value != "1" || info.Uses[indexName] != info.Uses[endIndex] {
+				return nil, fmt.Errorf("expression.collection_update_range")
+			}
+			collection, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			index, err := analyzeGoExpressionWithProgram(expression.Args[1], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			value, err := analyzeGoExpressionWithProgram(expression.Args[3], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			return &goExpression{kind: goCollectionUpdate, left: collection, initial: index, right: value}, nil
 		}
 		callee, exists := functions[info.Uses[identifier]]
 		if !ok || !exists || expression.Ellipsis.IsValid() {
@@ -550,6 +630,24 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}
+}
+
+func isSlicesFunction(info *types.Info, selector *ast.SelectorExpr, name string) bool {
+	function, ok := info.Uses[selector.Sel].(*types.Func)
+	return ok && function.Name() == name && function.Pkg() != nil && function.Pkg().Path() == "slices"
+}
+
+func goI64IndexIdentifier(expression ast.Expr, info *types.Info) (*ast.Ident, bool) {
+	if identifier, ok := ast.Unparen(expression).(*ast.Ident); ok {
+		return identifier, isInt64(info.TypeOf(identifier))
+	}
+	conversion, ok := ast.Unparen(expression).(*ast.CallExpr)
+	if !ok || len(conversion.Args) != 1 {
+		return nil, false
+	}
+	typeName, ok := ast.Unparen(conversion.Fun).(*ast.Ident)
+	identifier, identifierOK := ast.Unparen(conversion.Args[0]).(*ast.Ident)
+	return identifier, ok && identifierOK && typeName.Name == "int" && info.Uses[typeName] == types.Universe.Lookup("int") && isInt64(info.TypeOf(identifier))
 }
 
 func isGoStringExpression(expression ast.Expr, info *types.Info) bool {

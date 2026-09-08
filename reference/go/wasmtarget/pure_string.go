@@ -255,6 +255,9 @@ func (context *stringLowering) lowerBlock(id wire.ID, result string, parameterTy
 		if result == "bool" {
 			return context.lowerBoolean(values.List[0].Reference, map[wire.ID]bool{}, budget)
 		}
+		if result == "slice:i64" {
+			return context.lowerSlice(values.List[0].Reference, budget)
+		}
 		return context.lowerInteger(values.List[0].Reference, budget)
 	}
 	if statement.Schema != identity(0x90c0) {
@@ -287,6 +290,102 @@ func (context *stringLowering) lowerBlock(id wire.ID, result string, parameterTy
 	code = append(code, 0x05)
 	code = append(code, elseCode...)
 	return append(code, 0x0b), nil
+}
+
+func (context *stringLowering) newLocal(valueType byte) byte {
+	local := byte(len(context.locals) + len(context.extraLocals))
+	context.extraLocals = append(context.extraLocals, valueType)
+	return local
+}
+
+func (context *stringLowering) lowerSlice(id wire.ID, budget *int) ([]byte, error) {
+	if *budget == 0 {
+		return nil, fmt.Errorf("wasm.slice_expression_size")
+	}
+	*budget--
+	expression, ok := context.graph.Entities[id]
+	if !ok {
+		return nil, fmt.Errorf("wasm.slice_expression_missing")
+	}
+	if expression.Schema == identity(0x9013) {
+		parameter, err := field(expression, 0x9130)
+		local, exists := context.locals[parameter.Reference]
+		if err != nil || !exists {
+			return nil, fmt.Errorf("wasm.slice_parameter")
+		}
+		context.used[local] = true
+		return []byte{0x20, local}, nil
+	}
+	appendOperation := expression.Schema == identity(0x90fb)
+	updateOperation := expression.Schema == identity(0x90fc)
+	if !appendOperation && !updateOperation {
+		return nil, fmt.Errorf("wasm.slice_expression")
+	}
+	collectionField, valueField := uint64(0x9fb0), uint64(0x9fb1)
+	if updateOperation {
+		collectionField, valueField = 0x9fc0, 0x9fc2
+	}
+	collection, collectionErr := field(expression, collectionField)
+	value, valueErr := field(expression, valueField)
+	if collectionErr != nil || valueErr != nil || collection.Tag != 6 || value.Tag != 6 {
+		return nil, fmt.Errorf("wasm.slice_fields")
+	}
+	collectionCode, err := context.lowerSlice(collection.Reference, budget)
+	if err != nil {
+		return nil, err
+	}
+	valueCode, err := context.lowerInteger(value.Reference, budget)
+	if err != nil {
+		return nil, err
+	}
+	sourceLocal := context.newLocal(0x7e)
+	countLocal := context.newLocal(0x7f)
+	valueLocal := context.newLocal(0x7e)
+	outputLocal := context.newLocal(0x7f)
+	code := append(collectionCode, 0x21, sourceLocal)
+	code = append(code, 0x20, sourceLocal, 0x42, 0x20, 0x88, 0xa7, 0x21, countLocal)
+	code = append(code, valueCode...)
+	code = append(code, 0x21, valueLocal)
+	var indexLocal byte
+	if appendOperation {
+		code = append(code, 0x20, countLocal, 0x41)
+		var limit bytes.Buffer
+		sleb(&limit, 512)
+		code = append(code, limit.Bytes()...)
+		code = append(code, 0x4f, 0x04, 0x40, 0x00, 0x0b) // count >= 512
+	} else {
+		index, indexErr := field(expression, 0x9fc1)
+		if indexErr != nil || index.Tag != 6 {
+			return nil, fmt.Errorf("wasm.slice_update_index")
+		}
+		indexCode, err := context.lowerInteger(index.Reference, budget)
+		if err != nil {
+			return nil, err
+		}
+		indexLocal = context.newLocal(0x7e)
+		code = append(code, indexCode...)
+		code = append(code, 0x21, indexLocal, 0x20, indexLocal, 0x20, countLocal, 0xad, 0x5a, 0x04, 0x40, 0x00, 0x0b)
+	}
+	code = append(code, 0x20, countLocal)
+	if appendOperation {
+		code = append(code, 0x41, 0x01, 0x6a)
+	}
+	code = append(code, 0x41, 0x03, 0x74, 0x10, 0x00, 0x22, outputLocal, 0x45, 0x04, 0x40, 0x00, 0x0b)
+	// Copy before writing so the result cannot alias the source collection.
+	code = append(code, 0x20, outputLocal, 0x20, sourceLocal, 0xa7, 0x20, countLocal, 0x41, 0x03, 0x74, 0xfc, 0x0a, 0x00, 0x00)
+	code = append(code, 0x20, outputLocal)
+	if appendOperation {
+		code = append(code, 0x20, countLocal)
+	} else {
+		code = append(code, 0x20, indexLocal, 0xa7)
+	}
+	code = append(code, 0x41, 0x03, 0x74, 0x6a, 0x20, valueLocal, 0x37, 0x03, 0x00)
+	code = append(code, 0x20, outputLocal, 0xad, 0x20, countLocal)
+	if appendOperation {
+		code = append(code, 0x41, 0x01, 0x6a)
+	}
+	code = append(code, 0xad, 0x42, 0x20, 0x86, 0x84)
+	return code, nil
 }
 
 func (context *stringLowering) lowerInteger(id wire.ID, budget *int) ([]byte, error) {
@@ -740,6 +839,30 @@ func stringProviderBody(parameters []pureValueType, result pureValueType, abi Pu
 		offset += parameter.size
 	}
 	body.Write([]byte{0x10, 5, 0x21, 7})
+	if result.name == "slice:i64" {
+		// Validate packed pointer/count before copying into a stable canonical response.
+		body.Write([]byte{0x20, 7, 0x42, 0x20, 0x88, 0xa7})
+		constI32(&body, 512)
+		body.Write([]byte{0x4b, 0x04, 0x40, 0x41, 6, 0x0f, 0x0b})
+		body.Write([]byte{0x20, 7, 0xa7})
+		constI32(&body, stringArenaStart)
+		body.Write([]byte{0x49, 0x04, 0x40, 0x41, 6, 0x0f, 0x0b})
+		body.Write([]byte{0x20, 7, 0xa7, 0x20, 7, 0x42, 0x20, 0x88, 0xa7, 0x41, 0x03, 0x74, 0x6a})
+		constI32(&body, stringArenaEnd)
+		body.Write([]byte{0x4b, 0x04, 0x40, 0x41, 6, 0x0f, 0x0b})
+		// Canonical response descriptor: payload begins immediately after 8-byte header.
+		constI32(&body, stringScratch)
+		body.Write([]byte{0x41, 0x08, 0x36, 0x02, 0x00})
+		constI32(&body, stringScratch+4)
+		body.Write([]byte{0x20, 7, 0x42, 0x20, 0x88, 0xa7, 0x36, 0x02, 0x00})
+		constI32(&body, stringScratch+8)
+		body.Write([]byte{0x20, 7, 0xa7, 0x20, 7, 0x42, 0x20, 0x88, 0xa7, 0x41, 0x03, 0x74, 0xfc, 0x0a, 0x00, 0x00})
+		body.Write([]byte{0x20, 4, 0x41, 0x10, 0x6a, 0x24, 0x00})
+		body.Write([]byte{0x20, 4})
+		constI32(&body, stringScratch)
+		body.Write([]byte{0x36, 0x02, 0x00, 0x20, 0x05, 0x41, 0x08, 0x20, 7, 0x42, 0x20, 0x88, 0xa7, 0x41, 0x03, 0x74, 0x6a, 0x36, 0x02, 0x00, 0x41, 0x00, 0x0b})
+		return body.Bytes()
+	}
 	if result.name == "string" {
 		// Discard helper allocations on both success and result-validation
 		// failure while retaining the host's output-header allocation.

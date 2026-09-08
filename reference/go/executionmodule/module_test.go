@@ -346,8 +346,22 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(25); err == nil {
+	if _, err := Declarations(26); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersionTwentyFiveAddsImmutableCollectionResults(t *testing.T) {
+	previous, err := Declarations(24)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(25)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+2 || current[len(previous)].Name != "CollectionAppend" || current[len(previous)+1].Name != "CollectionUpdate" {
+		t.Fatalf("v25 declarations = %#v", current[len(previous):])
 	}
 }
 
