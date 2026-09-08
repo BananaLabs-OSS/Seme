@@ -7,7 +7,7 @@ const ids = {
   string: stableID("execution", "type", "string"),
 };
 
-export function liftJavaScript({ source, packagePath, revision, moduleG1 }) {
+export function liftJavaScript({ source, packagePath, revision, moduleG1, entryName }) {
   if (!packagePath || !Number.isSafeInteger(revision) || revision < 1) fail("javascript.invalid_snapshot");
   const comments = [];
   let program;
@@ -16,35 +16,45 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1 }) {
   } catch (error) {
     fail("javascript.parse", error.loc);
   }
+  const exported = new Set(program.body.filter((item) => item.type === "ExportNamedDeclaration" && item.declaration?.type === "FunctionDeclaration").map((item) => item.declaration.id?.name));
   const declarations = program.body.map((item) => item.type === "ExportNamedDeclaration" ? item.declaration : item);
   const functions = declarations.filter((item) => item?.type === "FunctionDeclaration");
-  if (functions.length !== 1) fail("javascript.requires_one_function", functions[1]?.loc?.start);
-  const fn = functions[0];
-  if (!fn.id || fn.async || fn.generator) fail("javascript.unsupported_function", fn.loc.start);
-  const signature = readSignature(comments, fn);
-  if (signature.parameters.length !== fn.params.length) fail("javascript.signature_arity", fn.loc.start);
-  const functionID = stableID("session-declaration", packagePath, fn.id.name);
+  if (functions.length === 0) fail("javascript.requires_function");
+  const descriptions = functions.map((fn) => {
+    if (!fn.id || fn.async || fn.generator) fail("javascript.unsupported_function", fn.loc.start);
+    const signature = readSignature(comments, fn);
+    if (signature.parameters.length !== fn.params.length) fail("javascript.signature_arity", fn.loc.start);
+    return { fn, signature, id: stableID("session-declaration", packagePath, fn.id.name) };
+  }).sort((left, right) => left.id.localeCompare(right.id));
+  const functionsByName = new Map(descriptions.map((item) => [item.fn.id.name, item]));
+  if (functionsByName.size !== descriptions.length) fail("javascript.duplicate_function");
   const entities = [
     graphEntity(ids.i64, entity(ids.i64, "00000000000000000000000000009010", [[0x9100, "uu 64"], [0x9101, "tr"], [0x9102, "uu 0"]])),
     graphEntity(ids.bool, entity(ids.bool, "00000000000000000000000000009020", [])),
     graphEntity(ids.string, entity(ids.string, "00000000000000000000000000009040", [])),
   ];
-  const parameterIDs = fn.params.map((parameter, index) => {
-    if (parameter.type !== "Identifier") fail("javascript.unsupported_parameter", parameter.loc.start);
-    if (signature.parameters[index].name !== parameter.name) fail("javascript.signature_name", parameter.loc.start);
-    const parameterID = stableID("execution", functionID, "parameter", String(index));
-    entities.push(graphEntity(parameterID, entity(parameterID, "00000000000000000000000000009012", [
-      [0x9120, bytes(parameter.name)], [0x9121, ref(ids[signature.parameters[index].type])], [0x9122, `uu ${index}`],
+  for (const description of descriptions) {
+    const { fn, signature, id: functionID } = description;
+    const parameterIDs = fn.params.map((parameter, index) => {
+      if (parameter.type !== "Identifier") fail("javascript.unsupported_parameter", parameter.loc.start);
+      if (signature.parameters[index].name !== parameter.name) fail("javascript.signature_name", parameter.loc.start);
+      const parameterID = stableID("execution", functionID, "parameter", String(index));
+      entities.push(graphEntity(parameterID, entity(parameterID, "00000000000000000000000000009012", [
+        [0x9120, bytes(parameter.name)], [0x9121, ref(ids[signature.parameters[index].type])], [0x9122, `uu ${index}`],
+      ])));
+      return parameterID;
+    });
+    const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName };
+    const bodyID = emitBlock(fn.body.body, "body", context, signature.result);
+    entities.push(graphEntity(functionID, entity(functionID, "00000000000000000000000000009011", [
+      [0x9110, bytes(fn.id.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(ids[signature.result])], [0x9113, ref(bodyID)],
     ])));
-    return parameterID;
-  });
-  const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 } };
-  const bodyID = emitBlock(fn.body.body, "body", context, signature.result);
-  entities.push(graphEntity(functionID, entity(functionID, "00000000000000000000000000009011", [
-    [0x9110, bytes(fn.id.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(ids[signature.result])], [0x9113, ref(bodyID)],
-  ])));
+  }
+  const selectedName = entryName || (exported.size === 1 ? [...exported][0] : descriptions[0].fn.id.name);
+  const entry = functionsByName.get(selectedName);
+  if (!entry) fail("javascript.entry_missing");
   const programID = stableID("session-program", packagePath);
-  entities.push(graphEntity(programID, entity(programID, "00000000000000000000000000009015", [[0x9150, refs([functionID])], [0x9151, ref(functionID)]])));
+  entities.push(graphEntity(programID, entity(programID, "00000000000000000000000000009015", [[0x9150, refs(descriptions.map((item) => item.id))], [0x9151, ref(entry.id)]])));
   return compose(moduleG1, stableID("session-revision", packagePath, String(revision)), entities);
 }
 
@@ -145,6 +155,14 @@ function emitExpression(node, owner, path, context, expected) {
     context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090b0", [[0x9b00, node.value ? "tr" : "fa"]])));
     return { id, type: "bool" };
   }
+  if (node.type === "CallExpression" && node.callee.type === "Identifier" && !node.optional) {
+    const callee = context.functionsByName.get(node.callee.name);
+    if (!callee || callee.signature.result !== expected || callee.signature.parameters.length !== node.arguments.length) fail("javascript.unsupported_call", node.loc.start);
+    const arguments_ = node.arguments.map((argument, index) => emitExpression(argument, owner, `${path}.argument.${index}`, context, callee.signature.parameters[index].type));
+    const id = expressionID(owner, path, "function-call");
+    context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009060", [[0x9600, ref(callee.id)], [0x9601, refs(arguments_.map((item) => item.id))]])));
+    return { id, type: expected };
+  }
   const operator = node.operator;
   const table = {
     "+:string": ["string-concat", "000000000000000000000000000090c3", 0x9c30, 0x9c31, "string"],
@@ -171,6 +189,10 @@ function inferExpressionType(node, context) {
   }
   if (node.type === "Literal" && typeof node.value === "string") return "string";
   if (node.type === "Literal" && typeof node.value === "boolean") return "bool";
+  if (node.type === "CallExpression" && node.callee.type === "Identifier") {
+    const callee = context.functionsByName.get(node.callee.name);
+    if (callee) return callee.signature.result;
+  }
   if (node.type === "LogicalExpression" && (node.operator === "&&" || node.operator === "||")) return "bool";
   if (node.type === "BinaryExpression" && node.operator === "===") return "bool";
   if (node.type === "BinaryExpression" && node.operator === "+") {

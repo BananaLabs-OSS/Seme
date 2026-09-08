@@ -273,8 +273,27 @@ func TestVersionFifteenAddsImmutableLexicalLocals(t *testing.T) {
 	}
 }
 
+func TestVersionSixteenFreezesMultiFunctionCallProfile(t *testing.T) {
+	v15, err := Declarations(15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v16, err := Declarations(16)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v16) != len(v15) {
+		t.Fatalf("v16 schema count = %d, want unchanged %d", len(v16), len(v15))
+	}
+	for index := range v15 {
+		if v15[index].ID != v16[index].ID || v15[index].Name != v16[index].Name {
+			t.Fatalf("v15 schema %d changed", index)
+		}
+	}
+}
+
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(16); err == nil {
+	if _, err := Declarations(17); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }

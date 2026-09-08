@@ -24,11 +24,15 @@ type goBlock struct {
 }
 
 func analyzeGoBlock(statements []ast.Stmt, signature *types.Signature, info *types.Info) (*goBlock, error) {
-	next := 0
-	return analyzeGoBlockScoped(statements, signature, info, map[types.Object]int{}, &next)
+	return analyzeGoBlockWithCalls(statements, signature, info, nil)
 }
 
-func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, info *types.Info, inherited map[types.Object]int, next *int) (*goBlock, error) {
+func analyzeGoBlockWithCalls(statements []ast.Stmt, signature *types.Signature, info *types.Info, functions map[types.Object]string) (*goBlock, error) {
+	next := 0
+	return analyzeGoBlockScoped(statements, signature, info, map[types.Object]int{}, functions, &next)
+}
+
+func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, info *types.Info, inherited map[types.Object]int, functions map[types.Object]string, next *int) (*goBlock, error) {
 	locals := cloneLocalScope(inherited)
 	block := &goBlock{}
 	for index, raw := range statements {
@@ -42,7 +46,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if !ok || object == nil || (!isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type())) {
 				return nil, fmt.Errorf("control.local_binding_type")
 			}
-			initializer, err := analyzeGoExpressionWithLocals(statement.Rhs[0], signature, info, locals)
+			initializer, err := analyzeGoExpressionWithContext(statement.Rhs[0], signature, info, locals, functions)
 			if err != nil {
 				return nil, err
 			}
@@ -61,7 +65,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if index != len(statements)-1 || len(statement.Results) != 1 {
 				return nil, fmt.Errorf("control.return_arity")
 			}
-			expression, err := analyzeGoExpressionWithLocals(statement.Results[0], signature, info, locals)
+			expression, err := analyzeGoExpressionWithContext(statement.Results[0], signature, info, locals, functions)
 			if err != nil {
 				return nil, err
 			}
@@ -70,7 +74,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if index != 0 && len(block.statements) != index {
 				return nil, fmt.Errorf("control.statement_order")
 			}
-			branch, err := analyzeTerminalIfScoped(statement, statements[index+1:], signature, info, locals, next)
+			branch, err := analyzeTerminalIfScoped(statement, statements[index+1:], signature, info, locals, functions, next)
 			if err != nil {
 				return nil, err
 			}
@@ -96,18 +100,18 @@ func cloneLocalScope(source map[types.Object]int) map[types.Object]int {
 
 func analyzeTerminalIf(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info) (*goBlock, error) {
 	next := 0
-	return analyzeTerminalIfScoped(statement, following, signature, info, map[types.Object]int{}, &next)
+	return analyzeTerminalIfScoped(statement, following, signature, info, map[types.Object]int{}, nil, &next)
 }
 
-func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, next *int) (*goBlock, error) {
+func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, next *int) (*goBlock, error) {
 	if statement.Init != nil {
 		return nil, fmt.Errorf("control.if_init_unsupported")
 	}
-	condition, err := analyzeGoExpressionWithLocals(statement.Cond, signature, info, locals)
+	condition, err := analyzeGoExpressionWithContext(statement.Cond, signature, info, locals, functions)
 	if err != nil {
 		return nil, err
 	}
-	thenBlock, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, next)
+	thenBlock, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, functions, next)
 	if err != nil {
 		return nil, err
 	}
@@ -116,16 +120,16 @@ func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signat
 		if len(following) == 0 {
 			return nil, fmt.Errorf("control.if_missing_fallthrough_return")
 		}
-		elseBlock, err = analyzeGoBlockScoped(following, signature, info, locals, next)
+		elseBlock, err = analyzeGoBlockScoped(following, signature, info, locals, functions, next)
 	} else {
 		if len(following) != 0 {
 			return nil, fmt.Errorf("control.unreachable_following_statement")
 		}
 		switch alternate := statement.Else.(type) {
 		case *ast.BlockStmt:
-			elseBlock, err = analyzeGoBlockScoped(alternate.List, signature, info, locals, next)
+			elseBlock, err = analyzeGoBlockScoped(alternate.List, signature, info, locals, functions, next)
 		case *ast.IfStmt:
-			elseBlock, err = analyzeTerminalIfScoped(alternate, nil, signature, info, locals, next)
+			elseBlock, err = analyzeTerminalIfScoped(alternate, nil, signature, info, locals, functions, next)
 		default:
 			err = fmt.Errorf("control.else_unsupported")
 		}

@@ -79,6 +79,15 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if len(programs) != 1 {
 		return nil, PureABI{}, fmt.Errorf("wasm.pure_program_cardinality")
 	}
+	listed, listedErr := field(programs[0], 0x9150)
+	if listedErr == nil && listed.Tag == 7 && len(listed.List) > 1 {
+		normalized, callErr := normalizePureCalls(graph, programs[0])
+		if callErr != nil {
+			return nil, PureABI{}, callErr
+		}
+		graph = normalized
+		programs = bySchema(graph, 0x9015)
+	}
 	functionsValue, err := field(programs[0], 0x9150)
 	if err != nil || functionsValue.Tag != 7 || len(functionsValue.List) != 1 || functionsValue.List[0].Tag != 6 {
 		return nil, PureABI{}, fmt.Errorf("wasm.pure_program_functions")

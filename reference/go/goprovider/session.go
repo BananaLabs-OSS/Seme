@@ -22,6 +22,7 @@ import (
 type DocumentSnapshot struct {
 	Revision    uint64
 	PackagePath string
+	Entry       string
 	Files       map[string]string
 }
 
@@ -169,6 +170,10 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 		}
 	}
 	sort.Slice(functions, func(left, right int) bool { return functions[left].id < functions[right].id })
+	functionObjects := make(map[types.Object]string, len(functions))
+	for _, function := range functions {
+		functionObjects[info.Defs[function.fn.Name]] = function.id
+	}
 	integerID := stableID("execution", "type", "i64")
 	booleanID := stableID("execution", "type", "bool")
 	stringID := stableID("execution", "type", "string")
@@ -180,7 +185,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	var functionIDs []string
 	var sources []SourceIdentity
 	for _, function := range functions {
-		entities, source, diagnostic := liftSessionFunction(function, integerID, booleanID, stringID)
+		entities, source, diagnostic := liftSessionFunction(function, integerID, booleanID, stringID, functionObjects)
 		if diagnostic != nil {
 			diagnostics = append(diagnostics, *diagnostic)
 			continue
@@ -195,15 +200,31 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 		}
 		return "", nil, sortedDiagnostics(diagnostics)
 	}
+	entryID := functionIDs[0]
+	if snapshot.Entry != "" {
+		entryID = ""
+		for _, function := range functions {
+			if function.name == snapshot.Entry {
+				for _, supported := range functionIDs {
+					if supported == function.id {
+						entryID = supported
+					}
+				}
+			}
+		}
+		if entryID == "" {
+			return "", nil, []SessionDiagnostic{{Code: "session.entry_missing", Message: "requested entry function is not supported", Severity: "error"}}
+		}
+	}
 	programID := stableID("session-program", snapshot.PackagePath)
 	instances = append(instances, graphEntity{programID, entity(programID, "00000000000000000000000000009015", []graphField{
-		refsField(0x9150, functionIDs), refField(0x9151, functionIDs[0]),
+		refsField(0x9150, functionIDs), refField(0x9151, entryID),
 	})})
 	revision := stableID("session-revision", snapshot.PackagePath, strconv.FormatUint(snapshot.Revision, 10))
 	return composeExecutionG1(moduleG1, revision, instances), sources, sortedDiagnostics(diagnostics)
 }
 
-func liftSessionFunction(function sessionFunction, integerID, booleanID, stringID string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
+func liftSessionFunction(function sessionFunction, integerID, booleanID, stringID string, functions map[types.Object]string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 	position := function.fset.Position(function.fn.Pos())
 	diagnostic := func(code, message string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 		return nil, SourceIdentity{}, &SessionDiagnostic{Code: code, Message: message, File: function.file, Line: position.Line, Column: position.Column, Severity: "warning"}
@@ -219,7 +240,7 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	} else if !isInt64(function.sig.Results().At(0).Type()) {
 		return diagnostic("session.unsupported_result_type", "supported result types are int64, bool, and string")
 	}
-	block, err := analyzeGoBlock(function.fn.Body.List, function.sig, function.info)
+	block, err := analyzeGoBlockWithCalls(function.fn.Body.List, function.sig, function.info, functions)
 	if err != nil {
 		return diagnostic("session.unsupported_function_body", err.Error())
 	}
