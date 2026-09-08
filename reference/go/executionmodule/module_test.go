@@ -346,8 +346,22 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(22); err == nil {
+	if _, err := Declarations(23); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersionTwentyTwoAddsIterationBindingsAndFold(t *testing.T) {
+	previous, err := Declarations(21)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(22)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+3 || current[len(previous)].Name != "IterationBinding" || current[len(previous)+1].Name != "IterationBindingRead" || current[len(previous)+2].Name != "Fold" {
+		t.Fatalf("v22 declarations = %#v", current[len(previous):])
 	}
 }
 

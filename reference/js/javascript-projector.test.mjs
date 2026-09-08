@@ -11,6 +11,7 @@ const moduleV18G1 = fs.readFileSync(new URL("../../modules/execution/v18/module.
 const moduleV19G1 = fs.readFileSync(new URL("../../modules/execution/v19/module.g1", import.meta.url), "utf8");
 const moduleV20G1 = fs.readFileSync(new URL("../../modules/execution/v20/module.g1", import.meta.url), "utf8");
 const moduleV21G1 = fs.readFileSync(new URL("../../modules/execution/v21/module.g1", import.meta.url), "utf8");
+const moduleV22G1 = fs.readFileSync(new URL("../../modules/execution/v22/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -144,5 +145,15 @@ export function Pick(values, index) { return values[index]; }`;
   assert.match(projected, /@param \{bigint\[3\]\} values/);
   assert.match(projected, /return values\[index\];/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array-boundary", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts deterministic folds", () => {
+  const source = `/** @param {bigint[3]} values @returns {bigint} */
+export function Sum(values) { return values.reduce((total, value) => total + value, 0n); }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV22G1, packagePath: "example.test/fold", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /values\.reduce\(\(total, value\) => \(total \+ value\), 0n\)/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV22G1, packagePath: "example.test/fold", revision: 1 });
   assert.equal(second, first);
 });

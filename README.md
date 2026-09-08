@@ -275,6 +275,12 @@ Fixed i64 array parameters also cross a canonical packed Wasm ABI derived from
 their element type and length. Run `./scripts/check-execution-v21.sh` and
 `./scripts/check-execution-v21-boundary.sh`.
 
+[`Core Execution v22`](spec/core-execution-v22.md) adds typed lexical iteration
+bindings and deterministic folds. Idiomatic Go `range` accumulation and
+JavaScript `reduce` converge on one canonical program; empty, signed, and
+overflow cases agree natively, in Wasm, and through Pulp. Run
+`./scripts/check-execution-v22.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

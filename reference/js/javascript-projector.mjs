@@ -3,10 +3,12 @@ const schema = {
   function: "00000000000000000000000000009011",
   parameter: "00000000000000000000000000009012",
   read: "00000000000000000000000000009013",
+  integerAdd: "00000000000000000000000000009014",
   program: "00000000000000000000000000009015",
   boolType: "00000000000000000000000000009020",
   stringType: "00000000000000000000000000009040",
   stringLiteral: "00000000000000000000000000009050",
+  integerLiteral: "00000000000000000000000000009070",
   block: "00000000000000000000000000009080",
   returned: "00000000000000000000000000009081",
   boolLiteral: "000000000000000000000000000090b0",
@@ -34,6 +36,9 @@ const schema = {
   fixedArrayType: "000000000000000000000000000090f2",
   fixedArrayConstruct: "000000000000000000000000000090f3",
   indexRead: "000000000000000000000000000090f4",
+  iterationBinding: "000000000000000000000000000090f5",
+  iterationBindingRead: "000000000000000000000000000090f6",
+  fold: "000000000000000000000000000090f7",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -168,6 +173,28 @@ function projectExpression(id, context) {
     if (!local?.mutable) fail("javascript_projection.place_out_of_scope");
     return local.name;
   }
+	if (expression.schema === schema.iterationBindingRead) {
+		const binding = context.iterationBindings?.get(reference(field(expression, 0x9f60)));
+		if (!binding) fail("javascript_projection.iteration_binding_scope");
+		return binding;
+	}
+	if (expression.schema === schema.integerLiteral) {
+		const value = BigInt.asIntN(64, unsigned(field(expression, 0x9700)));
+		return `${value}n`;
+	}
+	if (expression.schema === schema.fold) {
+		const accumulatorID = reference(field(expression, 0x9f72));
+		const elementID = reference(field(expression, 0x9f73));
+		const accumulator = required(context.graph, accumulatorID, schema.iterationBinding);
+		const element = required(context.graph, elementID, schema.iterationBinding);
+		const accumulatorName = text(field(accumulator, 0x9f50));
+		const elementName = text(field(element, 0x9f50));
+		if (!/^[A-Za-z_$][\w$]*$/.test(accumulatorName) || !/^[A-Za-z_$][\w$]*$/.test(elementName) || accumulatorName === elementName) fail("javascript_projection.iteration_binding_name");
+		const foldContext = { ...context, iterationBindings: new Map(context.iterationBindings || []) };
+		foldContext.iterationBindings.set(accumulatorID, accumulatorName);
+		foldContext.iterationBindings.set(elementID, elementName);
+		return `${projectExpression(reference(field(expression, 0x9f70)), context)}.reduce((${accumulatorName}, ${elementName}) => ${projectExpression(reference(field(expression, 0x9f74)), foldContext)}, ${projectExpression(reference(field(expression, 0x9f71)), context)})`;
+	}
   if (expression.schema === schema.stringLiteral) return JSON.stringify(text(field(expression, 0x9500)));
   if (expression.schema === schema.boolLiteral) return atom(field(expression, 0x9b00)) === "tr" ? "true" : "false";
   if (expression.schema === schema.call) {
@@ -205,6 +232,7 @@ function projectExpression(id, context) {
     return `${rendered}[${projectExpression(reference(field(expression, 0x9f41)), context)}]`;
   }
   const binary = new Map([
+	[schema.integerAdd, [0x9140, 0x9141, "+"]],
     [schema.boolAnd, [0x9b10, 0x9b11, "&&"]],
     [schema.boolOr, [0x9c10, 0x9c11, "||"]],
     [schema.stringEqual, [0x9c20, 0x9c21, "==="]],
@@ -225,7 +253,7 @@ function typeName(id, graph) {
 		const element = required(graph, reference(field(type, 0x9f20)));
 		if (element.schema !== schema.integerType) fail("javascript_projection.fixed_array_element_type");
 		const length = unsigned(field(type, 0x9f21));
-		if (length < 1n || length > 32n) fail("javascript_projection.fixed_array_length");
+		if (length < 0n || length > 32n) fail("javascript_projection.fixed_array_length");
 		return `bigint[${length}]`;
 	}
   fail("javascript_projection.unsupported_type");

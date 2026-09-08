@@ -38,6 +38,9 @@ func analyzeGoBlockWithCalls(statements []ast.Stmt, signature *types.Signature, 
 }
 
 func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goBlock, error) {
+	if fold, ok := matchGoFixedArrayFold(statements, signature, info); ok {
+		return &goBlock{statements: []*goStatement{{returned: fold}}}, nil
+	}
 	next := 0
 	mutable := map[types.Object]bool{}
 	for _, statement := range statements {
@@ -55,6 +58,71 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 		})
 	}
 	return analyzeGoBlockScoped(statements, signature, info, map[types.Object]int{}, functions, records, mutable, &next, true)
+}
+
+func matchGoFixedArrayFold(statements []ast.Stmt, signature *types.Signature, info *types.Info) (*goExpression, bool) {
+	if len(statements) != 3 {
+		return nil, false
+	}
+	declare, ok := statements[0].(*ast.AssignStmt)
+	if !ok || declare.Tok != token.DEFINE || len(declare.Lhs) != 1 || len(declare.Rhs) != 1 {
+		return nil, false
+	}
+	accumulator, ok := declare.Lhs[0].(*ast.Ident)
+	if !ok || !isInt64(info.TypeOf(accumulator)) {
+		return nil, false
+	}
+	conversion, ok := declare.Rhs[0].(*ast.CallExpr)
+	if !ok || len(conversion.Args) != 1 {
+		return nil, false
+	}
+	conversionName, ok := conversion.Fun.(*ast.Ident)
+	literal, literalOK := conversion.Args[0].(*ast.BasicLit)
+	if !ok || conversionName.Name != "int64" || !literalOK || literal.Kind != token.INT || literal.Value != "0" {
+		return nil, false
+	}
+	rangeStatement, ok := statements[1].(*ast.RangeStmt)
+	if !ok || rangeStatement.Tok != token.DEFINE || len(rangeStatement.Body.List) != 1 {
+		return nil, false
+	}
+	key, keyOK := rangeStatement.Key.(*ast.Ident)
+	element, elementOK := rangeStatement.Value.(*ast.Ident)
+	collectionName, collectionOK := rangeStatement.X.(*ast.Ident)
+	if !keyOK || key.Name != "_" || !elementOK || !collectionOK || !isInt64(info.TypeOf(element)) {
+		return nil, false
+	}
+	parameter := -1
+	for index := 0; index < signature.Params().Len(); index++ {
+		if info.Uses[collectionName] == signature.Params().At(index) {
+			parameter = index
+			break
+		}
+	}
+	if parameter < 0 {
+		return nil, false
+	}
+	if _, ok := fixedI64ArrayLength(signature.Params().At(parameter).Type()); !ok {
+		return nil, false
+	}
+	update, ok := rangeStatement.Body.List[0].(*ast.AssignStmt)
+	if !ok || update.Tok != token.ADD_ASSIGN || len(update.Lhs) != 1 || len(update.Rhs) != 1 {
+		return nil, false
+	}
+	updateAccumulator, aOK := update.Lhs[0].(*ast.Ident)
+	updateElement, eOK := update.Rhs[0].(*ast.Ident)
+	if !aOK || !eOK || info.Uses[updateAccumulator] != info.Defs[accumulator] || info.Uses[updateElement] != info.Defs[element] {
+		return nil, false
+	}
+	returned, ok := statements[2].(*ast.ReturnStmt)
+	if !ok || len(returned.Results) != 1 {
+		return nil, false
+	}
+	returnName, ok := returned.Results[0].(*ast.Ident)
+	if !ok || info.Uses[returnName] != info.Defs[accumulator] {
+		return nil, false
+	}
+	body := &goExpression{kind: goIntegerAdd, left: &goExpression{kind: goIterationBindingRead, text: "accumulator"}, right: &goExpression{kind: goIterationBindingRead, text: "element"}}
+	return &goExpression{kind: goFold, left: &goExpression{kind: goParameterRead, parameter: parameter}, initial: &goExpression{kind: goIntegerLiteral}, body: body, accName: accumulator.Name, elementName: element.Name}, true
 }
 
 func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, info *types.Info, inherited map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool, next *int, requireReturn bool) (*goBlock, error) {

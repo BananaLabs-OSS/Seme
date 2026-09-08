@@ -305,7 +305,7 @@ func isPureString(value types.Type) bool {
 }
 func fixedI64ArrayLength(value types.Type) (uint64, bool) {
 	array, ok := value.Underlying().(*types.Array)
-	if !ok || array.Len() <= 0 || array.Len() > 32 || !isInt64(array.Elem()) {
+	if !ok || array.Len() < 0 || array.Len() > 32 || !isInt64(array.Elem()) {
 		return 0, false
 	}
 	return uint64(array.Len()), true

@@ -458,6 +458,68 @@ func lowerHelperInteger(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 			instructions = append(instructions, 0x0b)
 		}
 		return instructions, nil
+	case identity(0x90f7):
+		collection, initial, accumulator, element, body, err := foldFields(graph, expression)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateI64AddFoldBody(graph, body, accumulator, element); err != nil {
+			return nil, err
+		}
+		instructions, err := lowerHelperInteger(graph, initial, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		collectionEntity, ok := graph.Entities[collection]
+		if !ok {
+			return nil, fmt.Errorf("wasm.fold_collection")
+		}
+		var values []wire.ID
+		var parameter wire.ID
+		if collectionEntity.Schema == identity(0x90f3) {
+			values, err = fixedI64ArrayValues(graph, collection)
+			if err != nil {
+				return nil, err
+			}
+		} else if collectionEntity.Schema == identity(0x9013) {
+			parameterValue, fieldErr := field(collectionEntity, 0x9130)
+			if fieldErr != nil || parameterValue.Tag != 6 {
+				return nil, fmt.Errorf("wasm.fold_parameter")
+			}
+			parameter = parameterValue.Reference
+		} else {
+			return nil, fmt.Errorf("wasm.fold_collection")
+		}
+		if parameter != (wire.ID{}) {
+			local, ok := parameterLocals[parameter]
+			if !ok {
+				return nil, fmt.Errorf("wasm.fold_parameter")
+			}
+			parameterEntity := graph.Entities[parameter]
+			typeValue, _ := field(parameterEntity, 0x9121)
+			arrayType, err := pureType(graph, typeValue.Reference)
+			if err != nil {
+				return nil, err
+			}
+			for position := uint64(0); position < arrayType.size/8; position++ {
+				instructions = append(instructions, 0x20, local, 0x29, 0x03)
+				var offset bytes.Buffer
+				uleb(&offset, position*8)
+				instructions = append(instructions, offset.Bytes()...)
+				instructions = append(instructions, 0x7c)
+			}
+			used[local] = true
+			return instructions, nil
+		}
+		for _, value := range values {
+			valueCode, err := lowerHelperInteger(graph, value, parameterLocals, used, visiting, budget)
+			if err != nil {
+				return nil, err
+			}
+			instructions = append(instructions, valueCode...)
+			instructions = append(instructions, 0x7c)
+		}
+		return instructions, nil
 	default:
 		return nil, fmt.Errorf("wasm.helper_integer_expression")
 	}
