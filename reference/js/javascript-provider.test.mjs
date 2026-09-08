@@ -15,6 +15,7 @@ const moduleV23G1 = fs.readFileSync(new URL("../../modules/execution/v23/module.
 const moduleV24G1 = fs.readFileSync(new URL("../../modules/execution/v24/module.g1", import.meta.url), "utf8");
 const moduleV25G1 = fs.readFileSync(new URL("../../modules/execution/v25/module.g1", import.meta.url), "utf8");
 const moduleV26G1 = fs.readFileSync(new URL("../../modules/execution/v26/module.g1", import.meta.url), "utf8");
+const moduleV27G1 = fs.readFileSync(new URL("../../modules/execution/v27/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -223,4 +224,54 @@ class Counter {
   const resultSource = `${base}\n/** @param {Counter} counter @param {bigint} delta @returns {bigint} */\nexport function Value(counter, delta) { return counter.add(delta).result; }`;
   assert.match(liftJavaScript({ source: stateSource, moduleG1: moduleV26G1, packagePath: "example.test/transition-state", revision: 1 }), /0000000000000000000000000000a006/);
   assert.match(liftJavaScript({ source: resultSource, moduleG1: moduleV26G1, packagePath: "example.test/transition-result", revision: 1 }), /0000000000000000000000000000a007/);
+});
+
+test("lifts native structural interfaces with explicit dispatch witnesses", () => {
+  const source = `/** @interface Adjuster
+ * @method Adjust
+ * @param {bigint} value
+ * @returns {bigint}
+ */
+/** @typedef {Object} OffsetAdjuster
+ * @property {bigint} Offset
+ */
+class OffsetAdjuster {
+  constructor(Offset) { this.Offset = Offset; }
+  /** @param {bigint} value @returns {bigint} */
+  Adjust(value) { return value + this.Offset; }
+}
+/** @typedef {Object} ScaleAdjuster
+ * @property {bigint} Factor
+ */
+class ScaleAdjuster {
+  constructor(Factor) { this.Factor = Factor; }
+  /** @param {bigint} value @returns {bigint} */
+  Adjust(value) { return value * this.Factor; }
+}
+/** @param {Adjuster} adjuster @param {bigint} value @returns {bigint} */
+export function Apply(adjuster, value) { return adjuster.Adjust(value); }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV27G1, packagePath: "example.test/interface-dispatch", revision: 1 });
+  for (const suffix of ["a010", "a011", "a012", "a014"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
+  assert.equal((canonical.match(/0000000000000000000000000000a012/g) || []).length, 2);
+});
+
+test("lifts a concrete structural value through an explicit interface witness", () => {
+  const source = `/** @interface Adjuster
+ * @method Adjust
+ * @param {bigint} value
+ * @returns {bigint}
+ */
+/** @typedef {Object} OffsetAdjuster
+ * @property {bigint} Offset
+ */
+class OffsetAdjuster {
+  constructor(Offset) { this.Offset = Offset; }
+  /** @param {bigint} value @returns {bigint} */
+  Adjust(value) { return value + this.Offset; }
+}
+/** @param {bigint} offset @param {bigint} value @returns {bigint} */
+export function ApplyOffset(offset, value) { return new OffsetAdjuster(offset).Adjust(value); }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV27G1, packagePath: "example.test/interface-value", revision: 1 });
+  assert.match(canonical, /0000000000000000000000000000a013/);
+  assert.match(canonical, /0000000000000000000000000000a014/);
 });

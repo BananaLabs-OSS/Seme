@@ -29,7 +29,10 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
   const functionsByName = new Map(descriptions.map((item) => [item.fn.id.name, item]));
   if (functionsByName.size !== descriptions.length) fail("javascript.duplicate_function");
   const recordsByName = readRecords(comments, packagePath);
+  const interfacesByName = readInterfaces(comments, packagePath);
+  for (const description of descriptions) normalizeInterfaceTypes(description.signature, interfacesByName);
   const methodDescriptions = readMethods(declarations, comments, recordsByName, packagePath);
+  for (const description of methodDescriptions) normalizeInterfaceTypes(description.signature, interfacesByName);
   const methodsByTypeAndName = new Map(methodDescriptions.map((item) => [`${item.receiverType}:${item.fn.key.name}`, item]));
   const declaredEffects = new Set();
   const entities = [
@@ -37,6 +40,12 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
     graphEntity(ids.bool, entity(ids.bool, "00000000000000000000000000009020", [])),
     graphEntity(ids.string, entity(ids.string, "00000000000000000000000000009040", [])),
   ];
+  for (const interface_ of [...interfacesByName.values()].sort((left, right) => left.id.localeCompare(right.id))) {
+    for (const requirement of interface_.requirements) {
+      entities.push(graphEntity(requirement.id, entity(requirement.id, "0000000000000000000000000000a011", [[0xa0110, bytes(requirement.name)], [0xa0111, refs(requirement.parameters.map((type) => typeID(type, { recordsByName, interfacesByName, entities })))], [0xa0112, ref(typeID(requirement.result, { recordsByName, interfacesByName, entities }))]])));
+    }
+    entities.push(graphEntity(interface_.id, entity(interface_.id, "0000000000000000000000000000a010", [[0xa0100, bytes(interface_.name)], [0xa0101, refs(interface_.requirements.map((item) => item.id))]])));
+  }
   for (const record of [...recordsByName.values()].sort((left, right) => left.id.localeCompare(right.id))) {
     const fieldIDs = record.fields.map((field, index) => {
       const id = stableID("execution", record.id, "field", String(index));
@@ -57,9 +66,19 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
       entities.push(graphEntity(parameterID, entity(parameterID, "00000000000000000000000000009012", [[0x9120, bytes(parameter.name)], [0x9121, ref(typeID(signature.parameters[index].type, { recordsByName }))], [0x9122, `uu ${index}`]])));
       return parameterID;
     });
-    const context = { functionID: methodID, parameterIDs, parameterNames: fn.value.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName, declaredEffects, receiver: { id: receiverID, type: `record:${receiverType}` }, methodsByTypeAndName };
+    const context = { functionID: methodID, parameterIDs, parameterNames: fn.value.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName, interfacesByName, declaredEffects, receiver: { id: receiverID, type: `record:${receiverType}` }, methodsByTypeAndName };
     const bodyID = emitBlock(fn.value.body.body, "body", context, signature.result, true);
     entities.push(graphEntity(methodID, entity(methodID, "0000000000000000000000000000a002", [[0xa0020, bytes(fn.key.name)], [0xa0021, ref(receiverID)], [0xa0022, refs(parameterIDs)], [0xa0023, ref(typeID(signature.result, context))], [0xa0024, ref(bodyID)]])));
+  }
+  const witnessesByConcreteAndInterface = new Map();
+  for (const record of recordsByName.values()) {
+    for (const interface_ of interfacesByName.values()) {
+      const methods = interface_.requirements.map((requirement) => methodsByTypeAndName.get(`${record.name}:${requirement.name}`));
+      if (methods.some((method, index) => !method || !sameSignature(method.signature, interface_.requirements[index]))) continue;
+      const id = stableID("execution", "witness", record.id, interface_.id);
+      entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a012", [[0xa0120, ref(record.id)], [0xa0121, ref(interface_.id)], [0xa0122, refs(methods.map((item) => item.id))]])));
+      witnessesByConcreteAndInterface.set(`${record.name}:${interface_.name}`, { id, record, interface_ });
+    }
   }
   for (const description of descriptions) {
     const { fn, signature, id: functionID } = description;
@@ -83,13 +102,13 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
 	  }
 	  const parameterTypeID = parameterType.startsWith("array:i64:")
 		? stableID("execution", "type", "fixed-array", "i64", parameterType.slice("array:i64:".length))
-		: parameterType === "slice:i64" ? stableID("execution", "type", "slice", "i64") : typeID(parameterType, { recordsByName, entities });
+		: parameterType === "slice:i64" ? stableID("execution", "type", "slice", "i64") : typeID(parameterType, { recordsByName, interfacesByName, entities });
       entities.push(graphEntity(parameterID, entity(parameterID, "00000000000000000000000000009012", [
 		[0x9120, bytes(parameter.name)], [0x9121, ref(parameterTypeID)], [0x9122, `uu ${index}`],
       ])));
       return parameterID;
     });
-    const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName, declaredEffects, methodsByTypeAndName };
+    const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName, interfacesByName, witnessesByConcreteAndInterface, declaredEffects, methodsByTypeAndName };
     const bodyID = emitBlock(fn.body.body, "body", context, signature.result, true);
     entities.push(graphEntity(functionID, entity(functionID, "00000000000000000000000000009011", [
       [0x9110, bytes(fn.id.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(typeID(signature.result, context))], [0x9113, ref(bodyID)],
@@ -125,6 +144,32 @@ function semanticType(type) {
   if (transition) return `transition:record:${transition[1]}:${semanticType(transition[2])}`;
   if (/^[A-Za-z_$][\w$]*$/.test(type)) return `record:${type}`;
   fail("javascript.unsupported_type_annotation");
+}
+
+function readInterfaces(comments, packagePath) {
+  const interfaces = new Map();
+  for (const comment of comments) {
+    const declaration = comment.value.match(/@interface\s+([A-Za-z_$][\w$]*)/);
+    if (!declaration) continue;
+    const name = declaration[1];
+    const method = comment.value.match(/@method\s+([A-Za-z_$][\w$]*)/);
+    const result = comment.value.match(/@returns?\s+\{([^}]+)\}/);
+    if (!method || !result || interfaces.has(name)) fail("javascript.invalid_interface");
+    const parameters = [...comment.value.matchAll(/@param\s+\{([^}]+)\}\s+[A-Za-z_$][\w$]*/g)].map((match) => semanticType(match[1]));
+    const id = stableID("execution", "interface", packagePath, name);
+    interfaces.set(name, { name, id, requirements: [{ name: method[1], parameters, result: semanticType(result[1]), id: stableID("execution", id, "requirement", method[1]) }] });
+  }
+  return interfaces;
+}
+
+function normalizeInterfaceTypes(signature, interfacesByName) {
+  const normalize = (type) => type.startsWith("record:") && interfacesByName.has(type.slice("record:".length)) ? `interface:${type.slice("record:".length)}` : type;
+  signature.parameters = signature.parameters.map((parameter) => ({ ...parameter, type: normalize(parameter.type) }));
+  signature.result = normalize(signature.result);
+}
+
+function sameSignature(signature, requirement) {
+  return signature.result === requirement.result && signature.parameters.length === requirement.parameters.length && signature.parameters.every((parameter, index) => parameter.type === requirement.parameters[index]);
 }
 
 function readMethods(declarations, comments, recordsByName, packagePath) {
@@ -168,6 +213,8 @@ function typeID(type, context) {
     return id;
   }
   const record = type.startsWith("record:") ? context.recordsByName.get(type.slice("record:".length)) : undefined;
+  const interface_ = type.startsWith("interface:") ? context.interfacesByName?.get(type.slice("interface:".length)) : undefined;
+  if (interface_) return interface_.id;
   if (!record) fail("javascript.unknown_type");
   return record.id;
 }
@@ -278,6 +325,19 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 }
 
 function emitExpression(node, owner, path, context, expected) {
+	if (expected.startsWith("interface:")) {
+		const concreteType = inferExpressionType(node, context);
+		if (concreteType.startsWith("record:")) {
+			const concreteName = concreteType.slice("record:".length);
+			const interfaceName = expected.slice("interface:".length);
+			const witness = context.witnessesByConcreteAndInterface?.get(`${concreteName}:${interfaceName}`);
+			if (!witness) fail("javascript.interface_not_satisfied", node.loc.start);
+			const value = emitExpression(node, owner, `${path}.value`, context, concreteType);
+			const id = expressionID(owner, path, "interface-value");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a013", [[0xa0130, ref(witness.interface_.id)], [0xa0131, ref(value.id)], [0xa0132, ref(witness.id)]])));
+			return { id, type: expected };
+		}
+	}
 	if (node.type === "ThisExpression" && expected === context.receiver?.type) {
 		const id = expressionID(owner, path, "receiver-read");
 		context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a001", [[0xa0010, ref(context.receiver.id)]])));
@@ -291,9 +351,39 @@ function emitExpression(node, owner, path, context, expected) {
 		context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009033", [[0x9330, ref(record.id)], [0x9331, refs(values.map((item) => item.id))]])));
 		return { id, type: expected };
 	}
+	if (node.type === "CallExpression" && expected === "i64" && !node.optional && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "BigInt" && node.callee.property.name === "asIntN" && node.arguments.length === 2 && node.arguments[0].type === "Literal" && node.arguments[0].value === 64) {
+		return emitExpression(node.arguments[1], owner, path, context, expected);
+	}
 	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.type === "Identifier") {
 		const receiverType = inferExpressionType(node.callee.object, context);
+		if (receiverType.startsWith("interface:")) {
+			const interface_ = context.interfacesByName.get(receiverType.slice("interface:".length));
+			const requirement = interface_?.requirements.find((item) => item.name === node.callee.property.name);
+			if (requirement && requirement.result === expected && requirement.parameters.length === node.arguments.length) {
+				const receiver = emitExpression(node.callee.object, owner, `${path}.receiver`, context, receiverType);
+				const arguments_ = node.arguments.map((argument, index) => emitExpression(argument, owner, `${path}.argument.${index}`, context, requirement.parameters[index]));
+				const id = expressionID(owner, path, "dynamic-method-call");
+				context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a014", [[0xa0140, ref(receiver.id)], [0xa0141, ref(requirement.id)], [0xa0142, refs(arguments_.map((item) => item.id))]])));
+				return { id, type: expected };
+			}
+		}
 		const method = context.methodsByTypeAndName?.get(`${receiverType.slice("record:".length)}:${node.callee.property.name}`);
+		if (method && receiverType.startsWith("record:")) {
+			const matches = [...context.interfacesByName.values()].flatMap((interface_) => interface_.requirements.filter((requirement) => requirement.name === node.callee.property.name && sameSignature(method.signature, requirement)).map((requirement) => ({ interface_, requirement })));
+			if (matches.length === 1) {
+				const [{ interface_, requirement }] = matches;
+				const concreteName = receiverType.slice("record:".length);
+				const witness = context.witnessesByConcreteAndInterface.get(`${concreteName}:${interface_.name}`);
+				if (!witness) fail("javascript.interface_not_satisfied", node.loc.start);
+				const value = emitExpression(node.callee.object, owner, `${path}.receiver.value`, context, receiverType);
+				const receiverID = expressionID(owner, `${path}.receiver`, "interface-value");
+				context.entities.push(graphEntity(receiverID, entity(receiverID, "0000000000000000000000000000a013", [[0xa0130, ref(interface_.id)], [0xa0131, ref(value.id)], [0xa0132, ref(witness.id)]])));
+				const arguments_ = node.arguments.map((argument, index) => emitExpression(argument, owner, `${path}.argument.${index}`, context, requirement.parameters[index]));
+				const id = expressionID(owner, path, "dynamic-method-call");
+				context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a014", [[0xa0140, ref(receiverID)], [0xa0141, ref(requirement.id)], [0xa0142, refs(arguments_.map((item) => item.id))]])));
+				return { id, type: expected };
+			}
+		}
 		if (method && method.signature.result === expected && method.signature.parameters.length === node.arguments.length) {
 			const receiver = emitExpression(node.callee.object, owner, `${path}.receiver`, context, receiverType);
 			const arguments_ = node.arguments.map((argument, index) => emitExpression(argument, owner, `${path}.argument.${index}`, context, method.signature.parameters[index].type));
@@ -474,6 +564,7 @@ function emitExpression(node, owner, path, context, expected) {
   const operator = node.operator;
   const table = {
 	"+:i64": ["add", "00000000000000000000000000009014", 0x9140, 0x9141, "i64"],
+	"*:i64": ["multiply", "00000000000000000000000000009090", 0x9900, 0x9901, "i64"],
 	"-:i64": ["subtract", "000000000000000000000000000090a0", 0x9a00, 0x9a01, "i64"],
 	"<=:bool": ["less-equal", "00000000000000000000000000009021", 0x9160, 0x9161, "i64"],
     "+:string": ["string-concat", "000000000000000000000000000090c3", 0x9c30, 0x9c31, "string"],
@@ -489,6 +580,7 @@ function emitExpression(node, owner, path, context, expected) {
   const id = expressionID(owner, path, kind);
   const fields = [[leftField, ref(left.id)], [rightField, ref(right.id)]];
 	if (schema === "00000000000000000000000000009014") fields.push([0x9142, ref(ids.i64)]);
+	if (schema === "00000000000000000000000000009090") fields.push([0x9902, ref(ids.i64)]);
 	if (schema === "000000000000000000000000000090a0") fields.push([0x9a02, ref(ids.i64)]);
 	if (schema === "00000000000000000000000000009021") fields.push([0x9162, ref(ids.i64)]);
   context.entities.push(graphEntity(id, entity(id, schema, fields)));
@@ -540,8 +632,13 @@ function inferExpressionType(node, context) {
     const callee = context.functionsByName.get(node.callee.name);
     if (callee) return callee.signature.result;
   }
+	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "BigInt" && node.callee.property.name === "asIntN" && node.arguments.length === 2 && node.arguments[0].type === "Literal" && node.arguments[0].value === 64) return "i64";
 	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed) {
 		const receiverType = inferExpressionType(node.callee.object, context);
+		if (receiverType.startsWith("interface:")) {
+			const requirement = context.interfacesByName.get(receiverType.slice("interface:".length))?.requirements.find((item) => item.name === node.callee.property.name);
+			if (requirement) return requirement.result;
+		}
 		const method = context.methodsByTypeAndName?.get(`${receiverType.slice("record:".length)}:${node.callee.property.name}`);
 		if (method) return method.signature.result;
 	}

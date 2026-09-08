@@ -6,6 +6,64 @@ import (
 	"testing"
 )
 
+func TestIncrementalSessionLiftsInterfaceWitnessesAndDynamicCall(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v27/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package dispatch
+type Adjuster interface { Adjust(value int64) int64 }
+type OffsetAdjuster struct { Offset int64 }
+func (a OffsetAdjuster) Adjust(value int64) int64 { return value + a.Offset }
+type ScaleAdjuster struct { Factor int64 }
+func (a ScaleAdjuster) Adjust(value int64) int64 { return value * a.Factor }
+func Apply(adjuster Adjuster, value int64) int64 { return adjuster.Adjust(value) }
+func Dispatch(useScale bool, amount, value int64) int64 {
+ if useScale { return Apply(ScaleAdjuster{Factor: amount}, value) }
+ return Apply(OffsetAdjuster{Offset: amount}, value)
+}
+`
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/interface-dispatch", Entry: "Dispatch", Files: map[string]string{"dispatch.go": source}})
+	if !result.Valid {
+		t.Fatalf("result = %#v", result)
+	}
+	for _, schema := range []string{"0000000000000000000000000000a010", "0000000000000000000000000000a011", "0000000000000000000000000000a012", "0000000000000000000000000000a014"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("canonical graph lacks schema %s", schema)
+		}
+	}
+	if got := strings.Count(result.CanonicalG1, " 0000000000000000000000000000a012 1 3"); got != 2 {
+		t.Fatalf("satisfaction witness count = %d, want 2", got)
+	}
+	if got := strings.Count(result.CanonicalG1, " 0000000000000000000000000000a013 1 3"); got != 2 {
+		t.Fatalf("interface value count = %d, want 2", got)
+	}
+	witnessIDs := func(graph string) []string {
+		var ids []string
+		for _, line := range strings.Split(graph, "\n") {
+			fields := strings.Fields(line)
+			if len(fields) >= 3 && fields[0] == "en" && fields[2] == "0000000000000000000000000000a012" {
+				ids = append(ids, fields[1])
+			}
+		}
+		return ids
+	}
+	baselineWitnesses := strings.Join(witnessIDs(result.CanonicalG1), ",")
+	edited := session.Apply(DocumentSnapshot{Revision: 2, PackagePath: "example.test/interface-dispatch", Entry: "Dispatch", Files: map[string]string{
+		"dispatch.go": strings.Replace(source, "return value + a.Offset", "return value - a.Offset", 1),
+	}})
+	if !edited.Valid || edited.LastValidRevision != 2 || edited.CanonicalG1 == result.CanonicalG1 {
+		t.Fatalf("edited interface result = %#v", edited)
+	}
+	if got := strings.Join(witnessIDs(edited.CanonicalG1), ","); got != baselineWitnesses {
+		t.Fatalf("witness identities changed across method-body edit: %s != %s", got, baselineWitnesses)
+	}
+}
+
 func TestIncrementalSessionRetainsLastValidGraph(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v12/module.g1")
 	if err != nil {

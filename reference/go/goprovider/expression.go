@@ -42,6 +42,8 @@ const (
 	goStateTransition
 	goTransitionState
 	goTransitionResult
+	goDynamicMethodCall
+	goInterfaceValue
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -72,6 +74,7 @@ type goExpression struct {
 	receiverID  string
 	methodID    string
 	typeID      string
+	witnessID   string
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -267,6 +270,29 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := expressionNodeID(owner, path, "method-call")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a003", []graphField{refField(0xa0030, receiver), refField(0xa0031, expression.methodID), refsField(0xa0032, arguments)})}
+			return id, nil
+		case goDynamicMethodCall:
+			receiver, err := emit(expression.left, path+".receiver")
+			if err != nil {
+				return "", err
+			}
+			arguments := make([]string, len(expression.arguments))
+			for index, argument := range expression.arguments {
+				arguments[index], err = emit(argument, path+".argument."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+			}
+			id := expressionNodeID(owner, path, "dynamic-method-call")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a014", []graphField{refField(0xa0140, receiver), refField(0xa0141, expression.methodID), refsField(0xa0142, arguments)})}
+			return id, nil
+		case goInterfaceValue:
+			value, err := emit(expression.left, path+".value")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "interface-value")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a013", []graphField{refField(0xa0130, expression.typeID), refField(0xa0131, value), refField(0xa0132, expression.witnessID)})}
 			return id, nil
 		case goStateTransition:
 			state, err := emit(expression.left, path+".state")
@@ -519,10 +545,32 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 						return nil, err
 					}
 				}
-				return &goExpression{kind: goMethodCall, left: receiver, methodID: methodID, arguments: arguments}, nil
+				kind := goMethodCall
+				if _, ok := selection.Recv().Underlying().(*types.Interface); ok {
+					kind = goDynamicMethodCall
+				}
+				return &goExpression{kind: kind, left: receiver, methodID: methodID, arguments: arguments}, nil
 			}
 		}
 		identifier, ok := ast.Unparen(expression.Fun).(*ast.Ident)
+		if ok && len(expression.Args) == 1 {
+			if typeName, typeOK := info.Uses[identifier].(*types.TypeName); typeOK {
+				interfaceNamed, interfaceOK := typeName.Type().(*types.Named)
+				if interfaceOK {
+					_, contractOK := interfaceNamed.Underlying().(*types.Interface)
+					concreteNamed, concreteOK := info.TypeOf(expression.Args[0]).(*types.Named)
+					if contractOK && concreteOK {
+						value, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+						if err != nil {
+							return nil, err
+						}
+						interfaceID := stableID("execution", "interface", interfaceNamed.Obj().Pkg().Path(), interfaceNamed.Obj().Name())
+						concreteID := stableID("execution", "record", concreteNamed.Obj().Pkg().Path(), concreteNamed.Obj().Name())
+						return &goExpression{kind: goInterfaceValue, left: value, typeID: interfaceID, witnessID: stableID("execution", "witness", concreteID, interfaceID)}, nil
+					}
+				}
+			}
+		}
 		if ok && identifier.Name == "int" && info.Uses[identifier] == types.Universe.Lookup("int") && len(expression.Args) == 1 && isInt64(info.TypeOf(expression.Args[0])) {
 			return analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
 		}
@@ -591,10 +639,23 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return nil, fmt.Errorf("expression.unsupported_call")
 		}
 		arguments := make([]*goExpression, len(expression.Args))
+		calleeFunction, _ := info.Uses[identifier].(*types.Func)
+		calleeSignature, _ := calleeFunction.Type().(*types.Signature)
 		for index, argument := range expression.Args {
 			analyzed, err := analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
 				return nil, err
+			}
+			if calleeSignature != nil && index < calleeSignature.Params().Len() {
+				if interfaceNamed, ok := calleeSignature.Params().At(index).Type().(*types.Named); ok {
+					if _, interfaceOK := interfaceNamed.Underlying().(*types.Interface); interfaceOK {
+						if concreteNamed, concreteOK := info.TypeOf(argument).(*types.Named); concreteOK {
+							interfaceID := stableID("execution", "interface", interfaceNamed.Obj().Pkg().Path(), interfaceNamed.Obj().Name())
+							concreteID := stableID("execution", "record", concreteNamed.Obj().Pkg().Path(), concreteNamed.Obj().Name())
+							analyzed = &goExpression{kind: goInterfaceValue, left: analyzed, typeID: interfaceID, witnessID: stableID("execution", "witness", concreteID, interfaceID)}
+						}
+					}
+				}
 			}
 			arguments[index] = analyzed
 		}

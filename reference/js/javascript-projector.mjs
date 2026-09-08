@@ -4,6 +4,7 @@ const schema = {
   parameter: "00000000000000000000000000009012",
   read: "00000000000000000000000000009013",
   integerAdd: "00000000000000000000000000009014",
+  integerMultiply: "00000000000000000000000000009090",
   integerLessEqual: "00000000000000000000000000009021",
   program: "00000000000000000000000000009015",
   boolType: "00000000000000000000000000009020",
@@ -54,6 +55,11 @@ const schema = {
   stateTransition: "0000000000000000000000000000a005",
   transitionState: "0000000000000000000000000000a006",
   transitionResult: "0000000000000000000000000000a007",
+  interfaceType: "0000000000000000000000000000a010",
+  methodRequirement: "0000000000000000000000000000a011",
+  satisfactionWitness: "0000000000000000000000000000a012",
+  interfaceValue: "0000000000000000000000000000a013",
+  dynamicMethodCall: "0000000000000000000000000000a014",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -65,6 +71,17 @@ export function projectJavaScript(canonicalG1) {
   if (!functionIDs.includes(entryID) || functionIDs.length === 0) fail("javascript_projection.entry_membership");
   const functions = new Map(functionIDs.map((id) => [id, required(graph, id, schema.function)]));
   const methods = new Map([...graph.values()].filter((entity) => entity.schema === schema.method).map((entity) => [entity.id, entity]));
+  const interfaces = new Map();
+  for (const entity of graph.values()) {
+    if (entity.schema !== schema.interfaceType) continue;
+    const name = text(field(entity, 0xa0100));
+    if (!/^[A-Za-z_$][\w$]*$/.test(name)) fail("javascript_projection.invalid_interface_name");
+    const requirements = references(field(entity, 0xa0101)).map((id) => {
+      const requirement = required(graph, id, schema.methodRequirement);
+      return { id, name: text(field(requirement, 0xa0110)), parameters: references(field(requirement, 0xa0111)).map((type) => typeName(type, graph)), result: typeName(reference(field(requirement, 0xa0112)), graph) };
+    });
+    interfaces.set(entity.id, { id: entity.id, name, requirements });
+  }
   const records = new Map();
   for (const entity of graph.values()) {
     if (entity.schema !== schema.recordType) continue;
@@ -84,11 +101,12 @@ export function projectJavaScript(canonicalG1) {
     if (!/^[A-Za-z_$][\w$]*$/.test(name) || [...names.values()].includes(name)) fail("javascript_projection.invalid_function_name");
     names.set(id, name);
   }
-  const program = { graph, functions, names, records, methods };
+  const program = { graph, functions, names, records, methods, interfaces };
+  const interfaceDocs = [...interfaces.values()].map((interface_) => ["/**", ` * @interface ${interface_.name}`, ...interface_.requirements.flatMap((requirement) => [` * @method ${requirement.name}`, ...requirement.parameters.map((type, index) => ` * @param {${type}} argument${index}`), ` * @returns {${requirement.result}}`]), " */"].join("\n")).join("\n\n");
   const typedefs = [...records.values()].map((record) => ["/**", ` * @typedef {Object} ${record.name}`, ...record.fields.map((item) => ` * @property {${item.type}} ${item.name}`), " */"].join("\n")).join("\n\n");
   const classes = [...records.values()].map((record) => projectClass(record, program)).filter(Boolean).join("\n");
   const body = functionIDs.map((id) => projectFunction(id, functions.get(id), id === entryID, program)).join("\n");
-  return [typedefs, classes, body].filter(Boolean).join("\n\n");
+  return [interfaceDocs, typedefs, classes, body].filter(Boolean).join("\n\n");
 }
 
 function projectClass(record, program) {
@@ -262,6 +280,20 @@ function projectExpression(id, context) {
     const arguments_ = references(field(expression, 0xa0032)).map((argument) => projectExpression(argument, context));
     return `${projectExpression(reference(field(expression, 0xa0030)), context)}.${text(field(method, 0xa0020))}(${arguments_.join(", ")})`;
   }
+  if (expression.schema === schema.interfaceValue) {
+    const interface_ = context.interfaces.get(reference(field(expression, 0xa0130)));
+    const witness = required(context.graph, reference(field(expression, 0xa0132)), schema.satisfactionWitness);
+    if (!interface_ || reference(field(witness, 0xa0121)) !== interface_.id) fail("javascript_projection.interface_value");
+    return projectExpression(reference(field(expression, 0xa0131)), context);
+  }
+  if (expression.schema === schema.dynamicMethodCall) {
+    const requirementID = reference(field(expression, 0xa0141));
+    const interface_ = [...context.interfaces.values()].find((candidate) => candidate.requirements.some((item) => item.id === requirementID));
+    const requirement = interface_?.requirements.find((item) => item.id === requirementID);
+    if (!requirement) fail("javascript_projection.dynamic_requirement");
+    const arguments_ = references(field(expression, 0xa0142)).map((argument) => projectExpression(argument, context));
+    return `${projectExpression(reference(field(expression, 0xa0140)), context)}.${requirement.name}(${arguments_.join(", ")})`;
+  }
   if (expression.schema === schema.stateTransition) {
     return `{ state: ${projectExpression(reference(field(expression, 0xa0051)), context)}, result: ${projectExpression(reference(field(expression, 0xa0052)), context)} }`;
   }
@@ -310,6 +342,7 @@ function projectExpression(id, context) {
   }
   const binary = new Map([
 	[schema.integerAdd, [0x9140, 0x9141, "+"]],
+	[schema.integerMultiply, [0x9900, 0x9901, "*"]],
 	[schema.integerSubtract, [0x9a00, 0x9a01, "-"]],
 	[schema.integerLessEqual, [0x9160, 0x9161, "<="]],
     [schema.boolAnd, [0x9b10, 0x9b11, "&&"]],
@@ -319,7 +352,11 @@ function projectExpression(id, context) {
   ]).get(expression.schema);
   if (!binary) fail("javascript_projection.unsupported_expression");
   const [leftField, rightField, operator] = binary;
-  return `(${projectExpression(reference(field(expression, leftField)), context)} ${operator} ${projectExpression(reference(field(expression, rightField)), context)})`;
+  const rendered = `(${projectExpression(reference(field(expression, leftField)), context)} ${operator} ${projectExpression(reference(field(expression, rightField)), context)})`;
+  if (expression.schema === schema.integerMultiply) {
+    return `BigInt.asIntN(64, ${rendered})`;
+  }
+  return rendered;
 }
 
 function projectIndexExpression(id, context) {
@@ -341,6 +378,7 @@ function typeName(id, graph) {
   if (type.schema === schema.stringType) return "string";
   if (type.schema === schema.boolType) return "boolean";
   if (type.schema === schema.recordType) return text(field(type, 0x9300));
+  if (type.schema === schema.interfaceType) return text(field(type, 0xa0100));
 	if (type.schema === schema.fixedArrayType) {
 		const element = required(graph, reference(field(type, 0x9f20)));
 		if (element.schema !== schema.integerType) fail("javascript_projection.fixed_array_element_type");

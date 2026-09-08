@@ -165,3 +165,13 @@ removed local copy using the existing Go 1.25.6 toolchain; only copied Go
 version declarations were adjusted from 1.26 to 1.25. No repository dependency,
 software, global setting, SSH setting, or persistent environment configuration
 was installed or changed.
+
+## 2026-09-08 — Core v27 interface-dispatch verification
+
+Core v27 used the existing workstation Go 1.26 toolchain, Node 22,
+repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. The
+complete acceptance gate builds and executes only in an automatically removed
+temporary directory. Local investigation used the existing Go 1.25.6
+toolchain and disposable `/tmp` copies. No software, dependency, global
+setting, SSH setting, or persistent environment configuration was installed or
+changed.
