@@ -172,6 +172,28 @@ func TestIncrementalSessionLiftsCompositionalRecords(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsMutablePlacesAndWhile(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v18/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/mutation", Entry: "AppendOnce", Files: map[string]string{
+		"mutation.go": "package mutation\nfunc AppendOnce(value, suffix string, enabled bool) string { result := value; remaining := enabled; for remaining { result = result + suffix; remaining = false }; return result }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("mutation result = %#v", result)
+	}
+	for _, schema := range []string{"000000000000000000000000000090e0", "000000000000000000000000000090e1", "000000000000000000000000000090e2", "000000000000000000000000000090e3", "000000000000000000000000000090e4"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("mutation schema %s missing", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
 	if err != nil {

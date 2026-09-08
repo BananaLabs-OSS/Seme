@@ -55,7 +55,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
       return parameterID;
     });
     const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName };
-    const bodyID = emitBlock(fn.body.body, "body", context, signature.result);
+    const bodyID = emitBlock(fn.body.body, "body", context, signature.result, true);
     entities.push(graphEntity(functionID, entity(functionID, "00000000000000000000000000009011", [
       [0x9110, bytes(fn.id.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(ids[signature.result])], [0x9113, ref(bodyID)],
     ])));
@@ -101,25 +101,44 @@ function typeID(type, context) {
   return record.id;
 }
 
-function emitBlock(statements, path, context, resultType) {
+function emitBlock(statements, path, context, resultType, requireReturn = true) {
   const localContext = { ...context, locals: new Map(context.locals) };
   const statementIDs = [];
   for (let index = 0; index < statements.length; index += 1) {
     const current = statements[index];
     const statementPath = statements.length === 1 ? `${path}.statement` : `${path}.statement.${index}`;
     if (current.type === "VariableDeclaration") {
-      if (current.kind !== "const" || current.declarations.length !== 1) fail("javascript.local_binding_shape", current.loc.start);
+      if ((current.kind !== "const" && current.kind !== "let") || current.declarations.length !== 1) fail("javascript.local_binding_shape", current.loc.start);
       const declaration = current.declarations[0];
       if (declaration.id.type !== "Identifier" || !declaration.init || localContext.locals.has(declaration.id.name)) fail("javascript.local_binding_shape", current.loc.start);
       const valueType = inferExpressionType(declaration.init, localContext);
       const local = localContext.nextLocal.value++;
       const bindingID = stableID("execution", context.functionID, path, "local", String(local));
       const initializer = emitExpression(declaration.init, `${context.functionID}:${path}:local:${local}`, "root", localContext, valueType);
-      context.entities.push(graphEntity(bindingID, entity(bindingID, "000000000000000000000000000090d0", [[0x9d00, bytes(declaration.id.name)], [0x9d01, ref(typeID(valueType, context))], [0x9d02, ref(initializer.id)]])));
-      const statementID = stableID("execution", context.functionID, statementPath, "bind-local");
-      context.entities.push(graphEntity(statementID, entity(statementID, "000000000000000000000000000090d1", [[0x9d10, ref(bindingID)]])));
+      const mutable = current.kind === "let";
+      context.entities.push(graphEntity(bindingID, entity(bindingID, mutable ? "000000000000000000000000000090e0" : "000000000000000000000000000090d0", mutable ? [[0x9e00, bytes(declaration.id.name)], [0x9e01, ref(typeID(valueType, context))], [0x9e02, ref(initializer.id)]] : [[0x9d00, bytes(declaration.id.name)], [0x9d01, ref(typeID(valueType, context))], [0x9d02, ref(initializer.id)]])));
+      const statementID = stableID("execution", context.functionID, statementPath, mutable ? "declare-place" : "bind-local");
+      context.entities.push(graphEntity(statementID, entity(statementID, mutable ? "000000000000000000000000000090e1" : "000000000000000000000000000090d1", [[mutable ? 0x9e10 : 0x9d10, ref(bindingID)]])));
       statementIDs.push(statementID);
-      localContext.locals.set(declaration.id.name, { id: bindingID, type: valueType });
+      localContext.locals.set(declaration.id.name, { id: bindingID, type: valueType, mutable });
+      continue;
+    }
+    if (current.type === "ExpressionStatement" && current.expression.type === "AssignmentExpression") {
+      const assignment = current.expression;
+      const local = assignment.left.type === "Identifier" ? localContext.locals.get(assignment.left.name) : undefined;
+      if (assignment.operator !== "=" || !local?.mutable) fail("javascript.assignment_target", current.loc.start);
+      const value = emitExpression(assignment.right, `${context.functionID}:${path}:assignment:${index}`, "root", localContext, local.type);
+      const statementID = stableID("execution", context.functionID, statementPath, "assign-place");
+      context.entities.push(graphEntity(statementID, entity(statementID, "000000000000000000000000000090e3", [[0x9e30, ref(local.id)], [0x9e31, ref(value.id)]])));
+      statementIDs.push(statementID);
+      continue;
+    }
+    if (current.type === "WhileStatement") {
+      const condition = emitExpression(current.test, `${context.functionID}:${path}:loop-condition:${index}`, "root", localContext, "bool");
+      const bodyID = emitBlock(blockStatements(current.body), `${path}.loop.${index}`, localContext, resultType, false);
+      const statementID = stableID("execution", context.functionID, statementPath, "while");
+      context.entities.push(graphEntity(statementID, entity(statementID, "000000000000000000000000000090e4", [[0x9e40, ref(condition.id)], [0x9e41, ref(bodyID)]])));
+      statementIDs.push(statementID);
       continue;
     }
     if (current.type === "ReturnStatement") {
@@ -132,10 +151,10 @@ function emitBlock(statements, path, context, resultType) {
       const following = statements.slice(index + 1);
       if (current.alternate && following.length) fail("javascript.unreachable_following", following[0].loc.start);
       const condition = emitExpression(current.test, `${context.functionID}:${path}:condition`, "root", localContext, "bool");
-      const thenID = emitBlock(blockStatements(current.consequent), `${path}.then`, localContext, resultType);
+      const thenID = emitBlock(blockStatements(current.consequent), `${path}.then`, localContext, resultType, true);
       const elseStatements = current.alternate ? blockStatements(current.alternate) : following;
       if (!elseStatements.length) fail("javascript.branch_not_total", current.loc.start);
-      const elseID = emitBlock(elseStatements, `${path}.else`, localContext, resultType);
+      const elseID = emitBlock(elseStatements, `${path}.else`, localContext, resultType, true);
       const canonicalPath = statementIDs.length === 0 ? `${path}.statement` : `${path}.statement.${statementIDs.length}`;
       const id = stableID("execution", context.functionID, canonicalPath, "if");
       context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090c0", [[0x9c00, ref(condition.id)], [0x9c01, ref(thenID)], [0x9c02, ref(elseID)]])));
@@ -145,6 +164,10 @@ function emitBlock(statements, path, context, resultType) {
     fail("javascript.unsupported_statement", current.loc.start);
   }
   if (!statementIDs.length) fail("javascript.block_not_total", statements[0]?.loc?.start);
+  if (requireReturn) {
+    const last = statements[statements.length - 1];
+    if (last.type !== "ReturnStatement" && last.type !== "IfStatement") fail("javascript.block_not_total", last.loc.start);
+  }
   const blockID = stableID("execution", context.functionID, path, "block");
   context.entities.push(graphEntity(blockID, entity(blockID, "00000000000000000000000000009080", [[0x9800, refs(statementIDs)]])));
   return blockID;
@@ -164,8 +187,8 @@ function emitExpression(node, owner, path, context, expected) {
     if (index < 0) {
       const local = context.locals.get(node.name);
       if (!local || local.type !== expected) fail("javascript.unresolved_or_mistyped_identifier", node.loc.start);
-      const id = stableID("execution", owner, "local-read", local.id);
-      context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090d2", [[0x9d20, ref(local.id)]])));
+      const id = stableID("execution", owner, local.mutable ? "place-read" : "local-read", local.id);
+      context.entities.push(graphEntity(id, entity(id, local.mutable ? "000000000000000000000000000090e2" : "000000000000000000000000000090d2", [[local.mutable ? 0x9e20 : 0x9d20, ref(local.id)]])));
       return { id, type: expected };
     }
     if (context.parameterTypes[index] !== expected) fail("javascript.unresolved_or_mistyped_identifier", node.loc.start);

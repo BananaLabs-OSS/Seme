@@ -244,6 +244,12 @@ reads and JavaScript typedefs/plain objects/property reads converge on the same
 canonical records, project without drift, and execute as internal immutable
 values through Wasm and Pulp. Run `./scripts/check-execution-v17.sh`.
 
+[`Core Execution v18`](spec/core-execution-v18.md) adds typed mutable places,
+ordered assignment, and structured `While`. Native Go condition loops and
+JavaScript `while` converge on one canonical graph and project without drift;
+the bounded string/Boolean profile executes as real Wasm locals and loops
+standalone and through Pulp. Run `./scripts/check-execution-v18.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

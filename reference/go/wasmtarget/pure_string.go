@@ -3,6 +3,7 @@ package wasmtarget
 import (
 	"bytes"
 	"fmt"
+	"sort"
 	"unicode/utf8"
 
 	"seme.local/reference/wire"
@@ -22,18 +23,182 @@ type stringLowering struct {
 	used        map[byte]bool
 	data        []byte
 	literalBase int
+	placeTypes  map[wire.ID]string
+	extraLocals []byte
+	loopCounter byte
 }
 
 func certifyPureStringFunction(graph wire.Envelope, body wire.ID, parameters []pureValueType, result pureValueType, parameterTypes map[wire.ID]string, locals map[wire.ID]byte, abi PureABI) ([]byte, PureABI, error) {
-	context := &stringLowering{graph: graph, locals: locals, used: map[byte]bool{}, data: utf8TransitionTable()}
+	context := &stringLowering{graph: graph, locals: locals, used: map[byte]bool{}, data: utf8TransitionTable(), placeTypes: map[wire.ID]string{}}
 	context.literalBase = stringTableOffset + len(context.data)
 	budget := 4096
-	instructions, err := context.lowerBlock(body, result.name, parameterTypes, map[wire.ID]bool{}, &budget)
+	var instructions []byte
+	var err error
+	if len(bySchema(graph, 0x90e0))+len(bySchema(graph, 0x90e1))+len(bySchema(graph, 0x90e2))+len(bySchema(graph, 0x90e3))+len(bySchema(graph, 0x90e4)) > 0 {
+		err = context.planPlaces(parameters)
+		if err == nil {
+			declared := map[wire.ID]bool{}
+			err = validateStateScopes(graph, body, map[wire.ID]bool{}, declared, map[wire.ID]bool{}, &budget)
+			if err == nil && len(declared) != len(bySchema(graph, 0x90e0)) {
+				err = fmt.Errorf("wasm.pure_undeclared_place")
+			}
+		}
+		if err == nil {
+			budget = 4096
+			instructions, err = context.lowerStateBlock(body, result.name, true, map[wire.ID]bool{}, &budget)
+		}
+	} else {
+		instructions, err = context.lowerBlock(body, result.name, parameterTypes, map[wire.ID]bool{}, &budget)
+	}
 	if err != nil {
 		return nil, PureABI{}, err
 	}
-	wasm, err := pureStringModule(parameters, result, instructions, abi, context.data)
+	wasm, err := pureStringModule(parameters, result, instructions, abi, context.data, context.extraLocals)
 	return wasm, abi, err
+}
+
+func (context *stringLowering) planPlaces(parameters []pureValueType) error {
+	places := bySchema(context.graph, 0x90e0)
+	sort.Slice(places, func(left, right int) bool {
+		return bytes.Compare(places[left].ID[:], places[right].ID[:]) < 0
+	})
+	if len(places) > 32 {
+		return fmt.Errorf("wasm.pure_place_count")
+	}
+	for _, place := range places {
+		typeValue, err := field(place, 0x9e01)
+		if err != nil || typeValue.Tag != 6 {
+			return fmt.Errorf("wasm.pure_place_type")
+		}
+		valueType, err := pureType(context.graph, typeValue.Reference)
+		if err != nil || (valueType.name != "string" && valueType.name != "bool") {
+			return fmt.Errorf("wasm.pure_place_type")
+		}
+		index := byte(len(parameters) + len(context.extraLocals))
+		context.locals[place.ID] = index
+		context.placeTypes[place.ID] = valueType.name
+		context.extraLocals = append(context.extraLocals, valueType.wasm)
+	}
+	context.loopCounter = byte(len(parameters) + len(context.extraLocals))
+	context.extraLocals = append(context.extraLocals, 0x7f)
+	return nil
+}
+
+func (context *stringLowering) lowerStateBlock(id wire.ID, result string, requireReturn bool, visiting map[wire.ID]bool, budget *int) ([]byte, error) {
+	if *budget == 0 || visiting[id] {
+		return nil, fmt.Errorf("wasm.pure_state_cycle_or_size")
+	}
+	*budget--
+	visiting[id] = true
+	defer delete(visiting, id)
+	block, ok := context.graph.Entities[id]
+	statements, err := field(block, 0x9800)
+	if !ok || block.Schema != identity(0x9080) || err != nil || statements.Tag != 7 || len(statements.List) == 0 {
+		return nil, fmt.Errorf("wasm.pure_state_block")
+	}
+	declared := map[wire.ID]bool{}
+	var code []byte
+	returned := false
+	for index, item := range statements.List {
+		if item.Tag != 6 {
+			return nil, fmt.Errorf("wasm.pure_state_statement")
+		}
+		statement, exists := context.graph.Entities[item.Reference]
+		if !exists {
+			return nil, fmt.Errorf("wasm.pure_state_statement")
+		}
+		switch statement.Schema {
+		case identity(0x90e1):
+			placeValue, e := field(statement, 0x9e10)
+			place := context.graph.Entities[placeValue.Reference]
+			initializer, iErr := field(place, 0x9e02)
+			if e != nil || iErr != nil || placeValue.Tag != 6 || place.Schema != identity(0x90e0) || declared[place.ID] {
+				return nil, fmt.Errorf("wasm.pure_place_declaration")
+			}
+			value, lowerErr := context.lowerStateExpression(initializer.Reference, context.placeTypes[place.ID], budget)
+			if lowerErr != nil {
+				return nil, lowerErr
+			}
+			code = append(code, value...)
+			code = append(code, 0x21, context.locals[place.ID])
+			declared[place.ID] = true
+		case identity(0x90e3):
+			placeValue, e := field(statement, 0x9e30)
+			valueValue, vErr := field(statement, 0x9e31)
+			if e != nil || vErr != nil || placeValue.Tag != 6 || valueValue.Tag != 6 || context.placeTypes[placeValue.Reference] == "" {
+				return nil, fmt.Errorf("wasm.pure_assignment")
+			}
+			value, lowerErr := context.lowerStateExpression(valueValue.Reference, context.placeTypes[placeValue.Reference], budget)
+			if lowerErr != nil {
+				return nil, lowerErr
+			}
+			code = append(code, value...)
+			code = append(code, 0x21, context.locals[placeValue.Reference])
+		case identity(0x90e4):
+			condition, e := field(statement, 0x9e40)
+			body, bErr := field(statement, 0x9e41)
+			if e != nil || bErr != nil || condition.Tag != 6 || body.Tag != 6 {
+				return nil, fmt.Errorf("wasm.pure_while")
+			}
+			conditionCode, lowerErr := context.lowerStateExpression(condition.Reference, "bool", budget)
+			if lowerErr != nil {
+				return nil, lowerErr
+			}
+			bodyCode, lowerErr := context.lowerStateBlock(body.Reference, result, false, visiting, budget)
+			if lowerErr != nil {
+				return nil, lowerErr
+			}
+			code = append(code, 0x41, 0x00, 0x21, context.loopCounter, 0x02, 0x40, 0x03, 0x40)
+			code = append(code, conditionCode...)
+			code = append(code, 0x45, 0x0d, 0x01)
+			code = append(code, 0x20, context.loopCounter, 0x41)
+			slebBytes := &bytes.Buffer{}
+			sleb(slebBytes, 1)
+			code = append(code, slebBytes.Bytes()...)
+			code = append(code, 0x6a, 0x22, context.loopCounter, 0x41)
+			limit := &bytes.Buffer{}
+			sleb(limit, 10000)
+			code = append(code, limit.Bytes()...)
+			code = append(code, 0x4b, 0x04, 0x40, 0x00, 0x0b)
+			code = append(code, bodyCode...)
+			code = append(code, 0x0c, 0x00, 0x0b, 0x0b)
+		case identity(0x9081):
+			values, e := field(statement, 0x9810)
+			if e != nil || values.Tag != 7 || len(values.List) != 1 || index != len(statements.List)-1 {
+				return nil, fmt.Errorf("wasm.pure_state_return")
+			}
+			value, lowerErr := context.lowerStateExpression(values.List[0].Reference, result, budget)
+			if lowerErr != nil {
+				return nil, lowerErr
+			}
+			code = append(code, value...)
+			returned = true
+		default:
+			return nil, fmt.Errorf("wasm.pure_state_statement")
+		}
+	}
+	if requireReturn && !returned {
+		return nil, fmt.Errorf("wasm.pure_state_missing_return")
+	}
+	return code, nil
+}
+
+func (context *stringLowering) lowerStateExpression(id wire.ID, expected string, budget *int) ([]byte, error) {
+	entity, ok := context.graph.Entities[id]
+	if ok && entity.Schema == identity(0x90e2) {
+		place, err := field(entity, 0x9e20)
+		if err != nil || place.Tag != 6 || context.placeTypes[place.Reference] != expected {
+			return nil, fmt.Errorf("wasm.pure_place_read_type")
+		}
+		return []byte{0x20, context.locals[place.Reference]}, nil
+	}
+	if expected == "string" {
+		return context.lowerString(id, map[wire.ID]bool{}, budget)
+	}
+	if expected == "bool" {
+		return context.lowerBoolean(id, map[wire.ID]bool{}, budget)
+	}
+	return nil, fmt.Errorf("wasm.pure_state_type")
 }
 
 func (context *stringLowering) lowerBlock(id wire.ID, result string, parameterTypes map[wire.ID]string, visiting map[wire.ID]bool, budget *int) ([]byte, error) {
@@ -115,6 +280,12 @@ func (context *stringLowering) lowerString(id wire.ID, visiting map[wire.ID]bool
 		return nil, fmt.Errorf("wasm.helper_string_missing")
 	}
 	switch expression.Schema {
+	case identity(0x90e2):
+		place, err := field(expression, 0x9e20)
+		if err != nil || context.placeTypes[place.Reference] != "string" {
+			return nil, fmt.Errorf("wasm.pure_place_read_type")
+		}
+		return []byte{0x20, context.locals[place.Reference]}, nil
 	case identity(0x9013):
 		parameter, err := field(expression, 0x9130)
 		local, ok := context.locals[parameter.Reference]
@@ -158,6 +329,13 @@ func (context *stringLowering) lowerBoolean(id wire.ID, visiting map[wire.ID]boo
 	expression, ok := context.graph.Entities[id]
 	if !ok {
 		return nil, fmt.Errorf("wasm.helper_expression_missing")
+	}
+	if expression.Schema == identity(0x90e2) {
+		place, err := field(expression, 0x9e20)
+		if err != nil || context.placeTypes[place.Reference] != "bool" {
+			return nil, fmt.Errorf("wasm.pure_place_read_type")
+		}
+		return []byte{0x20, context.locals[place.Reference]}, nil
 	}
 	if expression.Schema == identity(0x90c2) {
 		*budget--
@@ -276,7 +454,7 @@ func utf8TransitionTable() []byte {
 	return table
 }
 
-func pureStringModule(parameters []pureValueType, result pureValueType, helper []byte, abi PureABI, data []byte) ([]byte, error) {
+func pureStringModule(parameters []pureValueType, result pureValueType, helper []byte, abi PureABI, data []byte, helperLocals []byte) ([]byte, error) {
 	if len(helper) == 0 || abi.FixedHeaderSize > 7160 || len(data)+stringTableOffset >= stringArenaStart {
 		return nil, fmt.Errorf("wasm.pure_string_layout")
 	}
@@ -314,9 +492,17 @@ func pureStringModule(parameters []pureValueType, result pureValueType, helper [
 	export(&exports, "pulp_shutdown", 0, 4)
 	export(&exports, "pulp_on_call", 0, 9)
 	section(&wasm, 7, exports.Bytes())
+	localDecls := &bytes.Buffer{}
+	uleb(localDecls, uint64(len(helperLocals)))
+	for _, valueType := range helperLocals {
+		uleb(localDecls, 1)
+		localDecls.WriteByte(valueType)
+	}
+	helperBody := append(localDecls.Bytes(), helper...)
+	helperBody = append(helperBody, 0x0b)
 	bodies := [][]byte{
 		stringAllocatorBody(), stringFreeBody(), {0, 0x41, 0, 0x0b}, {0, 0x41, 0, 0x0b}, {0, 0x41, 0, 0x0b},
-		append(append([]byte{0}, helper...), 0x0b), utf8ValidatorBody(), stringEqualBody(), stringConcatBody(), stringProviderBody(parameters, result, abi),
+		helperBody, utf8ValidatorBody(), stringEqualBody(), stringConcatBody(), stringProviderBody(parameters, result, abi),
 	}
 	var code bytes.Buffer
 	uleb(&code, uint64(len(bodies)))

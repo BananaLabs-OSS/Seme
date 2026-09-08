@@ -81,3 +81,11 @@ repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. No
 software, dependency, global setting, SSH setting, or persistent environment
 configuration was installed or changed. Gate artifacts use an automatically
 removed temporary directory.
+
+## 2026-09-08 — Core v18 mutable-place verification
+
+Core v18 used only the existing workstation Go 1.26 toolchain, Node 22,
+repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. No
+software, dependency, global setting, SSH setting, or persistent environment
+configuration was installed or changed. Gate artifacts and caches use an
+automatically removed temporary directory.

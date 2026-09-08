@@ -218,6 +218,10 @@ func expressionChildren(entity wire.Entity) []wire.ID {
 		fields = []wire.ID{identity(0x9c20), identity(0x9c21)}
 	case identity(0x90c3):
 		fields = []wire.ID{identity(0x9c30), identity(0x9c31)}
+	case identity(0x90e3):
+		fields = []wire.ID{identity(0x9e31)}
+	case identity(0x90e4):
+		fields = []wire.ID{identity(0x9e40)}
 	case identity(0x9060):
 		if arguments, ok := entity.Fields[identity(0x9601)]; ok && arguments.Tag == 7 {
 			for _, argument := range arguments.List {

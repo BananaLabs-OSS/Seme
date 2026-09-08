@@ -311,8 +311,28 @@ func TestVersionSeventeenFreezesCompositionalRecordProfile(t *testing.T) {
 	}
 }
 
+func TestVersionEighteenAddsMutablePlacesAndWhile(t *testing.T) {
+	v17, err := Declarations(17)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v18, err := Declarations(18)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v18) != len(v17)+5 {
+		t.Fatalf("v18 schema count = %d", len(v18))
+	}
+	want := []string{"MutablePlace", "DeclarePlace", "PlaceRead", "AssignPlace", "While"}
+	for index, name := range want {
+		if v18[len(v17)+index].Name != name {
+			t.Fatalf("v18 schema = %q", v18[len(v17)+index].Name)
+		}
+	}
+}
+
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(18); err == nil {
+	if _, err := Declarations(19); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
