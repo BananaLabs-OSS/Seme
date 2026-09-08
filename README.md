@@ -294,6 +294,13 @@ through Wasm and Pulp. Run `./scripts/check-execution-v24.sh`. The distinction
 between finite roadmap completion and broad language readiness is maintained in
 the [`progress dashboard`](spec/progress-dashboard.md).
 
+The frozen [`Useful Application Bridge Profile v1`](spec/useful-application-bridge-profile-v1.md)
+defines the next honest 100% milestone for Go, JavaScript, and Lua: 12 composed
+application capabilities per language, five evidence classes per capability,
+and one shared cumulative application. Broad language, runtime, standard
+library, tooling, and third-party package compatibility remain separately
+versioned conformance tracks.
+
 [`Core Execution v25`](spec/core-execution-v25.md) adds neutral immutable
 collection append and update with dynamically sized slice results. Native Go
 and JavaScript forms converge canonically; projection remains native, and
