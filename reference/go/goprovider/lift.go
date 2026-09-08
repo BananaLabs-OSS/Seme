@@ -310,6 +310,10 @@ func fixedI64ArrayLength(value types.Type) (uint64, bool) {
 	}
 	return uint64(array.Len()), true
 }
+func isI64Slice(value types.Type) bool {
+	slice, ok := value.Underlying().(*types.Slice)
+	return ok && isInt64(slice.Elem())
+}
 func packagePathOf(nativeKey string) string {
 	parts := strings.Split(nativeKey, "\x00")
 	if len(parts) == 0 {

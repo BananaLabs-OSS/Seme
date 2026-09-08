@@ -39,6 +39,7 @@ const schema = {
   iterationBinding: "000000000000000000000000000090f5",
   iterationBindingRead: "000000000000000000000000000090f6",
   fold: "000000000000000000000000000090f7",
+  sliceType: "000000000000000000000000000090f8",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -255,6 +256,11 @@ function typeName(id, graph) {
 		const length = unsigned(field(type, 0x9f21));
 		if (length < 0n || length > 32n) fail("javascript_projection.fixed_array_length");
 		return `bigint[${length}]`;
+	}
+	if (type.schema === schema.sliceType) {
+		const element = required(graph, reference(field(type, 0x9f80)));
+		if (element.schema !== schema.integerType) fail("javascript_projection.slice_element_type");
+		return "bigint[]";
 	}
   fail("javascript_projection.unsupported_type");
 }

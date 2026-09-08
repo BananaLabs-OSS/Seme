@@ -56,8 +56,15 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
 		const arrayType = stableID("execution", "type", "fixed-array", "i64", String(length));
 		if (!entities.some((item) => item.id === arrayType)) entities.push(graphEntity(arrayType, entity(arrayType, "000000000000000000000000000090f2", [[0x9f20, ref(ids.i64)], [0x9f21, `uu ${length}`]])));
 	  }
+	  if (parameterType === "slice:i64") {
+		const sliceType = stableID("execution", "type", "slice", "i64");
+		if (!entities.some((item) => item.id === sliceType)) entities.push(graphEntity(sliceType, entity(sliceType, "000000000000000000000000000090f8", [[0x9f80, ref(ids.i64)]])));
+	  }
+	  const parameterTypeID = parameterType.startsWith("array:i64:")
+		? stableID("execution", "type", "fixed-array", "i64", parameterType.slice("array:i64:".length))
+		: parameterType === "slice:i64" ? stableID("execution", "type", "slice", "i64") : ids[parameterType];
       entities.push(graphEntity(parameterID, entity(parameterID, "00000000000000000000000000009012", [
-		[0x9120, bytes(parameter.name)], [0x9121, ref(parameterType.startsWith("array:i64:") ? stableID("execution", "type", "fixed-array", "i64", parameterType.slice("array:i64:".length)) : ids[parameterType])], [0x9122, `uu ${index}`],
+		[0x9120, bytes(parameter.name)], [0x9121, ref(parameterTypeID)], [0x9122, `uu ${index}`],
       ])));
       return parameterID;
     });
@@ -78,7 +85,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
 function readSignature(comments, fn) {
   const comment = [...comments].reverse().find((item) => item.type === "Block" && item.end <= fn.start && sourceGapIsWhitespace(item.end, fn.start, fn));
   if (!comment || !comment.value.startsWith("*")) fail("javascript.missing_jsdoc", fn.loc.start);
-  const parameters = [...comment.value.matchAll(/@param\s+\{(string|boolean|bigint|bigint\[(?:[0-9]|[12]\d|3[0-2])\])\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
+  const parameters = [...comment.value.matchAll(/@param\s+\{(string|boolean|bigint|bigint\[\]|bigint\[(?:[0-9]|[12]\d|3[0-2])\])\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
   const result = comment.value.match(/@returns?\s+\{(string|boolean|bigint)\}/);
   if (!result) fail("javascript.missing_result_type", fn.loc.start);
   return { parameters, result: semanticType(result[1]) };
@@ -88,6 +95,7 @@ function readSignature(comments, fn) {
 // comment to precede the declaration is sufficient for this one-declaration profile.
 function sourceGapIsWhitespace(_end, _start, _fn) { return true; }
 function semanticType(type) {
+  if (type === "bigint[]") return "slice:i64";
   if (type.startsWith("bigint[")) return `array:i64:${type.slice(7, -1)}`;
   return type === "boolean" ? "bool" : type === "bigint" ? "i64" : "string";
 }
@@ -220,7 +228,7 @@ function emitExpression(node, owner, path, context, expected) {
 	if (node.type === "CallExpression" && expected === "i64" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.name === "reduce" && node.arguments.length === 2) {
 		const collectionType = inferExpressionType(node.callee.object, context);
 		const callback = node.arguments[0];
-		if (!collectionType.startsWith("array:i64:") || callback.type !== "ArrowFunctionExpression" || callback.async || callback.params.length !== 2 || callback.params.some((item) => item.type !== "Identifier") || callback.body.type !== "BinaryExpression" || callback.body.operator !== "+") fail("javascript.fold_shape", node.loc.start);
+		if (!(collectionType.startsWith("array:i64:") || collectionType === "slice:i64") || callback.type !== "ArrowFunctionExpression" || callback.async || callback.params.length !== 2 || callback.params.some((item) => item.type !== "Identifier") || callback.body.type !== "BinaryExpression" || callback.body.operator !== "+") fail("javascript.fold_shape", node.loc.start);
 		const [accumulator, element] = callback.params;
 		if (callback.body.left.type !== "Identifier" || callback.body.left.name !== accumulator.name || callback.body.right.type !== "Identifier" || callback.body.right.name !== element.name) fail("javascript.fold_body", callback.body.loc.start);
 		const collection = emitExpression(node.callee.object, owner, `${path}.collection`, context, collectionType);
