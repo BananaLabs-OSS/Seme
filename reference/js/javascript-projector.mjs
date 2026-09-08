@@ -31,6 +31,9 @@ const schema = {
   when: "000000000000000000000000000090f0",
   effectInvoke: "000000000000000000000000000090f1",
   effect: "00000000000000000000000000000015",
+  fixedArrayType: "000000000000000000000000000090f2",
+  fixedArrayConstruct: "000000000000000000000000000090f3",
+  indexRead: "000000000000000000000000000090f4",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -185,6 +188,14 @@ function projectExpression(id, context) {
     const recordField = record?.fields.find((item) => item.id === fieldID);
     if (!recordField) fail("javascript_projection.record_field");
     return `${projectExpression(reference(field(expression, 0x9320)), context)}.${recordField.name}`;
+  }
+  if (expression.schema === schema.indexRead) {
+    const collection = required(context.graph, reference(field(expression, 0x9f40)), schema.fixedArrayConstruct);
+    const type = required(context.graph, reference(field(collection, 0x9f30)), schema.fixedArrayType);
+    if (reference(field(type, 0x9f20)) !== [...context.graph.values()].find((item) => item.schema === schema.integerType)?.id) fail("javascript_projection.fixed_array_element_type");
+    const values = references(field(collection, 0x9f31));
+    if (BigInt(values.length) !== unsigned(field(type, 0x9f21))) fail("javascript_projection.fixed_array_length");
+    return `[${values.map((value) => projectExpression(value, context)).join(", ")}][${projectExpression(reference(field(expression, 0x9f41)), context)}]`;
   }
   const binary = new Map([
     [schema.boolAnd, [0x9b10, 0x9b11, "&&"]],

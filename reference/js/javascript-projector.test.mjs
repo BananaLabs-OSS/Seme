@@ -10,6 +10,7 @@ const moduleV16G1 = fs.readFileSync(new URL("../../modules/execution/v16/module.
 const moduleV18G1 = fs.readFileSync(new URL("../../modules/execution/v18/module.g1", import.meta.url), "utf8");
 const moduleV19G1 = fs.readFileSync(new URL("../../modules/execution/v19/module.g1", import.meta.url), "utf8");
 const moduleV20G1 = fs.readFileSync(new URL("../../modules/execution/v20/module.g1", import.meta.url), "utf8");
+const moduleV21G1 = fs.readFileSync(new URL("../../modules/execution/v21/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -122,5 +123,15 @@ export function Observe(first, second) { console.log(first); console.log(second)
   const projected = projectJavaScript(first);
   assert.match(projected, /console\.log\(first\);[\s\S]*console\.log\(second\);/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV20G1, packagePath: "example.test/effect", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts fixed array indexed reads", () => {
+  const source = `/** @param {bigint} first @param {bigint} second @param {bigint} third @param {bigint} index @returns {bigint} */
+export function Pick(first, second, third, index) { return [first, second, third][index]; }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /\[first, second, third\]\[index\]/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array", revision: 1 });
   assert.equal(second, first);
 });

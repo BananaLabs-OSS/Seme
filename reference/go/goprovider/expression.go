@@ -29,6 +29,8 @@ const (
 	goRecordConstruct
 	goFieldRead
 	goPlaceRead
+	goFixedArrayConstruct
+	goIndexRead
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -49,6 +51,8 @@ type goExpression struct {
 	field      string
 	values     []*goExpression
 	mutable    bool
+	arrayType  string
+	arrayLen   uint64
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -120,6 +124,31 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := expressionNodeID(owner, path, "field-read")
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009032", []graphField{refField(0x9320, record), refField(0x9321, expression.field)})}
+			return id, nil
+		case goFixedArrayConstruct:
+			values := make([]string, len(expression.values))
+			for index, value := range expression.values {
+				id, err := emit(value, path+".element."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+				values[index] = id
+			}
+			emitted[expression.arrayType] = graphEntity{expression.arrayType, entity(expression.arrayType, "000000000000000000000000000090f2", []graphField{refField(0x9f20, integerID), unsignedField(0x9f21, expression.arrayLen)})}
+			id := expressionNodeID(owner, path, "fixed-array-construct")
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090f3", []graphField{refField(0x9f30, expression.arrayType), refsField(0x9f31, values)})}
+			return id, nil
+		case goIndexRead:
+			collection, err := emit(expression.left, path+".collection")
+			if err != nil {
+				return "", err
+			}
+			index, err := emit(expression.right, path+".index")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "index-read")
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090f4", []graphField{refField(0x9f40, collection), refField(0x9f41, index)})}
 			return id, nil
 		case goIntegerLiteral:
 			id := expressionNodeID(owner, path, "integer-literal")
@@ -332,6 +361,24 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		return &goExpression{kind: goFunctionCall, callee: callee, arguments: arguments}, nil
 	case *ast.CompositeLit:
+		if array, ok := info.TypeOf(expression).Underlying().(*types.Array); ok {
+			if array.Len() <= 0 || array.Len() > 32 || !isInt64(array.Elem()) || int64(len(expression.Elts)) != array.Len() {
+				return nil, fmt.Errorf("expression.unsupported_fixed_array")
+			}
+			values := make([]*goExpression, len(expression.Elts))
+			for index, element := range expression.Elts {
+				if _, keyed := element.(*ast.KeyValueExpr); keyed {
+					return nil, fmt.Errorf("expression.keyed_array_unsupported")
+				}
+				value, err := analyzeGoExpressionWithProgram(element, signature, info, locals, functions, records, mutableLocals)
+				if err != nil {
+					return nil, err
+				}
+				values[index] = value
+			}
+			length := uint64(array.Len())
+			return &goExpression{kind: goFixedArrayConstruct, arrayType: stableID("execution", "type", "fixed-array", "i64", strconv.FormatUint(length, 10)), arrayLen: length, values: values}, nil
+		}
 		named, ok := info.TypeOf(expression).(*types.Named)
 		record, exists := records[named]
 		if !ok || !exists || len(expression.Elts) != len(record.ordered) {
@@ -397,6 +444,20 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return nil, err
 		}
 		return &goExpression{kind: goFieldRead, left: record, field: fieldID}, nil
+	case *ast.IndexExpr:
+		array, ok := info.TypeOf(expression.X).Underlying().(*types.Array)
+		if !ok || !isInt64(array.Elem()) || !isInt64(info.TypeOf(expression.Index)) {
+			return nil, fmt.Errorf("expression.unsupported_index_read")
+		}
+		collection, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+		if err != nil {
+			return nil, err
+		}
+		index, err := analyzeGoExpressionWithProgram(expression.Index, signature, info, locals, functions, records, mutableLocals)
+		if err != nil {
+			return nil, err
+		}
+		return &goExpression{kind: goIndexRead, left: collection, right: index}, nil
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}

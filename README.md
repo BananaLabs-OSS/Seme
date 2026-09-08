@@ -267,6 +267,12 @@ the generated Wasm records adapted fidelity and the required capability,
 executes ordered observations through Pulp when granted, and traps without an
 effect when denied. Run `./scripts/check-execution-v20.sh`.
 
+[`Core Execution v21`](spec/core-execution-v21.md) adds language-neutral fixed
+array construction and indexed reads. Idiomatic Go and JavaScript converge on
+one canonical graph; valid boundary indexes agree natively and through Wasm
+and Pulp, while negative and upper-bound reads trap in the certified target.
+Run `./scripts/check-execution-v21.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

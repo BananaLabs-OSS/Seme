@@ -385,6 +385,40 @@ func lowerHelperInteger(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 		}
 		instructions := append(leftInstructions, rightInstructions...)
 		return append(instructions, 0x7d), nil // i64.sub
+	case identity(0x90f4):
+		collection, collectionErr := field(expression, 0x9f40)
+		index, indexErr := field(expression, 0x9f41)
+		if collectionErr != nil || indexErr != nil || collection.Tag != 6 || index.Tag != 6 {
+			return nil, fmt.Errorf("wasm.helper_index_read")
+		}
+		values, err := fixedI64ArrayValues(graph, collection.Reference)
+		if err != nil {
+			return nil, err
+		}
+		var instructions []byte
+		for position, value := range values {
+			indexCode, err := lowerHelperInteger(graph, index.Reference, parameterLocals, used, visiting, budget)
+			if err != nil {
+				return nil, err
+			}
+			valueCode, err := lowerHelperInteger(graph, value, parameterLocals, used, visiting, budget)
+			if err != nil {
+				return nil, err
+			}
+			instructions = append(instructions, indexCode...)
+			instructions = append(instructions, 0x42)
+			var constant bytes.Buffer
+			sleb(&constant, int64(position))
+			instructions = append(instructions, constant.Bytes()...)
+			instructions = append(instructions, 0x51, 0x04, 0x7e)
+			instructions = append(instructions, valueCode...)
+			instructions = append(instructions, 0x05)
+		}
+		instructions = append(instructions, 0x00)
+		for range values {
+			instructions = append(instructions, 0x0b)
+		}
+		return instructions, nil
 	default:
 		return nil, fmt.Errorf("wasm.helper_integer_expression")
 	}

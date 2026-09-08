@@ -346,8 +346,22 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(21); err == nil {
+	if _, err := Declarations(22); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersionTwentyOneAddsFixedArraysAndIndexRead(t *testing.T) {
+	previous, err := Declarations(20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(21)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+3 || current[len(previous)].Name != "FixedArrayType" || current[len(previous)+1].Name != "FixedArrayConstruct" || current[len(previous)+2].Name != "IndexRead" {
+		t.Fatalf("v21 declarations = %#v", current[len(previous):])
 	}
 }
 
