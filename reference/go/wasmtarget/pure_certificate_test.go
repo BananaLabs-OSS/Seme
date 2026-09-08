@@ -115,6 +115,39 @@ func TestPureCertificateRejectsExpressionOverBudget(t *testing.T) {
 	}
 }
 
+func TestPureCertificateRejectsInvalidLexicalLocals(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+		edit func(map[wire.ID]wire.Entity)
+	}{
+		{"initializer self read", "wasm.pure_local_read_scope", func(entities map[wire.ID]wire.Entity) {
+			binding := entities[identity(0x2200)]
+			binding.Fields[identity(0x9d02)] = ref(identity(0x2202))
+			entities[binding.ID] = binding
+		}},
+		{"duplicate binding placement", "wasm.pure_local_binding_reference", func(entities map[wire.ID]wire.Entity) {
+			block := entities[identity(0x2002)]
+			block.Fields[identity(0x9800)] = refs(identity(0x2201), identity(0x2201), identity(0x2003))
+			entities[block.ID] = block
+		}},
+		{"binding after terminal", "wasm.pure_local_terminal_order", func(entities map[wire.ID]wire.Entity) {
+			block := entities[identity(0x2002)]
+			block.Fields[identity(0x9800)] = refs(identity(0x2003), identity(0x2201))
+			entities[block.ID] = block
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			graph := certifiedLocalTestGraph()
+			test.edit(graph.Entities)
+			if _, err := CertifyPureFunction(graph); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %s", err, test.want)
+			}
+		})
+	}
+}
+
 func TestPureCertificateLowersNestedIfAndUTF8Text(t *testing.T) {
 	graph := certifiedTestGraph()
 	function := graph.Entities[identity(0x2001)]
@@ -179,6 +212,25 @@ func certifiedTestGraph() wire.Envelope {
 	}}
 	entities[booleanType] = wire.Entity{ID: booleanType, Schema: identity(0x9020), Fields: map[wire.ID]wire.Value{}}
 	return wire.Envelope{Entities: entities}
+}
+
+func certifiedLocalTestGraph() wire.Envelope {
+	graph := certifiedTestGraph()
+	bindingID, bindID, localReadID := identity(0x2200), identity(0x2201), identity(0x2202)
+	integerType, leftRead, rightRead, addID := identity(0x2008), identity(0x2006), identity(0x2009), identity(0x2007)
+	graph.Entities[bindingID] = wire.Entity{ID: bindingID, Schema: identity(0x90d0), Fields: map[wire.ID]wire.Value{
+		identity(0x9d00): byteValue("total"), identity(0x9d01): ref(integerType), identity(0x9d02): ref(leftRead),
+	}}
+	graph.Entities[bindID] = wire.Entity{ID: bindID, Schema: identity(0x90d1), Fields: map[wire.ID]wire.Value{identity(0x9d10): ref(bindingID)}}
+	graph.Entities[localReadID] = wire.Entity{ID: localReadID, Schema: identity(0x90d2), Fields: map[wire.ID]wire.Value{identity(0x9d20): ref(bindingID)}}
+	add := graph.Entities[addID]
+	add.Fields[identity(0x9140)] = ref(localReadID)
+	add.Fields[identity(0x9141)] = ref(rightRead)
+	graph.Entities[addID] = add
+	block := graph.Entities[identity(0x2002)]
+	block.Fields[identity(0x9800)] = refs(bindID, identity(0x2003))
+	graph.Entities[block.ID] = block
+	return graph
 }
 
 func testParameter(id wire.ID, name string, valueType wire.ID, index uint64) wire.Entity {

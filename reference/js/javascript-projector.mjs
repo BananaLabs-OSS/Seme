@@ -14,6 +14,9 @@ const schema = {
   boolOr: "000000000000000000000000000090c1",
   stringEqual: "000000000000000000000000000090c2",
   stringConcat: "000000000000000000000000000090c3",
+  localBinding: "000000000000000000000000000090d0",
+  bindLocal: "000000000000000000000000000090d1",
+  localRead: "000000000000000000000000000090d2",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -32,7 +35,7 @@ export function projectJavaScript(canonicalG1) {
     return { id, name: parameterName, type: typeName(reference(field(parameter, 0x9121)), graph) };
   });
   const result = typeName(reference(field(fn, 0x9112)), graph);
-  const context = { graph, parameters: new Map(parameters.map((item) => [item.id, item])) };
+  const context = { graph, parameters: new Map(parameters.map((item) => [item.id, item])), locals: new Map() };
   const body = projectBlock(reference(field(fn, 0x9113)), context, "  ");
   const jsdoc = ["/**", ...parameters.map((item) => ` * @param {${item.type}} ${item.name}`), ` * @returns {${result}}`, " */"];
   return `${jsdoc.join("\n")}\nexport function ${name}(${parameters.map((item) => item.name).join(", ")}) {\n${body}\n}\n`;
@@ -41,18 +44,32 @@ export function projectJavaScript(canonicalG1) {
 function projectBlock(id, context, indent) {
   const block = required(context.graph, id, schema.block);
   const statements = references(field(block, 0x9800));
-  if (statements.length !== 1) fail("javascript_projection.block_arity");
-  const statement = required(context.graph, statements[0]);
+  if (statements.length === 0) fail("javascript_projection.block_arity");
+  const localContext = { ...context, locals: new Map(context.locals) };
+  const lines = [];
+  for (let index = 0; index < statements.length - 1; index += 1) {
+    const bindingStatement = required(context.graph, statements[index], schema.bindLocal);
+    const binding = required(context.graph, reference(field(bindingStatement, 0x9d10)), schema.localBinding);
+    const name = text(field(binding, 0x9d00));
+    if (!/^[A-Za-z_$][\w$]*$/.test(name) || [...localContext.locals.values()].some((item) => item.name === name)) fail("javascript_projection.invalid_local_name");
+    const valueType = typeName(reference(field(binding, 0x9d01)), context.graph);
+    const initializer = projectExpression(reference(field(binding, 0x9d02)), localContext);
+    lines.push(`${indent}const ${name} = ${initializer};`);
+    localContext.locals.set(binding.id, { name, type: valueType });
+  }
+  const statement = required(context.graph, statements[statements.length - 1]);
   if (statement.schema === schema.returned) {
     const values = references(field(statement, 0x9810));
     if (values.length !== 1) fail("javascript_projection.return_arity");
-    return `${indent}return ${projectExpression(values[0], context)};`;
+    lines.push(`${indent}return ${projectExpression(values[0], localContext)};`);
+    return lines.join("\n");
   }
   if (statement.schema === schema.branch) {
-    const condition = projectExpression(reference(field(statement, 0x9c00)), context);
-    const thenBody = projectBlock(reference(field(statement, 0x9c01)), context, `${indent}  `);
-    const elseBody = projectBlock(reference(field(statement, 0x9c02)), context, `${indent}  `);
-    return `${indent}if (${condition}) {\n${thenBody}\n${indent}} else {\n${elseBody}\n${indent}}`;
+    const condition = projectExpression(reference(field(statement, 0x9c00)), localContext);
+    const thenBody = projectBlock(reference(field(statement, 0x9c01)), localContext, `${indent}  `);
+    const elseBody = projectBlock(reference(field(statement, 0x9c02)), localContext, `${indent}  `);
+    lines.push(`${indent}if (${condition}) {\n${thenBody}\n${indent}} else {\n${elseBody}\n${indent}}`);
+    return lines.join("\n");
   }
   fail("javascript_projection.unsupported_statement");
 }
@@ -63,6 +80,11 @@ function projectExpression(id, context) {
     const parameter = context.parameters.get(reference(field(expression, 0x9130)));
     if (!parameter) fail("javascript_projection.unknown_parameter");
     return parameter.name;
+  }
+  if (expression.schema === schema.localRead) {
+    const local = context.locals.get(reference(field(expression, 0x9d20)));
+    if (!local) fail("javascript_projection.local_out_of_scope");
+    return local.name;
   }
   if (expression.schema === schema.stringLiteral) return JSON.stringify(text(field(expression, 0x9500)));
   if (expression.schema === schema.boolLiteral) return atom(field(expression, 0x9b00)) === "tr" ? "true" : "false";

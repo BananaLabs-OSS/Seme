@@ -223,6 +223,13 @@ graph projects back to native JavaScript and re-lifts without semantic drift.
 Ambiguous or coercive JavaScript rejects instead of being guessed. Run
 `./scripts/check-javascript-provider-v1.sh`.
 
+[`Core Execution v15`](spec/core-execution-v15.md) adds immutable lexical local
+bindings, ordered binding statements, and local reads. Native Go `:=` and
+JavaScript `const` views converge on the same canonical graph; JavaScript
+projection re-lifts without drift, while integer and UTF-8 local programs run
+standalone and through the applicable Pulp/Wasm path. Run
+`./scripts/check-execution-v15.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

@@ -38,7 +38,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1 }) {
     ])));
     return parameterID;
   });
-  const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities };
+  const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 } };
   const bodyID = emitBlock(fn.body.body, "body", context, signature.result);
   entities.push(graphEntity(functionID, entity(functionID, "00000000000000000000000000009011", [
     [0x9110, bytes(fn.id.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(ids[signature.result])], [0x9113, ref(bodyID)],
@@ -63,30 +63,58 @@ function sourceGapIsWhitespace(_end, _start, _fn) { return true; }
 function semanticType(type) { return type === "boolean" ? "bool" : type === "bigint" ? "i64" : "string"; }
 
 function emitBlock(statements, path, context, resultType) {
-  let statement;
-  if (statements.length === 1 && statements[0].type === "ReturnStatement") statement = emitReturn(statements[0], path, context, resultType);
-  else if (statements.length >= 1 && statements[0].type === "IfStatement") {
-    const branch = statements[0];
-    const following = statements.slice(1);
-    const condition = emitExpression(branch.test, `${context.functionID}:${path}:condition`, "root", context, "bool");
-    const thenID = emitBlock(blockStatements(branch.consequent), `${path}.then`, context, resultType);
-    const elseStatements = branch.alternate ? blockStatements(branch.alternate) : following;
-    if (branch.alternate && following.length) fail("javascript.unreachable_following", following[0].loc.start);
-    if (!elseStatements.length) fail("javascript.branch_not_total", branch.loc.start);
-    const elseID = emitBlock(elseStatements, `${path}.else`, context, resultType);
-    const id = stableID("execution", context.functionID, `${path}.statement`, "if");
-    context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090c0", [[0x9c00, ref(condition.id)], [0x9c01, ref(thenID)], [0x9c02, ref(elseID)]])));
-    statement = id;
-  } else fail("javascript.block_not_total", statements[0]?.loc?.start);
+  const localContext = { ...context, locals: new Map(context.locals) };
+  const statementIDs = [];
+  for (let index = 0; index < statements.length; index += 1) {
+    const current = statements[index];
+    const statementPath = statements.length === 1 ? `${path}.statement` : `${path}.statement.${index}`;
+    if (current.type === "VariableDeclaration") {
+      if (current.kind !== "const" || current.declarations.length !== 1) fail("javascript.local_binding_shape", current.loc.start);
+      const declaration = current.declarations[0];
+      if (declaration.id.type !== "Identifier" || !declaration.init || localContext.locals.has(declaration.id.name)) fail("javascript.local_binding_shape", current.loc.start);
+      const valueType = inferExpressionType(declaration.init, localContext);
+      const local = localContext.nextLocal.value++;
+      const bindingID = stableID("execution", context.functionID, path, "local", String(local));
+      const initializer = emitExpression(declaration.init, `${context.functionID}:${path}:local:${local}`, "root", localContext, valueType);
+      context.entities.push(graphEntity(bindingID, entity(bindingID, "000000000000000000000000000090d0", [[0x9d00, bytes(declaration.id.name)], [0x9d01, ref(ids[valueType])], [0x9d02, ref(initializer.id)]])));
+      const statementID = stableID("execution", context.functionID, statementPath, "bind-local");
+      context.entities.push(graphEntity(statementID, entity(statementID, "000000000000000000000000000090d1", [[0x9d10, ref(bindingID)]])));
+      statementIDs.push(statementID);
+      localContext.locals.set(declaration.id.name, { id: bindingID, type: valueType });
+      continue;
+    }
+    if (current.type === "ReturnStatement") {
+      if (index !== statements.length - 1) fail("javascript.return_not_terminal", current.loc.start);
+      const canonicalPath = statementIDs.length === 0 ? `${path}.statement` : `${path}.statement.${statementIDs.length}`;
+      statementIDs.push(emitReturn(current, path, canonicalPath, localContext, resultType));
+      continue;
+    }
+    if (current.type === "IfStatement") {
+      const following = statements.slice(index + 1);
+      if (current.alternate && following.length) fail("javascript.unreachable_following", following[0].loc.start);
+      const condition = emitExpression(current.test, `${context.functionID}:${path}:condition`, "root", localContext, "bool");
+      const thenID = emitBlock(blockStatements(current.consequent), `${path}.then`, localContext, resultType);
+      const elseStatements = current.alternate ? blockStatements(current.alternate) : following;
+      if (!elseStatements.length) fail("javascript.branch_not_total", current.loc.start);
+      const elseID = emitBlock(elseStatements, `${path}.else`, localContext, resultType);
+      const canonicalPath = statementIDs.length === 0 ? `${path}.statement` : `${path}.statement.${statementIDs.length}`;
+      const id = stableID("execution", context.functionID, canonicalPath, "if");
+      context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090c0", [[0x9c00, ref(condition.id)], [0x9c01, ref(thenID)], [0x9c02, ref(elseID)]])));
+      statementIDs.push(id);
+      break;
+    }
+    fail("javascript.unsupported_statement", current.loc.start);
+  }
+  if (!statementIDs.length) fail("javascript.block_not_total", statements[0]?.loc?.start);
   const blockID = stableID("execution", context.functionID, path, "block");
-  context.entities.push(graphEntity(blockID, entity(blockID, "00000000000000000000000000009080", [[0x9800, refs([statement])]])));
+  context.entities.push(graphEntity(blockID, entity(blockID, "00000000000000000000000000009080", [[0x9800, refs(statementIDs)]])));
   return blockID;
 }
 
-function emitReturn(statement, path, context, resultType) {
+function emitReturn(statement, path, statementPath, context, resultType) {
   if (!statement.argument) fail("javascript.return_arity", statement.loc.start);
   const expression = emitExpression(statement.argument, `${context.functionID}:${path}`, "root", context, resultType);
-  const id = stableID("execution", context.functionID, `${path}.statement`, "return");
+  const id = stableID("execution", context.functionID, statementPath, "return");
   context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009081", [[0x9810, refs([expression.id])]])));
   return id;
 }
@@ -94,7 +122,14 @@ function emitReturn(statement, path, context, resultType) {
 function emitExpression(node, owner, path, context, expected) {
   if (node.type === "Identifier") {
     const index = context.parameterNames.indexOf(node.name);
-    if (index < 0 || context.parameterTypes[index] !== expected) fail("javascript.unresolved_or_mistyped_identifier", node.loc.start);
+    if (index < 0) {
+      const local = context.locals.get(node.name);
+      if (!local || local.type !== expected) fail("javascript.unresolved_or_mistyped_identifier", node.loc.start);
+      const id = stableID("execution", owner, "local-read", local.id);
+      context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090d2", [[0x9d20, ref(local.id)]])));
+      return { id, type: expected };
+    }
+    if (context.parameterTypes[index] !== expected) fail("javascript.unresolved_or_mistyped_identifier", node.loc.start);
     const id = stableID("execution", owner, "read", String(index));
     context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009013", [[0x9130, ref(context.parameterIDs[index])]])));
     return { id, type: expected };
@@ -125,6 +160,25 @@ function emitExpression(node, owner, path, context, expected) {
   const id = expressionID(owner, path, kind);
   context.entities.push(graphEntity(id, entity(id, schema, [[leftField, ref(left.id)], [rightField, ref(right.id)]])));
   return { id, type: expected };
+}
+
+function inferExpressionType(node, context) {
+  if (node.type === "Identifier") {
+    const parameter = context.parameterNames.indexOf(node.name);
+    if (parameter >= 0) return context.parameterTypes[parameter];
+    const local = context.locals.get(node.name);
+    if (local) return local.type;
+  }
+  if (node.type === "Literal" && typeof node.value === "string") return "string";
+  if (node.type === "Literal" && typeof node.value === "boolean") return "bool";
+  if (node.type === "LogicalExpression" && (node.operator === "&&" || node.operator === "||")) return "bool";
+  if (node.type === "BinaryExpression" && node.operator === "===") return "bool";
+  if (node.type === "BinaryExpression" && node.operator === "+") {
+    const left = inferExpressionType(node.left, context);
+    const right = inferExpressionType(node.right, context);
+    if (left === "string" && right === "string") return "string";
+  }
+  fail("javascript.ambiguous_local_type", node.loc.start);
 }
 
 function blockStatements(node) {

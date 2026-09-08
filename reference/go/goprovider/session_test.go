@@ -108,6 +108,28 @@ func TestIncrementalSessionLiftsStringParametersAndResult(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsOrderedImmutableLocals(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v15/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/locals", Files: map[string]string{
+		"locals.go": "package locals\nfunc Scale(left, right int64) int64 {\ntotal := left + right\nscaled := total * 2\nreturn scaled - left\n}\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("local result = %#v", result)
+	}
+	for _, schema := range []string{"000000000000000000000000000090d0", "000000000000000000000000000090d1", "000000000000000000000000000090d2"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("canonical local schema %s missing", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
 	if err != nil {
