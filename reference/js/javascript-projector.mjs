@@ -17,6 +17,7 @@ const schema = {
   localBinding: "000000000000000000000000000090d0",
   bindLocal: "000000000000000000000000000090d1",
   localRead: "000000000000000000000000000090d2",
+  call: "00000000000000000000000000009060",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -24,21 +25,32 @@ export function projectJavaScript(canonicalG1) {
   const programs = [...graph.values()].filter((entity) => entity.schema === schema.program);
   if (programs.length !== 1) fail("javascript_projection.requires_one_program");
   const entryID = reference(field(programs[0], 0x9151));
-  const fn = required(graph, entryID, schema.function);
+  const functionIDs = references(field(programs[0], 0x9150));
+  if (!functionIDs.includes(entryID) || functionIDs.length === 0) fail("javascript_projection.entry_membership");
+  const functions = new Map(functionIDs.map((id) => [id, required(graph, id, schema.function)]));
+  const names = new Map();
+  for (const [id, fn] of functions) {
+    const name = text(field(fn, 0x9110));
+    if (!/^[A-Za-z_$][\w$]*$/.test(name) || [...names.values()].includes(name)) fail("javascript_projection.invalid_function_name");
+    names.set(id, name);
+  }
+  return functionIDs.map((id) => projectFunction(id, functions.get(id), id === entryID, { graph, functions, names })).join("\n");
+}
+
+function projectFunction(functionID, fn, exported, program) {
   const name = text(field(fn, 0x9110));
-  if (!/^[A-Za-z_$][\w$]*$/.test(name)) fail("javascript_projection.invalid_function_name");
   const parameterIDs = references(field(fn, 0x9111));
   const parameters = parameterIDs.map((id) => {
-    const parameter = required(graph, id, schema.parameter);
+    const parameter = required(program.graph, id, schema.parameter);
     const parameterName = text(field(parameter, 0x9120));
     if (!/^[A-Za-z_$][\w$]*$/.test(parameterName)) fail("javascript_projection.invalid_parameter_name");
-    return { id, name: parameterName, type: typeName(reference(field(parameter, 0x9121)), graph) };
+    return { id, name: parameterName, type: typeName(reference(field(parameter, 0x9121)), program.graph) };
   });
-  const result = typeName(reference(field(fn, 0x9112)), graph);
-  const context = { graph, parameters: new Map(parameters.map((item) => [item.id, item])), locals: new Map() };
+  const result = typeName(reference(field(fn, 0x9112)), program.graph);
+  const context = { ...program, parameters: new Map(parameters.map((item) => [item.id, item])), locals: new Map() };
   const body = projectBlock(reference(field(fn, 0x9113)), context, "  ");
   const jsdoc = ["/**", ...parameters.map((item) => ` * @param {${item.type}} ${item.name}`), ` * @returns {${result}}`, " */"];
-  return `${jsdoc.join("\n")}\nexport function ${name}(${parameters.map((item) => item.name).join(", ")}) {\n${body}\n}\n`;
+  return `${jsdoc.join("\n")}\n${exported ? "export " : ""}function ${name}(${parameters.map((item) => item.name).join(", ")}) {\n${body}\n}\n`;
 }
 
 function projectBlock(id, context, indent) {
@@ -88,6 +100,12 @@ function projectExpression(id, context) {
   }
   if (expression.schema === schema.stringLiteral) return JSON.stringify(text(field(expression, 0x9500)));
   if (expression.schema === schema.boolLiteral) return atom(field(expression, 0x9b00)) === "tr" ? "true" : "false";
+  if (expression.schema === schema.call) {
+    const callee = reference(field(expression, 0x9600));
+    if (!context.functions.has(callee)) fail("javascript_projection.call_outside_program");
+    const arguments_ = references(field(expression, 0x9601)).map((argument) => projectExpression(argument, context));
+    return `${context.names.get(callee)}(${arguments_.join(", ")})`;
+  }
   const binary = new Map([
     [schema.boolAnd, [0x9b10, 0x9b11, "&&"]],
     [schema.boolOr, [0x9c10, 0x9c11, "||"]],

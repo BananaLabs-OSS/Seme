@@ -69,3 +69,17 @@ export function Join(left, right) {
   assert.match(canonical, /000000000000000000000000000090d1/);
   assert.match(canonical, /000000000000000000000000000090d2/);
 });
+
+test("lifts a closed native JavaScript function call graph", () => {
+  const source = `
+/** @param {string} value @returns {string} */
+function decorate(value) { return "[" + value + "]"; }
+/** @param {string} left @param {string} right @returns {string} */
+function combine(left, right) { return decorate(left) + decorate(right); }
+/** @param {string} left @param {string} right @returns {string} */
+export function Render(left, right) { const joined = combine(left, right); return decorate(joined); }
+`;
+  const canonical = liftJavaScript({ source, moduleG1, packagePath: "example.test/calls", revision: 1 });
+  assert.equal((canonical.match(/^en [0-9a-f]{32} 00000000000000000000000000009011 /gm) || []).length, 3);
+  assert.equal((canonical.match(/^en [0-9a-f]{32} 00000000000000000000000000009060 /gm) || []).length, 4);
+});

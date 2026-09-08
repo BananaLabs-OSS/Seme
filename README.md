@@ -230,6 +230,14 @@ projection re-lifts without drift, while integer and UTF-8 local programs run
 standalone and through the applicable Pulp/Wasm path. Run
 `./scripts/check-execution-v15.sh`.
 
+[`Core Execution v16`](spec/core-execution-v16.md) turns isolated function
+proofs into closed multi-function programs. Ordinary Go package calls and
+native JavaScript module calls converge on explicit canonical `FunctionCall`
+semantics; JavaScript projection re-lifts without drift. The bounded pure Wasm
+target certifies membership and an acyclic call graph, then realizes calls by
+safe target-side inlining before standalone and Pulp execution. Run
+`./scripts/check-execution-v16.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

@@ -18,6 +18,7 @@ func main() {
 	project := flag.String("project", "", "generic Go fixture directory")
 	packagePath := flag.String("package", "", "stable package path")
 	revision := flag.Uint64("revision", 1, "client revision")
+	entry := flag.String("entry", "", "entry function name (defaults to stable first declaration)")
 	out := flag.String("out", "", "canonical G1 output")
 	flag.Parse()
 	if *modulePath == "" || *project == "" || *packagePath == "" || *out == "" {
@@ -39,7 +40,7 @@ func main() {
 	}
 	session, err := goprovider.NewIncrementalSession(module)
 	fatal(err)
-	result := session.Apply(goprovider.DocumentSnapshot{Revision: *revision, PackagePath: *packagePath, Files: files})
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: *revision, PackagePath: *packagePath, Entry: *entry, Files: files})
 	if !result.Accepted || !result.Valid {
 		fatal(fmt.Errorf("snapshot disposition %s: %#v", result.Disposition, result.Diagnostics))
 	}

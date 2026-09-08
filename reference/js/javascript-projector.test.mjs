@@ -44,3 +44,21 @@ test("projects and re-lifts ordered lexical const bindings", () => {
   const relifted = liftJavaScript({ source: projected, moduleG1: moduleV15G1, packagePath: "example.test/project-locals", revision: 1 });
   assert.equal(relifted.split("\n").slice(1).join("\n"), canonical.split("\n").slice(1).join("\n"));
 });
+
+test("projects and re-lifts a native JavaScript call graph", () => {
+  const source = `
+/** @param {string} value @returns {string} */
+function decorate(value) { return "[" + value + "]"; }
+/** @param {string} left @param {string} right @returns {string} */
+function combine(left, right) { return decorate(left) + decorate(right); }
+/** @param {string} left @param {string} right @returns {string} */
+export function Render(left, right) { const joined = combine(left, right); return decorate(joined); }
+`;
+  const first = liftJavaScript({ source, moduleG1, packagePath: "example.test/calls", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /function decorate\(value\)/);
+  assert.match(projected, /export function Render\(left, right\)/);
+  assert.match(projected, /combine\(left, right\)/);
+  const second = liftJavaScript({ source: projected, moduleG1, packagePath: "example.test/calls", revision: 1 });
+  assert.equal(second, first);
+});

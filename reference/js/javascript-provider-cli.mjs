@@ -11,5 +11,6 @@ const canonical = liftJavaScript({
   moduleG1: fs.readFileSync(options.get("--module"), "utf8"),
   packagePath: options.get("--package"),
   revision: Number(options.get("--revision")),
+  entryName: options.get("--entry"),
 });
 fs.writeFileSync(options.get("--out"), canonical);

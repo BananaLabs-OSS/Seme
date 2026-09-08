@@ -65,3 +65,11 @@ pinned Acorn dependency, Pulp checkout, and Seme bootstrap. No package,
 toolchain, global dependency, or persistent setting was installed or changed.
 All Go, Pulp, and Wasm caches used by the gate are scoped to its automatically
 removed temporary directory where applicable.
+
+## 2026-09-08 — Core v16 multi-function verification
+
+Core v16 used the existing workstation Go 1.26 toolchain, Node 22 runtime,
+repository-local pinned Acorn dependency, existing Pulp checkout, and Seme
+bootstrap. No package, toolchain, dependency, global setting, SSH setting, or
+persistent workstation configuration was installed or changed. Temporary gate
+artifacts and caches are scoped to automatically removed task directories.

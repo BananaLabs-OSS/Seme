@@ -25,6 +25,7 @@ const (
 	goStringEqual
 	goStringConcat
 	goLocalRead
+	goFunctionCall
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -39,6 +40,8 @@ type goExpression struct {
 	text      string
 	left      *goExpression
 	right     *goExpression
+	callee    string
+	arguments []*goExpression
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -67,6 +70,21 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := stableID("execution", owner, "local-read", bindingID)
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090d2", []graphField{refField(0x9d20, bindingID)})}
+			return id, nil
+		case goFunctionCall:
+			if expression.callee == "" {
+				return "", fmt.Errorf("expression.call_missing_callee")
+			}
+			arguments := make([]string, len(expression.arguments))
+			for index, argument := range expression.arguments {
+				id, err := emit(argument, path+".argument."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+				arguments[index] = id
+			}
+			id := expressionNodeID(owner, path, "function-call")
+			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009060", []graphField{refField(0x9600, expression.callee), refsField(0x9601, arguments)})}
 			return id, nil
 		case goIntegerLiteral:
 			id := expressionNodeID(owner, path, "integer-literal")
@@ -174,6 +192,10 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 }
 
 func analyzeGoExpressionWithLocals(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int) (*goExpression, error) {
+	return analyzeGoExpressionWithContext(expression, signature, info, locals, nil)
+}
+
+func analyzeGoExpressionWithContext(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string) (*goExpression, error) {
 	switch expression := ast.Unparen(expression).(type) {
 	case *ast.Ident:
 		for index := 0; index < signature.Params().Len(); index++ {
@@ -236,15 +258,30 @@ func analyzeGoExpressionWithLocals(expression ast.Expr, signature *types.Signatu
 		default:
 			return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
 		}
-		analyzedLeft, err := analyzeGoExpressionWithLocals(left, signature, info, locals)
+		analyzedLeft, err := analyzeGoExpressionWithContext(left, signature, info, locals, functions)
 		if err != nil {
 			return nil, err
 		}
-		analyzedRight, err := analyzeGoExpressionWithLocals(right, signature, info, locals)
+		analyzedRight, err := analyzeGoExpressionWithContext(right, signature, info, locals, functions)
 		if err != nil {
 			return nil, err
 		}
 		return &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}, nil
+	case *ast.CallExpr:
+		identifier, ok := ast.Unparen(expression.Fun).(*ast.Ident)
+		callee, exists := functions[info.Uses[identifier]]
+		if !ok || !exists || expression.Ellipsis.IsValid() {
+			return nil, fmt.Errorf("expression.unsupported_call")
+		}
+		arguments := make([]*goExpression, len(expression.Args))
+		for index, argument := range expression.Args {
+			analyzed, err := analyzeGoExpressionWithContext(argument, signature, info, locals, functions)
+			if err != nil {
+				return nil, err
+			}
+			arguments[index] = analyzed
+		}
+		return &goExpression{kind: goFunctionCall, callee: callee, arguments: arguments}, nil
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}

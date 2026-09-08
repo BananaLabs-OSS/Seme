@@ -130,6 +130,26 @@ func TestIncrementalSessionLiftsOrderedImmutableLocals(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsClosedFunctionCalls(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v16/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/calls", Entry: "Render", Files: map[string]string{
+		"calls.go": "package calls\nfunc decorate(value string) string { return \"[\" + value + \"]\" }\nfunc combine(left, right string) string { return decorate(left) + decorate(right) }\nfunc Render(left, right string) string { joined := combine(left, right); return decorate(joined) }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.Sources) != 3 {
+		t.Fatalf("call result = %#v", result)
+	}
+	if strings.Count(result.CanonicalG1, "00000000000000000000000000009060") != 6 {
+		t.Fatal("canonical function calls missing")
+	}
+}
+
 func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
 	if err != nil {
