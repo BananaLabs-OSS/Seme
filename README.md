@@ -321,6 +321,13 @@ scale implementations execute through deterministic standalone Wasm and
 pinned Pulp while malformed signatures and unknown tags reject. Run
 `./scripts/check-execution-v27.sh`.
 
+[`Core Execution v28`](spec/core-execution-v28.md) adds typed function values,
+explicit immutable captures, closure construction, capture reads, and indirect
+calls. Native Go and JavaScript closures converge canonically; escaped and
+independent environments execute through deterministic Wasm and pinned Pulp,
+including a portable returned-closure ABI. Run
+`./scripts/check-execution-v28.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

@@ -135,6 +135,11 @@ function readSignature(comments, fn) {
 // comment to precede the declaration is sufficient for this one-declaration profile.
 function sourceGapIsWhitespace(_end, _start, _fn) { return true; }
 function semanticType(type) {
+  const function_ = /^function\(([^)]*)\)\s*:\s*(bigint|boolean|string)$/.exec(type);
+  if (function_) {
+    const parameters = function_[1].trim() === "" ? [] : function_[1].split(",").map((item) => semanticType(item.trim()));
+    return `function:${parameters.join(",")}=>${semanticType(function_[2])}`;
+  }
   if (type === "bigint[]") return "slice:i64";
   if (type.startsWith("bigint[")) return `array:i64:${type.slice(7, -1)}`;
   if (type === "boolean") return "bool";
@@ -201,6 +206,15 @@ function readRecords(comments, packagePath) {
 
 function typeID(type, context) {
   if (ids[type]) return ids[type];
+	if (type.startsWith("function:")) {
+		const [parameterText, resultType] = type.slice("function:".length).split("=>");
+		const parameterTypes = parameterText === "" ? [] : parameterText.split(",");
+		const parameterIDs = parameterTypes.map((item) => typeID(item, context));
+		const resultID = typeID(resultType, context);
+		const id = stableID("execution", "type", "function", ...parameterTypes, resultType);
+		if (context.entities && !context.entities.some((item) => item.id === id)) context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a020", [[0xa0200, refs(parameterIDs)], [0xa0201, ref(resultID)]])));
+		return id;
+	}
 	if (type === "slice:i64") return stableID("execution", "type", "slice", "i64");
   if (type.startsWith("transition:")) {
     const parts = type.split(":");
@@ -325,6 +339,40 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 }
 
 function emitExpression(node, owner, path, context, expected) {
+	if ((node.type === "ArrowFunctionExpression" || node.type === "FunctionExpression") && expected.startsWith("function:")) {
+		if (node.async || node.generator || node.params.some((item) => item.type !== "Identifier")) fail("javascript.unsupported_closure", node.loc.start);
+		const [parameterText, resultType] = expected.slice("function:".length).split("=>");
+		const parameterTypes = parameterText === "" ? [] : parameterText.split(",");
+		if (node.params.length !== parameterTypes.length) fail("javascript.closure_arity", node.loc.start);
+		const closureID = expressionID(owner, path, "closure");
+		const parameterIDs = node.params.map((parameter, index) => {
+			if (index !== 0) fail("javascript.closure_arity", node.loc.start);
+			const id = expressionID(owner, path, "closure-parameter");
+			context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009012", [[0x9120, bytes(parameter.name)], [0x9121, ref(typeID(parameterTypes[index], context))], [0x9122, `uu ${index}`]])));
+			return id;
+		});
+		const parameterNames = new Set(node.params.map((item) => item.name));
+		const freeNames = referencedIdentifiers(node.body).filter((name, index, all) => !parameterNames.has(name) && all.indexOf(name) === index);
+		const captures = [];
+		for (const name of freeNames) {
+			const outerIndex = context.parameterNames.indexOf(name);
+			const outer = outerIndex >= 0 ? { type: context.parameterTypes[outerIndex], identity: context.parameterIDs[outerIndex] } : context.locals.get(name);
+			if (!outer || outer.mutable) fail("javascript.closure_capture", node.loc.start);
+			const value = emitExpression({ type: "Identifier", name, loc: node.loc }, owner, `${path}.capture.${captures.length}.value`, context, outer.type);
+			const id = expressionID(owner, path, "capture");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a021", [[0xa0210, bytes(name)], [0xa0211, ref(typeID(outer.type, context))], [0xa0212, ref(value.id)]])));
+			captures.push({ id, name, type: outer.type });
+		}
+		const innerContext = { ...context, parameterIDs: [], parameterNames: [], parameterTypes: [], locals: new Map(), captures: new Map(captures.map((item) => [item.name, item])), closureParameters: new Map(node.params.map((item, index) => [item.name, { id: parameterIDs[index], type: parameterTypes[index] }])), nextLocal: { value: 0 } };
+		let bodyNode = node.body;
+		if (bodyNode.type === "BlockStatement") {
+			if (bodyNode.body.length !== 1 || bodyNode.body[0].type !== "ReturnStatement" || !bodyNode.body[0].argument) fail("javascript.closure_body", node.loc.start);
+			bodyNode = bodyNode.body[0].argument;
+		}
+		const bodyID = emitExpression(bodyNode, owner, `${path}.body`, innerContext, resultType).id;
+		context.entities.push(graphEntity(closureID, entity(closureID, "0000000000000000000000000000a023", [[0xa0230, ref(typeID(expected, context))], [0xa0231, refs(parameterIDs)], [0xa0232, refs(captures.map((item) => item.id))], [0xa0233, ref(bodyID)]])));
+		return { id: closureID, type: expected };
+	}
 	if (expected.startsWith("interface:")) {
 		const concreteType = inferExpressionType(node, context);
 		if (concreteType.startsWith("record:")) {
@@ -494,8 +542,22 @@ function emitExpression(node, owner, path, context, expected) {
 		return { id, type: "i64" };
 	}
   if (node.type === "Identifier") {
+	const closureParameter = context.closureParameters?.get(node.name);
+	if (closureParameter) {
+		if (closureParameter.type !== expected) fail("javascript.closure_parameter_type", node.loc.start);
+		const id = expressionID(owner, path, "closure-parameter-read");
+		context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009013", [[0x9130, ref(closureParameter.id)]])));
+		return { id, type: expected };
+	}
     const index = context.parameterNames.indexOf(node.name);
     if (index < 0) {
+	  const capture = context.captures?.get(node.name);
+	  if (capture) {
+		if (capture.type !== expected) fail("javascript.capture_type", node.loc.start);
+		const id = expressionID(owner, path, "capture-read");
+		context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a022", [[0xa0220, ref(capture.id)]])));
+		return { id, type: expected };
+	  }
       const local = context.locals.get(node.name);
       if (!local || local.type !== expected) fail("javascript.unresolved_or_mistyped_identifier", node.loc.start);
       const id = stableID("execution", owner, local.mutable ? "place-read" : "local-read", local.id);
@@ -554,6 +616,19 @@ function emitExpression(node, owner, path, context, expected) {
     return { id, type: expected };
   }
   if (node.type === "CallExpression" && node.callee.type === "Identifier" && !node.optional) {
+	const calleeParameterIndex = context.parameterNames.indexOf(node.callee.name);
+	const calleeLocal = context.locals.get(node.callee.name);
+	const calleeType = calleeParameterIndex >= 0 ? context.parameterTypes[calleeParameterIndex] : calleeLocal?.type;
+	if (calleeType?.startsWith("function:")) {
+		const [parameterText, resultType] = calleeType.slice("function:".length).split("=>");
+		const parameterTypes = parameterText === "" ? [] : parameterText.split(",");
+		if (resultType !== expected || parameterTypes.length !== node.arguments.length) fail("javascript.indirect_call_type", node.loc.start);
+		const callee = emitExpression(node.callee, owner, `${path}.callee`, context, calleeType);
+		const arguments_ = node.arguments.map((argument, index) => emitExpression(argument, owner, `${path}.argument.${index}`, context, parameterTypes[index]));
+		const id = expressionID(owner, path, "indirect-call");
+		context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a024", [[0xa0240, ref(callee.id)], [0xa0241, refs(arguments_.map((item) => item.id))]])));
+		return { id, type: expected };
+	}
     const callee = context.functionsByName.get(node.callee.name);
     if (!callee || callee.signature.result !== expected || callee.signature.parameters.length !== node.arguments.length) fail("javascript.unsupported_call", node.loc.start);
     const arguments_ = node.arguments.map((argument, index) => emitExpression(argument, owner, `${path}.argument.${index}`, context, callee.signature.parameters[index].type));
@@ -667,6 +742,20 @@ function inferExpressionType(node, context) {
   }
 	if (node.type === "BinaryExpression" && node.operator === "-") return "i64";
   fail("javascript.ambiguous_local_type", node.loc.start);
+}
+
+function referencedIdentifiers(node) {
+  const names = [];
+  const visit = (value) => {
+    if (!value || typeof value !== "object") return;
+    if (value.type === "Identifier") { names.push(value.name); return; }
+    for (const [key, child] of Object.entries(value)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      if (Array.isArray(child)) child.forEach(visit); else visit(child);
+    }
+  };
+  visit(node);
+  return names;
 }
 
 function blockStatements(node) {

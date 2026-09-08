@@ -156,16 +156,17 @@ compatibility is not a finite milestone.
 
 ## Current baseline audit
 
-At Core v27, repository evidence is strongest for a bounded shared subset:
+At Core v28, repository evidence is strongest for a bounded shared subset:
 typed functions; i64/Boolean/text and selected record/result/collection values;
 locals, branches, loops, calls, effects, fixed arrays and i64 slices; collection
 queries and immutable updates; methods; explicit transitions; and bounded
-interface dispatch with explicit satisfaction witnesses. Go and JavaScript
-have native parity and projection evidence for selected shapes.
+interface dispatch with explicit satisfaction witnesses; and immutable lexical
+closures with explicit environments. Go and JavaScript have native parity and
+projection evidence for selected shapes.
 
 The repository does **not** yet justify a UAB-v1 percentage because:
 
-- Core v28-v30 are not complete;
+- Core v29-v30 are not complete;
 - current proofs remain primarily isolated bounded shapes rather than UAB-11's
   cumulative application;
 - some Go and JavaScript provider recognition remains deliberately
