@@ -7,6 +7,7 @@ const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v14/module.g1"
 const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.g1", import.meta.url), "utf8");
 const moduleV16G1 = fs.readFileSync(new URL("../../modules/execution/v16/module.g1", import.meta.url), "utf8");
 const moduleV18G1 = fs.readFileSync(new URL("../../modules/execution/v18/module.g1", import.meta.url), "utf8");
+const moduleV19G1 = fs.readFileSync(new URL("../../modules/execution/v19/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -109,4 +110,16 @@ export function AppendOnce(value, suffix, enabled) {
 }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV18G1, packagePath: "example.test/mutation", revision: 1 });
   for (const mutationSchema of ["90e0", "90e1", "90e2", "90e3", "90e4"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${mutationSchema}`));
+});
+
+test("lifts bigint mutation and one-sided choice", () => {
+  const source = `/** @param {bigint} original @param {bigint} replacement @param {boolean} enabled @returns {bigint} */
+export function Choose(original, replacement, enabled) {
+  let result = original;
+  if (enabled) { result = replacement; }
+  return result;
+}`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV19G1, packagePath: "example.test/choice", revision: 1 });
+  assert.match(canonical, /000000000000000000000000000090f0/);
+  assert.match(canonical, /000000000000000000000000000090e3/);
 });

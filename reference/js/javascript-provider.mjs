@@ -104,6 +104,7 @@ function typeID(type, context) {
 function emitBlock(statements, path, context, resultType, requireReturn = true) {
   const localContext = { ...context, locals: new Map(context.locals) };
   const statementIDs = [];
+  let terminal = false;
   for (let index = 0; index < statements.length; index += 1) {
     const current = statements[index];
     const statementPath = statements.length === 1 ? `${path}.statement` : `${path}.statement.${index}`;
@@ -145,10 +146,19 @@ function emitBlock(statements, path, context, resultType, requireReturn = true) 
       if (index !== statements.length - 1) fail("javascript.return_not_terminal", current.loc.start);
       const canonicalPath = statementIDs.length === 0 ? `${path}.statement` : `${path}.statement.${statementIDs.length}`;
       statementIDs.push(emitReturn(current, path, canonicalPath, localContext, resultType));
+      terminal = true;
       continue;
     }
     if (current.type === "IfStatement") {
       const following = statements.slice(index + 1);
+      if (!current.alternate && !containsReturn(current.consequent)) {
+        const condition = emitExpression(current.test, `${context.functionID}:${path}:condition:${index}`, "root", localContext, "bool");
+        const bodyID = emitBlock(blockStatements(current.consequent), `${path}.when.${index}`, localContext, resultType, false);
+        const statementID = stableID("execution", context.functionID, statementPath, "when");
+        context.entities.push(graphEntity(statementID, entity(statementID, "000000000000000000000000000090f0", [[0x9f00, ref(condition.id)], [0x9f01, ref(bodyID)]])));
+        statementIDs.push(statementID);
+        continue;
+      }
       if (current.alternate && following.length) fail("javascript.unreachable_following", following[0].loc.start);
       const condition = emitExpression(current.test, `${context.functionID}:${path}:condition`, "root", localContext, "bool");
       const thenID = emitBlock(blockStatements(current.consequent), `${path}.then`, localContext, resultType, true);
@@ -159,15 +169,13 @@ function emitBlock(statements, path, context, resultType, requireReturn = true) 
       const id = stableID("execution", context.functionID, canonicalPath, "if");
       context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090c0", [[0x9c00, ref(condition.id)], [0x9c01, ref(thenID)], [0x9c02, ref(elseID)]])));
       statementIDs.push(id);
+      terminal = true;
       break;
     }
     fail("javascript.unsupported_statement", current.loc.start);
   }
   if (!statementIDs.length) fail("javascript.block_not_total", statements[0]?.loc?.start);
-  if (requireReturn) {
-    const last = statements[statements.length - 1];
-    if (last.type !== "ReturnStatement" && last.type !== "IfStatement") fail("javascript.block_not_total", last.loc.start);
-  }
+  if (requireReturn && !terminal) fail("javascript.block_not_total", statements[statements.length - 1].loc.start);
   const blockID = stableID("execution", context.functionID, path, "block");
   context.entities.push(graphEntity(blockID, entity(blockID, "00000000000000000000000000009080", [[0x9800, refs(statementIDs)]])));
   return blockID;
@@ -293,6 +301,12 @@ function blockStatements(node) {
   if (node.type === "BlockStatement") return node.body;
   if (node.type === "IfStatement" || node.type === "ReturnStatement") return [node];
   fail("javascript.unsupported_branch", node.loc.start);
+}
+function containsReturn(node) {
+  if (node.type === "ReturnStatement") return true;
+  if (node.type === "BlockStatement") return node.body.some(containsReturn);
+  if (node.type === "IfStatement") return containsReturn(node.consequent) || (node.alternate ? containsReturn(node.alternate) : false);
+  return false;
 }
 function expressionID(owner, path, kind) { return stableID("execution", owner, "expression", path, kind); }
 function isUnicodeScalarString(value) {

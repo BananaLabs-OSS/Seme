@@ -1,4 +1,5 @@
 const schema = {
+  integerType: "00000000000000000000000000009010",
   function: "00000000000000000000000000009011",
   parameter: "00000000000000000000000000009012",
   read: "00000000000000000000000000009013",
@@ -27,6 +28,7 @@ const schema = {
   placeRead: "000000000000000000000000000090e2",
   assignPlace: "000000000000000000000000000090e3",
   whileLoop: "000000000000000000000000000090e4",
+  when: "000000000000000000000000000090f0",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -111,6 +113,12 @@ function projectBlock(id, context, indent) {
       lines.push(`${indent}while (${condition}) {\n${body}\n${indent}}`);
       continue;
     }
+    if (statement.schema === schema.when) {
+      const condition = projectExpression(reference(field(statement, 0x9f00)), localContext);
+      const body = projectBlock(reference(field(statement, 0x9f01)), localContext, `${indent}  `);
+      lines.push(`${indent}if (${condition}) {\n${body}\n${indent}}`);
+      continue;
+    }
     if (statement.schema === schema.returned) {
       const values = references(field(statement, 0x9810));
       if (values.length !== 1 || index !== statements.length - 1) fail("javascript_projection.return_arity");
@@ -181,6 +189,7 @@ function projectExpression(id, context) {
 
 function typeName(id, graph) {
   const type = required(graph, id);
+  if (type.schema === schema.integerType) return "bigint";
   if (type.schema === schema.stringType) return "string";
   if (type.schema === schema.boolType) return "boolean";
   if (type.schema === schema.recordType) return text(field(type, 0x9300));

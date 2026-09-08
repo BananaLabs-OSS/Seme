@@ -70,6 +70,18 @@ func validateStateScopes(graph wire.Envelope, blockID wire.ID, inherited map[wir
 			if err := validateStateScopes(graph, body.Reference, visible, declared, visiting, budget); err != nil {
 				return err
 			}
+		case identity(0x90f0):
+			condition, conditionErr := field(statement, 0x9f00)
+			body, bodyErr := field(statement, 0x9f01)
+			if conditionErr != nil || bodyErr != nil || condition.Tag != 6 || body.Tag != 6 {
+				return fmt.Errorf("wasm.pure_when_scope")
+			}
+			if err := validateStateExpression(graph, condition.Reference, visible, map[wire.ID]bool{}, budget); err != nil {
+				return err
+			}
+			if err := validateStateScopes(graph, body.Reference, visible, declared, visiting, budget); err != nil {
+				return err
+			}
 		case identity(0x9081):
 			values, valueErr := field(statement, 0x9810)
 			if valueErr != nil || values.Tag != 7 || len(values.List) != 1 || values.List[0].Tag != 6 || index != len(statements.List)-1 {

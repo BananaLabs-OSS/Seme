@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 18 {
+	if version < 2 || version > 19 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -111,6 +111,11 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0x90e2, "PlaceRead", []Field{field(0x9e20, "place_read.place", 5, 0x90e0, 0)}},
 			Schema{0x90e3, "AssignPlace", []Field{field(0x9e30, "assign_place.place", 5, 0x90e0, 0), field(0x9e31, "assign_place.value", 5, 0, 0)}},
 			Schema{0x90e4, "While", []Field{field(0x9e40, "while.condition", 5, 0, 0), field(0x9e41, "while.body", 5, 0x9080, 0)}},
+		)
+	}
+	if version >= 19 {
+		schemas = append(schemas,
+			Schema{0x90f0, "When", []Field{field(0x9f00, "when.condition", 5, 0, 0), field(0x9f01, "when.body", 5, 0x9080, 0)}},
 		)
 	}
 	return schemas, nil

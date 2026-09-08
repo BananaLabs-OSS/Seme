@@ -194,6 +194,28 @@ func TestIncrementalSessionLiftsMutablePlacesAndWhile(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsIntegerMutationAndWhen(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v19/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/choice", Entry: "Choose", Files: map[string]string{
+		"choice.go": "package choice\nfunc Choose(original, replacement int64, enabled bool) int64 { result := original; if enabled { result = replacement }; return result }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("update rejected: %#v", result.Diagnostics)
+	}
+	for _, schema := range []string{"000000000000000000000000000090e0", "000000000000000000000000000090e3", "000000000000000000000000000090f0"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("canonical program lacks %s", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
 	if err != nil {

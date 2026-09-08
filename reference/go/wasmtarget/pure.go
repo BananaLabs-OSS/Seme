@@ -168,7 +168,8 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if err != nil {
 		return nil, PureABI{}, err
 	}
-	if hasStrings {
+	hasState := len(bySchema(graph, 0x90e0))+len(bySchema(graph, 0x90e1))+len(bySchema(graph, 0x90e2))+len(bySchema(graph, 0x90e3))+len(bySchema(graph, 0x90e4))+len(bySchema(graph, 0x90f0)) > 0
+	if hasStrings || hasState {
 		abi.Contract = "seme.pure-abi/v2"
 		abi.Provider = "seme.function-v2"
 		abi.FixedHeaderSize = abi.RequestSize
