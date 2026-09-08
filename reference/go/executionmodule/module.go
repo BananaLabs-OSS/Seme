@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 27 {
+	if version < 2 || version > 28 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -173,6 +173,15 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0xa012, "SatisfactionWitness", []Field{field(0xa0120, "witness.concrete_type", 5, 0, 0), field(0xa0121, "witness.interface_type", 5, 0xa010, 0), field(0xa0122, "witness.methods", 5, 0xa002, 2)}},
 			Schema{0xa013, "InterfaceValue", []Field{field(0xa0130, "interface_value.type", 5, 0xa010, 0), field(0xa0131, "interface_value.value", 5, 0, 0), field(0xa0132, "interface_value.witness", 5, 0xa012, 0)}},
 			Schema{0xa014, "DynamicMethodCall", []Field{field(0xa0140, "dynamic_call.receiver", 5, 0, 0), field(0xa0141, "dynamic_call.requirement", 5, 0xa011, 0), field(0xa0142, "dynamic_call.arguments", 5, 0, 2)}},
+		)
+	}
+	if version >= 28 {
+		schemas = append(schemas,
+			Schema{0xa020, "FunctionType", []Field{field(0xa0200, "function_type.parameters", 5, 0, 2), field(0xa0201, "function_type.result", 5, 0, 0)}},
+			Schema{0xa021, "CaptureBinding", []Field{field(0xa0210, "capture.name", 4, 0, 0), field(0xa0211, "capture.type", 5, 0, 0), field(0xa0212, "capture.value", 5, 0, 0)}},
+			Schema{0xa022, "CaptureRead", []Field{field(0xa0220, "capture_read.capture", 5, 0xa021, 0)}},
+			Schema{0xa023, "ClosureConstruct", []Field{field(0xa0230, "closure.type", 5, 0xa020, 0), field(0xa0231, "closure.parameters", 5, 0x9012, 2), field(0xa0232, "closure.captures", 5, 0xa021, 2), field(0xa0233, "closure.body", 5, 0, 0)}},
+			Schema{0xa024, "IndirectCall", []Field{field(0xa0240, "indirect_call.callee", 5, 0, 0), field(0xa0241, "indirect_call.arguments", 5, 0, 2)}},
 		)
 	}
 	return schemas, nil

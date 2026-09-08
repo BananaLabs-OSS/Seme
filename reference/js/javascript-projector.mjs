@@ -60,6 +60,11 @@ const schema = {
   satisfactionWitness: "0000000000000000000000000000a012",
   interfaceValue: "0000000000000000000000000000a013",
   dynamicMethodCall: "0000000000000000000000000000a014",
+  functionType: "0000000000000000000000000000a020",
+  captureBinding: "0000000000000000000000000000a021",
+  captureRead: "0000000000000000000000000000a022",
+  closureConstruct: "0000000000000000000000000000a023",
+  indirectCall: "0000000000000000000000000000a024",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -220,6 +225,11 @@ function projectBlock(id, context, indent) {
 
 function projectExpression(id, context) {
   const expression = required(context.graph, id);
+  if (expression.schema === schema.captureRead) {
+    const capture = context.captures?.get(reference(field(expression, 0xa0220)));
+    if (!capture) fail("javascript_projection.capture_scope");
+    return capture.name;
+  }
   if (expression.schema === schema.receiverRead) {
     if (!context.receiver || reference(field(expression, 0xa0010)) !== context.receiver.id) fail("javascript_projection.receiver_scope");
     return context.receiver.name;
@@ -293,6 +303,32 @@ function projectExpression(id, context) {
     if (!requirement) fail("javascript_projection.dynamic_requirement");
     const arguments_ = references(field(expression, 0xa0142)).map((argument) => projectExpression(argument, context));
     return `${projectExpression(reference(field(expression, 0xa0140)), context)}.${requirement.name}(${arguments_.join(", ")})`;
+  }
+  if (expression.schema === schema.closureConstruct) {
+    const functionType = required(context.graph, reference(field(expression, 0xa0230)), schema.functionType);
+    const typeParameters = references(field(functionType, 0xa0200));
+    const parameterIDs = references(field(expression, 0xa0231));
+    if (parameterIDs.length !== typeParameters.length) fail("javascript_projection.closure_arity");
+    const parameters = parameterIDs.map((parameterID, index) => {
+      const parameter = required(context.graph, parameterID, schema.parameter);
+      if (reference(field(parameter, 0x9121)) !== typeParameters[index] || unsigned(field(parameter, 0x9122)) !== BigInt(index)) fail("javascript_projection.closure_parameter");
+      return { id: parameterID, name: text(field(parameter, 0x9120)), type: typeName(typeParameters[index], context.graph) };
+    });
+    const captures = references(field(expression, 0xa0232)).map((captureID) => {
+      const capture = required(context.graph, captureID, schema.captureBinding);
+      const name = text(field(capture, 0xa0210));
+      if (!/^[A-Za-z_$][\w$]*$/.test(name)) fail("javascript_projection.capture_name");
+      // Projecting the initializer validates that this binding is available in the outer scope.
+      projectExpression(reference(field(capture, 0xa0212)), context);
+      return { id: captureID, name, type: typeName(reference(field(capture, 0xa0211)), context.graph) };
+    });
+    const closureContext = { ...context, parameters: new Map(parameters.map((item) => [item.id, item])), locals: new Map(), captures: new Map(captures.map((item) => [item.id, item])) };
+    const body = projectExpression(reference(field(expression, 0xa0233)), closureContext);
+    return `(${parameters.map((item) => item.name).join(", ")}) => ${body}`;
+  }
+  if (expression.schema === schema.indirectCall) {
+    const arguments_ = references(field(expression, 0xa0241)).map((argument) => projectExpression(argument, context));
+    return `${projectExpression(reference(field(expression, 0xa0240)), context)}(${arguments_.join(", ")})`;
   }
   if (expression.schema === schema.stateTransition) {
     return `{ state: ${projectExpression(reference(field(expression, 0xa0051)), context)}, result: ${projectExpression(reference(field(expression, 0xa0052)), context)} }`;
@@ -379,6 +415,7 @@ function typeName(id, graph) {
   if (type.schema === schema.boolType) return "boolean";
   if (type.schema === schema.recordType) return text(field(type, 0x9300));
   if (type.schema === schema.interfaceType) return text(field(type, 0xa0100));
+  if (type.schema === schema.functionType) return `function(${references(field(type, 0xa0200)).map((parameter) => typeName(parameter, graph)).join(", ")}): ${typeName(reference(field(type, 0xa0201)), graph)}`;
 	if (type.schema === schema.fixedArrayType) {
 		const element = required(graph, reference(field(type, 0x9f20)));
 		if (element.schema !== schema.integerType) fail("javascript_projection.fixed_array_element_type");

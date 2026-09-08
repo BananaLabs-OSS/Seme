@@ -6,6 +6,32 @@ import (
 	"testing"
 )
 
+func TestIncrementalSessionLiftsReturnedImmutableClosure(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v28/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package closure
+type Unary func(int64) int64
+func MakeAdder(base int64) Unary { return func(value int64) int64 { return base + value } }
+func Apply(fn Unary, value int64) int64 { return fn(value) }
+func Run(base, value int64) int64 { return Apply(MakeAdder(base), value) }
+`
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/immutable-closure", Entry: "Run", Files: map[string]string{"closure.go": source}})
+	if !result.Valid {
+		t.Fatalf("result = %#v", result)
+	}
+	for _, schema := range []string{"0000000000000000000000000000a020", "0000000000000000000000000000a021", "0000000000000000000000000000a022", "0000000000000000000000000000a023", "0000000000000000000000000000a024"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("canonical graph lacks schema %s", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsInterfaceWitnessesAndDynamicCall(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v27/module.g1")
 	if err != nil {

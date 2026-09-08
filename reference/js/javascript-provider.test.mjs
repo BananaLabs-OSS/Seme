@@ -16,6 +16,7 @@ const moduleV24G1 = fs.readFileSync(new URL("../../modules/execution/v24/module.
 const moduleV25G1 = fs.readFileSync(new URL("../../modules/execution/v25/module.g1", import.meta.url), "utf8");
 const moduleV26G1 = fs.readFileSync(new URL("../../modules/execution/v26/module.g1", import.meta.url), "utf8");
 const moduleV27G1 = fs.readFileSync(new URL("../../modules/execution/v27/module.g1", import.meta.url), "utf8");
+const moduleV28G1 = fs.readFileSync(new URL("../../modules/execution/v28/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -274,4 +275,15 @@ export function ApplyOffset(offset, value) { return new OffsetAdjuster(offset).A
   const canonical = liftJavaScript({ source, moduleG1: moduleV27G1, packagePath: "example.test/interface-value", revision: 1 });
   assert.match(canonical, /0000000000000000000000000000a013/);
   assert.match(canonical, /0000000000000000000000000000a014/);
+});
+
+test("lifts immutable lexical closures and indirect calls", () => {
+  const source = `/** @param {bigint} base @returns {function(bigint): bigint} */
+function MakeAdder(base) { return (value) => base + value; }
+/** @param {function(bigint): bigint} fn @param {bigint} value @returns {bigint} */
+function Apply(fn, value) { return fn(value); }
+/** @param {bigint} base @param {bigint} value @returns {bigint} */
+export function Run(base, value) { return Apply(MakeAdder(base), value); }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV28G1, packagePath: "example.test/immutable-closure", revision: 1 });
+  for (const suffix of ["a020", "a021", "a022", "a023", "a024"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
 });

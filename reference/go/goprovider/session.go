@@ -375,6 +375,11 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		resultTypeID = stringID
 	} else if isI64Slice(function.sig.Results().At(0).Type()) {
 		resultTypeID = stableID("execution", "type", "slice", "i64")
+	} else if functionSignature, ok := goFunctionSignature(resultType); ok {
+		if !isUnaryI64Function(functionSignature) {
+			return diagnostic("session.unsupported_result_type", "only unary i64 function values are supported")
+		}
+		resultTypeID = goFunctionTypeID(functionSignature)
 	} else if _, named := resultType.(*types.Named); named {
 		var ok bool
 		resultTypeID, ok = goSupportedTypeID(resultType, integerID, booleanID, stringID, records)
@@ -401,6 +406,9 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	if isI64Slice(function.sig.Results().At(0).Type()) {
 		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
 	}
+	if _, ok := goFunctionSignature(resultType); ok {
+		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a020", []graphField{refsField(0xa0200, []string{integerID}), refField(0xa0201, integerID)})})
+	}
 	for index := range parameterIDs {
 		parameterTypeID := integerID
 		if isBool(function.sig.Params().At(index).Type()) {
@@ -416,6 +424,14 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 			parameterTypeID = stableID("execution", "type", "slice", "i64")
 			if !hasGraphEntity(instances, parameterTypeID) {
 				instances = append(instances, graphEntity{parameterTypeID, entity(parameterTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
+			}
+		} else if functionSignature, ok := goFunctionSignature(function.sig.Params().At(index).Type()); ok {
+			if !isUnaryI64Function(functionSignature) {
+				return diagnostic("session.unsupported_parameter_type", "only unary i64 function values are supported")
+			}
+			parameterTypeID = goFunctionTypeID(functionSignature)
+			if !hasGraphEntity(instances, parameterTypeID) {
+				instances = append(instances, graphEntity{parameterTypeID, entity(parameterTypeID, "0000000000000000000000000000a020", []graphField{refsField(0xa0200, []string{integerID}), refField(0xa0201, integerID)})})
 			}
 		} else if named, ok := function.sig.Params().At(index).Type().(*types.Named); ok {
 			record, exists := records[named]
@@ -527,12 +543,31 @@ func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, 
 	if state, result, ok := goTransitionTypes(value); ok {
 		return goTransitionTypeID(state, result), true
 	}
+	if signature, ok := goFunctionSignature(value); ok && isUnaryI64Function(signature) {
+		return goFunctionTypeID(signature), true
+	}
 	if named, ok := value.(*types.Named); ok {
 		if record, exists := records[named]; exists {
 			return record.id, true
 		}
 	}
 	return "", false
+}
+
+func goFunctionSignature(value types.Type) (*types.Signature, bool) {
+	if named, ok := value.(*types.Named); ok {
+		value = named.Underlying()
+	}
+	signature, ok := value.(*types.Signature)
+	return signature, ok
+}
+
+func isUnaryI64Function(signature *types.Signature) bool {
+	return signature != nil && signature.Params().Len() == 1 && isInt64(signature.Params().At(0).Type()) && signature.Results().Len() == 1 && isInt64(signature.Results().At(0).Type())
+}
+
+func goFunctionTypeID(signature *types.Signature) string {
+	return stableID("execution", "type", "function", "i64", "i64")
 }
 
 func snapshotDigest(snapshot DocumentSnapshot) string {

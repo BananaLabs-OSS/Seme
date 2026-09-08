@@ -44,6 +44,10 @@ const (
 	goTransitionResult
 	goDynamicMethodCall
 	goInterfaceValue
+	goCaptureRead
+	goClosureParameterRead
+	goClosureConstruct
+	goIndirectCall
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -294,6 +298,47 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			id := expressionNodeID(owner, path, "interface-value")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a013", []graphField{refField(0xa0130, expression.typeID), refField(0xa0131, value), refField(0xa0132, expression.witnessID)})}
 			return id, nil
+		case goCaptureRead:
+			id := expressionNodeID(owner, path, "capture-read")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a022", []graphField{refField(0xa0220, expression.bindingID)})}
+			return id, nil
+		case goClosureParameterRead:
+			id := expressionNodeID(owner, path, "closure-parameter-read")
+			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009013", []graphField{refField(0x9130, expression.bindingID)})}
+			return id, nil
+		case goClosureConstruct:
+			captured, err := emit(expression.left, path+".capture.value")
+			if err != nil {
+				return "", err
+			}
+			captureID := expressionNodeID(owner, path, "capture")
+			parameterID := expressionNodeID(owner, path, "closure-parameter")
+			assignClosureBindings(expression.body, captureID, parameterID)
+			body, err := emit(expression.body, path+".body")
+			if err != nil {
+				return "", err
+			}
+			emitted[expression.typeID] = graphEntity{expression.typeID, entity(expression.typeID, "0000000000000000000000000000a020", []graphField{refsField(0xa0200, []string{integerID}), refField(0xa0201, integerID)})}
+			emitted[captureID] = graphEntity{captureID, entity(captureID, "0000000000000000000000000000a021", []graphField{bytesField(0xa0210, expression.text), refField(0xa0211, integerID), refField(0xa0212, captured)})}
+			emitted[parameterID] = graphEntity{parameterID, entity(parameterID, "00000000000000000000000000009012", []graphField{bytesField(0x9120, expression.elementName), refField(0x9121, integerID), unsignedField(0x9122, 0)})}
+			id := expressionNodeID(owner, path, "closure")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a023", []graphField{refField(0xa0230, expression.typeID), refsField(0xa0231, []string{parameterID}), refsField(0xa0232, []string{captureID}), refField(0xa0233, body)})}
+			return id, nil
+		case goIndirectCall:
+			callee, err := emit(expression.left, path+".callee")
+			if err != nil {
+				return "", err
+			}
+			arguments := make([]string, len(expression.arguments))
+			for index, argument := range expression.arguments {
+				arguments[index], err = emit(argument, path+".argument."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+			}
+			id := expressionNodeID(owner, path, "indirect-call")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a024", []graphField{refField(0xa0240, callee), refsField(0xa0241, arguments)})}
+			return id, nil
 		case goStateTransition:
 			state, err := emit(expression.left, path+".state")
 			if err != nil {
@@ -416,6 +461,20 @@ func assignFoldBinding(expression *goExpression, role, id string) {
 	}
 	assignFoldBinding(expression.left, role, id)
 	assignFoldBinding(expression.right, role, id)
+}
+
+func assignClosureBindings(expression *goExpression, captureID, parameterID string) {
+	if expression == nil {
+		return
+	}
+	if expression.kind == goCaptureRead {
+		expression.bindingID = captureID
+	}
+	if expression.kind == goClosureParameterRead {
+		expression.bindingID = parameterID
+	}
+	assignClosureBindings(expression.left, captureID, parameterID)
+	assignClosureBindings(expression.right, captureID, parameterID)
 }
 
 func expressionNodeID(owner, path, kind string) string {
@@ -553,6 +612,22 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 		}
 		identifier, ok := ast.Unparen(expression.Fun).(*ast.Ident)
+		if callSignature, signatureOK := goFunctionSignature(info.TypeOf(expression.Fun)); signatureOK && isUnaryI64Function(callSignature) {
+			if !ok || functions[info.Uses[identifier]] == "" {
+				callee, err := analyzeGoExpressionWithProgram(expression.Fun, signature, info, locals, functions, records, mutableLocals)
+				if err != nil {
+					return nil, err
+				}
+				if len(expression.Args) != 1 {
+					return nil, fmt.Errorf("expression.indirect_call_arity")
+				}
+				argument, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+				if err != nil {
+					return nil, err
+				}
+				return &goExpression{kind: goIndirectCall, left: callee, arguments: []*goExpression{argument}}, nil
+			}
+		}
 		if ok && len(expression.Args) == 1 {
 			if typeName, typeOK := info.Uses[identifier].(*types.TypeName); typeOK {
 				interfaceNamed, interfaceOK := typeName.Type().(*types.Named)
@@ -660,6 +735,34 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			arguments[index] = analyzed
 		}
 		return &goExpression{kind: goFunctionCall, callee: callee, arguments: arguments}, nil
+	case *ast.FuncLit:
+		closureSignature, ok := info.TypeOf(expression.Type).(*types.Signature)
+		if !ok || !isUnaryI64Function(closureSignature) || len(expression.Body.List) != 1 {
+			return nil, fmt.Errorf("expression.unsupported_closure")
+		}
+		statement, ok := expression.Body.List[0].(*ast.ReturnStmt)
+		if !ok || len(statement.Results) != 1 {
+			return nil, fmt.Errorf("expression.unsupported_closure_body")
+		}
+		addition, ok := ast.Unparen(statement.Results[0]).(*ast.BinaryExpr)
+		if !ok || addition.Op != token.ADD {
+			return nil, fmt.Errorf("expression.unsupported_closure_body")
+		}
+		leftID, leftOK := ast.Unparen(addition.X).(*ast.Ident)
+		rightID, rightOK := ast.Unparen(addition.Y).(*ast.Ident)
+		if !leftOK || !rightOK {
+			return nil, fmt.Errorf("expression.unsupported_closure_body")
+		}
+		captureIndex := -1
+		for index := 0; index < signature.Params().Len(); index++ {
+			if info.Uses[leftID] == signature.Params().At(index) {
+				captureIndex = index
+			}
+		}
+		if captureIndex < 0 || info.Uses[rightID] != closureSignature.Params().At(0) {
+			return nil, fmt.Errorf("expression.unsupported_closure_capture")
+		}
+		return &goExpression{kind: goClosureConstruct, left: &goExpression{kind: goParameterRead, parameter: captureIndex}, body: &goExpression{kind: goIntegerAdd, left: &goExpression{kind: goCaptureRead}, right: &goExpression{kind: goClosureParameterRead}}, text: leftID.Name, elementName: rightID.Name, typeID: goFunctionTypeID(closureSignature)}, nil
 	case *ast.CompositeLit:
 		if stateType, resultType, ok := goTransitionTypes(info.TypeOf(expression)); ok {
 			if len(expression.Elts) != 2 {

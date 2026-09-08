@@ -17,6 +17,7 @@ const moduleV24G1 = fs.readFileSync(new URL("../../modules/execution/v24/module.
 const moduleV25G1 = fs.readFileSync(new URL("../../modules/execution/v25/module.g1", import.meta.url), "utf8");
 const moduleV26G1 = fs.readFileSync(new URL("../../modules/execution/v26/module.g1", import.meta.url), "utf8");
 const moduleV27G1 = fs.readFileSync(new URL("../../modules/execution/v27/module.g1", import.meta.url), "utf8");
+const moduleV28G1 = fs.readFileSync(new URL("../../modules/execution/v28/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -269,5 +270,20 @@ export function ApplyOffset(offset, value) { return new OffsetAdjuster(offset).A
   const projected = projectJavaScript(first);
   assert.match(projected, /new OffsetAdjuster\(offset\)\.Adjust\(value\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV27G1, packagePath: "example.test/interface-value", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts immutable lexical closures", () => {
+  const source = `/** @param {bigint} base @returns {function(bigint): bigint} */
+function MakeAdder(base) { return (value) => base + value; }
+/** @param {function(bigint): bigint} fn @param {bigint} value @returns {bigint} */
+function Apply(fn, value) { return fn(value); }
+/** @param {bigint} base @param {bigint} value @returns {bigint} */
+export function Run(base, value) { return Apply(MakeAdder(base), value); }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV28G1, packagePath: "example.test/immutable-closure", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /\(value\) => \(base \+ value\)/);
+  assert.match(projected, /return fn\(value\)/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV28G1, packagePath: "example.test/immutable-closure", revision: 1 });
   assert.equal(second, first);
 });
