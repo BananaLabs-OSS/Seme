@@ -256,6 +256,10 @@ and JavaScript `if` statements converge on `When`; both outcomes execute with
 exact modular-i64 values standalone and through Pulp. Run
 `./scripts/check-execution-v19.sh`.
 
+The durable status, verified evidence, honest limits, environment state, and
+recommended resumption point through v19 are recorded in the
+[`Core v19 development checkpoint`](spec/development-checkpoint-v19.md).
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and
