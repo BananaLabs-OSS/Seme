@@ -32,3 +32,20 @@ It is not part of Seme's runtime or trusted bootstrap.
 - Live Language Service v1, the incremental Go session, and the certified
   canonical builder used only the existing workstation tools documented above.
   No software was installed and no persistent environment setting changed.
+
+## 2026-09-07 — temporary Go toolchain cache for Core v14 verification
+
+The pre-existing local `mise` Go shim automatically downloaded Go 1.26.0 into
+the task-scoped temporary cache directories `/tmp/seme-v14-gomodcache` and
+`/tmp/seme-v14-gocache` because the repository requires Go 1.26. No persistent
+configuration, project dependency, system package, or workstation toolchain was
+installed or changed. The v14 Pulp gate also downloaded its already-locked Go
+module dependencies (`BurntSushi/toml`, `vmihailenco/msgpack/v5`, and
+`tetratelabs/wazero`, including transitive locked modules) into the same
+task-scoped module cache; repository dependency declarations were unchanged.
+These exact temporary directories were removed after the verification run.
+
+The Core v14 gate sets `XDG_CACHE_HOME` to its automatically removed temporary
+work directory for the duration of the command. This lets the existing Pulp
+Wazero runtime create its compilation cache without writing to the developer's
+persistent home cache. It is not a persistent environment setting.

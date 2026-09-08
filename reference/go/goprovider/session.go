@@ -206,8 +206,8 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID string) 
 	diagnostic := func(code, message string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 		return nil, SourceIdentity{}, &SessionDiagnostic{Code: code, Message: message, File: function.file, Line: position.Line, Column: position.Column, Severity: "warning"}
 	}
-	if function.sig.Results().Len() != 1 || len(function.fn.Body.List) != 1 {
-		return diagnostic("session.unsupported_function_shape", "supported functions require one result and one return statement")
+	if function.sig.Results().Len() != 1 {
+		return diagnostic("session.unsupported_function_shape", "supported functions require one result")
 	}
 	resultTypeID := integerID
 	if isBool(function.sig.Results().At(0).Type()) {
@@ -215,9 +215,9 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID string) 
 	} else if !isInt64(function.sig.Results().At(0).Type()) {
 		return diagnostic("session.unsupported_result_type", "supported result types are int64 and bool")
 	}
-	returned, ok := function.fn.Body.List[0].(*ast.ReturnStmt)
-	if !ok || len(returned.Results) != 1 {
-		return diagnostic("session.unsupported_function_body", "supported function body must contain one returned expression")
+	block, err := analyzeGoBlock(function.fn.Body.List, function.sig, function.info)
+	if err != nil {
+		return diagnostic("session.unsupported_function_body", err.Error())
 	}
 	parameterIDs := make([]string, function.sig.Params().Len())
 	var instances []graphEntity
@@ -233,24 +233,13 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID string) 
 			bytesField(0x9120, function.sig.Params().At(index).Name()), refField(0x9121, parameterTypeID), unsignedField(0x9122, uint64(index)),
 		})})
 	}
-	expression, err := analyzeGoExpression(returned.Results[0], function.sig, function.info)
-	if err != nil {
-		return diagnostic("session.unsupported_expression", err.Error())
-	}
-	expressions, expressionID, err := emitCanonicalExpression(expression, function.id, parameterIDs, integerID)
+	bodyID, err := emitCanonicalBlock(block, function.id, "body", parameterIDs, integerID, &instances)
 	if err != nil {
 		return diagnostic("session.expression_emission", err.Error())
 	}
-	instances = append(instances, expressions...)
-	returnID := stableID("execution", function.id, "statement", "return")
-	blockID := stableID("execution", function.id, "block", "body")
-	instances = append(instances,
-		graphEntity{returnID, entity(returnID, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{expressionID})})},
-		graphEntity{blockID, entity(blockID, "00000000000000000000000000009080", []graphField{refsField(0x9800, []string{returnID})})},
-		graphEntity{function.id, entity(function.id, "00000000000000000000000000009011", []graphField{
-			bytesField(0x9110, function.name), refsField(0x9111, parameterIDs), refField(0x9112, resultTypeID), refField(0x9113, blockID),
-		})},
-	)
+	instances = append(instances, graphEntity{function.id, entity(function.id, "00000000000000000000000000009011", []graphField{
+		bytesField(0x9110, function.name), refsField(0x9111, parameterIDs), refField(0x9112, resultTypeID), refField(0x9113, bodyID),
+	})})
 	start := function.fset.Position(function.fn.Pos())
 	end := function.fset.Position(function.fn.End())
 	source := SourceIdentity{ID: function.id, Kind: "function", Name: function.name, Document: function.file, Start: start.Offset, End: end.Offset, Line: start.Line, Column: start.Column}

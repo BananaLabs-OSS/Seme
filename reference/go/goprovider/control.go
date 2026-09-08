@@ -124,11 +124,11 @@ func LiftControlFunction(project string, manifest Manifest, moduleG1 []byte, fun
 	if err != nil {
 		return "", "", err
 	}
-	if signature.Results().Len() != 1 || (!isInt64(signature.Results().At(0).Type()) && !isBool(signature.Results().At(0).Type())) {
+	if signature.Results().Len() != 1 || (!isInt64(signature.Results().At(0).Type()) && !isBool(signature.Results().At(0).Type()) && !isPureString(signature.Results().At(0).Type())) {
 		return "", "", fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 	}
 	for index := 0; index < signature.Params().Len(); index++ {
-		if !isInt64(signature.Params().At(index).Type()) && !isBool(signature.Params().At(index).Type()) {
+		if !isInt64(signature.Params().At(index).Type()) && !isBool(signature.Params().At(index).Type()) && !isPureString(signature.Params().At(index).Type()) {
 			return "", "", fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 		}
 	}
@@ -139,25 +139,35 @@ func LiftControlFunction(project string, manifest Manifest, moduleG1 []byte, fun
 
 	integerID := stableID("execution", "type", "i64")
 	booleanID := stableID("execution", "type", "bool")
+	stringID := stableID("execution", "type", "string")
 	resultTypeID := integerID
 	if isBool(signature.Results().At(0).Type()) {
 		resultTypeID = booleanID
+	} else if isPureString(signature.Results().At(0).Type()) {
+		resultTypeID = stringID
 	}
 	instances := []graphEntity{{integerID, entity(integerID, "00000000000000000000000000009010", []graphField{
 		unsignedField(0x9100, 64), {0x9101, "tr"}, unsignedField(0x9102, 0),
 	})}}
 	needsBoolean := isBool(signature.Results().At(0).Type())
+	needsString := isPureString(signature.Results().At(0).Type())
 	parameterIDs := make([]string, signature.Params().Len())
 	for index := range parameterIDs {
 		needsBoolean = needsBoolean || isBool(signature.Params().At(index).Type())
+		needsString = needsString || isPureString(signature.Params().At(index).Type())
 	}
 	if needsBoolean {
 		instances = append(instances, graphEntity{booleanID, entity(booleanID, "00000000000000000000000000009020", nil)})
+	}
+	if needsString {
+		instances = append(instances, graphEntity{stringID, entity(stringID, "00000000000000000000000000009040", nil)})
 	}
 	for index := range parameterIDs {
 		typeID := integerID
 		if isBool(signature.Params().At(index).Type()) {
 			typeID = booleanID
+		} else if isPureString(signature.Params().At(index).Type()) {
+			typeID = stringID
 		}
 		parameterIDs[index] = stableID("execution", declaration.ID, "parameter", strconv.Itoa(index))
 		instances = append(instances, graphEntity{parameterIDs[index], entity(parameterIDs[index], "00000000000000000000000000009012", []graphField{

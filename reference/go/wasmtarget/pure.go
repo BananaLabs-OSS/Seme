@@ -9,20 +9,23 @@ import (
 )
 
 type PureABI struct {
-	Contract          string         `json:"contract"`
-	Provider          string         `json:"provider"`
-	Target            string         `json:"target"`
-	Fidelity          string         `json:"fidelity"`
-	CanonicalModule   string         `json:"canonical_module"`
-	CanonicalRevision string         `json:"canonical_revision"`
-	CanonicalProgram  string         `json:"canonical_program"`
-	Function          string         `json:"function"`
-	ProgramSHA256     string         `json:"program_sha256,omitempty"`
-	ArtifactSHA256    string         `json:"artifact_sha256,omitempty"`
-	RequestSize       uint64         `json:"request_size"`
-	ResponseSize      uint64         `json:"response_size"`
-	Parameters        []PureABIField `json:"parameters"`
-	Result            PureABIField   `json:"result"`
+	Contract           string         `json:"contract"`
+	Provider           string         `json:"provider"`
+	Target             string         `json:"target"`
+	Fidelity           string         `json:"fidelity"`
+	CanonicalModule    string         `json:"canonical_module"`
+	CanonicalRevision  string         `json:"canonical_revision"`
+	CanonicalProgram   string         `json:"canonical_program"`
+	Function           string         `json:"function"`
+	ProgramSHA256      string         `json:"program_sha256,omitempty"`
+	ArtifactSHA256     string         `json:"artifact_sha256,omitempty"`
+	RequestSize        uint64         `json:"request_size"`
+	ResponseSize       uint64         `json:"response_size"`
+	FixedHeaderSize    uint64         `json:"fixed_header_size,omitempty"`
+	MaximumRequestSize uint64         `json:"maximum_request_size,omitempty"`
+	VariablePayload    bool           `json:"variable_payload,omitempty"`
+	Parameters         []PureABIField `json:"parameters"`
+	Result             PureABIField   `json:"result"`
 }
 
 type PureABIField struct {
@@ -105,6 +108,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 		CanonicalModule: graph.Module.String(), CanonicalRevision: graph.Revision.String(),
 		CanonicalProgram: programs[0].ID.String(), Function: function.ID.String(),
 	}
+	hasStrings := false
 	seenParameters := make(map[wire.ID]bool, len(parametersValue.List))
 	for index, item := range parametersValue.List {
 		if item.Tag != 6 || seenParameters[item.Reference] {
@@ -126,6 +130,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 			return nil, PureABI{}, err
 		}
 		parameterTypes[index] = valueType
+		hasStrings = hasStrings || valueType.name == "string"
 		parameterLocals[parameter.ID] = byte(index)
 		parameterTypeNames[parameter.ID] = valueType.name
 		abi.Parameters = append(abi.Parameters, PureABIField{Index: uint64(index), Type: valueType.name, Offset: abi.RequestSize, Size: valueType.size, Encoding: pureEncoding(valueType.name)})
@@ -139,11 +144,23 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if err != nil {
 		return nil, PureABI{}, err
 	}
+	hasStrings = hasStrings || resultType.name == "string"
 	abi.Result = PureABIField{Index: 0, Type: resultType.name, Offset: 0, Size: resultType.size, Encoding: pureEncoding(resultType.name)}
 	abi.ResponseSize = resultType.size
 	bodyValue, err := field(function, 0x9113)
 	if err != nil || bodyValue.Tag != 6 {
 		return nil, PureABI{}, fmt.Errorf("wasm.pure_body")
+	}
+	if hasStrings {
+		abi.Contract = "seme.pure-abi/v2"
+		abi.Provider = "seme.function-v2"
+		abi.FixedHeaderSize = abi.RequestSize
+		abi.MaximumRequestSize = 7160
+		abi.VariablePayload = true
+		if resultType.name == "string" {
+			abi.ResponseSize = 0
+		}
+		return certifyPureStringFunction(graph, bodyValue.Reference, parameterTypes, resultType, parameterTypeNames, parameterLocals, abi)
 	}
 	used := map[byte]bool{}
 	budget := 4096
@@ -226,6 +243,9 @@ func lowerPureBlock(graph wire.Envelope, id wire.ID, resultType string, paramete
 func pureEncoding(name string) string {
 	if name == "bool" {
 		return "canonical-u8-0-or-1"
+	}
+	if name == "string" {
+		return "u32le-offset-u32le-length/utf8-scalar-exact"
 	}
 	return "little-endian-twos-complement-i64-modular"
 }
@@ -337,6 +357,8 @@ func pureType(graph wire.Envelope, id wire.ID) (pureValueType, error) {
 		return pureValueType{"i64", 0x7e, 8}, nil
 	case identity(0x9020):
 		return pureValueType{"bool", 0x7f, 1}, nil
+	case identity(0x9040):
+		return pureValueType{"string", 0x7e, 8}, nil
 	default:
 		return pureValueType{}, fmt.Errorf("wasm.pure_unsupported_type")
 	}

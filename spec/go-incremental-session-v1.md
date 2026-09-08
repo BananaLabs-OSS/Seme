@@ -32,8 +32,9 @@ declarations may still form a valid canonical subset. Unsupported source is not
 inserted into the canonical graph or rewritten.
 
 The bounded v1 lift accepts package functions with `int64` and `bool`
-parameters, one `int64` or `bool` result, one return statement, and the current
-Core v12 compositional expression vocabulary. It does not yet resolve sibling
+parameters, one `int64` or `bool` result, a v13 total-return conditional body,
+and the current compositional expression vocabulary. Fallthrough after a
+terminal `if` is normalized to an explicit canonical else block. It does not yet resolve sibling
 in-memory packages, imported module dependencies, methods, locals, effects,
 multiple returns, or build-tag variants.
 

@@ -209,6 +209,12 @@ provider normalizes fallthrough returns into explicit branches, and the same
 canonical tree runs as standalone Wasm and through Pulp. Run
 `./scripts/check-execution-v13.sh`.
 
+[`Core Execution v14`](spec/core-execution-v14.md) adds the variable-width
+`seme.pure-abi/v2` realization for exact UTF-8 string parameters and results.
+Ordered descriptors, strict validation, runtime concatenation/equality, bounded
+allocation, standalone Wasm, and capability-free Pulp execution are checked by
+`./scripts/check-execution-v14.sh`; scalar ABI v1 remains frozen.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

@@ -13,13 +13,13 @@ import (
 func TestLiveLoopRetainsLastValidAndRejectsStale(t *testing.T) {
 	input := strings.Join([]string{
 		`{"id":1,"command":"initialize","session":"s","package_path":"example.test/live"}`,
-		`{"id":2,"command":"update","session":"s","revision":1,"files":{"main.go":"package live\nfunc Add(a, b int64) int64 { return a + b }\n"}}`,
-		`{"id":3,"command":"update","session":"s","revision":2,"files":{"main.go":"package live\nfunc Add("}}`,
-		`{"id":4,"command":"update","session":"s","revision":2,"files":{"main.go":"package live\nfunc Add(a, b int64) int64 { return a + b }\n"}}`,
+		`{"id":2,"command":"update","session":"s","revision":1,"files":{"main.go":"package live\nfunc Decide(enabled bool, value, limit int64) bool {\nif enabled || (\"λ\" + \"!\" == \"never\") {\nif value <= limit { return \"exact\" + \"-text\" == \"exact-text\" }\nreturn false\n}\nreturn false\n}\n"}}`,
+		`{"id":3,"command":"update","session":"s","revision":2,"files":{"main.go":"package live\nfunc Decide("}}`,
+		`{"id":4,"command":"update","session":"s","revision":2,"files":{"main.go":"package live\nfunc Decide(enabled bool, value, limit int64) bool { return enabled && value <= limit }\n"}}`,
 		`{"id":5,"command":"snapshot","session":"s"}`,
 	}, "\n")
 	var output bytes.Buffer
-	if err := serve(strings.NewReader(input), &output, moduleV12(t), defaultMaxMessage); err != nil {
+	if err := serve(strings.NewReader(input), &output, moduleVersion(t, 13), defaultMaxMessage); err != nil {
 		t.Fatal(err)
 	}
 	responses := decodeResponses(t, output.Bytes())
@@ -105,9 +105,13 @@ func TestGracefulEmptyEOF(t *testing.T) {
 }
 
 func moduleV12(t *testing.T) []byte {
+	return moduleVersion(t, 12)
+}
+
+func moduleVersion(t *testing.T, version int) []byte {
 	t.Helper()
 	var module bytes.Buffer
-	if err := executionmodule.Emit(&module, 12); err != nil {
+	if err := executionmodule.Emit(&module, version); err != nil {
 		t.Fatal(err)
 	}
 	return module.Bytes()
