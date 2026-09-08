@@ -208,6 +208,19 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 }
 
 function emitExpression(node, owner, path, context, expected) {
+	if (node.type === "MemberExpression" && node.computed && node.object.type === "ArrayExpression" && expected === "i64") {
+		if (node.object.elements.length === 0 || node.object.elements.length > 32 || node.object.elements.some((item) => !item || item.type === "SpreadElement")) fail("javascript.fixed_array_shape", node.loc.start);
+		const length = node.object.elements.length;
+		const arrayType = stableID("execution", "type", "fixed-array", "i64", String(length));
+		const values = node.object.elements.map((item, index) => emitExpression(item, owner, `${path}.collection.element.${index}`, context, "i64"));
+		const constructID = expressionID(owner, `${path}.collection`, "fixed-array-construct");
+		context.entities.push(graphEntity(arrayType, entity(arrayType, "000000000000000000000000000090f2", [[0x9f20, ref(ids.i64)], [0x9f21, `uu ${length}`]])));
+		context.entities.push(graphEntity(constructID, entity(constructID, "000000000000000000000000000090f3", [[0x9f30, ref(arrayType)], [0x9f31, refs(values.map((item) => item.id))]])));
+		const index = emitExpression(node.property, owner, `${path}.index`, context, "i64");
+		const id = expressionID(owner, path, "index-read");
+		context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f4", [[0x9f40, ref(constructID)], [0x9f41, ref(index.id)]])));
+		return { id, type: "i64" };
+	}
   if (node.type === "Identifier") {
     const index = context.parameterNames.indexOf(node.name);
     if (index < 0) {

@@ -359,9 +359,58 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 			return fmt.Errorf("wasm.pure_string_literal_type")
 		}
 		return nil
+	case identity(0x90f4):
+		if expected != "i64" {
+			return fmt.Errorf("wasm.fixed_array_result_type")
+		}
+		collection, collectionErr := field(expression, 0x9f40)
+		index, indexErr := field(expression, 0x9f41)
+		if collectionErr != nil || indexErr != nil || collection.Tag != 6 || index.Tag != 6 {
+			return fmt.Errorf("wasm.index_read_fields")
+		}
+		values, err := fixedI64ArrayValues(graph, collection.Reference)
+		if err != nil {
+			return err
+		}
+		for _, value := range values {
+			if err := validatePureExpression(graph, value, "i64", parameterTypes, visiting, budget); err != nil {
+				return err
+			}
+		}
+		return validatePureExpression(graph, index.Reference, "i64", parameterTypes, visiting, budget)
 	default:
 		return fmt.Errorf("wasm.pure_unsupported_expression")
 	}
+}
+
+func fixedI64ArrayValues(graph wire.Envelope, constructID wire.ID) ([]wire.ID, error) {
+	construct, ok := graph.Entities[constructID]
+	if !ok || construct.Schema != identity(0x90f3) {
+		return nil, fmt.Errorf("wasm.fixed_array_construct")
+	}
+	typeValue, typeErr := field(construct, 0x9f30)
+	valuesValue, valuesErr := field(construct, 0x9f31)
+	if typeErr != nil || valuesErr != nil || typeValue.Tag != 6 || valuesValue.Tag != 7 || len(valuesValue.List) == 0 || len(valuesValue.List) > 32 {
+		return nil, fmt.Errorf("wasm.fixed_array_fields")
+	}
+	arrayType, ok := graph.Entities[typeValue.Reference]
+	if !ok || arrayType.Schema != identity(0x90f2) {
+		return nil, fmt.Errorf("wasm.fixed_array_type")
+	}
+	element, elementErr := field(arrayType, 0x9f20)
+	length, lengthErr := field(arrayType, 0x9f21)
+	elementType, elementTypeErr := pureType(graph, element.Reference)
+	if elementErr != nil || lengthErr != nil || element.Tag != 6 || length.Tag != 3 || length.Unsigned != uint64(len(valuesValue.List)) || elementTypeErr != nil || elementType.name != "i64" {
+		return nil, fmt.Errorf("wasm.fixed_array_profile")
+	}
+	values := make([]wire.ID, len(valuesValue.List))
+	for index, value := range valuesValue.List {
+		if value.Tag != 6 {
+			return nil, fmt.Errorf("wasm.fixed_array_value")
+		}
+		values[index] = value.Reference
+	}
+	return values, nil
 }
 
 func pureType(graph wire.Envelope, id wire.ID) (pureValueType, error) {
