@@ -287,6 +287,13 @@ JavaScript `bigint[]` converge on one canonical slice fold; a bounded
 descriptor/payload ABI executes changing lengths through Wasm and Pulp. Run
 `./scripts/check-execution-v23.sh`.
 
+[`Core Execution v24`](spec/core-execution-v24.md) adds neutral collection
+length and runtime-checked computed indexing. Go and JavaScript empty-safe last
+element access converge canonically and execute with negative/upper-bound traps
+through Wasm and Pulp. Run `./scripts/check-execution-v24.sh`. The distinction
+between finite roadmap completion and broad language readiness is maintained in
+the [`progress dashboard`](spec/progress-dashboard.md).
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

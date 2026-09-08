@@ -132,3 +132,11 @@ repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. Its
 gate builds and executes only in automatically removed temporary directories.
 No software, dependency, global setting, SSH setting, or persistent environment
 configuration was installed or changed.
+
+## 2026-09-08 — Core v24 collection-query verification
+
+Core v24 used only the existing workstation Go 1.26 toolchain, Node 22,
+repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. Its
+gate builds and executes only in automatically removed temporary directories.
+No software, dependency, global setting, SSH setting, or persistent environment
+configuration was installed or changed.

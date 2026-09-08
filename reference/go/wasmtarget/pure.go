@@ -413,9 +413,48 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 			return err
 		}
 		return validateI64AddFoldBody(graph, body, accumulator, element)
+	case identity(0x90f9):
+		if expected != "i64" {
+			return fmt.Errorf("wasm.collection_length_result_type")
+		}
+		collection, err := field(expression, 0x9f90)
+		if err != nil || collection.Tag != 6 || validateI64Collection(graph, collection.Reference, parameterTypes) != nil {
+			return fmt.Errorf("wasm.collection_length_collection")
+		}
+		return nil
+	case identity(0x90fa):
+		if expected != "i64" {
+			return fmt.Errorf("wasm.dynamic_index_result_type")
+		}
+		collection, collectionErr := field(expression, 0x9fa0)
+		index, indexErr := field(expression, 0x9fa1)
+		if collectionErr != nil || indexErr != nil || collection.Tag != 6 || index.Tag != 6 || validateI64Collection(graph, collection.Reference, parameterTypes) != nil {
+			return fmt.Errorf("wasm.dynamic_index_fields")
+		}
+		return validatePureExpression(graph, index.Reference, "i64", parameterTypes, visiting, budget)
 	default:
 		return fmt.Errorf("wasm.pure_unsupported_expression")
 	}
+}
+
+func validateI64Collection(graph wire.Envelope, id wire.ID, parameterTypes map[wire.ID]string) error {
+	collection, ok := graph.Entities[id]
+	if !ok {
+		return fmt.Errorf("wasm.collection_missing")
+	}
+	if collection.Schema == identity(0x90f3) {
+		_, err := fixedI64ArrayValues(graph, id)
+		return err
+	}
+	if collection.Schema != identity(0x9013) {
+		return fmt.Errorf("wasm.collection_expression")
+	}
+	parameter, err := field(collection, 0x9130)
+	typeName := parameterTypes[parameter.Reference]
+	if err != nil || parameter.Tag != 6 || (typeName != "slice:i64" && !strings.HasPrefix(typeName, "fixed-array:i64:")) {
+		return fmt.Errorf("wasm.collection_type")
+	}
+	return nil
 }
 
 func foldFields(graph wire.Envelope, fold wire.Entity) (wire.ID, wire.ID, wire.ID, wire.ID, wire.ID, error) {

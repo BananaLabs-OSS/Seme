@@ -225,6 +225,14 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 }
 
 function emitExpression(node, owner, path, context, expected) {
+	if (node.type === "MemberExpression" && !node.computed && node.property.type === "Identifier" && node.property.name === "length" && expected === "i64") {
+		const collectionType = inferExpressionType(node.object, context);
+		if (!(collectionType.startsWith("array:i64:") || collectionType === "slice:i64")) fail("javascript.collection_length_type", node.loc.start);
+		const collection = emitExpression(node.object, owner, `${path}.collection`, context, collectionType);
+		const id = expressionID(owner, path, "collection-length");
+		context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f9", [[0x9f90, ref(collection.id)]])));
+		return { id, type: "i64" };
+	}
 	if (node.type === "CallExpression" && expected === "i64" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.name === "reduce" && node.arguments.length === 2) {
 		const collectionType = inferExpressionType(node.callee.object, context);
 		const callback = node.arguments[0];
@@ -250,11 +258,12 @@ function emitExpression(node, owner, path, context, expected) {
 	if (node.type === "MemberExpression" && node.computed && expected === "i64" && node.object.type === "Identifier") {
 		const parameterIndex = context.parameterNames.indexOf(node.object.name);
 		const arrayType = parameterIndex >= 0 ? context.parameterTypes[parameterIndex] : undefined;
-		if (!arrayType?.startsWith("array:i64:")) fail("javascript.index_read_collection", node.loc.start);
+		if (!(arrayType?.startsWith("array:i64:") || arrayType === "slice:i64")) fail("javascript.index_read_collection", node.loc.start);
 		const collection = emitExpression(node.object, owner, `${path}.collection`, context, arrayType);
-		const index = emitExpression(node.property, owner, `${path}.index`, context, "i64");
-		const id = expressionID(owner, path, "index-read");
-		context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f4", [[0x9f40, ref(collection.id)], [0x9f41, ref(index.id)]])));
+		const index = dynamicIndexExpression(node.property, owner, `${path}.index`, context);
+		const dynamic = arrayType === "slice:i64";
+		const id = expressionID(owner, path, dynamic ? "dynamic-index-read" : "index-read");
+		context.entities.push(graphEntity(id, entity(id, dynamic ? "000000000000000000000000000090fa" : "000000000000000000000000000090f4", [[dynamic ? 0x9fa0 : 0x9f40, ref(collection.id)], [dynamic ? 0x9fa1 : 0x9f41, ref(index.id)]])));
 		return { id, type: "i64" };
 	}
 	if (node.type === "MemberExpression" && node.computed && node.object.type === "ArrayExpression" && expected === "i64") {
@@ -341,6 +350,8 @@ function emitExpression(node, owner, path, context, expected) {
   const operator = node.operator;
   const table = {
 	"+:i64": ["add", "00000000000000000000000000009014", 0x9140, 0x9141, "i64"],
+	"-:i64": ["subtract", "000000000000000000000000000090a0", 0x9a00, 0x9a01, "i64"],
+	"<=:bool": ["less-equal", "00000000000000000000000000009021", 0x9160, 0x9161, "i64"],
     "+:string": ["string-concat", "000000000000000000000000000090c3", 0x9c30, 0x9c31, "string"],
     "===:bool": ["string-equal", "000000000000000000000000000090c2", 0x9c20, 0x9c21, "string"],
     "&&:bool": ["boolean-and", "000000000000000000000000000090b1", 0x9b10, 0x9b11, "bool"],
@@ -352,8 +363,31 @@ function emitExpression(node, owner, path, context, expected) {
   const left = emitExpression(node.left, owner, `${path}.left`, context, operandType);
   const right = emitExpression(node.right, owner, `${path}.right`, context, operandType);
   const id = expressionID(owner, path, kind);
-  context.entities.push(graphEntity(id, entity(id, schema, [[leftField, ref(left.id)], [rightField, ref(right.id)]])));
+  const fields = [[leftField, ref(left.id)], [rightField, ref(right.id)]];
+	if (schema === "00000000000000000000000000009014") fields.push([0x9142, ref(ids.i64)]);
+	if (schema === "000000000000000000000000000090a0") fields.push([0x9a02, ref(ids.i64)]);
+	if (schema === "00000000000000000000000000009021") fields.push([0x9162, ref(ids.i64)]);
+  context.entities.push(graphEntity(id, entity(id, schema, fields)));
   return { id, type: expected };
+}
+
+function dynamicIndexExpression(node, owner, path, context) {
+	if (node.type === "Literal" && typeof node.value === "number" && Number.isSafeInteger(node.value)) {
+		const id = expressionID(owner, path, "integer-literal");
+		context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009070", [[0x9700, `uu ${BigInt.asUintN(64, BigInt(node.value))}`], [0x9701, ref(ids.i64)]])));
+		return { id, type: "i64" };
+	}
+	if (node.type === "BinaryExpression" && (node.operator === "+" || node.operator === "-")) {
+		const left = dynamicIndexExpression(node.left, owner, `${path}.left`, context);
+		const right = dynamicIndexExpression(node.right, owner, `${path}.right`, context);
+		const subtract = node.operator === "-";
+		const id = expressionID(owner, path, subtract ? "subtract" : "add");
+		context.entities.push(graphEntity(id, entity(id, subtract ? "000000000000000000000000000090a0" : "00000000000000000000000000009014", subtract
+			? [[0x9a00, ref(left.id)], [0x9a01, ref(right.id)], [0x9a02, ref(ids.i64)]]
+			: [[0x9140, ref(left.id)], [0x9141, ref(right.id)], [0x9142, ref(ids.i64)]])));
+		return { id, type: "i64" };
+	}
+	return emitExpression(node, owner, path, context, "i64");
 }
 
 function inferExpressionType(node, context) {
@@ -365,6 +399,7 @@ function inferExpressionType(node, context) {
   }
   if (node.type === "Literal" && typeof node.value === "string") return "string";
   if (node.type === "Literal" && typeof node.value === "boolean") return "bool";
+	if (node.type === "MemberExpression" && !node.computed && node.property.name === "length") return "i64";
   if (node.type === "ObjectExpression") {
     const names = new Set(node.properties.map((property) => property.key?.name ?? property.key?.value));
     const matches = [...context.recordsByName.values()].filter((record) => record.fields.length === names.size && record.fields.every((field) => names.has(field.name)));
@@ -376,11 +411,13 @@ function inferExpressionType(node, context) {
   }
   if (node.type === "LogicalExpression" && (node.operator === "&&" || node.operator === "||")) return "bool";
   if (node.type === "BinaryExpression" && node.operator === "===") return "bool";
-  if (node.type === "BinaryExpression" && node.operator === "+") {
+	if (node.type === "BinaryExpression" && node.operator === "<=") return "bool";
+	if (node.type === "BinaryExpression" && node.operator === "+") {
     const left = inferExpressionType(node.left, context);
     const right = inferExpressionType(node.right, context);
     if (left === "string" && right === "string") return "string";
   }
+	if (node.type === "BinaryExpression" && node.operator === "-") return "i64";
   fail("javascript.ambiguous_local_type", node.loc.start);
 }
 
@@ -395,7 +432,11 @@ function containsReturn(node) {
   if (node.type === "IfStatement") return containsReturn(node.consequent) || (node.alternate ? containsReturn(node.alternate) : false);
   return false;
 }
-function expressionID(owner, path, kind) { return stableID("execution", owner, "expression", path, kind); }
+function expressionID(owner, path, kind) {
+	if (path === "root" && kind === "less-equal") return stableID("execution", owner, "less-equal");
+	if (path === "root.left" && kind === "add") return stableID("execution", owner, "add");
+	return stableID("execution", owner, "expression", path, kind);
+}
 function isUnicodeScalarString(value) {
   for (let index = 0; index < value.length; index += 1) {
     const unit = value.charCodeAt(index);

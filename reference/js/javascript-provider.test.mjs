@@ -12,6 +12,7 @@ const moduleV20G1 = fs.readFileSync(new URL("../../modules/execution/v20/module.
 const moduleV21G1 = fs.readFileSync(new URL("../../modules/execution/v21/module.g1", import.meta.url), "utf8");
 const moduleV22G1 = fs.readFileSync(new URL("../../modules/execution/v22/module.g1", import.meta.url), "utf8");
 const moduleV23G1 = fs.readFileSync(new URL("../../modules/execution/v23/module.g1", import.meta.url), "utf8");
+const moduleV24G1 = fs.readFileSync(new URL("../../modules/execution/v24/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -169,4 +170,17 @@ export function Sum(values) { return values.reduce((total, value) => total + val
   const canonical = liftJavaScript({ source, moduleG1: moduleV23G1, packagePath: "example.test/slice", revision: 1 });
   assert.match(canonical, /000000000000000000000000000090f8/);
   assert.match(canonical, /000000000000000000000000000090f7/);
+});
+
+test("lifts collection length and computed slice indexing", () => {
+  const source = `/** @param {bigint[]} values @param {bigint} fallback @returns {bigint} */
+export function LastOr(values, fallback) { if (values.length <= 0n) return fallback; return values[values.length - 1]; }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV24G1, packagePath: "example.test/query", revision: 1 });
+  assert.match(canonical, /000000000000000000000000000090f9/);
+  assert.match(canonical, /000000000000000000000000000090fa/);
+});
+
+test("does not treat general JavaScript Number values as canonical i64", () => {
+  const source = `/** @returns {bigint} */ export function Wrong() { return 1; }`;
+  assert.throws(() => liftJavaScript({ source, moduleG1: moduleV24G1, packagePath: "example.test/wrong-number", revision: 1 }), /javascript\.unsupported_expression/);
 });

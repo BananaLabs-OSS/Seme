@@ -33,6 +33,8 @@ const (
 	goIndexRead
 	goIterationBindingRead
 	goFold
+	goCollectionLength
+	goDynamicIndexRead
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -185,6 +187,26 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			emitted[elementID] = graphEntity{elementID, entity(elementID, "000000000000000000000000000090f5", []graphField{bytesField(0x9f50, expression.elementName), refField(0x9f51, integerID)})}
 			id := expressionNodeID(owner, path, "fold")
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090f7", []graphField{refField(0x9f70, collection), refField(0x9f71, initial), refField(0x9f72, accumulatorID), refField(0x9f73, elementID), refField(0x9f74, body)})}
+			return id, nil
+		case goCollectionLength:
+			collection, err := emit(expression.left, path+".collection")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "collection-length")
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090f9", []graphField{refField(0x9f90, collection)})}
+			return id, nil
+		case goDynamicIndexRead:
+			collection, err := emit(expression.left, path+".collection")
+			if err != nil {
+				return "", err
+			}
+			index, err := emit(expression.right, path+".index")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "dynamic-index-read")
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090fa", []graphField{refField(0x9fa0, collection), refField(0x9fa1, index)})}
 			return id, nil
 		case goIntegerLiteral:
 			id := expressionNodeID(owner, path, "integer-literal")
@@ -394,6 +416,19 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		return &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}, nil
 	case *ast.CallExpr:
 		identifier, ok := ast.Unparen(expression.Fun).(*ast.Ident)
+		if ok && identifier.Name == "len" && info.Uses[identifier] == types.Universe.Lookup("len") && len(expression.Args) == 1 && !expression.Ellipsis.IsValid() {
+			underlying := info.TypeOf(expression.Args[0]).Underlying()
+			array, arrayOK := underlying.(*types.Array)
+			slice, sliceOK := underlying.(*types.Slice)
+			if (!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !isInt64(slice.Elem())) {
+				return nil, fmt.Errorf("expression.unsupported_collection_length")
+			}
+			collection, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			return &goExpression{kind: goCollectionLength, left: collection}, nil
+		}
 		callee, exists := functions[info.Uses[identifier]]
 		if !ok || !exists || expression.Ellipsis.IsValid() {
 			return nil, fmt.Errorf("expression.unsupported_call")
@@ -492,8 +527,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		return &goExpression{kind: goFieldRead, left: record, field: fieldID}, nil
 	case *ast.IndexExpr:
-		array, ok := info.TypeOf(expression.X).Underlying().(*types.Array)
-		if !ok || !isInt64(array.Elem()) || !isInt64(info.TypeOf(expression.Index)) {
+		underlying := info.TypeOf(expression.X).Underlying()
+		array, arrayOK := underlying.(*types.Array)
+		slice, sliceOK := underlying.(*types.Slice)
+		indexBasic, indexOK := info.TypeOf(expression.Index).Underlying().(*types.Basic)
+		if ((!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !isInt64(slice.Elem()))) || !indexOK || (indexBasic.Kind() != types.Int && indexBasic.Kind() != types.Int64) {
 			return nil, fmt.Errorf("expression.unsupported_index_read")
 		}
 		collection, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
@@ -504,7 +542,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		if err != nil {
 			return nil, err
 		}
-		return &goExpression{kind: goIndexRead, left: collection, right: index}, nil
+		kind := goIndexRead
+		if sliceOK {
+			kind = goDynamicIndexRead
+		}
+		return &goExpression{kind: kind, left: collection, right: index}, nil
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}

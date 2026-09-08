@@ -4,6 +4,7 @@ const schema = {
   parameter: "00000000000000000000000000009012",
   read: "00000000000000000000000000009013",
   integerAdd: "00000000000000000000000000009014",
+  integerLessEqual: "00000000000000000000000000009021",
   program: "00000000000000000000000000009015",
   boolType: "00000000000000000000000000009020",
   stringType: "00000000000000000000000000009040",
@@ -12,6 +13,7 @@ const schema = {
   block: "00000000000000000000000000009080",
   returned: "00000000000000000000000000009081",
   boolLiteral: "000000000000000000000000000090b0",
+  integerSubtract: "000000000000000000000000000090a0",
   boolAnd: "000000000000000000000000000090b1",
   branch: "000000000000000000000000000090c0",
   boolOr: "000000000000000000000000000090c1",
@@ -40,6 +42,8 @@ const schema = {
   iterationBindingRead: "000000000000000000000000000090f6",
   fold: "000000000000000000000000000090f7",
   sliceType: "000000000000000000000000000090f8",
+  collectionLength: "000000000000000000000000000090f9",
+  dynamicIndexRead: "000000000000000000000000000090fa",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -196,6 +200,12 @@ function projectExpression(id, context) {
 		foldContext.iterationBindings.set(elementID, elementName);
 		return `${projectExpression(reference(field(expression, 0x9f70)), context)}.reduce((${accumulatorName}, ${elementName}) => ${projectExpression(reference(field(expression, 0x9f74)), foldContext)}, ${projectExpression(reference(field(expression, 0x9f71)), context)})`;
 	}
+	if (expression.schema === schema.collectionLength) {
+		return `${projectExpression(reference(field(expression, 0x9f90)), context)}.length`;
+	}
+	if (expression.schema === schema.dynamicIndexRead) {
+		return `${projectExpression(reference(field(expression, 0x9fa0)), context)}[${projectIndexExpression(reference(field(expression, 0x9fa1)), context)}]`;
+	}
   if (expression.schema === schema.stringLiteral) return JSON.stringify(text(field(expression, 0x9500)));
   if (expression.schema === schema.boolLiteral) return atom(field(expression, 0x9b00)) === "tr" ? "true" : "false";
   if (expression.schema === schema.call) {
@@ -234,6 +244,8 @@ function projectExpression(id, context) {
   }
   const binary = new Map([
 	[schema.integerAdd, [0x9140, 0x9141, "+"]],
+	[schema.integerSubtract, [0x9a00, 0x9a01, "-"]],
+	[schema.integerLessEqual, [0x9160, 0x9161, "<="]],
     [schema.boolAnd, [0x9b10, 0x9b11, "&&"]],
     [schema.boolOr, [0x9c10, 0x9c11, "||"]],
     [schema.stringEqual, [0x9c20, 0x9c21, "==="]],
@@ -242,6 +254,19 @@ function projectExpression(id, context) {
   if (!binary) fail("javascript_projection.unsupported_expression");
   const [leftField, rightField, operator] = binary;
   return `(${projectExpression(reference(field(expression, leftField)), context)} ${operator} ${projectExpression(reference(field(expression, rightField)), context)})`;
+}
+
+function projectIndexExpression(id, context) {
+	const expression = required(context.graph, id);
+	if (expression.schema === schema.integerLiteral) return BigInt.asIntN(64, unsigned(field(expression, 0x9700))).toString();
+	if (expression.schema === schema.collectionLength) return `${projectExpression(reference(field(expression, 0x9f90)), context)}.length`;
+	if (expression.schema === schema.integerAdd || expression.schema === schema.integerSubtract) {
+		const leftField = expression.schema === schema.integerAdd ? 0x9140 : 0x9a00;
+		const rightField = expression.schema === schema.integerAdd ? 0x9141 : 0x9a01;
+		const operator = expression.schema === schema.integerAdd ? "+" : "-";
+		return `(${projectIndexExpression(reference(field(expression, leftField)), context)} ${operator} ${projectIndexExpression(reference(field(expression, rightField)), context)})`;
+	}
+	return `Number(${projectExpression(id, context)})`;
 }
 
 function typeName(id, graph) {
