@@ -44,6 +44,8 @@ const schema = {
   sliceType: "000000000000000000000000000090f8",
   collectionLength: "000000000000000000000000000090f9",
   dynamicIndexRead: "000000000000000000000000000090fa",
+  collectionAppend: "000000000000000000000000000090fb",
+  collectionUpdate: "000000000000000000000000000090fc",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -205,6 +207,12 @@ function projectExpression(id, context) {
 	}
 	if (expression.schema === schema.dynamicIndexRead) {
 		return `${projectExpression(reference(field(expression, 0x9fa0)), context)}[${projectIndexExpression(reference(field(expression, 0x9fa1)), context)}]`;
+	}
+	if (expression.schema === schema.collectionAppend) {
+		return `${projectExpression(reference(field(expression, 0x9fb0)), context)}.concat([${projectExpression(reference(field(expression, 0x9fb1)), context)}])`;
+	}
+	if (expression.schema === schema.collectionUpdate) {
+		return `${projectExpression(reference(field(expression, 0x9fc0)), context)}.with(Number(${projectExpression(reference(field(expression, 0x9fc1)), context)}), ${projectExpression(reference(field(expression, 0x9fc2)), context)})`;
 	}
   if (expression.schema === schema.stringLiteral) return JSON.stringify(text(field(expression, 0x9500)));
   if (expression.schema === schema.boolLiteral) return atom(field(expression, 0x9b00)) === "tr" ? "true" : "false";

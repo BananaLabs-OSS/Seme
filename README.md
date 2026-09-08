@@ -294,6 +294,12 @@ through Wasm and Pulp. Run `./scripts/check-execution-v24.sh`. The distinction
 between finite roadmap completion and broad language readiness is maintained in
 the [`progress dashboard`](spec/progress-dashboard.md).
 
+[`Core Execution v25`](spec/core-execution-v25.md) adds neutral immutable
+collection append and update with dynamically sized slice results. Native Go
+and JavaScript forms converge canonically; projection remains native, and
+alias-safe bounded results agree through standalone Wasm and Pulp. Run
+`./scripts/check-execution-v25.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

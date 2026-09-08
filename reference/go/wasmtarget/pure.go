@@ -156,7 +156,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if err != nil {
 		return nil, PureABI{}, err
 	}
-	hasVariableValues = hasVariableValues || resultType.name == "string"
+	hasVariableValues = hasVariableValues || resultType.name == "string" || resultType.name == "slice:i64"
 	abi.Result = PureABIField{Index: 0, Type: resultType.name, Offset: 0, Size: resultType.size, Encoding: pureEncoding(resultType.name)}
 	abi.ResponseSize = resultType.size
 	bodyValue, err := field(function, 0x9113)
@@ -181,7 +181,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 		abi.FixedHeaderSize = abi.RequestSize
 		abi.MaximumRequestSize = 7160
 		abi.VariablePayload = true
-		if resultType.name == "string" {
+		if resultType.name == "string" || resultType.name == "slice:i64" {
 			abi.ResponseSize = 0
 		}
 		return certifyPureStringFunction(graph, bodyValue.Reference, parameterTypes, resultType, parameterTypeNames, parameterLocals, abi)
@@ -432,6 +432,36 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 			return fmt.Errorf("wasm.dynamic_index_fields")
 		}
 		return validatePureExpression(graph, index.Reference, "i64", parameterTypes, visiting, budget)
+	case identity(0x90fb):
+		if expected != "slice:i64" {
+			return fmt.Errorf("wasm.collection_append_result_type")
+		}
+		collection, collectionErr := field(expression, 0x9fb0)
+		value, valueErr := field(expression, 0x9fb1)
+		if collectionErr != nil || valueErr != nil || collection.Tag != 6 || value.Tag != 6 {
+			return fmt.Errorf("wasm.collection_append_fields")
+		}
+		if err := validatePureExpression(graph, collection.Reference, "slice:i64", parameterTypes, visiting, budget); err != nil {
+			return err
+		}
+		return validatePureExpression(graph, value.Reference, "i64", parameterTypes, visiting, budget)
+	case identity(0x90fc):
+		if expected != "slice:i64" {
+			return fmt.Errorf("wasm.collection_update_result_type")
+		}
+		collection, collectionErr := field(expression, 0x9fc0)
+		index, indexErr := field(expression, 0x9fc1)
+		value, valueErr := field(expression, 0x9fc2)
+		if collectionErr != nil || indexErr != nil || valueErr != nil || collection.Tag != 6 || index.Tag != 6 || value.Tag != 6 {
+			return fmt.Errorf("wasm.collection_update_fields")
+		}
+		if err := validatePureExpression(graph, collection.Reference, "slice:i64", parameterTypes, visiting, budget); err != nil {
+			return err
+		}
+		if err := validatePureExpression(graph, index.Reference, "i64", parameterTypes, visiting, budget); err != nil {
+			return err
+		}
+		return validatePureExpression(graph, value.Reference, "i64", parameterTypes, visiting, budget)
 	default:
 		return fmt.Errorf("wasm.pure_unsupported_expression")
 	}

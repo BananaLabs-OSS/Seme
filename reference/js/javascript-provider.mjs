@@ -46,6 +46,10 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
   }
   for (const description of descriptions) {
     const { fn, signature, id: functionID } = description;
+	if (signature.result === "slice:i64") {
+	  const sliceType = stableID("execution", "type", "slice", "i64");
+	  if (!entities.some((item) => item.id === sliceType)) entities.push(graphEntity(sliceType, entity(sliceType, "000000000000000000000000000090f8", [[0x9f80, ref(ids.i64)]])));
+	}
     const parameterIDs = fn.params.map((parameter, index) => {
       if (parameter.type !== "Identifier") fail("javascript.unsupported_parameter", parameter.loc.start);
       if (signature.parameters[index].name !== parameter.name) fail("javascript.signature_name", parameter.loc.start);
@@ -71,7 +75,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
     const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName, declaredEffects };
     const bodyID = emitBlock(fn.body.body, "body", context, signature.result, true);
     entities.push(graphEntity(functionID, entity(functionID, "00000000000000000000000000009011", [
-      [0x9110, bytes(fn.id.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(ids[signature.result])], [0x9113, ref(bodyID)],
+      [0x9110, bytes(fn.id.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(typeID(signature.result, context))], [0x9113, ref(bodyID)],
     ])));
   }
   const selectedName = entryName || (exported.size === 1 ? [...exported][0] : descriptions[0].fn.id.name);
@@ -86,7 +90,7 @@ function readSignature(comments, fn) {
   const comment = [...comments].reverse().find((item) => item.type === "Block" && item.end <= fn.start && sourceGapIsWhitespace(item.end, fn.start, fn));
   if (!comment || !comment.value.startsWith("*")) fail("javascript.missing_jsdoc", fn.loc.start);
   const parameters = [...comment.value.matchAll(/@param\s+\{(string|boolean|bigint|bigint\[\]|bigint\[(?:[0-9]|[12]\d|3[0-2])\])\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
-  const result = comment.value.match(/@returns?\s+\{(string|boolean|bigint)\}/);
+  const result = comment.value.match(/@returns?\s+\{(string|boolean|bigint|bigint\[\])\}/);
   if (!result) fail("javascript.missing_result_type", fn.loc.start);
   return { parameters, result: semanticType(result[1]) };
 }
@@ -114,6 +118,7 @@ function readRecords(comments, packagePath) {
 
 function typeID(type, context) {
   if (ids[type]) return ids[type];
+	if (type === "slice:i64") return stableID("execution", "type", "slice", "i64");
   const record = context.recordsByName.get(type.slice("record:".length));
   if (!type.startsWith("record:") || !record) fail("javascript.unknown_type");
   return record.id;
@@ -225,6 +230,27 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 }
 
 function emitExpression(node, owner, path, context, expected) {
+	if (node.type === "CallExpression" && expected === "slice:i64" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.name === "concat" && node.arguments.length === 1 && node.arguments[0].type === "ArrayExpression" && node.arguments[0].elements.length === 1) {
+		const collectionType = inferExpressionType(node.callee.object, context);
+		if (collectionType !== "slice:i64") fail("javascript.collection_append_type", node.loc.start);
+		const collection = emitExpression(node.callee.object, owner, `${path}.collection`, context, "slice:i64");
+		const value = emitExpression(node.arguments[0].elements[0], owner, `${path}.value`, context, "i64");
+		const id = expressionID(owner, path, "collection-append");
+		context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090fb", [[0x9fb0, ref(collection.id)], [0x9fb1, ref(value.id)]])));
+		return { id, type: "slice:i64" };
+	}
+	if (node.type === "CallExpression" && expected === "slice:i64" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.name === "with" && node.arguments.length === 2) {
+		const collectionType = inferExpressionType(node.callee.object, context);
+		if (collectionType !== "slice:i64") fail("javascript.collection_update_type", node.loc.start);
+		const collection = emitExpression(node.callee.object, owner, `${path}.collection`, context, "slice:i64");
+		let indexNode = node.arguments[0];
+		if (indexNode.type === "CallExpression" && indexNode.callee.type === "Identifier" && indexNode.callee.name === "Number" && indexNode.arguments.length === 1) indexNode = indexNode.arguments[0];
+		const index = emitExpression(indexNode, owner, `${path}.index`, context, "i64");
+		const value = emitExpression(node.arguments[1], owner, `${path}.value`, context, "i64");
+		const id = expressionID(owner, path, "collection-update");
+		context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090fc", [[0x9fc0, ref(collection.id)], [0x9fc1, ref(index.id)], [0x9fc2, ref(value.id)]])));
+		return { id, type: "slice:i64" };
+	}
 	if (node.type === "MemberExpression" && !node.computed && node.property.type === "Identifier" && node.property.name === "length" && expected === "i64") {
 		const collectionType = inferExpressionType(node.object, context);
 		if (!(collectionType.startsWith("array:i64:") || collectionType === "slice:i64")) fail("javascript.collection_length_type", node.loc.start);
@@ -409,6 +435,7 @@ function inferExpressionType(node, context) {
     const callee = context.functionsByName.get(node.callee.name);
     if (callee) return callee.signature.result;
   }
+	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && (node.callee.property.name === "with" || node.callee.property.name === "concat")) return "slice:i64";
   if (node.type === "LogicalExpression" && (node.operator === "&&" || node.operator === "||")) return "bool";
   if (node.type === "BinaryExpression" && node.operator === "===") return "bool";
 	if (node.type === "BinaryExpression" && node.operator === "<=") return "bool";

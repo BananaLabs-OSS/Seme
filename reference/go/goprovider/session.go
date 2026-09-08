@@ -281,8 +281,10 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		resultTypeID = booleanID
 	} else if isPureString(function.sig.Results().At(0).Type()) {
 		resultTypeID = stringID
+	} else if isI64Slice(function.sig.Results().At(0).Type()) {
+		resultTypeID = stableID("execution", "type", "slice", "i64")
 	} else if !isInt64(function.sig.Results().At(0).Type()) {
-		return diagnostic("session.unsupported_result_type", "supported result types are int64, bool, and string")
+		return diagnostic("session.unsupported_result_type", "supported result types are int64, bool, string, and i64 slices")
 	}
 	block, err := analyzeGoBlockWithProgram(function.fn.Body.List, function.sig, function.info, functions, records)
 	if err != nil {
@@ -290,6 +292,9 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	}
 	parameterIDs := make([]string, function.sig.Params().Len())
 	var instances []graphEntity
+	if isI64Slice(function.sig.Results().At(0).Type()) {
+		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
+	}
 	for index := range parameterIDs {
 		parameterTypeID := integerID
 		if isBool(function.sig.Params().At(index).Type()) {
