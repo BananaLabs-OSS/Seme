@@ -57,3 +57,11 @@ the exact dependency `acorn@8.15.0`. It was installed with npm into the ignored
 `reference/js/node_modules/` working directory; no global package or system
 setting changed. `package-lock.json` records the registry artifact and
 integrity digest so clean environments can reproduce the parser dependency.
+
+## 2026-09-08 — Core v15 lexical-local verification
+
+Core v15 used the existing workstation Go 1.26 toolchain, Node 22 runtime,
+pinned Acorn dependency, Pulp checkout, and Seme bootstrap. No package,
+toolchain, global dependency, or persistent setting was installed or changed.
+All Go, Pulp, and Wasm caches used by the gate are scoped to its automatically
+removed temporary directory where applicable.

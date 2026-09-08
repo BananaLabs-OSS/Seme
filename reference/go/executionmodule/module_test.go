@@ -248,8 +248,33 @@ func TestVersionFourteenFreezesVariableWidthStringABIProfile(t *testing.T) {
 	}
 }
 
+func TestVersionFifteenAddsImmutableLexicalLocals(t *testing.T) {
+	v14, err := Declarations(14)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v15, err := Declarations(15)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v15) != len(v14)+3 {
+		t.Fatalf("v15 schema count = %d, want %d", len(v15), len(v14)+3)
+	}
+	want := []string{"LocalBinding", "BindLocal", "LocalRead"}
+	for index := range v14 {
+		if v14[index].ID != v15[index].ID || v14[index].Name != v15[index].Name {
+			t.Fatalf("v14 schema %d changed", index)
+		}
+	}
+	for index, name := range want {
+		if v15[len(v14)+index].Name != name {
+			t.Fatalf("v15 schema %d = %q", index, v15[len(v14)+index].Name)
+		}
+	}
+}
+
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(15); err == nil {
+	if _, err := Declarations(16); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }

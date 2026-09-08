@@ -3,54 +3,111 @@ package goprovider
 import (
 	"fmt"
 	"go/ast"
+	"go/token"
 	"go/types"
 	"strconv"
 )
 
 type goStatement struct {
-	condition *goExpression
-	returned  *goExpression
-	thenBlock *goBlock
-	elseBlock *goBlock
+	condition   *goExpression
+	returned    *goExpression
+	thenBlock   *goBlock
+	elseBlock   *goBlock
+	localName   string
+	localType   string
+	local       int
+	initializer *goExpression
 }
 
 type goBlock struct {
-	statement *goStatement
+	statements []*goStatement
 }
 
 func analyzeGoBlock(statements []ast.Stmt, signature *types.Signature, info *types.Info) (*goBlock, error) {
-	if len(statements) == 1 {
-		switch statement := statements[0].(type) {
-		case *ast.ReturnStmt:
-			if len(statement.Results) != 1 {
-				return nil, fmt.Errorf("control.return_arity")
+	next := 0
+	return analyzeGoBlockScoped(statements, signature, info, map[types.Object]int{}, &next)
+}
+
+func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, info *types.Info, inherited map[types.Object]int, next *int) (*goBlock, error) {
+	locals := cloneLocalScope(inherited)
+	block := &goBlock{}
+	for index, raw := range statements {
+		switch statement := raw.(type) {
+		case *ast.AssignStmt:
+			if statement.Tok != token.DEFINE || len(statement.Lhs) != 1 || len(statement.Rhs) != 1 {
+				return nil, fmt.Errorf("control.local_binding_shape")
 			}
-			expression, err := analyzeGoExpression(statement.Results[0], signature, info)
+			name, ok := statement.Lhs[0].(*ast.Ident)
+			object := info.Defs[name]
+			if !ok || object == nil || (!isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type())) {
+				return nil, fmt.Errorf("control.local_binding_type")
+			}
+			initializer, err := analyzeGoExpressionWithLocals(statement.Rhs[0], signature, info, locals)
 			if err != nil {
 				return nil, err
 			}
-			return &goBlock{statement: &goStatement{returned: expression}}, nil
+			local := *next
+			*next++
+			localType := "i64"
+			if isBool(object.Type()) {
+				localType = "bool"
+			}
+			if isPureString(object.Type()) {
+				localType = "string"
+			}
+			block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer})
+			locals[object] = local
+		case *ast.ReturnStmt:
+			if index != len(statements)-1 || len(statement.Results) != 1 {
+				return nil, fmt.Errorf("control.return_arity")
+			}
+			expression, err := analyzeGoExpressionWithLocals(statement.Results[0], signature, info, locals)
+			if err != nil {
+				return nil, err
+			}
+			block.statements = append(block.statements, &goStatement{returned: expression})
 		case *ast.IfStmt:
-			return analyzeTerminalIf(statement, nil, signature, info)
+			if index != 0 && len(block.statements) != index {
+				return nil, fmt.Errorf("control.statement_order")
+			}
+			branch, err := analyzeTerminalIfScoped(statement, statements[index+1:], signature, info, locals, next)
+			if err != nil {
+				return nil, err
+			}
+			block.statements = append(block.statements, branch.statements...)
+			return block, nil
+		default:
+			return nil, fmt.Errorf("control.unsupported_statement")
 		}
 	}
-	if len(statements) >= 2 {
-		if statement, ok := statements[0].(*ast.IfStmt); ok && statement.Else == nil {
-			return analyzeTerminalIf(statement, statements[1:], signature, info)
-		}
+	if len(block.statements) == 0 || block.statements[len(block.statements)-1].returned == nil {
+		return nil, fmt.Errorf("control.block_not_total")
 	}
-	return nil, fmt.Errorf("control.block_not_total")
+	return block, nil
+}
+
+func cloneLocalScope(source map[types.Object]int) map[types.Object]int {
+	result := make(map[types.Object]int, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 func analyzeTerminalIf(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info) (*goBlock, error) {
+	next := 0
+	return analyzeTerminalIfScoped(statement, following, signature, info, map[types.Object]int{}, &next)
+}
+
+func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, next *int) (*goBlock, error) {
 	if statement.Init != nil {
 		return nil, fmt.Errorf("control.if_init_unsupported")
 	}
-	condition, err := analyzeGoExpression(statement.Cond, signature, info)
+	condition, err := analyzeGoExpressionWithLocals(statement.Cond, signature, info, locals)
 	if err != nil {
 		return nil, err
 	}
-	thenBlock, err := analyzeGoBlock(statement.Body.List, signature, info)
+	thenBlock, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, next)
 	if err != nil {
 		return nil, err
 	}
@@ -59,16 +116,16 @@ func analyzeTerminalIf(statement *ast.IfStmt, following []ast.Stmt, signature *t
 		if len(following) == 0 {
 			return nil, fmt.Errorf("control.if_missing_fallthrough_return")
 		}
-		elseBlock, err = analyzeGoBlock(following, signature, info)
+		elseBlock, err = analyzeGoBlockScoped(following, signature, info, locals, next)
 	} else {
 		if len(following) != 0 {
 			return nil, fmt.Errorf("control.unreachable_following_statement")
 		}
 		switch alternate := statement.Else.(type) {
 		case *ast.BlockStmt:
-			elseBlock, err = analyzeGoBlock(alternate.List, signature, info)
+			elseBlock, err = analyzeGoBlockScoped(alternate.List, signature, info, locals, next)
 		case *ast.IfStmt:
-			elseBlock, err = analyzeTerminalIf(alternate, nil, signature, info)
+			elseBlock, err = analyzeTerminalIfScoped(alternate, nil, signature, info, locals, next)
 		default:
 			err = fmt.Errorf("control.else_unsupported")
 		}
@@ -76,44 +133,79 @@ func analyzeTerminalIf(statement *ast.IfStmt, following []ast.Stmt, signature *t
 	if err != nil {
 		return nil, err
 	}
-	return &goBlock{statement: &goStatement{condition: condition, thenBlock: thenBlock, elseBlock: elseBlock}}, nil
+	return &goBlock{statements: []*goStatement{{condition: condition, thenBlock: thenBlock, elseBlock: elseBlock}}}, nil
 }
 
 func emitCanonicalBlock(block *goBlock, owner, path string, parameterIDs []string, integerTypeID string, instances *[]graphEntity) (string, error) {
-	if block == nil || block.statement == nil {
+	return emitCanonicalBlockScoped(block, owner, path, parameterIDs, integerTypeID, map[int]string{}, instances)
+}
+
+func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs []string, integerTypeID string, inherited map[int]string, instances *[]graphEntity) (string, error) {
+	if block == nil || len(block.statements) == 0 {
 		return "", fmt.Errorf("control.nil_block")
 	}
-	statementPath := path + ".statement"
-	statementID := ""
-	if block.statement.returned != nil {
-		expressions, expressionID, err := emitCanonicalExpression(block.statement.returned, owner+":"+path, parameterIDs, integerTypeID)
-		if err != nil {
-			return "", err
+	localIDs := make(map[int]string, len(inherited)+len(block.statements))
+	for key, value := range inherited {
+		localIDs[key] = value
+	}
+	statementIDs := make([]string, 0, len(block.statements))
+	for index, statement := range block.statements {
+		statementPath := path + ".statement"
+		if len(block.statements) != 1 {
+			statementPath += "." + strconv.Itoa(index)
 		}
-		*instances = append(*instances, expressions...)
-		statementID = stableID("execution", owner, statementPath, "return")
-		*instances = append(*instances, graphEntity{statementID, entity(statementID, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{expressionID})})})
-	} else {
-		conditionEntities, conditionID, err := emitCanonicalExpression(block.statement.condition, owner+":"+path+":condition", parameterIDs, integerTypeID)
-		if err != nil {
-			return "", err
+		statementID := ""
+		if statement.initializer != nil {
+			bindingID := stableID("execution", owner, path, "local", strconv.Itoa(statement.local))
+			localTypeID := integerTypeID
+			if statement.localType == "bool" {
+				localTypeID = stableID("execution", "type", "bool")
+			}
+			if statement.localType == "string" {
+				localTypeID = stableID("execution", "type", "string")
+			}
+			expressions, initializerID, err := emitCanonicalExpressionWithLocals(statement.initializer, owner+":"+path+":local:"+strconv.Itoa(statement.local), parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, expressions...)
+			*instances = append(*instances, graphEntity{bindingID, entity(bindingID, "000000000000000000000000000090d0", []graphField{
+				bytesField(0x9d00, statement.localName), refField(0x9d01, localTypeID), refField(0x9d02, initializerID),
+			})})
+			statementID = stableID("execution", owner, statementPath, "bind-local")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090d1", []graphField{refField(0x9d10, bindingID)})})
+			localIDs[statement.local] = bindingID
+		} else if statement.returned != nil {
+			expressions, expressionID, err := emitCanonicalExpressionWithLocals(statement.returned, owner+":"+path, parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, expressions...)
+			statementID = stableID("execution", owner, statementPath, "return")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{expressionID})})})
+		} else {
+			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+path+":condition", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, conditionEntities...)
+			thenID, err := emitCanonicalBlockScoped(statement.thenBlock, owner, path+".then", parameterIDs, integerTypeID, localIDs, instances)
+			if err != nil {
+				return "", err
+			}
+			elseID, err := emitCanonicalBlockScoped(statement.elseBlock, owner, path+".else", parameterIDs, integerTypeID, localIDs, instances)
+			if err != nil {
+				return "", err
+			}
+			statementID = stableID("execution", owner, statementPath, "if")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090c0", []graphField{
+				refField(0x9c00, conditionID), refField(0x9c01, thenID), refField(0x9c02, elseID),
+			})})
 		}
-		*instances = append(*instances, conditionEntities...)
-		thenID, err := emitCanonicalBlock(block.statement.thenBlock, owner, path+".then", parameterIDs, integerTypeID, instances)
-		if err != nil {
-			return "", err
-		}
-		elseID, err := emitCanonicalBlock(block.statement.elseBlock, owner, path+".else", parameterIDs, integerTypeID, instances)
-		if err != nil {
-			return "", err
-		}
-		statementID = stableID("execution", owner, statementPath, "if")
-		*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090c0", []graphField{
-			refField(0x9c00, conditionID), refField(0x9c01, thenID), refField(0x9c02, elseID),
-		})})
+		statementIDs = append(statementIDs, statementID)
 	}
 	blockID := stableID("execution", owner, path, "block")
-	*instances = append(*instances, graphEntity{blockID, entity(blockID, "00000000000000000000000000009080", []graphField{refsField(0x9800, []string{statementID})})})
+	*instances = append(*instances, graphEntity{blockID, entity(blockID, "00000000000000000000000000009080", []graphField{refsField(0x9800, statementIDs)})})
 	return blockID, nil
 }
 

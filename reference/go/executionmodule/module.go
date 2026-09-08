@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 14 {
+	if version < 2 || version > 15 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -95,6 +95,13 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0x90c1, "BooleanOr", []Field{field(0x9c10, "boolean_or.left", 5, 0, 0), field(0x9c11, "boolean_or.right", 5, 0, 0)}},
 			Schema{0x90c2, "StringEqual", []Field{field(0x9c20, "string_equal.left", 5, 0, 0), field(0x9c21, "string_equal.right", 5, 0, 0)}},
 			Schema{0x90c3, "StringConcat", []Field{field(0x9c30, "string_concat.left", 5, 0, 0), field(0x9c31, "string_concat.right", 5, 0, 0)}},
+		)
+	}
+	if version >= 15 {
+		schemas = append(schemas,
+			Schema{0x90d0, "LocalBinding", []Field{field(0x9d00, "local_binding.name", 4, 0, 0), field(0x9d01, "local_binding.type", 5, 0, 0), field(0x9d02, "local_binding.initializer", 5, 0, 0)}},
+			Schema{0x90d1, "BindLocal", []Field{field(0x9d10, "bind_local.binding", 5, 0x90d0, 0)}},
+			Schema{0x90d2, "LocalRead", []Field{field(0x9d20, "local_read.binding", 5, 0x90d0, 0)}},
 		)
 	}
 	return schemas, nil

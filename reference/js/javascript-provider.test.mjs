@@ -4,6 +4,7 @@ import test from "node:test";
 import { liftJavaScript } from "./javascript-provider.mjs";
 
 const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v14/module.g1", import.meta.url), "utf8");
+const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -50,4 +51,21 @@ test("repeated reads retain one semantic identity", () => {
   const canonical = liftJavaScript({ source: repeated, moduleG1, packagePath: "example.test/repeated", revision: 1 });
   const ids = [...canonical.matchAll(/^en ([0-9a-f]{32}) /gm)].map((match) => match[1]);
   assert.equal(new Set(ids).size, ids.length);
+});
+
+test("lifts ordered const bindings as lexical local semantics", () => {
+  const localSource = `/**
+ * @param {string} left
+ * @param {string} right
+ * @returns {string}
+ */
+export function Join(left, right) {
+  const middle = left + "λ";
+  const complete = middle + right;
+  return complete;
+}`;
+  const canonical = liftJavaScript({ source: localSource, moduleG1: moduleV15G1, packagePath: "example.test/local-text", revision: 1 });
+  assert.match(canonical, /000000000000000000000000000090d0/);
+  assert.match(canonical, /000000000000000000000000000090d1/);
+  assert.match(canonical, /000000000000000000000000000090d2/);
 });

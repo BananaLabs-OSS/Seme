@@ -24,6 +24,7 @@ const (
 	goBooleanOr
 	goStringEqual
 	goStringConcat
+	goLocalRead
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -32,6 +33,7 @@ const (
 type goExpression struct {
 	kind      goExpressionKind
 	parameter int
+	local     int
 	integer   uint64
 	boolean   bool
 	text      string
@@ -40,6 +42,10 @@ type goExpression struct {
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
+	return emitCanonicalExpressionWithLocals(expression, owner, parameterIDs, nil, integerID)
+}
+
+func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, parameterIDs []string, localIDs map[int]string, integerID string) ([]graphEntity, string, error) {
 	emitted := make(map[string]graphEntity)
 	var emit func(*goExpression, string) (string, error)
 	emit = func(expression *goExpression, path string) (string, error) {
@@ -53,6 +59,14 @@ func emitCanonicalExpression(expression *goExpression, owner string, parameterID
 			}
 			id := stableID("execution", owner, "read", strconv.Itoa(expression.parameter))
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009013", []graphField{refField(0x9130, parameterIDs[expression.parameter])})}
+			return id, nil
+		case goLocalRead:
+			bindingID, ok := localIDs[expression.local]
+			if !ok {
+				return "", fmt.Errorf("expression.local_out_of_scope")
+			}
+			id := stableID("execution", owner, "local-read", bindingID)
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090d2", []graphField{refField(0x9d20, bindingID)})}
 			return id, nil
 		case goIntegerLiteral:
 			id := expressionNodeID(owner, path, "integer-literal")
@@ -156,12 +170,19 @@ func expressionNodeID(owner, path, kind string) string {
 }
 
 func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *types.Info) (*goExpression, error) {
+	return analyzeGoExpressionWithLocals(expression, signature, info, nil)
+}
+
+func analyzeGoExpressionWithLocals(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int) (*goExpression, error) {
 	switch expression := ast.Unparen(expression).(type) {
 	case *ast.Ident:
 		for index := 0; index < signature.Params().Len(); index++ {
 			if info.Uses[expression] == signature.Params().At(index) {
 				return &goExpression{kind: goParameterRead, parameter: index}, nil
 			}
+		}
+		if local, ok := locals[info.Uses[expression]]; ok {
+			return &goExpression{kind: goLocalRead, local: local}, nil
 		}
 		if object, ok := info.Uses[expression].(*types.Const); ok && object.Type() == types.Typ[types.UntypedBool] {
 			return &goExpression{kind: goBooleanLiteral, boolean: constant.BoolVal(object.Val())}, nil
@@ -215,11 +236,11 @@ func analyzeGoExpression(expression ast.Expr, signature *types.Signature, info *
 		default:
 			return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
 		}
-		analyzedLeft, err := analyzeGoExpression(left, signature, info)
+		analyzedLeft, err := analyzeGoExpressionWithLocals(left, signature, info, locals)
 		if err != nil {
 			return nil, err
 		}
-		analyzedRight, err := analyzeGoExpression(right, signature, info)
+		analyzedRight, err := analyzeGoExpressionWithLocals(right, signature, info, locals)
 		if err != nil {
 			return nil, err
 		}

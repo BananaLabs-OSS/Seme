@@ -32,10 +32,10 @@ func Decide(enabled bool, value, limit int64) bool {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if block.statement.condition.kind != goBooleanOr || block.statement.thenBlock.statement.condition.kind != goIntegerLessEqual {
+	if block.statements[0].condition.kind != goBooleanOr || block.statements[0].thenBlock.statements[0].condition.kind != goIntegerLessEqual {
 		t.Fatal("nested if structure was not preserved")
 	}
-	if block.statement.elseBlock.statement.returned.kind != goBooleanLiteral {
+	if block.statements[0].elseBlock.statements[0].returned.kind != goBooleanLiteral {
 		t.Fatal("following return was not normalized into the else block")
 	}
 	instances := []graphEntity{}
