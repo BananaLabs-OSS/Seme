@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 26 {
+	if version < 2 || version > 27 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -164,6 +164,15 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0xa005, "StateTransition", []Field{field(0xa0050, "transition.type", 5, 0xa004, 0), field(0xa0051, "transition.state", 5, 0, 0), field(0xa0052, "transition.result", 5, 0, 0)}},
 			Schema{0xa006, "TransitionState", []Field{field(0xa0060, "state.value", 5, 0, 0)}},
 			Schema{0xa007, "TransitionResult", []Field{field(0xa0070, "result.value", 5, 0, 0)}},
+		)
+	}
+	if version >= 27 {
+		schemas = append(schemas,
+			Schema{0xa010, "InterfaceType", []Field{field(0xa0100, "interface.name", 4, 0, 0), field(0xa0101, "interface.requirements", 5, 0xa011, 2)}},
+			Schema{0xa011, "MethodRequirement", []Field{field(0xa0110, "requirement.name", 4, 0, 0), field(0xa0111, "requirement.parameters", 5, 0, 2), field(0xa0112, "requirement.result", 5, 0, 0)}},
+			Schema{0xa012, "SatisfactionWitness", []Field{field(0xa0120, "witness.concrete_type", 5, 0, 0), field(0xa0121, "witness.interface_type", 5, 0xa010, 0), field(0xa0122, "witness.methods", 5, 0xa002, 2)}},
+			Schema{0xa013, "InterfaceValue", []Field{field(0xa0130, "interface_value.type", 5, 0xa010, 0), field(0xa0131, "interface_value.value", 5, 0, 0), field(0xa0132, "interface_value.witness", 5, 0xa012, 0)}},
+			Schema{0xa014, "DynamicMethodCall", []Field{field(0xa0140, "dynamic_call.receiver", 5, 0, 0), field(0xa0141, "dynamic_call.requirement", 5, 0xa011, 0), field(0xa0142, "dynamic_call.arguments", 5, 0, 2)}},
 		)
 	}
 	return schemas, nil

@@ -113,6 +113,13 @@ type sessionFunction struct {
 	method   bool
 }
 
+type goInterfaceInfo struct {
+	named          *types.Named
+	id             string
+	requirements   []*types.Func
+	requirementIDs []string
+}
+
 func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, []SourceIdentity, []SessionDiagnostic) {
 	if snapshot.PackagePath == "" {
 		return "", nil, []SessionDiagnostic{{Code: "session.package_path_missing", Message: "package path is required", Severity: "error"}}
@@ -230,6 +237,75 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 			records[named] = record
 			instances = append(instances, fieldEntities...)
 			instances = append(instances, graphEntity{recordID, entity(recordID, "00000000000000000000000000009030", []graphField{bytesField(0x9300, identifier.Name), refsField(0x9301, fieldIDs)})})
+		}
+	}
+	var interfaces []goInterfaceInfo
+	for identifier, object := range info.Defs {
+		typeName, ok := object.(*types.TypeName)
+		if !ok {
+			continue
+		}
+		named, ok := typeName.Type().(*types.Named)
+		if !ok {
+			continue
+		}
+		contract, ok := named.Underlying().(*types.Interface)
+		if !ok {
+			continue
+		}
+		contract = contract.Complete()
+		interfaceID := stableID("execution", "interface", snapshot.PackagePath, identifier.Name)
+		declaration := goInterfaceInfo{named: named, id: interfaceID}
+		valid := contract.NumMethods() > 0
+		for index := 0; valid && index < contract.NumMethods(); index++ {
+			method := contract.Method(index)
+			signature, ok := method.Type().(*types.Signature)
+			if !ok || signature.Params().Len() != 1 || !isInt64(signature.Params().At(0).Type()) || signature.Results().Len() != 1 || !isInt64(signature.Results().At(0).Type()) {
+				valid = false
+				break
+			}
+			requirementID := stableID("execution", interfaceID, "requirement", method.Name())
+			declaration.requirements = append(declaration.requirements, method)
+			declaration.requirementIDs = append(declaration.requirementIDs, requirementID)
+			instances = append(instances, graphEntity{requirementID, entity(requirementID, "0000000000000000000000000000a011", []graphField{
+				bytesField(0xa0110, method.Name()), refsField(0xa0111, []string{integerID}), refField(0xa0112, integerID),
+			})})
+			functionObjects[method] = requirementID
+		}
+		if !valid {
+			continue
+		}
+		instances = append(instances, graphEntity{interfaceID, entity(interfaceID, "0000000000000000000000000000a010", []graphField{
+			bytesField(0xa0100, identifier.Name), refsField(0xa0101, declaration.requirementIDs),
+		})})
+		records[named] = goRecordInfo{id: interfaceID}
+		interfaces = append(interfaces, declaration)
+	}
+	for named, record := range records {
+		if _, isInterface := named.Underlying().(*types.Interface); isInterface {
+			continue
+		}
+		for _, contract := range interfaces {
+			if !types.Implements(named, contract.named.Underlying().(*types.Interface)) {
+				continue
+			}
+			methodIDs := make([]string, len(contract.requirements))
+			valid := true
+			for index, requirement := range contract.requirements {
+				method, _, _ := types.LookupFieldOrMethod(named, true, named.Obj().Pkg(), requirement.Name())
+				methodID, exists := functionObjects[method]
+				if !exists {
+					valid = false
+					break
+				}
+				methodIDs[index] = methodID
+			}
+			if valid {
+				witnessID := stableID("execution", "witness", record.id, contract.id)
+				instances = append(instances, graphEntity{witnessID, entity(witnessID, "0000000000000000000000000000a012", []graphField{
+					refField(0xa0120, record.id), refField(0xa0121, contract.id), refsField(0xa0122, methodIDs),
+				})})
+			}
 		}
 	}
 	var functionIDs []string

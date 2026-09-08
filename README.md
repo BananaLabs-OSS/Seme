@@ -313,6 +313,14 @@ and JavaScript class methods converge on byte-identical canonical meaning and
 execute through Wasm and Pulp without mutating the receiver. Run
 `./scripts/check-execution-v26.sh`.
 
+[`Core Execution v27`](spec/core-execution-v27.md) adds neutral interfaces,
+method requirements, explicit satisfaction witnesses, interface values, and
+bounded dynamic calls. Native Go interfaces and JavaScript structural classes
+converge on byte-identical canonical meaning; witness-certified offset and
+scale implementations execute through deterministic standalone Wasm and
+pinned Pulp while malformed signatures and unknown tags reject. Run
+`./scripts/check-execution-v27.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

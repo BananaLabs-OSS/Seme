@@ -222,6 +222,21 @@ func lowerTransitionI64(graph wire.Envelope, id wire.ID, parameters map[wire.ID]
 			return nil, err
 		}
 		return append(append(leftCode, rightCode...), 0x7c), nil
+	case identity(0x9090):
+		left, a := field(expression, 0x9900)
+		right, b := field(expression, 0x9901)
+		if a != nil || b != nil {
+			return nil, fmt.Errorf("wasm.transition_multiply")
+		}
+		leftCode, err := lowerTransitionI64(graph, left.Reference, parameters, receiver, visiting)
+		if err != nil {
+			return nil, err
+		}
+		rightCode, err := lowerTransitionI64(graph, right.Reference, parameters, receiver, visiting)
+		if err != nil {
+			return nil, err
+		}
+		return append(append(leftCode, rightCode...), 0x7e), nil
 	default:
 		return nil, fmt.Errorf("wasm.transition_expression:%s", expression.Schema.String())
 	}
