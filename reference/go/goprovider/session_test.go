@@ -69,7 +69,7 @@ func TestIncrementalSessionLiftsSupportedDeclarationsAndReportsOpaqueOnes(t *tes
 	}
 	snapshot := DocumentSnapshot{Revision: 7, PackagePath: "example.test/multi", Files: map[string]string{
 		"first.go":  "package multi\nfunc Enabled(value int64) bool { return true && value <= 9 }\n",
-		"second.go": "package multi\nfunc Unsupported(value string) string { return value }\n",
+		"second.go": "package multi\nfunc Unsupported(value float64) float64 { return value }\n",
 	}}
 	first := session.Apply(snapshot)
 	if !first.Valid || len(first.Sources) != 1 || first.Sources[0].Name != "Enabled" || len(first.Diagnostics) != 1 || first.Diagnostics[0].Severity != "warning" {
@@ -85,6 +85,26 @@ func TestIncrementalSessionLiftsSupportedDeclarationsAndReportsOpaqueOnes(t *tes
 	second := other.Apply(snapshot)
 	if second.CanonicalG1 != first.CanonicalG1 || second.ContentDigest != first.ContentDigest {
 		t.Fatal("equal snapshots did not produce deterministic state")
+	}
+}
+
+func TestIncrementalSessionLiftsStringParametersAndResult(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v14/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/text", Files: map[string]string{
+		"text.go": "package text\nfunc Join(left, right string) string { return left + \"λ\" + right }\n",
+	}})
+	if !result.Valid || result.LastValidRevision != 1 || len(result.Sources) != 1 || result.Sources[0].Name != "Join" {
+		t.Fatalf("string result = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "00000000000000000000000000009040") || !strings.Contains(result.CanonicalG1, "000000000000000000000000000090c3") {
+		t.Fatal("canonical string type or concatenation node missing")
 	}
 }
 
