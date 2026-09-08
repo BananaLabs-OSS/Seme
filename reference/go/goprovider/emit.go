@@ -143,7 +143,11 @@ func entity(identity, schema string, fields []graphField) string {
 	return b.String()
 }
 func bytesField(id uint64, value string) graphField {
-	return graphField{id, "by " + hex.EncodeToString([]byte(value))}
+	encoded := hex.EncodeToString([]byte(value))
+	if encoded == "" {
+		encoded = "-"
+	}
+	return graphField{id, "by " + encoded}
 }
 func bytesHexField(id uint64, value string) graphField {
 	if value == "" {
