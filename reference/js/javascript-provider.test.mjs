@@ -44,3 +44,10 @@ test("rejects JavaScript-only lone surrogate text", () => {
     /javascript\.non_scalar_string/,
   );
 });
+
+test("repeated reads retain one semantic identity", () => {
+  const repeated = source.replace('left + "λ" + right', 'left + "λ" + left');
+  const canonical = liftJavaScript({ source: repeated, moduleG1, packagePath: "example.test/repeated", revision: 1 });
+  const ids = [...canonical.matchAll(/^en ([0-9a-f]{32}) /gm)].map((match) => match[1]);
+  assert.equal(new Set(ids).size, ids.length);
+});

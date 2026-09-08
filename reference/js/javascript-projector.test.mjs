@@ -27,3 +27,9 @@ test("projects canonical text control to native JavaScript and re-lifts", () => 
 test("projection rejects a graph without one executable program", () => {
   assert.throws(() => projectJavaScript(moduleG1), /javascript_projection\.requires_one_program/);
 });
+
+test("projection rejects duplicate semantic identities", () => {
+  const canonical = liftJavaScript({ source, moduleG1, packagePath: "example.test/duplicate", revision: 1 });
+  const entity = canonical.slice(canonical.indexOf("\nen ") + 1);
+  assert.throws(() => projectJavaScript(`${canonical}\n${entity}`), /javascript_projection\.duplicate_entity/);
+});
