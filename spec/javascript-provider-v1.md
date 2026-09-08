@@ -39,11 +39,14 @@ canonical SemOne archives must be byte-identical. The gate also requires:
 2. native Node execution producing `雪λ🦀`;
 3. validation by the Kernel and Foundation;
 4. lowering of the JavaScript-derived canonical graph to ABI v2 Wasm; and
-5. exact matching execution of that Wasm result.
+5. exact matching execution of that Wasm result;
+6. projection of the Go-derived canonical graph into idiomatic JavaScript;
+7. native execution of that projected JavaScript; and
+8. re-lifting the projection to the byte-identical canonical archive.
 
 This proves one bounded cross-language semantic bridge, not general JavaScript
-support and not canonical-to-JavaScript projection. Projection, round-trip
-editing, broader constructs, and JavaScript-specific mechanics are subsequent
-provider milestones.
+support. Canonical-to-JavaScript projection and round-trip editing are proven
+only for the semantic subset listed above; broader constructs and
+JavaScript-specific mechanics are subsequent provider milestones.
 
 Run `./scripts/check-javascript-provider-v1.sh`.

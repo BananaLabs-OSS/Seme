@@ -44,6 +44,14 @@ node "$repo/reference/js/javascript-native-runner.mjs" "file://$work/text.mjs" �
     > "$work/native-js.log"
 rg -q '"result":"雪λ🦀"' "$work/native-js.log"
 
+node "$repo/reference/js/javascript-projector-cli.mjs" "$work/go.g1" "$work/projected.mjs"
+node "$repo/reference/js/javascript-native-runner.mjs" "file://$work/projected.mjs" 雪 🦀 \
+    > "$work/projected-native.log"
+rg -q '"result":"雪λ🦀"' "$work/projected-native.log"
+node "$repo/reference/js/javascript-provider-cli.mjs" \
+    --source "$work/projected.mjs" --module "$repo/modules/execution/v14/module.g1" \
+    --package example.test/cross-text --revision 1 --out "$work/relifted.g1"
+
 for language in go js; do
     "$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" \
         "$work/$language.g1" "$work/$language.seme"
@@ -52,6 +60,9 @@ for language in go js; do
     "$repo/bootstrap/seme-k0-linux-amd64" "$repo/modules/foundation/v1/validator.k0" \
         "$work/$language.seme"
 done
+"$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" \
+    "$work/relifted.g1" "$work/relifted.seme"
+cmp "$work/go.seme" "$work/relifted.seme"
 if ! cmp "$work/go.seme" "$work/js.seme"; then
     diff -u "$work/go.g1" "$work/js.g1"
     exit 1
