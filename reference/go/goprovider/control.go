@@ -21,6 +21,8 @@ type goStatement struct {
 	assignment  *goExpression
 	loopBlock   *goBlock
 	whenBlock   *goBlock
+	effect      string
+	effectArgs  []*goExpression
 }
 
 type goBlock struct {
@@ -150,6 +152,24 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				return nil, err
 			}
 			block.statements = append(block.statements, &goStatement{condition: condition, loopBlock: body})
+		case *ast.ExprStmt:
+			call, ok := statement.X.(*ast.CallExpr)
+			if !ok || len(call.Args) != 1 {
+				return nil, fmt.Errorf("control.effect_shape")
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				return nil, fmt.Errorf("control.unsupported_effect")
+			}
+			function, functionOK := info.Uses[selector.Sel].(*types.Func)
+			if !functionOK || function.Pkg() == nil || function.Pkg().Path() != "log" || function.Name() != "Print" {
+				return nil, fmt.Errorf("control.unsupported_effect")
+			}
+			argument, err := analyzeGoExpressionWithProgram(call.Args[0], signature, info, locals, functions, records, mutable)
+			if err != nil || !isBool(info.TypeOf(call.Args[0])) {
+				return nil, fmt.Errorf("control.effect_argument")
+			}
+			block.statements = append(block.statements, &goStatement{effect: "observability.log", effectArgs: []*goExpression{argument}})
 		default:
 			return nil, fmt.Errorf("control.unsupported_statement")
 		}
@@ -317,6 +337,26 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			}
 			statementID = stableID("execution", owner, statementPath, "when")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090f0", []graphField{refField(0x9f00, conditionID), refField(0x9f01, bodyID)})})
+		} else if statement.effect != "" {
+			capabilityID := stableID("capability", statement.effect)
+			effectID := stableID("effect", statement.effect)
+			argumentIDs := make([]string, len(statement.effectArgs))
+			for argumentIndex, argument := range statement.effectArgs {
+				expressions, argumentID, err := emitCanonicalExpressionWithLocals(argument, owner+":"+path+":effect:"+strconv.Itoa(index)+":"+strconv.Itoa(argumentIndex), parameterIDs, localIDs, integerTypeID)
+				if err != nil {
+					return "", err
+				}
+				*instances = append(*instances, expressions...)
+				argumentIDs[argumentIndex] = argumentID
+			}
+			if !hasGraphEntity(*instances, capabilityID) {
+				*instances = append(*instances,
+					graphEntity{capabilityID, entity(capabilityID, "00000000000000000000000000000016", []graphField{bytesField(0x160, statement.effect)})},
+					graphEntity{effectID, entity(effectID, "00000000000000000000000000000015", []graphField{bytesField(0x150, statement.effect), refField(0x151, capabilityID)})},
+				)
+			}
+			statementID = stableID("execution", owner, statementPath, "effect-invoke")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090f1", []graphField{refField(0x9f10, effectID), refsField(0x9f11, argumentIDs)})})
 		} else {
 			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+path+":condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {
@@ -341,6 +381,15 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 	blockID := stableID("execution", owner, path, "block")
 	*instances = append(*instances, graphEntity{blockID, entity(blockID, "00000000000000000000000000009080", []graphField{refsField(0x9800, statementIDs)})})
 	return blockID, nil
+}
+
+func hasGraphEntity(instances []graphEntity, id string) bool {
+	for _, instance := range instances {
+		if instance.id == id {
+			return true
+		}
+	}
+	return false
 }
 
 // LiftControlFunction lifts the bounded total-return control-flow profile. Go

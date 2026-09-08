@@ -97,3 +97,12 @@ repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. No
 software, dependency, global setting, SSH setting, or persistent environment
 configuration was installed or changed. A temporary generator copy under
 `/tmp` avoided a Syncthing race; it did not alter workstation configuration.
+
+## 2026-09-08 — Core v20 effect verification
+
+Core v20 used only the existing workstation Go 1.26 toolchain, Node 22,
+repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. The
+gate copies a Seme-owned capability adapter into an automatically removed
+archived Pulp worktree before compilation; neither the Pulp repository nor its
+history is modified. No software, dependency, global setting, SSH setting, or
+persistent environment configuration was installed or changed.

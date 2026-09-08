@@ -216,6 +216,33 @@ func TestIncrementalSessionLiftsIntegerMutationAndWhen(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsFoundationEffectInvocation(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v20/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/effect", Entry: "Observe", Files: map[string]string{
+		"effect.go": "package effect\nimport \"log\"\nfunc Observe(first, second bool) bool { log.Print(first); log.Print(second); return second }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("effect result = %#v", result)
+	}
+	for _, schema := range []string{"000000000000000000000000000090f1", "00000000000000000000000000000015", "00000000000000000000000000000016"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("effect schema %s missing", schema)
+		}
+	}
+	for _, id := range []string{stableID("capability", "observability.log"), stableID("effect", "observability.log")} {
+		if strings.Count(result.CanonicalG1, "en "+id+" ") != 1 {
+			t.Fatalf("shared declaration %s was not interned exactly once", id)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
 	if err != nil {

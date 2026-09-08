@@ -9,6 +9,7 @@ const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.
 const moduleV16G1 = fs.readFileSync(new URL("../../modules/execution/v16/module.g1", import.meta.url), "utf8");
 const moduleV18G1 = fs.readFileSync(new URL("../../modules/execution/v18/module.g1", import.meta.url), "utf8");
 const moduleV19G1 = fs.readFileSync(new URL("../../modules/execution/v19/module.g1", import.meta.url), "utf8");
+const moduleV20G1 = fs.readFileSync(new URL("../../modules/execution/v20/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -111,5 +112,15 @@ export function Choose(original, replacement, enabled) {
   assert.match(projected, /@param \{bigint\} original/);
   assert.match(projected, /if \(enabled\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV19G1, packagePath: "example.test/choice", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts ordered observation effects", () => {
+  const source = `/** @param {boolean} first @param {boolean} second @returns {boolean} */
+export function Observe(first, second) { console.log(first); console.log(second); return second; }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV20G1, packagePath: "example.test/effect", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /console\.log\(first\);[\s\S]*console\.log\(second\);/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV20G1, packagePath: "example.test/effect", revision: 1 });
   assert.equal(second, first);
 });

@@ -8,6 +8,7 @@ const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.
 const moduleV16G1 = fs.readFileSync(new URL("../../modules/execution/v16/module.g1", import.meta.url), "utf8");
 const moduleV18G1 = fs.readFileSync(new URL("../../modules/execution/v18/module.g1", import.meta.url), "utf8");
 const moduleV19G1 = fs.readFileSync(new URL("../../modules/execution/v19/module.g1", import.meta.url), "utf8");
+const moduleV20G1 = fs.readFileSync(new URL("../../modules/execution/v20/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -122,4 +123,13 @@ export function Choose(original, replacement, enabled) {
   const canonical = liftJavaScript({ source, moduleG1: moduleV19G1, packagePath: "example.test/choice", revision: 1 });
   assert.match(canonical, /000000000000000000000000000090f0/);
   assert.match(canonical, /000000000000000000000000000090e3/);
+});
+
+test("lifts console observation as a Foundation effect invocation", () => {
+  const source = `/** @param {boolean} first @param {boolean} second @returns {boolean} */
+export function Observe(first, second) { console.log(first); console.log(second); return second; }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV20G1, packagePath: "example.test/effect", revision: 1 });
+  assert.match(canonical, /000000000000000000000000000090f1/);
+  assert.match(canonical, /00000000000000000000000000000015/);
+  assert.match(canonical, /00000000000000000000000000000016/);
 });

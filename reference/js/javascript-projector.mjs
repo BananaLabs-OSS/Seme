@@ -29,6 +29,8 @@ const schema = {
   assignPlace: "000000000000000000000000000090e3",
   whileLoop: "000000000000000000000000000090e4",
   when: "000000000000000000000000000090f0",
+  effectInvoke: "000000000000000000000000000090f1",
+  effect: "00000000000000000000000000000015",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -117,6 +119,14 @@ function projectBlock(id, context, indent) {
       const condition = projectExpression(reference(field(statement, 0x9f00)), localContext);
       const body = projectBlock(reference(field(statement, 0x9f01)), localContext, `${indent}  `);
       lines.push(`${indent}if (${condition}) {\n${body}\n${indent}}`);
+      continue;
+    }
+    if (statement.schema === schema.effectInvoke) {
+      const effect = required(context.graph, reference(field(statement, 0x9f10)), schema.effect);
+      if (text(field(effect, 0x150)) !== "observability.log") fail("javascript_projection.unsupported_effect");
+      const arguments_ = references(field(statement, 0x9f11));
+      if (arguments_.length !== 1) fail("javascript_projection.effect_arity");
+      lines.push(`${indent}console.log(${projectExpression(arguments_[0], localContext)});`);
       continue;
     }
     if (statement.schema === schema.returned) {
