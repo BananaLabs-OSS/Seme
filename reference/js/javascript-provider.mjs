@@ -29,6 +29,8 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
   const functionsByName = new Map(descriptions.map((item) => [item.fn.id.name, item]));
   if (functionsByName.size !== descriptions.length) fail("javascript.duplicate_function");
   const recordsByName = readRecords(comments, packagePath);
+  const methodDescriptions = readMethods(declarations, comments, recordsByName, packagePath);
+  const methodsByTypeAndName = new Map(methodDescriptions.map((item) => [`${item.receiverType}:${item.fn.key.name}`, item]));
   const declaredEffects = new Set();
   const entities = [
     graphEntity(ids.i64, entity(ids.i64, "00000000000000000000000000009010", [[0x9100, "uu 64"], [0x9101, "tr"], [0x9102, "uu 0"]])),
@@ -43,6 +45,21 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
       return id;
     });
     entities.push(graphEntity(record.id, entity(record.id, "00000000000000000000000000009030", [[0x9300, bytes(record.name)], [0x9301, refs(fieldIDs)]])));
+  }
+  for (const description of methodDescriptions) {
+    const { fn, signature, id: methodID, receiverType } = description;
+    const receiverRecord = recordsByName.get(receiverType);
+    const receiverID = stableID("execution", "receiver", packagePath, receiverType);
+    entities.push(graphEntity(receiverID, entity(receiverID, "0000000000000000000000000000a000", [[0xa0000, bytes("self")], [0xa0001, ref(receiverRecord.id)]])));
+    const parameterIDs = fn.value.params.map((parameter, index) => {
+      if (parameter.type !== "Identifier" || signature.parameters[index]?.name !== parameter.name) fail("javascript.signature_name", parameter.loc.start);
+      const parameterID = stableID("execution", methodID, "parameter", String(index));
+      entities.push(graphEntity(parameterID, entity(parameterID, "00000000000000000000000000009012", [[0x9120, bytes(parameter.name)], [0x9121, ref(typeID(signature.parameters[index].type, { recordsByName }))], [0x9122, `uu ${index}`]])));
+      return parameterID;
+    });
+    const context = { functionID: methodID, parameterIDs, parameterNames: fn.value.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName, declaredEffects, receiver: { id: receiverID, type: `record:${receiverType}` }, methodsByTypeAndName };
+    const bodyID = emitBlock(fn.value.body.body, "body", context, signature.result, true);
+    entities.push(graphEntity(methodID, entity(methodID, "0000000000000000000000000000a002", [[0xa0020, bytes(fn.key.name)], [0xa0021, ref(receiverID)], [0xa0022, refs(parameterIDs)], [0xa0023, ref(typeID(signature.result, context))], [0xa0024, ref(bodyID)]])));
   }
   for (const description of descriptions) {
     const { fn, signature, id: functionID } = description;
@@ -66,13 +83,13 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
 	  }
 	  const parameterTypeID = parameterType.startsWith("array:i64:")
 		? stableID("execution", "type", "fixed-array", "i64", parameterType.slice("array:i64:".length))
-		: parameterType === "slice:i64" ? stableID("execution", "type", "slice", "i64") : ids[parameterType];
+		: parameterType === "slice:i64" ? stableID("execution", "type", "slice", "i64") : typeID(parameterType, { recordsByName, entities });
       entities.push(graphEntity(parameterID, entity(parameterID, "00000000000000000000000000009012", [
 		[0x9120, bytes(parameter.name)], [0x9121, ref(parameterTypeID)], [0x9122, `uu ${index}`],
       ])));
       return parameterID;
     });
-    const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName, declaredEffects };
+    const context = { functionID, parameterIDs, parameterNames: fn.params.map((item) => item.name), parameterTypes: signature.parameters.map((item) => item.type), entities, locals: new Map(), nextLocal: { value: 0 }, functionsByName, recordsByName, declaredEffects, methodsByTypeAndName };
     const bodyID = emitBlock(fn.body.body, "body", context, signature.result, true);
     entities.push(graphEntity(functionID, entity(functionID, "00000000000000000000000000009011", [
       [0x9110, bytes(fn.id.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(typeID(signature.result, context))], [0x9113, ref(bodyID)],
@@ -89,8 +106,8 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
 function readSignature(comments, fn) {
   const comment = [...comments].reverse().find((item) => item.type === "Block" && item.end <= fn.start && sourceGapIsWhitespace(item.end, fn.start, fn));
   if (!comment || !comment.value.startsWith("*")) fail("javascript.missing_jsdoc", fn.loc.start);
-  const parameters = [...comment.value.matchAll(/@param\s+\{(string|boolean|bigint|bigint\[\]|bigint\[(?:[0-9]|[12]\d|3[0-2])\])\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
-  const result = comment.value.match(/@returns?\s+\{(string|boolean|bigint|bigint\[\])\}/);
+  const parameters = [...comment.value.matchAll(/@param\s+\{([^}]+)\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
+  const result = comment.value.match(/@returns?\s+\{([^}]+)\}/);
   if (!result) fail("javascript.missing_result_type", fn.loc.start);
   return { parameters, result: semanticType(result[1]) };
 }
@@ -101,7 +118,28 @@ function sourceGapIsWhitespace(_end, _start, _fn) { return true; }
 function semanticType(type) {
   if (type === "bigint[]") return "slice:i64";
   if (type.startsWith("bigint[")) return `array:i64:${type.slice(7, -1)}`;
-  return type === "boolean" ? "bool" : type === "bigint" ? "i64" : "string";
+  if (type === "boolean") return "bool";
+  if (type === "bigint") return "i64";
+  if (type === "string") return "string";
+  const transition = /^Transition<([A-Za-z_$][\w$]*),(bigint|boolean|string)>$/.exec(type);
+  if (transition) return `transition:record:${transition[1]}:${semanticType(transition[2])}`;
+  if (/^[A-Za-z_$][\w$]*$/.test(type)) return `record:${type}`;
+  fail("javascript.unsupported_type_annotation");
+}
+
+function readMethods(declarations, comments, recordsByName, packagePath) {
+  const methods = [];
+  for (const declaration of declarations.filter((item) => item?.type === "ClassDeclaration")) {
+    if (!declaration.id || !recordsByName.has(declaration.id.name)) fail("javascript.class_requires_record", declaration.loc.start);
+    for (const item of declaration.body.body) {
+      if (item.kind === "constructor") continue;
+      if (item.type !== "MethodDefinition" || item.static || item.computed || item.key.type !== "Identifier" || item.value.async || item.value.generator) fail("javascript.unsupported_method", item.loc.start);
+      const signature = readSignature(comments, item);
+      if (signature.parameters.length !== item.value.params.length) fail("javascript.signature_arity", item.loc.start);
+      methods.push({ fn: item, signature, receiverType: declaration.id.name, id: stableID("session-method", packagePath, declaration.id.name, item.key.name) });
+    }
+  }
+  return methods.sort((left, right) => left.id.localeCompare(right.id));
 }
 
 function readRecords(comments, packagePath) {
@@ -119,8 +157,18 @@ function readRecords(comments, packagePath) {
 function typeID(type, context) {
   if (ids[type]) return ids[type];
 	if (type === "slice:i64") return stableID("execution", "type", "slice", "i64");
-  const record = context.recordsByName.get(type.slice("record:".length));
-  if (!type.startsWith("record:") || !record) fail("javascript.unknown_type");
+  if (type.startsWith("transition:")) {
+    const parts = type.split(":");
+    const stateType = `record:${parts[2]}`;
+    const resultType = parts.slice(3).join(":");
+    const stateID = typeID(stateType, context);
+    const resultID = typeID(resultType, context);
+    const id = stableID("execution", "type", "state-transition", stateID, resultID);
+    if (context.entities && !context.entities.some((item) => item.id === id)) context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a004", [[0xa0040, ref(stateID)], [0xa0041, ref(resultID)]])));
+    return id;
+  }
+  const record = type.startsWith("record:") ? context.recordsByName.get(type.slice("record:".length)) : undefined;
+  if (!record) fail("javascript.unknown_type");
   return record.id;
 }
 
@@ -230,6 +278,56 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 }
 
 function emitExpression(node, owner, path, context, expected) {
+	if (node.type === "ThisExpression" && expected === context.receiver?.type) {
+		const id = expressionID(owner, path, "receiver-read");
+		context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a001", [[0xa0010, ref(context.receiver.id)]])));
+		return { id, type: expected };
+	}
+	if (node.type === "NewExpression" && expected.startsWith("record:") && node.callee.type === "Identifier") {
+		const record = context.recordsByName.get(expected.slice("record:".length));
+		if (!record || node.callee.name !== record.name || node.arguments.length !== record.fields.length) fail("javascript.record_constructor", node.loc.start);
+		const values = node.arguments.map((argument, index) => emitExpression(argument, owner, `${path}.field.${index}`, context, record.fields[index].type));
+		const id = expressionID(owner, path, "record-construct");
+		context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009033", [[0x9330, ref(record.id)], [0x9331, refs(values.map((item) => item.id))]])));
+		return { id, type: expected };
+	}
+	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.type === "Identifier") {
+		const receiverType = inferExpressionType(node.callee.object, context);
+		const method = context.methodsByTypeAndName?.get(`${receiverType.slice("record:".length)}:${node.callee.property.name}`);
+		if (method && method.signature.result === expected && method.signature.parameters.length === node.arguments.length) {
+			const receiver = emitExpression(node.callee.object, owner, `${path}.receiver`, context, receiverType);
+			const arguments_ = node.arguments.map((argument, index) => emitExpression(argument, owner, `${path}.argument.${index}`, context, method.signature.parameters[index].type));
+			const id = expressionID(owner, path, "method-call");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a003", [[0xa0030, ref(receiver.id)], [0xa0031, ref(method.id)], [0xa0032, refs(arguments_.map((item) => item.id))]])));
+			return { id, type: expected };
+		}
+	}
+	if (node.type === "ObjectExpression" && expected.startsWith("transition:")) {
+		const properties = new Map(node.properties.map((property) => [property.key?.name ?? property.key?.value, property.value]));
+		if (properties.size !== 2 || !properties.has("state") || !properties.has("result")) fail("javascript.transition_shape", node.loc.start);
+		const parts = expected.split(":");
+		const stateType = `record:${parts[2]}`;
+		const resultType = parts.slice(3).join(":");
+		const state = emitExpression(properties.get("state"), owner, `${path}.state`, context, stateType);
+		const result = emitExpression(properties.get("result"), owner, `${path}.result`, context, resultType);
+		const transitionType = typeID(expected, context);
+		const id = expressionID(owner, path, "state-transition");
+		context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a005", [[0xa0050, ref(transitionType)], [0xa0051, ref(state.id)], [0xa0052, ref(result.id)]])));
+		return { id, type: expected };
+	}
+	if (node.type === "MemberExpression" && !node.computed && (node.property.name === "state" || node.property.name === "result")) {
+		const transitionType = inferExpressionType(node.object, context);
+		if (transitionType.startsWith("transition:")) {
+			const parts = transitionType.split(":");
+			const projectedType = node.property.name === "state" ? `record:${parts[2]}` : parts.slice(3).join(":");
+			if (projectedType !== expected) fail("javascript.transition_projection_type", node.loc.start);
+			const transition = emitExpression(node.object, owner, `${path}.transition`, context, transitionType);
+			const state = node.property.name === "state";
+			const id = expressionID(owner, path, state ? "transition-state" : "transition-result");
+			context.entities.push(graphEntity(id, entity(id, state ? "0000000000000000000000000000a006" : "0000000000000000000000000000a007", [[state ? 0xa0060 : 0xa0070, ref(transition.id)]])));
+			return { id, type: expected };
+		}
+	}
 	if (node.type === "CallExpression" && expected === "slice:i64" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.name === "concat" && node.arguments.length === 1 && node.arguments[0].type === "ArrayExpression" && node.arguments[0].elements.length === 1) {
 		const collectionType = inferExpressionType(node.callee.object, context);
 		if (collectionType !== "slice:i64") fail("javascript.collection_append_type", node.loc.start);
@@ -355,12 +453,12 @@ function emitExpression(node, owner, path, context, expected) {
     context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009033", [[0x9330, ref(record.id)], [0x9331, refs(values.map((item) => item.id))]])));
     return { id, type: expected };
   }
-  if (node.type === "MemberExpression" && !node.computed && node.object.type === "Identifier" && node.property.type === "Identifier") {
-    const local = context.locals.get(node.object.name);
-    const record = local?.type?.startsWith("record:") ? context.recordsByName.get(local.type.slice("record:".length)) : undefined;
+  if (node.type === "MemberExpression" && !node.computed && node.property.type === "Identifier") {
+    const objectType = inferExpressionType(node.object, context);
+    const record = objectType?.startsWith("record:") ? context.recordsByName.get(objectType.slice("record:".length)) : undefined;
     const field = record?.fields.find((item) => item.name === node.property.name);
     if (!record || !field || field.type !== expected) fail("javascript.record_field_read", node.loc.start);
-    const base = emitExpression(node.object, owner, `${path}.record`, context, local.type);
+    const base = emitExpression(node.object, owner, `${path}.record`, context, objectType);
     const id = expressionID(owner, path, "field-read");
     context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009032", [[0x9320, ref(base.id)], [0x9321, ref(field.id)]])));
     return { id, type: expected };
@@ -417,6 +515,7 @@ function dynamicIndexExpression(node, owner, path, context) {
 }
 
 function inferExpressionType(node, context) {
+  if (node.type === "ThisExpression" && context.receiver) return context.receiver.type;
   if (node.type === "Identifier") {
     const parameter = context.parameterNames.indexOf(node.name);
     if (parameter >= 0) return context.parameterTypes[parameter];
@@ -427,6 +526,12 @@ function inferExpressionType(node, context) {
   if (node.type === "Literal" && typeof node.value === "boolean") return "bool";
 	if (node.type === "MemberExpression" && !node.computed && node.property.name === "length") return "i64";
   if (node.type === "ObjectExpression") {
+	const propertyNames = new Set(node.properties.map((property) => property.key?.name ?? property.key?.value));
+	if (propertyNames.size === 2 && propertyNames.has("state") && propertyNames.has("result")) {
+		const stateNode = node.properties.find((property) => (property.key?.name ?? property.key?.value) === "state")?.value;
+		const resultNode = node.properties.find((property) => (property.key?.name ?? property.key?.value) === "result")?.value;
+		return `transition:${inferExpressionType(stateNode, context)}:${inferExpressionType(resultNode, context)}`;
+	}
     const names = new Set(node.properties.map((property) => property.key?.name ?? property.key?.value));
     const matches = [...context.recordsByName.values()].filter((record) => record.fields.length === names.size && record.fields.every((field) => names.has(field.name)));
     if (matches.length === 1) return `record:${matches[0].name}`;
@@ -435,6 +540,25 @@ function inferExpressionType(node, context) {
     const callee = context.functionsByName.get(node.callee.name);
     if (callee) return callee.signature.result;
   }
+	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed) {
+		const receiverType = inferExpressionType(node.callee.object, context);
+		const method = context.methodsByTypeAndName?.get(`${receiverType.slice("record:".length)}:${node.callee.property.name}`);
+		if (method) return method.signature.result;
+	}
+	if (node.type === "NewExpression" && node.callee.type === "Identifier" && context.recordsByName.has(node.callee.name)) return `record:${node.callee.name}`;
+	if (node.type === "MemberExpression" && !node.computed) {
+		const objectType = inferExpressionType(node.object, context);
+		if (objectType.startsWith("transition:")) {
+			const parts = objectType.split(":");
+			if (node.property.name === "state") return `record:${parts[2]}`;
+			if (node.property.name === "result") return parts.slice(3).join(":");
+		}
+		if (objectType.startsWith("record:")) {
+			const record = context.recordsByName.get(objectType.slice("record:".length));
+			const recordField = record?.fields.find((item) => item.name === node.property.name);
+			if (recordField) return recordField.type;
+		}
+	}
 	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && (node.callee.property.name === "with" || node.callee.property.name === "concat")) return "slice:i64";
   if (node.type === "LogicalExpression" && (node.operator === "&&" || node.operator === "||")) return "bool";
   if (node.type === "BinaryExpression" && node.operator === "===") return "bool";
@@ -496,6 +620,9 @@ function compose(moduleG1, revision, additions) {
     if (line.startsWith("en ")) { current = { id: line.split(/\s+/)[1], text: "" }; entities.push(current); }
     if (current) current.text += `${line}\n`;
   }
+  const moduleRoot = entities.find((item) => item.id === "00000000000000000000000000009000");
+  const moduleVersion = Number(moduleRoot?.text.match(/^en\s+\S+\s+\S+\s+(\d+)\s+/m)?.[1] ?? 0);
+  if (moduleVersion >= 26) entities.length = 0;
   const unique = new Map(entities.map((item) => [item.id, item]));
   for (const item of additions) {
     const existing = unique.get(item.id);

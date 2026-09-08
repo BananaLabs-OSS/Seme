@@ -172,6 +172,42 @@ func TestIncrementalSessionLiftsCompositionalRecords(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsValueReceiverStateTransition(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v26/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package counter
+type Transition[S, R any] struct { State S; Result R }
+type Counter struct { Value int64 }
+func (counter Counter) Add(delta int64) Transition[Counter, int64] {
+	next := Counter{Value: counter.Value + delta}
+	return Transition[Counter, int64]{State: next, Result: next.Value}
+}
+func Step(counter Counter, delta int64) Transition[Counter, int64] { return counter.Add(delta) }
+func Updated(counter Counter, delta int64) Counter { return Step(counter, delta).State }
+func Result(counter Counter, delta int64) int64 { return Step(counter, delta).Result }
+`
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/counter", Entry: "Step", Files: map[string]string{"counter.go": source}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("transition result = %#v", result)
+	}
+	for _, schema := range []string{
+		"0000000000000000000000000000a000", "0000000000000000000000000000a001",
+		"0000000000000000000000000000a002", "0000000000000000000000000000a003",
+		"0000000000000000000000000000a004", "0000000000000000000000000000a005",
+		"0000000000000000000000000000a006", "0000000000000000000000000000a007",
+	} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("canonical program lacks %s", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsMutablePlacesAndWhile(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v18/module.g1")
 	if err != nil {

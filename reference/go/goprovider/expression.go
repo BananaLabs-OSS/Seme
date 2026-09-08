@@ -37,6 +37,11 @@ const (
 	goDynamicIndexRead
 	goCollectionAppend
 	goCollectionUpdate
+	goReceiverRead
+	goMethodCall
+	goStateTransition
+	goTransitionState
+	goTransitionResult
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -64,6 +69,9 @@ type goExpression struct {
 	bindingID   string
 	accName     string
 	elementName string
+	receiverID  string
+	methodID    string
+	typeID      string
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -238,6 +246,52 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			id := expressionNodeID(owner, path, "collection-update")
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090fc", []graphField{refField(0x9fc0, collection), refField(0x9fc1, index), refField(0x9fc2, value)})}
 			return id, nil
+		case goReceiverRead:
+			if expression.receiverID == "" {
+				return "", fmt.Errorf("expression.receiver_missing")
+			}
+			id := expressionNodeID(owner, path, "receiver-read")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a001", []graphField{refField(0xa0010, expression.receiverID)})}
+			return id, nil
+		case goMethodCall:
+			receiver, err := emit(expression.left, path+".receiver")
+			if err != nil {
+				return "", err
+			}
+			arguments := make([]string, len(expression.arguments))
+			for index, argument := range expression.arguments {
+				arguments[index], err = emit(argument, path+".argument."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+			}
+			id := expressionNodeID(owner, path, "method-call")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a003", []graphField{refField(0xa0030, receiver), refField(0xa0031, expression.methodID), refsField(0xa0032, arguments)})}
+			return id, nil
+		case goStateTransition:
+			state, err := emit(expression.left, path+".state")
+			if err != nil {
+				return "", err
+			}
+			result, err := emit(expression.right, path+".result")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "state-transition")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a005", []graphField{refField(0xa0050, expression.typeID), refField(0xa0051, state), refField(0xa0052, result)})}
+			return id, nil
+		case goTransitionState, goTransitionResult:
+			value, err := emit(expression.left, path+".value")
+			if err != nil {
+				return "", err
+			}
+			kind, schema, field := "transition-state", "0000000000000000000000000000a006", uint64(0xa0060)
+			if expression.kind == goTransitionResult {
+				kind, schema, field = "transition-result", "0000000000000000000000000000a007", 0xa0070
+			}
+			id := expressionNodeID(owner, path, kind)
+			emitted[id] = graphEntity{id, entity(id, schema, []graphField{refField(field, value)})}
+			return id, nil
 		case goIntegerLiteral:
 			id := expressionNodeID(owner, path, "integer-literal")
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009070", []graphField{unsignedField(0x9700, expression.integer), refField(0x9701, integerID)})}
@@ -371,6 +425,9 @@ type goRecordInfo struct {
 func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
 	switch expression := ast.Unparen(expression).(type) {
 	case *ast.Ident:
+		if signature.Recv() != nil && info.Uses[expression] == signature.Recv() {
+			return &goExpression{kind: goReceiverRead, receiverID: goReceiverID(signature)}, nil
+		}
 		for index := 0; index < signature.Params().Len(); index++ {
 			if info.Uses[expression] == signature.Params().At(index) {
 				return &goExpression{kind: goParameterRead, parameter: index}, nil
@@ -445,6 +502,26 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		return &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}, nil
 	case *ast.CallExpr:
+		if selector, ok := ast.Unparen(expression.Fun).(*ast.SelectorExpr); ok {
+			if selection := info.Selections[selector]; selection != nil && selection.Kind() == types.MethodVal {
+				methodID, exists := functions[selection.Obj()]
+				if !exists || expression.Ellipsis.IsValid() {
+					return nil, fmt.Errorf("expression.unsupported_method_call")
+				}
+				receiver, err := analyzeGoExpressionWithProgram(selector.X, signature, info, locals, functions, records, mutableLocals)
+				if err != nil {
+					return nil, err
+				}
+				arguments := make([]*goExpression, len(expression.Args))
+				for index, argument := range expression.Args {
+					arguments[index], err = analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
+					if err != nil {
+						return nil, err
+					}
+				}
+				return &goExpression{kind: goMethodCall, left: receiver, methodID: methodID, arguments: arguments}, nil
+			}
+		}
 		identifier, ok := ast.Unparen(expression.Fun).(*ast.Ident)
 		if ok && identifier.Name == "int" && info.Uses[identifier] == types.Universe.Lookup("int") && len(expression.Args) == 1 && isInt64(info.TypeOf(expression.Args[0])) {
 			return analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
@@ -523,6 +600,46 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		return &goExpression{kind: goFunctionCall, callee: callee, arguments: arguments}, nil
 	case *ast.CompositeLit:
+		if stateType, resultType, ok := goTransitionTypes(info.TypeOf(expression)); ok {
+			if len(expression.Elts) != 2 {
+				return nil, fmt.Errorf("expression.transition_arity")
+			}
+			values := make([]ast.Expr, 2)
+			for index, element := range expression.Elts {
+				position := index
+				value := element
+				if keyed, keyedOK := element.(*ast.KeyValueExpr); keyedOK {
+					name, nameOK := keyed.Key.(*ast.Ident)
+					if !nameOK {
+						return nil, fmt.Errorf("expression.transition_field")
+					}
+					if name.Name == "State" {
+						position = 0
+					} else if name.Name == "Result" {
+						position = 1
+					} else {
+						return nil, fmt.Errorf("expression.transition_field")
+					}
+					value = keyed.Value
+				}
+				if values[position] != nil {
+					return nil, fmt.Errorf("expression.transition_field")
+				}
+				values[position] = value
+			}
+			if values[0] == nil || values[1] == nil {
+				return nil, fmt.Errorf("expression.transition_field")
+			}
+			state, err := analyzeGoExpressionWithProgram(values[0], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			result, err := analyzeGoExpressionWithProgram(values[1], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			return &goExpression{kind: goStateTransition, left: state, right: result, typeID: goTransitionTypeID(stateType, resultType)}, nil
+		}
 		if array, ok := info.TypeOf(expression).Underlying().(*types.Array); ok {
 			if array.Len() < 0 || array.Len() > 32 || !isInt64(array.Elem()) || int64(len(expression.Elts)) != array.Len() {
 				return nil, fmt.Errorf("expression.unsupported_fixed_array")
@@ -590,6 +707,19 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		field, ok := selection.Obj().(*types.Var)
 		if !ok {
 			return nil, fmt.Errorf("expression.unsupported_selector")
+		}
+		if _, _, transition := goTransitionTypes(info.TypeOf(expression.X)); transition {
+			value, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			if field.Name() == "State" {
+				return &goExpression{kind: goTransitionState, left: value}, nil
+			}
+			if field.Name() == "Result" {
+				return &goExpression{kind: goTransitionResult, left: value}, nil
+			}
+			return nil, fmt.Errorf("expression.unknown_transition_field")
 		}
 		var fieldID string
 		for _, record := range records {

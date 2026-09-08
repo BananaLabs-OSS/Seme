@@ -15,6 +15,7 @@ const moduleV22G1 = fs.readFileSync(new URL("../../modules/execution/v22/module.
 const moduleV23G1 = fs.readFileSync(new URL("../../modules/execution/v23/module.g1", import.meta.url), "utf8");
 const moduleV24G1 = fs.readFileSync(new URL("../../modules/execution/v24/module.g1", import.meta.url), "utf8");
 const moduleV25G1 = fs.readFileSync(new URL("../../modules/execution/v25/module.g1", import.meta.url), "utf8");
+const moduleV26G1 = fs.readFileSync(new URL("../../modules/execution/v26/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -189,5 +190,26 @@ export function UpdateAndAppend(values, index, replacement, appended) { return v
   const projected = projectJavaScript(first);
   assert.match(projected, /\.with\(Number\(index\), replacement\)\.concat\(\[appended\]\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV25G1, packagePath: "example.test/update", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts native JavaScript method transitions", () => {
+  const source = `/** @typedef {Object} Counter
+ * @property {bigint} value
+ */
+class Counter {
+  constructor(value) { this.value = value; }
+  /** @param {bigint} delta @returns {Transition<Counter,bigint>} */
+  add(delta) { const state = new Counter(this.value + delta); return { state, result: state.value }; }
+}
+/** @param {Counter} counter @param {bigint} delta @returns {Transition<Counter,bigint>} */
+export function Step(counter, delta) { return counter.add(delta); }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV26G1, packagePath: "example.test/method-transition", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /class Counter/);
+  assert.match(projected, /add\(delta\)/);
+  assert.match(projected, /new Counter\(/);
+  assert.match(projected, /counter\.add\(delta\)/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV26G1, packagePath: "example.test/method-transition", revision: 1 });
   assert.equal(second, first);
 });

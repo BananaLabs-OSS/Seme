@@ -323,8 +323,28 @@ func packagePathOf(nativeKey string) string {
 }
 func composeExecutionG1(module []byte, revision string, instances []graphEntity) string {
 	entities := graphEntities(module)
+	// From v26 onward schema modules are independently compiled inputs rather
+	// than copied into every executable program envelope. Schema identities on
+	// program entities remain stable; validation and targets resolve them
+	// against the separately pinned execution module.
+	if executionModuleVersion(module) >= 26 {
+		entities = nil
+	}
 	entities = append(entities, instances...)
 	sort.Slice(entities, func(i, j int) bool { return entities[i].id < entities[j].id })
+	unique := entities[:0]
+	for _, item := range entities {
+		if len(unique) != 0 && unique[len(unique)-1].id == item.id {
+			if unique[len(unique)-1].text != item.text {
+				// Preserve conflicting declarations so canonical compilation rejects
+				// the duplicate identity instead of silently choosing one meaning.
+				unique = append(unique, item)
+			}
+			continue
+		}
+		unique = append(unique, item)
+	}
+	entities = unique
 	var out strings.Builder
 	fmt.Fprintf(&out, "# Generated exact Go to Core Execution v1 lift.\nve 1\nmo %032x\nrv %s\npc 0\nec %s\n", 0x9000, revision, strconv.Itoa(len(entities)))
 	for _, item := range entities {
@@ -332,6 +352,17 @@ func composeExecutionG1(module []byte, revision string, instances []graphEntity)
 		out.WriteString(item.text)
 	}
 	return out.String()
+}
+
+func executionModuleVersion(module []byte) uint64 {
+	for _, line := range strings.Split(string(module), "\n") {
+		parts := strings.Fields(line)
+		if len(parts) == 5 && parts[0] == "en" && parts[1] == fmt.Sprintf("%032x", 0x9000) && parts[2] == fmt.Sprintf("%032x", 0x12) {
+			version, _ := strconv.ParseUint(parts[3], 10, 64)
+			return version
+		}
+	}
+	return 0
 }
 
 func graphEntities(module []byte) []graphEntity {

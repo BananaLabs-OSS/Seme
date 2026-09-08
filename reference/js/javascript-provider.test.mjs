@@ -14,6 +14,7 @@ const moduleV22G1 = fs.readFileSync(new URL("../../modules/execution/v22/module.
 const moduleV23G1 = fs.readFileSync(new URL("../../modules/execution/v23/module.g1", import.meta.url), "utf8");
 const moduleV24G1 = fs.readFileSync(new URL("../../modules/execution/v24/module.g1", import.meta.url), "utf8");
 const moduleV25G1 = fs.readFileSync(new URL("../../modules/execution/v25/module.g1", import.meta.url), "utf8");
+const moduleV26G1 = fs.readFileSync(new URL("../../modules/execution/v26/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -192,4 +193,34 @@ export function UpdateAndAppend(values, index, replacement, appended) { return v
   const canonical = liftJavaScript({ source, moduleG1: moduleV25G1, packagePath: "example.test/update", revision: 1 });
   assert.match(canonical, /000000000000000000000000000090fb/);
   assert.match(canonical, /000000000000000000000000000090fc/);
+});
+
+test("lifts native methods as explicit immutable state transitions", () => {
+  const source = `/** @typedef {Object} Counter
+ * @property {bigint} value
+ */
+class Counter {
+  constructor(value) { this.value = value; }
+  /** @param {bigint} delta @returns {Transition<Counter,bigint>} */
+  add(delta) { const state = new Counter(this.value + delta); return { state, result: state.value }; }
+}
+/** @param {Counter} counter @param {bigint} delta @returns {Transition<Counter,bigint>} */
+export function Step(counter, delta) { return counter.add(delta); }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV26G1, packagePath: "example.test/method-transition", revision: 1 });
+  for (const methodSchema of ["a000", "a001", "a002", "a003", "a004", "a005"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${methodSchema}`));
+});
+
+test("lifts explicit state and result projections", () => {
+  const base = `/** @typedef {Object} Counter
+ * @property {bigint} value
+ */
+class Counter {
+  constructor(value) { this.value = value; }
+  /** @param {bigint} delta @returns {Transition<Counter,bigint>} */
+  add(delta) { const state = new Counter(this.value + delta); return { state, result: state.value }; }
+}`;
+  const stateSource = `${base}\n/** @param {Counter} counter @param {bigint} delta @returns {Counter} */\nexport function Next(counter, delta) { return counter.add(delta).state; }`;
+  const resultSource = `${base}\n/** @param {Counter} counter @param {bigint} delta @returns {bigint} */\nexport function Value(counter, delta) { return counter.add(delta).result; }`;
+  assert.match(liftJavaScript({ source: stateSource, moduleG1: moduleV26G1, packagePath: "example.test/transition-state", revision: 1 }), /0000000000000000000000000000a006/);
+  assert.match(liftJavaScript({ source: resultSource, moduleG1: moduleV26G1, packagePath: "example.test/transition-result", revision: 1 }), /0000000000000000000000000000a007/);
 });
