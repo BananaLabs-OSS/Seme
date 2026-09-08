@@ -17,6 +17,9 @@ type goStatement struct {
 	localType   string
 	local       int
 	initializer *goExpression
+	mutable     bool
+	assignment  *goExpression
+	loopBlock   *goBlock
 }
 
 type goBlock struct {
@@ -33,28 +36,60 @@ func analyzeGoBlockWithCalls(statements []ast.Stmt, signature *types.Signature, 
 
 func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goBlock, error) {
 	next := 0
-	return analyzeGoBlockScoped(statements, signature, info, map[types.Object]int{}, functions, records, &next)
+	mutable := map[types.Object]bool{}
+	for _, statement := range statements {
+		ast.Inspect(statement, func(node ast.Node) bool {
+			assignment, ok := node.(*ast.AssignStmt)
+			if !ok || assignment.Tok != token.ASSIGN {
+				return true
+			}
+			for _, target := range assignment.Lhs {
+				if name, ok := target.(*ast.Ident); ok && info.Uses[name] != nil {
+					mutable[info.Uses[name]] = true
+				}
+			}
+			return true
+		})
+	}
+	return analyzeGoBlockScoped(statements, signature, info, map[types.Object]int{}, functions, records, mutable, &next, true)
 }
 
-func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, info *types.Info, inherited map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, next *int) (*goBlock, error) {
+func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, info *types.Info, inherited map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool, next *int, requireReturn bool) (*goBlock, error) {
 	locals := cloneLocalScope(inherited)
 	block := &goBlock{}
 	for index, raw := range statements {
 		switch statement := raw.(type) {
 		case *ast.AssignStmt:
-			if statement.Tok != token.DEFINE || len(statement.Lhs) != 1 || len(statement.Rhs) != 1 {
+			if (statement.Tok != token.DEFINE && statement.Tok != token.ASSIGN) || len(statement.Lhs) != 1 || len(statement.Rhs) != 1 {
 				return nil, fmt.Errorf("control.local_binding_shape")
 			}
 			name, ok := statement.Lhs[0].(*ast.Ident)
+			if !ok {
+				return nil, fmt.Errorf("control.local_binding_shape")
+			}
 			object := info.Defs[name]
-			named, isRecord := object.Type().(*types.Named)
-			_, recordSupported := records[named]
-			if !ok || object == nil || (!isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type()) && !(isRecord && recordSupported)) {
+			if statement.Tok == token.ASSIGN {
+				object = info.Uses[name]
+			}
+			if object == nil {
 				return nil, fmt.Errorf("control.local_binding_type")
 			}
-			initializer, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records)
+			named, isRecord := object.Type().(*types.Named)
+			_, recordSupported := records[named]
+			if !isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type()) && !(isRecord && recordSupported) {
+				return nil, fmt.Errorf("control.local_binding_type")
+			}
+			initializer, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
 			if err != nil {
 				return nil, err
+			}
+			if statement.Tok == token.ASSIGN {
+				local, exists := locals[object]
+				if !exists || !mutable[object] {
+					return nil, fmt.Errorf("control.assignment_target")
+				}
+				block.statements = append(block.statements, &goStatement{local: local, mutable: true, assignment: initializer})
+				continue
 			}
 			local := *next
 			*next++
@@ -68,13 +103,13 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if isRecord && recordSupported {
 				localType = records[named].id
 			}
-			block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer})
+			block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer, mutable: mutable[object]})
 			locals[object] = local
 		case *ast.ReturnStmt:
 			if index != len(statements)-1 || len(statement.Results) != 1 {
 				return nil, fmt.Errorf("control.return_arity")
 			}
-			expression, err := analyzeGoExpressionWithProgram(statement.Results[0], signature, info, locals, functions, records)
+			expression, err := analyzeGoExpressionWithProgram(statement.Results[0], signature, info, locals, functions, records, mutable)
 			if err != nil {
 				return nil, err
 			}
@@ -83,18 +118,34 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if index != 0 && len(block.statements) != index {
 				return nil, fmt.Errorf("control.statement_order")
 			}
-			branch, err := analyzeTerminalIfScoped(statement, statements[index+1:], signature, info, locals, functions, records, next)
+			branch, err := analyzeTerminalIfScoped(statement, statements[index+1:], signature, info, locals, functions, records, mutable, next)
 			if err != nil {
 				return nil, err
 			}
 			block.statements = append(block.statements, branch.statements...)
 			return block, nil
+		case *ast.ForStmt:
+			if statement.Init != nil || statement.Post != nil || statement.Cond == nil {
+				return nil, fmt.Errorf("control.for_shape")
+			}
+			condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
+			if err != nil {
+				return nil, err
+			}
+			body, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, functions, records, mutable, next, false)
+			if err != nil {
+				return nil, err
+			}
+			block.statements = append(block.statements, &goStatement{condition: condition, loopBlock: body})
 		default:
 			return nil, fmt.Errorf("control.unsupported_statement")
 		}
 	}
-	if len(block.statements) == 0 || block.statements[len(block.statements)-1].returned == nil {
+	if requireReturn && (len(block.statements) == 0 || block.statements[len(block.statements)-1].returned == nil) {
 		return nil, fmt.Errorf("control.block_not_total")
+	}
+	if !requireReturn && len(block.statements) == 0 {
+		return nil, fmt.Errorf("control.loop_body_empty")
 	}
 	return block, nil
 }
@@ -109,18 +160,18 @@ func cloneLocalScope(source map[types.Object]int) map[types.Object]int {
 
 func analyzeTerminalIf(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info) (*goBlock, error) {
 	next := 0
-	return analyzeTerminalIfScoped(statement, following, signature, info, map[types.Object]int{}, nil, nil, &next)
+	return analyzeTerminalIfScoped(statement, following, signature, info, map[types.Object]int{}, nil, nil, nil, &next)
 }
 
-func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, next *int) (*goBlock, error) {
+func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool, next *int) (*goBlock, error) {
 	if statement.Init != nil {
 		return nil, fmt.Errorf("control.if_init_unsupported")
 	}
-	condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records)
+	condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
 	if err != nil {
 		return nil, err
 	}
-	thenBlock, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, functions, records, next)
+	thenBlock, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, functions, records, mutable, next, true)
 	if err != nil {
 		return nil, err
 	}
@@ -129,16 +180,16 @@ func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signat
 		if len(following) == 0 {
 			return nil, fmt.Errorf("control.if_missing_fallthrough_return")
 		}
-		elseBlock, err = analyzeGoBlockScoped(following, signature, info, locals, functions, records, next)
+		elseBlock, err = analyzeGoBlockScoped(following, signature, info, locals, functions, records, mutable, next, true)
 	} else {
 		if len(following) != 0 {
 			return nil, fmt.Errorf("control.unreachable_following_statement")
 		}
 		switch alternate := statement.Else.(type) {
 		case *ast.BlockStmt:
-			elseBlock, err = analyzeGoBlockScoped(alternate.List, signature, info, locals, functions, records, next)
+			elseBlock, err = analyzeGoBlockScoped(alternate.List, signature, info, locals, functions, records, mutable, next, true)
 		case *ast.IfStmt:
-			elseBlock, err = analyzeTerminalIfScoped(alternate, nil, signature, info, locals, functions, records, next)
+			elseBlock, err = analyzeTerminalIfScoped(alternate, nil, signature, info, locals, functions, records, mutable, next)
 		default:
 			err = fmt.Errorf("control.else_unsupported")
 		}
@@ -185,12 +236,28 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 				return "", err
 			}
 			*instances = append(*instances, expressions...)
-			*instances = append(*instances, graphEntity{bindingID, entity(bindingID, "000000000000000000000000000090d0", []graphField{
-				bytesField(0x9d00, statement.localName), refField(0x9d01, localTypeID), refField(0x9d02, initializerID),
-			})})
-			statementID = stableID("execution", owner, statementPath, "bind-local")
-			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090d1", []graphField{refField(0x9d10, bindingID)})})
+			if statement.mutable {
+				*instances = append(*instances, graphEntity{bindingID, entity(bindingID, "000000000000000000000000000090e0", []graphField{bytesField(0x9e00, statement.localName), refField(0x9e01, localTypeID), refField(0x9e02, initializerID)})})
+				statementID = stableID("execution", owner, statementPath, "declare-place")
+				*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090e1", []graphField{refField(0x9e10, bindingID)})})
+			} else {
+				*instances = append(*instances, graphEntity{bindingID, entity(bindingID, "000000000000000000000000000090d0", []graphField{bytesField(0x9d00, statement.localName), refField(0x9d01, localTypeID), refField(0x9d02, initializerID)})})
+				statementID = stableID("execution", owner, statementPath, "bind-local")
+				*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090d1", []graphField{refField(0x9d10, bindingID)})})
+			}
 			localIDs[statement.local] = bindingID
+		} else if statement.assignment != nil {
+			placeID, ok := localIDs[statement.local]
+			if !ok {
+				return "", fmt.Errorf("control.assignment_out_of_scope")
+			}
+			expressions, valueID, err := emitCanonicalExpressionWithLocals(statement.assignment, owner+":"+path+":assignment:"+strconv.Itoa(index), parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, expressions...)
+			statementID = stableID("execution", owner, statementPath, "assign-place")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090e3", []graphField{refField(0x9e30, placeID), refField(0x9e31, valueID)})})
 		} else if statement.returned != nil {
 			expressions, expressionID, err := emitCanonicalExpressionWithLocals(statement.returned, owner+":"+path, parameterIDs, localIDs, integerTypeID)
 			if err != nil {
@@ -199,6 +266,18 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, expressions...)
 			statementID = stableID("execution", owner, statementPath, "return")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{expressionID})})})
+		} else if statement.loopBlock != nil {
+			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+path+":loop-condition:"+strconv.Itoa(index), parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, conditionEntities...)
+			bodyID, err := emitCanonicalBlockScoped(statement.loopBlock, owner, path+".loop."+strconv.Itoa(index), parameterIDs, integerTypeID, localIDs, instances)
+			if err != nil {
+				return "", err
+			}
+			statementID = stableID("execution", owner, statementPath, "while")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090e4", []graphField{refField(0x9e40, conditionID), refField(0x9e41, bodyID)})})
 		} else {
 			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+path+":condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {

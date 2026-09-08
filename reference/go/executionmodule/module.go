@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 17 {
+	if version < 2 || version > 18 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -102,6 +102,15 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0x90d0, "LocalBinding", []Field{field(0x9d00, "local_binding.name", 4, 0, 0), field(0x9d01, "local_binding.type", 5, 0, 0), field(0x9d02, "local_binding.initializer", 5, 0, 0)}},
 			Schema{0x90d1, "BindLocal", []Field{field(0x9d10, "bind_local.binding", 5, 0x90d0, 0)}},
 			Schema{0x90d2, "LocalRead", []Field{field(0x9d20, "local_read.binding", 5, 0x90d0, 0)}},
+		)
+	}
+	if version >= 18 {
+		schemas = append(schemas,
+			Schema{0x90e0, "MutablePlace", []Field{field(0x9e00, "mutable_place.name", 4, 0, 0), field(0x9e01, "mutable_place.type", 5, 0, 0), field(0x9e02, "mutable_place.initializer", 5, 0, 0)}},
+			Schema{0x90e1, "DeclarePlace", []Field{field(0x9e10, "declare_place.place", 5, 0x90e0, 0)}},
+			Schema{0x90e2, "PlaceRead", []Field{field(0x9e20, "place_read.place", 5, 0x90e0, 0)}},
+			Schema{0x90e3, "AssignPlace", []Field{field(0x9e30, "assign_place.place", 5, 0x90e0, 0), field(0x9e31, "assign_place.value", 5, 0, 0)}},
+			Schema{0x90e4, "While", []Field{field(0x9e40, "while.condition", 5, 0, 0), field(0x9e41, "while.body", 5, 0x9080, 0)}},
 		)
 	}
 	return schemas, nil

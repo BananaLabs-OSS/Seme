@@ -6,6 +6,7 @@ import { liftJavaScript } from "./javascript-provider.mjs";
 const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v14/module.g1", import.meta.url), "utf8");
 const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.g1", import.meta.url), "utf8");
 const moduleV16G1 = fs.readFileSync(new URL("../../modules/execution/v16/module.g1", import.meta.url), "utf8");
+const moduleV18G1 = fs.readFileSync(new URL("../../modules/execution/v18/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -96,4 +97,16 @@ export function Label(name) { const item = { Name: name, Enabled: true }; return
 `;
   const canonical = liftJavaScript({ source, moduleG1: moduleV16G1, packagePath: "example.test/records", revision: 1 });
   for (const recordSchema of ["9030", "9031", "9032", "9033"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${recordSchema}`));
+});
+
+test("lifts let assignment and while as mutable places", () => {
+  const source = `/** @param {string} value @param {string} suffix @param {boolean} enabled @returns {string} */
+export function AppendOnce(value, suffix, enabled) {
+  let result = value;
+  let remaining = enabled;
+  while (remaining) { result = result + suffix; remaining = false; }
+  return result;
+}`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV18G1, packagePath: "example.test/mutation", revision: 1 });
+  for (const mutationSchema of ["90e0", "90e1", "90e2", "90e3", "90e4"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${mutationSchema}`));
 });

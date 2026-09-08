@@ -7,6 +7,7 @@ import { projectJavaScript } from "./javascript-projector.mjs";
 const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v14/module.g1", import.meta.url), "utf8");
 const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.g1", import.meta.url), "utf8");
 const moduleV16G1 = fs.readFileSync(new URL("../../modules/execution/v16/module.g1", import.meta.url), "utf8");
+const moduleV18G1 = fs.readFileSync(new URL("../../modules/execution/v18/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -78,5 +79,21 @@ export function Label(name) { const item = { Name: name, Enabled: true }; return
   assert.match(projected, /@typedef \{Object\} Item/);
   assert.match(projected, /const item = \{ Name: name, Enabled: true \}/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV16G1, packagePath: "example.test/records", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts mutable places and while", () => {
+  const source = `/** @param {string} value @param {string} suffix @param {boolean} enabled @returns {string} */
+export function AppendOnce(value, suffix, enabled) {
+  let result = value;
+  let remaining = enabled;
+  while (remaining) { result = result + suffix; remaining = false; }
+  return result;
+}`;
+  const first = liftJavaScript({ source, moduleG1: moduleV18G1, packagePath: "example.test/mutation", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /let result = value/);
+  assert.match(projected, /while \(remaining\)/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV18G1, packagePath: "example.test/mutation", revision: 1 });
   assert.equal(second, first);
 });

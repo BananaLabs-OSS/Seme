@@ -148,6 +148,58 @@ func TestPureCertificateRejectsInvalidLexicalLocals(t *testing.T) {
 	}
 }
 
+func TestStateScopeCertificationRejectsInvalidMutationOrder(t *testing.T) {
+	placeID := identity(0x2300)
+	declareID := identity(0x2301)
+	readID := identity(0x2302)
+	assignID := identity(0x2303)
+	returnID := identity(0x2304)
+	blockID := identity(0x2305)
+	literalID := identity(0x2306)
+	base := map[wire.ID]wire.Entity{
+		placeID: {ID: placeID, Schema: identity(0x90e0), Fields: map[wire.ID]wire.Value{
+			identity(0x9e00): byteValue("value"), identity(0x9e01): ref(identity(0x2010)), identity(0x9e02): ref(literalID),
+		}},
+		declareID: {ID: declareID, Schema: identity(0x90e1), Fields: map[wire.ID]wire.Value{identity(0x9e10): ref(placeID)}},
+		readID:    {ID: readID, Schema: identity(0x90e2), Fields: map[wire.ID]wire.Value{identity(0x9e20): ref(placeID)}},
+		assignID:  {ID: assignID, Schema: identity(0x90e3), Fields: map[wire.ID]wire.Value{identity(0x9e30): ref(placeID), identity(0x9e31): ref(readID)}},
+		returnID:  {ID: returnID, Schema: identity(0x9081), Fields: map[wire.ID]wire.Value{identity(0x9810): refs(readID)}},
+		literalID: {ID: literalID, Schema: identity(0x9050), Fields: map[wire.ID]wire.Value{identity(0x9500): byteValue("x")}},
+	}
+	tests := []struct {
+		name        string
+		statements  []wire.ID
+		initializer wire.ID
+		want        string
+	}{
+		{"assignment before declaration", []wire.ID{assignID, declareID, returnID}, literalID, "wasm.pure_assignment_scope"},
+		{"initializer self read", []wire.ID{declareID, returnID}, readID, "wasm.pure_place_read_scope"},
+		{"duplicate declaration", []wire.ID{declareID, declareID, returnID}, literalID, "wasm.pure_place_declaration_scope"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			entities := make(map[wire.ID]wire.Entity, len(base)+1)
+			for id, entity := range base {
+				fields := make(map[wire.ID]wire.Value, len(entity.Fields))
+				for fieldID, value := range entity.Fields {
+					fields[fieldID] = value
+				}
+				entity.Fields = fields
+				entities[id] = entity
+			}
+			place := entities[placeID]
+			place.Fields[identity(0x9e02)] = ref(test.initializer)
+			entities[placeID] = place
+			entities[blockID] = wire.Entity{ID: blockID, Schema: identity(0x9080), Fields: map[wire.ID]wire.Value{identity(0x9800): refs(test.statements...)}}
+			budget := 4096
+			err := validateStateScopes(wire.Envelope{Entities: entities}, blockID, map[wire.ID]bool{}, map[wire.ID]bool{}, map[wire.ID]bool{}, &budget)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want %s", err, test.want)
+			}
+		})
+	}
+}
+
 func TestPureCertificateLowersNestedIfAndUTF8Text(t *testing.T) {
 	graph := certifiedTestGraph()
 	function := graph.Entities[identity(0x2001)]

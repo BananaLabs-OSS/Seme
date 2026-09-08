@@ -22,6 +22,11 @@ const schema = {
   recordField: "00000000000000000000000000009031",
   fieldRead: "00000000000000000000000000009032",
   recordConstruct: "00000000000000000000000000009033",
+  mutablePlace: "000000000000000000000000000090e0",
+  declarePlace: "000000000000000000000000000090e1",
+  placeRead: "000000000000000000000000000090e2",
+  assignPlace: "000000000000000000000000000090e3",
+  whileLoop: "000000000000000000000000000090e4",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -78,31 +83,51 @@ function projectBlock(id, context, indent) {
   if (statements.length === 0) fail("javascript_projection.block_arity");
   const localContext = { ...context, locals: new Map(context.locals) };
   const lines = [];
-  for (let index = 0; index < statements.length - 1; index += 1) {
-    const bindingStatement = required(context.graph, statements[index], schema.bindLocal);
-    const binding = required(context.graph, reference(field(bindingStatement, 0x9d10)), schema.localBinding);
-    const name = text(field(binding, 0x9d00));
-    if (!/^[A-Za-z_$][\w$]*$/.test(name) || [...localContext.locals.values()].some((item) => item.name === name)) fail("javascript_projection.invalid_local_name");
-    const valueType = typeName(reference(field(binding, 0x9d01)), context.graph);
-    const initializer = projectExpression(reference(field(binding, 0x9d02)), localContext);
-    lines.push(`${indent}const ${name} = ${initializer};`);
-    localContext.locals.set(binding.id, { name, type: valueType });
+  for (let index = 0; index < statements.length; index += 1) {
+    const statement = required(context.graph, statements[index]);
+    if (statement.schema === schema.bindLocal || statement.schema === schema.declarePlace) {
+	  const mutable = statement.schema === schema.declarePlace;
+	  const binding = required(context.graph, reference(field(statement, mutable ? 0x9e10 : 0x9d10)), mutable ? schema.mutablePlace : schema.localBinding);
+	  const nameField = mutable ? 0x9e00 : 0x9d00;
+	  const typeField = mutable ? 0x9e01 : 0x9d01;
+	  const initializerField = mutable ? 0x9e02 : 0x9d02;
+	  const name = text(field(binding, nameField));
+	  if (!/^[A-Za-z_$][\w$]*$/.test(name) || [...localContext.locals.values()].some((item) => item.name === name)) fail("javascript_projection.invalid_local_name");
+	  const valueType = typeName(reference(field(binding, typeField)), context.graph);
+	  const initializer = projectExpression(reference(field(binding, initializerField)), localContext);
+	  lines.push(`${indent}${mutable ? "let" : "const"} ${name} = ${initializer};`);
+	  localContext.locals.set(binding.id, { name, type: valueType, mutable });
+	  continue;
+    }
+    if (statement.schema === schema.assignPlace) {
+      const place = localContext.locals.get(reference(field(statement, 0x9e30)));
+      if (!place?.mutable) fail("javascript_projection.assignment_target");
+      lines.push(`${indent}${place.name} = ${projectExpression(reference(field(statement, 0x9e31)), localContext)};`);
+      continue;
+    }
+    if (statement.schema === schema.whileLoop) {
+      const condition = projectExpression(reference(field(statement, 0x9e40)), localContext);
+      const body = projectBlock(reference(field(statement, 0x9e41)), localContext, `${indent}  `);
+      lines.push(`${indent}while (${condition}) {\n${body}\n${indent}}`);
+      continue;
+    }
+    if (statement.schema === schema.returned) {
+      const values = references(field(statement, 0x9810));
+      if (values.length !== 1 || index !== statements.length - 1) fail("javascript_projection.return_arity");
+      lines.push(`${indent}return ${projectExpression(values[0], localContext)};`);
+      continue;
+    }
+    if (statement.schema === schema.branch) {
+      if (index !== statements.length - 1) fail("javascript_projection.branch_terminal");
+      const condition = projectExpression(reference(field(statement, 0x9c00)), localContext);
+      const thenBody = projectBlock(reference(field(statement, 0x9c01)), localContext, `${indent}  `);
+      const elseBody = projectBlock(reference(field(statement, 0x9c02)), localContext, `${indent}  `);
+      lines.push(`${indent}if (${condition}) {\n${thenBody}\n${indent}} else {\n${elseBody}\n${indent}}`);
+      continue;
+    }
+    fail("javascript_projection.unsupported_statement");
   }
-  const statement = required(context.graph, statements[statements.length - 1]);
-  if (statement.schema === schema.returned) {
-    const values = references(field(statement, 0x9810));
-    if (values.length !== 1) fail("javascript_projection.return_arity");
-    lines.push(`${indent}return ${projectExpression(values[0], localContext)};`);
-    return lines.join("\n");
-  }
-  if (statement.schema === schema.branch) {
-    const condition = projectExpression(reference(field(statement, 0x9c00)), localContext);
-    const thenBody = projectBlock(reference(field(statement, 0x9c01)), localContext, `${indent}  `);
-    const elseBody = projectBlock(reference(field(statement, 0x9c02)), localContext, `${indent}  `);
-    lines.push(`${indent}if (${condition}) {\n${thenBody}\n${indent}} else {\n${elseBody}\n${indent}}`);
-    return lines.join("\n");
-  }
-  fail("javascript_projection.unsupported_statement");
+  return lines.join("\n");
 }
 
 function projectExpression(id, context) {
@@ -115,6 +140,11 @@ function projectExpression(id, context) {
   if (expression.schema === schema.localRead) {
     const local = context.locals.get(reference(field(expression, 0x9d20)));
     if (!local) fail("javascript_projection.local_out_of_scope");
+    return local.name;
+  }
+  if (expression.schema === schema.placeRead) {
+    const local = context.locals.get(reference(field(expression, 0x9e20)));
+    if (!local?.mutable) fail("javascript_projection.place_out_of_scope");
     return local.name;
   }
   if (expression.schema === schema.stringLiteral) return JSON.stringify(text(field(expression, 0x9500)));

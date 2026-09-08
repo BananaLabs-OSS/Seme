@@ -28,6 +28,7 @@ const (
 	goFunctionCall
 	goRecordConstruct
 	goFieldRead
+	goPlaceRead
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -47,6 +48,7 @@ type goExpression struct {
 	recordType string
 	field      string
 	values     []*goExpression
+	mutable    bool
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -75,6 +77,14 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := stableID("execution", owner, "local-read", bindingID)
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090d2", []graphField{refField(0x9d20, bindingID)})}
+			return id, nil
+		case goPlaceRead:
+			placeID, ok := localIDs[expression.local]
+			if !ok {
+				return "", fmt.Errorf("expression.place_out_of_scope")
+			}
+			id := stableID("execution", owner, "place-read", placeID)
+			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090e2", []graphField{refField(0x9e20, placeID)})}
 			return id, nil
 		case goFunctionCall:
 			if expression.callee == "" {
@@ -221,7 +231,7 @@ func analyzeGoExpressionWithLocals(expression ast.Expr, signature *types.Signatu
 }
 
 func analyzeGoExpressionWithContext(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string) (*goExpression, error) {
-	return analyzeGoExpressionWithProgram(expression, signature, info, locals, functions, nil)
+	return analyzeGoExpressionWithProgram(expression, signature, info, locals, functions, nil, nil)
 }
 
 type goRecordInfo struct {
@@ -230,7 +240,7 @@ type goRecordInfo struct {
 	ordered []*types.Var
 }
 
-func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goExpression, error) {
+func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
 	switch expression := ast.Unparen(expression).(type) {
 	case *ast.Ident:
 		for index := 0; index < signature.Params().Len(); index++ {
@@ -239,7 +249,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 		}
 		if local, ok := locals[info.Uses[expression]]; ok {
-			return &goExpression{kind: goLocalRead, local: local}, nil
+			kind := goLocalRead
+			if mutableLocals[info.Uses[expression]] {
+				kind = goPlaceRead
+			}
+			return &goExpression{kind: kind, local: local}, nil
 		}
 		if object, ok := info.Uses[expression].(*types.Const); ok && object.Type() == types.Typ[types.UntypedBool] {
 			return &goExpression{kind: goBooleanLiteral, boolean: constant.BoolVal(object.Val())}, nil
@@ -293,11 +307,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		default:
 			return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
 		}
-		analyzedLeft, err := analyzeGoExpressionWithProgram(left, signature, info, locals, functions, records)
+		analyzedLeft, err := analyzeGoExpressionWithProgram(left, signature, info, locals, functions, records, mutableLocals)
 		if err != nil {
 			return nil, err
 		}
-		analyzedRight, err := analyzeGoExpressionWithProgram(right, signature, info, locals, functions, records)
+		analyzedRight, err := analyzeGoExpressionWithProgram(right, signature, info, locals, functions, records, mutableLocals)
 		if err != nil {
 			return nil, err
 		}
@@ -310,7 +324,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		arguments := make([]*goExpression, len(expression.Args))
 		for index, argument := range expression.Args {
-			analyzed, err := analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records)
+			analyzed, err := analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
 				return nil, err
 			}
@@ -347,7 +361,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				return nil, fmt.Errorf("expression.duplicate_record_field")
 			}
 			seen[field] = true
-			value, err := analyzeGoExpressionWithProgram(valueExpression, signature, info, locals, functions, records)
+			value, err := analyzeGoExpressionWithProgram(valueExpression, signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
 				return nil, err
 			}
@@ -378,7 +392,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		if fieldID == "" {
 			return nil, fmt.Errorf("expression.unknown_record_field")
 		}
-		record, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records)
+		record, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
 		if err != nil {
 			return nil, err
 		}
