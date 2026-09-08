@@ -18,6 +18,7 @@ const moduleV25G1 = fs.readFileSync(new URL("../../modules/execution/v25/module.
 const moduleV26G1 = fs.readFileSync(new URL("../../modules/execution/v26/module.g1", import.meta.url), "utf8");
 const moduleV27G1 = fs.readFileSync(new URL("../../modules/execution/v27/module.g1", import.meta.url), "utf8");
 const moduleV28G1 = fs.readFileSync(new URL("../../modules/execution/v28/module.g1", import.meta.url), "utf8");
+const moduleV29G1 = fs.readFileSync(new URL("../../modules/execution/v29/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -285,5 +286,19 @@ export function Run(base, value) { return Apply(MakeAdder(base), value); }`;
   assert.match(projected, /\(value\) => \(base \+ value\)/);
   assert.match(projected, /return fn\(value\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV28G1, packagePath: "example.test/immutable-closure", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts idiomatic mutable closures", () => {
+  const source = `/** @param {bigint} start @returns {function(bigint): bigint} */
+function MakeCounter(start) { let value = start; return (delta) => { value = value + delta; return value; }; }
+/** @param {bigint} start @param {bigint} first @param {bigint} second @returns {bigint} */
+export function Run(start, first, second) { const counter = MakeCounter(start); counter(first); return counter(second); }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV29G1, packagePath: "example.test/mutable-closure", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /let value = start/);
+  assert.match(projected, /counter\(first\)/);
+  assert.match(projected, /return counter\(second\)/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV29G1, packagePath: "example.test/mutable-closure", revision: 1 });
   assert.equal(second, first);
 });

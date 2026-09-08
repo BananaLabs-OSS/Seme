@@ -48,6 +48,11 @@ const (
 	goClosureParameterRead
 	goClosureConstruct
 	goIndirectCall
+	goMutableCaptureRead
+	goCaptureUpdate
+	goSequence
+	goMutableClosureConstruct
+	goStatefulIndirectCall
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -339,6 +344,68 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			id := expressionNodeID(owner, path, "indirect-call")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a024", []graphField{refField(0xa0240, callee), refsField(0xa0241, arguments)})}
 			return id, nil
+		case goMutableCaptureRead:
+			id := expressionNodeID(owner, path, "mutable-capture-read")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a031", []graphField{refField(0xa0310, expression.bindingID)})}
+			return id, nil
+		case goCaptureUpdate:
+			value, err := emit(expression.left, path+".value")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "capture-update")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a032", []graphField{refField(0xa0320, expression.bindingID), refField(0xa0321, value)})}
+			return id, nil
+		case goSequence:
+			steps := make([]string, len(expression.arguments))
+			var err error
+			for index, step := range expression.arguments {
+				steps[index], err = emit(step, path+".step."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+			}
+			result, err := emit(expression.left, path+".result")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "sequence")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a033", []graphField{refsField(0xa0330, steps), refField(0xa0331, result)})}
+			return id, nil
+		case goMutableClosureConstruct:
+			initial, err := emit(expression.left, path+".capture.initial")
+			if err != nil {
+				return "", err
+			}
+			captureID := expressionNodeID(owner, path, "mutable-capture")
+			parameterID := expressionNodeID(owner, path, "closure-parameter")
+			assignMutableClosureBindings(expression.body, captureID, parameterID)
+			body, err := emit(expression.body, path+".body")
+			if err != nil {
+				return "", err
+			}
+			emitted[expression.typeID] = graphEntity{expression.typeID, entity(expression.typeID, "0000000000000000000000000000a020", []graphField{refsField(0xa0200, []string{integerID}), refField(0xa0201, integerID)})}
+			emitted[captureID] = graphEntity{captureID, entity(captureID, "0000000000000000000000000000a030", []graphField{bytesField(0xa0300, expression.text), refField(0xa0301, integerID), refField(0xa0302, initial)})}
+			emitted[parameterID] = graphEntity{parameterID, entity(parameterID, "00000000000000000000000000009012", []graphField{bytesField(0x9120, expression.elementName), refField(0x9121, integerID), unsignedField(0x9122, 0)})}
+			id := expressionNodeID(owner, path, "mutable-closure")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a034", []graphField{refField(0xa0340, expression.typeID), refsField(0xa0341, []string{parameterID}), refsField(0xa0342, []string{captureID}), refField(0xa0343, body)})}
+			return id, nil
+		case goStatefulIndirectCall:
+			callee, err := emit(expression.left, path+".callee")
+			if err != nil {
+				return "", err
+			}
+			arguments := make([]string, len(expression.arguments))
+			for index, argument := range expression.arguments {
+				arguments[index], err = emit(argument, path+".argument."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+			}
+			id := expressionNodeID(owner, path, "stateful-indirect-call")
+			emitted[expression.typeID] = graphEntity{expression.typeID, entity(expression.typeID, "0000000000000000000000000000a004", []graphField{refField(0xa0040, goUnaryI64FunctionTypeID()), refField(0xa0041, integerID)})}
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a035", []graphField{refField(0xa0350, callee), refsField(0xa0351, arguments)})}
+			return id, nil
 		case goStateTransition:
 			state, err := emit(expression.left, path+".state")
 			if err != nil {
@@ -452,6 +519,14 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 	return entities, root, nil
 }
 
+func goUnaryI64FunctionTypeID() string {
+	return stableID("execution", "type", "function", "i64", "i64")
+}
+
+func goStatefulUnaryI64TransitionTypeID() string {
+	return stableID("execution", "type", "state-transition", goUnaryI64FunctionTypeID(), stableID("execution", "type", "i64"))
+}
+
 func assignFoldBinding(expression *goExpression, role, id string) {
 	if expression == nil {
 		return
@@ -475,6 +550,23 @@ func assignClosureBindings(expression *goExpression, captureID, parameterID stri
 	}
 	assignClosureBindings(expression.left, captureID, parameterID)
 	assignClosureBindings(expression.right, captureID, parameterID)
+}
+
+func assignMutableClosureBindings(expression *goExpression, captureID, parameterID string) {
+	if expression == nil {
+		return
+	}
+	if expression.kind == goMutableCaptureRead || expression.kind == goCaptureUpdate {
+		expression.bindingID = captureID
+	}
+	if expression.kind == goClosureParameterRead {
+		expression.bindingID = parameterID
+	}
+	assignMutableClosureBindings(expression.left, captureID, parameterID)
+	assignMutableClosureBindings(expression.right, captureID, parameterID)
+	for _, child := range expression.arguments {
+		assignMutableClosureBindings(child, captureID, parameterID)
+	}
 }
 
 func expressionNodeID(owner, path, kind string) string {

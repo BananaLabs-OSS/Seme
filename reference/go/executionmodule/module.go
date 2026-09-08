@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 28 {
+	if version < 2 || version > 29 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -182,6 +182,16 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0xa022, "CaptureRead", []Field{field(0xa0220, "capture_read.capture", 5, 0xa021, 0)}},
 			Schema{0xa023, "ClosureConstruct", []Field{field(0xa0230, "closure.type", 5, 0xa020, 0), field(0xa0231, "closure.parameters", 5, 0x9012, 2), field(0xa0232, "closure.captures", 5, 0xa021, 2), field(0xa0233, "closure.body", 5, 0, 0)}},
 			Schema{0xa024, "IndirectCall", []Field{field(0xa0240, "indirect_call.callee", 5, 0, 0), field(0xa0241, "indirect_call.arguments", 5, 0, 2)}},
+		)
+	}
+	if version >= 29 {
+		schemas = append(schemas,
+			Schema{0xa030, "MutableCaptureBinding", []Field{field(0xa0300, "mutable_capture.name", 4, 0, 0), field(0xa0301, "mutable_capture.type", 5, 0, 0), field(0xa0302, "mutable_capture.initial", 5, 0, 0)}},
+			Schema{0xa031, "MutableCaptureRead", []Field{field(0xa0310, "mutable_capture_read.capture", 5, 0xa030, 0)}},
+			Schema{0xa032, "CaptureUpdate", []Field{field(0xa0320, "capture_update.capture", 5, 0xa030, 0), field(0xa0321, "capture_update.value", 5, 0, 0)}},
+			Schema{0xa033, "Sequence", []Field{field(0xa0330, "sequence.steps", 5, 0, 2), field(0xa0331, "sequence.result", 5, 0, 0)}},
+			Schema{0xa034, "MutableClosureConstruct", []Field{field(0xa0340, "mutable_closure.type", 5, 0xa020, 0), field(0xa0341, "mutable_closure.parameters", 5, 0x9012, 2), field(0xa0342, "mutable_closure.captures", 5, 0xa030, 2), field(0xa0343, "mutable_closure.body", 5, 0, 0)}},
+			Schema{0xa035, "StatefulIndirectCall", []Field{field(0xa0350, "stateful_call.callee", 5, 0, 0), field(0xa0351, "stateful_call.arguments", 5, 0, 2)}},
 		)
 	}
 	return schemas, nil
