@@ -1,0 +1,14 @@
+{
+  "name": "seme-javascript-reference",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reference JavaScript provider and conformance tools for Seme",
+  "type": "module",
+  "scripts": {
+    "test": "node --test javascript-provider.test.mjs string-abi-v2.test.mjs"
+  },
+  "license": "Apache-2.0",
+  "dependencies": {
+    "acorn": "8.15.0"
+  }
+}

@@ -2,3 +2,4 @@
 *.rebuilt
 .seme/
 .syncthing.*.tmp
+node_modules/

@@ -153,6 +153,12 @@ func TestAnalyzeEvaluateBooleanOrAndUTF8Strings(t *testing.T) {
 	}
 }
 
+func TestEmptyBytesFieldUsesCanonicalSentinel(t *testing.T) {
+	if field := bytesField(0x9500, ""); field.value != "by -" {
+		t.Fatalf("empty bytes field = %q", field.value)
+	}
+}
+
 func TestEvaluateBooleanOrShortCircuitsRightOperand(t *testing.T) {
 	invalidRight := &goExpression{kind: goParameterRead, parameter: 99}
 	shortCircuited := &goExpression{kind: goBooleanOr,

@@ -215,6 +215,13 @@ Ordered descriptors, strict validation, runtime concatenation/equality, bounded
 allocation, standalone Wasm, and capability-free Pulp execution are checked by
 `./scripts/check-execution-v14.sh`; scalar ABI v1 remains frozen.
 
+[`JavaScript Provider v1`](spec/javascript-provider-v1.md) is the first direct
+non-Go source lift. A deliberately bounded, explicitly typed native JavaScript
+function and its idiomatic Go equivalent compile to byte-identical canonical
+Seme, then the JavaScript-derived graph executes through ABI v2 Wasm. Ambiguous
+or coercive JavaScript rejects instead of being guessed. Run
+`./scripts/check-javascript-provider-v1.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

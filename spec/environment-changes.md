@@ -49,3 +49,11 @@ The Core v14 gate sets `XDG_CACHE_HOME` to its automatically removed temporary
 work directory for the duration of the command. This lets the existing Pulp
 Wazero runtime create its compilation cache without writing to the developer's
 persistent home cache. It is not a persistent environment setting.
+
+## 2026-09-08 — pinned JavaScript parser dependency
+
+The JavaScript reference provider added repository-local package metadata and
+the exact dependency `acorn@8.15.0`. It was installed with npm into the ignored
+`reference/js/node_modules/` working directory; no global package or system
+setting changed. `package-lock.json` records the registry artifact and
+integrity digest so clean environments can reproduce the parser dependency.
