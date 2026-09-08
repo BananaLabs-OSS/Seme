@@ -200,6 +200,32 @@ func TestStateScopeCertificationRejectsInvalidMutationOrder(t *testing.T) {
 	}
 }
 
+func TestStateScopeCertificationDoesNotLeakWhenLocals(t *testing.T) {
+	outerPlace, innerPlace := identity(0x2400), identity(0x2401)
+	outerDeclare, innerDeclare := identity(0x2402), identity(0x2403)
+	whenID, bodyID, rootID := identity(0x2404), identity(0x2405), identity(0x2406)
+	readID, returnID, literalID := identity(0x2407), identity(0x2408), identity(0x2409)
+	trueID := identity(0x2410)
+	entities := map[wire.ID]wire.Entity{
+		outerPlace:   {ID: outerPlace, Schema: identity(0x90e0), Fields: map[wire.ID]wire.Value{identity(0x9e00): byteValue("outer"), identity(0x9e01): ref(identity(0x2010)), identity(0x9e02): ref(literalID)}},
+		innerPlace:   {ID: innerPlace, Schema: identity(0x90e0), Fields: map[wire.ID]wire.Value{identity(0x9e00): byteValue("inner"), identity(0x9e01): ref(identity(0x2010)), identity(0x9e02): ref(literalID)}},
+		outerDeclare: {ID: outerDeclare, Schema: identity(0x90e1), Fields: map[wire.ID]wire.Value{identity(0x9e10): ref(outerPlace)}},
+		innerDeclare: {ID: innerDeclare, Schema: identity(0x90e1), Fields: map[wire.ID]wire.Value{identity(0x9e10): ref(innerPlace)}},
+		whenID:       {ID: whenID, Schema: identity(0x90f0), Fields: map[wire.ID]wire.Value{identity(0x9f00): ref(trueID), identity(0x9f01): ref(bodyID)}},
+		bodyID:       {ID: bodyID, Schema: identity(0x9080), Fields: map[wire.ID]wire.Value{identity(0x9800): refs(innerDeclare)}},
+		rootID:       {ID: rootID, Schema: identity(0x9080), Fields: map[wire.ID]wire.Value{identity(0x9800): refs(outerDeclare, whenID, returnID)}},
+		readID:       {ID: readID, Schema: identity(0x90e2), Fields: map[wire.ID]wire.Value{identity(0x9e20): ref(innerPlace)}},
+		returnID:     {ID: returnID, Schema: identity(0x9081), Fields: map[wire.ID]wire.Value{identity(0x9810): refs(readID)}},
+		literalID:    {ID: literalID, Schema: identity(0x9050), Fields: map[wire.ID]wire.Value{identity(0x9500): byteValue("x")}},
+		trueID:       {ID: trueID, Schema: identity(0x90b0), Fields: map[wire.ID]wire.Value{identity(0x9b00): {Tag: 2}}},
+	}
+	budget := 4096
+	err := validateStateScopes(wire.Envelope{Entities: entities}, rootID, map[wire.ID]bool{}, map[wire.ID]bool{}, map[wire.ID]bool{}, &budget)
+	if err == nil || !strings.Contains(err.Error(), "wasm.pure_place_read_scope") {
+		t.Fatalf("scope error = %v", err)
+	}
+}
+
 func TestPureCertificateLowersNestedIfAndUTF8Text(t *testing.T) {
 	graph := certifiedTestGraph()
 	function := graph.Entities[identity(0x2001)]

@@ -34,7 +34,7 @@ func certifyPureStringFunction(graph wire.Envelope, body wire.ID, parameters []p
 	budget := 4096
 	var instructions []byte
 	var err error
-	if len(bySchema(graph, 0x90e0))+len(bySchema(graph, 0x90e1))+len(bySchema(graph, 0x90e2))+len(bySchema(graph, 0x90e3))+len(bySchema(graph, 0x90e4)) > 0 {
+	if len(bySchema(graph, 0x90e0))+len(bySchema(graph, 0x90e1))+len(bySchema(graph, 0x90e2))+len(bySchema(graph, 0x90e3))+len(bySchema(graph, 0x90e4))+len(bySchema(graph, 0x90f0)) > 0 {
 		err = context.planPlaces(parameters)
 		if err == nil {
 			declared := map[wire.ID]bool{}
@@ -71,7 +71,7 @@ func (context *stringLowering) planPlaces(parameters []pureValueType) error {
 			return fmt.Errorf("wasm.pure_place_type")
 		}
 		valueType, err := pureType(context.graph, typeValue.Reference)
-		if err != nil || (valueType.name != "string" && valueType.name != "bool") {
+		if err != nil || (valueType.name != "string" && valueType.name != "bool" && valueType.name != "i64") {
 			return fmt.Errorf("wasm.pure_place_type")
 		}
 		index := byte(len(parameters) + len(context.extraLocals))
@@ -162,6 +162,24 @@ func (context *stringLowering) lowerStateBlock(id wire.ID, result string, requir
 			code = append(code, 0x4b, 0x04, 0x40, 0x00, 0x0b)
 			code = append(code, bodyCode...)
 			code = append(code, 0x0c, 0x00, 0x0b, 0x0b)
+		case identity(0x90f0):
+			condition, conditionErr := field(statement, 0x9f00)
+			body, bodyErr := field(statement, 0x9f01)
+			if conditionErr != nil || bodyErr != nil || condition.Tag != 6 || body.Tag != 6 {
+				return nil, fmt.Errorf("wasm.pure_when")
+			}
+			conditionCode, lowerErr := context.lowerStateExpression(condition.Reference, "bool", budget)
+			if lowerErr != nil {
+				return nil, lowerErr
+			}
+			bodyCode, lowerErr := context.lowerStateBlock(body.Reference, result, false, visiting, budget)
+			if lowerErr != nil {
+				return nil, lowerErr
+			}
+			code = append(code, conditionCode...)
+			code = append(code, 0x04, 0x40)
+			code = append(code, bodyCode...)
+			code = append(code, 0x0b)
 		case identity(0x9081):
 			values, e := field(statement, 0x9810)
 			if e != nil || values.Tag != 7 || len(values.List) != 1 || index != len(statements.List)-1 {
@@ -197,6 +215,9 @@ func (context *stringLowering) lowerStateExpression(id wire.ID, expected string,
 	}
 	if expected == "bool" {
 		return context.lowerBoolean(id, map[wire.ID]bool{}, budget)
+	}
+	if expected == "i64" {
+		return lowerHelperInteger(context.graph, id, context.locals, context.used, map[wire.ID]bool{}, budget)
 	}
 	return nil, fmt.Errorf("wasm.pure_state_type")
 }

@@ -8,6 +8,7 @@ const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v14/module.g1"
 const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.g1", import.meta.url), "utf8");
 const moduleV16G1 = fs.readFileSync(new URL("../../modules/execution/v16/module.g1", import.meta.url), "utf8");
 const moduleV18G1 = fs.readFileSync(new URL("../../modules/execution/v18/module.g1", import.meta.url), "utf8");
+const moduleV19G1 = fs.readFileSync(new URL("../../modules/execution/v19/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -95,5 +96,20 @@ export function AppendOnce(value, suffix, enabled) {
   assert.match(projected, /let result = value/);
   assert.match(projected, /while \(remaining\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV18G1, packagePath: "example.test/mutation", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts bigint mutation and one-sided choice", () => {
+  const source = `/** @param {bigint} original @param {bigint} replacement @param {boolean} enabled @returns {bigint} */
+export function Choose(original, replacement, enabled) {
+  let result = original;
+  if (enabled) { result = replacement; }
+  return result;
+}`;
+  const first = liftJavaScript({ source, moduleG1: moduleV19G1, packagePath: "example.test/choice", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /@param \{bigint\} original/);
+  assert.match(projected, /if \(enabled\)/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV19G1, packagePath: "example.test/choice", revision: 1 });
   assert.equal(second, first);
 });

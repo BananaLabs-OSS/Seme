@@ -331,8 +331,22 @@ func TestVersionEighteenAddsMutablePlacesAndWhile(t *testing.T) {
 	}
 }
 
+func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
+	previous, err := Declarations(18)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(19)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(current)-1].Name != "When" {
+		t.Fatalf("v19 declarations = %#v", current[len(previous):])
+	}
+}
+
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(19); err == nil {
+	if _, err := Declarations(20); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }

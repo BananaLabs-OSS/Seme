@@ -20,6 +20,7 @@ type goStatement struct {
 	mutable     bool
 	assignment  *goExpression
 	loopBlock   *goBlock
+	whenBlock   *goBlock
 }
 
 type goBlock struct {
@@ -115,6 +116,18 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			}
 			block.statements = append(block.statements, &goStatement{returned: expression})
 		case *ast.IfStmt:
+			if statement.Init == nil && statement.Else == nil && !blockContainsReturn(statement.Body.List) {
+				condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
+				body, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, functions, records, mutable, next, false)
+				if err != nil {
+					return nil, err
+				}
+				block.statements = append(block.statements, &goStatement{condition: condition, whenBlock: body})
+				continue
+			}
 			if index != 0 && len(block.statements) != index {
 				return nil, fmt.Errorf("control.statement_order")
 			}
@@ -148,6 +161,20 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 		return nil, fmt.Errorf("control.loop_body_empty")
 	}
 	return block, nil
+}
+
+func blockContainsReturn(statements []ast.Stmt) bool {
+	contains := false
+	for _, statement := range statements {
+		ast.Inspect(statement, func(node ast.Node) bool {
+			if _, ok := node.(*ast.ReturnStmt); ok {
+				contains = true
+				return false
+			}
+			return !contains
+		})
+	}
+	return contains
 }
 
 func cloneLocalScope(source map[types.Object]int) map[types.Object]int {
@@ -278,6 +305,18 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			}
 			statementID = stableID("execution", owner, statementPath, "while")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090e4", []graphField{refField(0x9e40, conditionID), refField(0x9e41, bodyID)})})
+		} else if statement.whenBlock != nil {
+			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+path+":condition:"+strconv.Itoa(index), parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, conditionEntities...)
+			bodyID, err := emitCanonicalBlockScoped(statement.whenBlock, owner, path+".when."+strconv.Itoa(index), parameterIDs, integerTypeID, localIDs, instances)
+			if err != nil {
+				return "", err
+			}
+			statementID = stableID("execution", owner, statementPath, "when")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090f0", []graphField{refField(0x9f00, conditionID), refField(0x9f01, bodyID)})})
 		} else {
 			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+path+":condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {

@@ -250,6 +250,12 @@ JavaScript `while` converge on one canonical graph and project without drift;
 the bounded string/Boolean profile executes as real Wasm locals and loops
 standalone and through Pulp. Run `./scripts/check-execution-v18.sh`.
 
+[`Core Execution v19`](spec/core-execution-v19.md) adds provider-neutral
+one-sided structured choice and realizes signed-i64 mutable places. Ordinary Go
+and JavaScript `if` statements converge on `When`; both outcomes execute with
+exact modular-i64 values standalone and through Pulp. Run
+`./scripts/check-execution-v19.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and
