@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 22 {
+	if version < 2 || version > 23 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -135,6 +135,11 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0x90f5, "IterationBinding", []Field{field(0x9f50, "iteration_binding.name", 4, 0, 0), field(0x9f51, "iteration_binding.type", 5, 0, 0)}},
 			Schema{0x90f6, "IterationBindingRead", []Field{field(0x9f60, "iteration_binding_read.binding", 5, 0x90f5, 0)}},
 			Schema{0x90f7, "Fold", []Field{field(0x9f70, "fold.collection", 5, 0, 0), field(0x9f71, "fold.initial", 5, 0, 0), field(0x9f72, "fold.accumulator", 5, 0x90f5, 0), field(0x9f73, "fold.element", 5, 0x90f5, 0), field(0x9f74, "fold.body", 5, 0, 0)}},
+		)
+	}
+	if version >= 23 {
+		schemas = append(schemas,
+			Schema{0x90f8, "SliceType", []Field{field(0x9f80, "slice.element_type", 5, 0, 0)}},
 		)
 	}
 	return schemas, nil

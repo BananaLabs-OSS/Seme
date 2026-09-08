@@ -120,7 +120,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 		CanonicalModule: graph.Module.String(), CanonicalRevision: graph.Revision.String(),
 		CanonicalProgram: programs[0].ID.String(), Function: function.ID.String(),
 	}
-	hasStrings := false
+	hasVariableValues := false
 	seenParameters := make(map[wire.ID]bool, len(parametersValue.List))
 	for index, item := range parametersValue.List {
 		if item.Tag != 6 || seenParameters[item.Reference] {
@@ -142,7 +142,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 			return nil, PureABI{}, err
 		}
 		parameterTypes[index] = valueType
-		hasStrings = hasStrings || valueType.name == "string"
+		hasVariableValues = hasVariableValues || valueType.name == "string" || valueType.name == "slice:i64"
 		parameterLocals[parameter.ID] = byte(index)
 		parameterTypeNames[parameter.ID] = valueType.name
 		abi.Parameters = append(abi.Parameters, PureABIField{Index: uint64(index), Type: valueType.name, Offset: abi.RequestSize, Size: valueType.size, Encoding: pureEncoding(valueType.name)})
@@ -156,7 +156,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if err != nil {
 		return nil, PureABI{}, err
 	}
-	hasStrings = hasStrings || resultType.name == "string"
+	hasVariableValues = hasVariableValues || resultType.name == "string"
 	abi.Result = PureABIField{Index: 0, Type: resultType.name, Offset: 0, Size: resultType.size, Encoding: pureEncoding(resultType.name)}
 	abi.ResponseSize = resultType.size
 	bodyValue, err := field(function, 0x9113)
@@ -175,7 +175,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 		return certifyPureEffectFunction(graph, bodyValue.Reference, parameterTypes, resultType, parameterTypeNames, parameterLocals, abi)
 	}
 	hasState := len(bySchema(graph, 0x90e0))+len(bySchema(graph, 0x90e1))+len(bySchema(graph, 0x90e2))+len(bySchema(graph, 0x90e3))+len(bySchema(graph, 0x90e4))+len(bySchema(graph, 0x90f0)) > 0
-	if hasStrings || hasState {
+	if hasVariableValues || hasState {
 		abi.Contract = "seme.pure-abi/v2"
 		abi.Provider = "seme.function-v2"
 		abi.FixedHeaderSize = abi.RequestSize
@@ -273,6 +273,9 @@ func pureEncoding(name string) string {
 	}
 	if strings.HasPrefix(name, "fixed-array:i64:") {
 		return "packed-little-endian-twos-complement-i64"
+	}
+	if name == "slice:i64" {
+		return "u32le-offset-u32le-element-count/packed-i64"
 	}
 	return "little-endian-twos-complement-i64-modular"
 }
@@ -487,7 +490,7 @@ func fixedI64Collection(graph wire.Envelope, collectionID wire.ID, parameterType
 		return nil, wire.ID{}, fmt.Errorf("wasm.fold_collection")
 	}
 	parameter, err := field(collection, 0x9130)
-	if err != nil || parameter.Tag != 6 || !strings.HasPrefix(parameterTypes[parameter.Reference], "fixed-array:i64:") {
+	if err != nil || parameter.Tag != 6 || (!strings.HasPrefix(parameterTypes[parameter.Reference], "fixed-array:i64:") && parameterTypes[parameter.Reference] != "slice:i64") {
 		return nil, wire.ID{}, fmt.Errorf("wasm.fold_collection_type")
 	}
 	return nil, parameter.Reference, nil
@@ -552,6 +555,16 @@ func pureType(graph wire.Envelope, id wire.ID) (pureValueType, error) {
 			return pureValueType{}, fmt.Errorf("wasm.fixed_array_element_type")
 		}
 		return pureValueType{fmt.Sprintf("fixed-array:i64:%d", length.Unsigned), 0x7f, length.Unsigned * 8}, nil
+	case identity(0x90f8):
+		element, err := field(entity, 0x9f80)
+		if err != nil || element.Tag != 6 {
+			return pureValueType{}, fmt.Errorf("wasm.slice_type")
+		}
+		elementType, err := pureType(graph, element.Reference)
+		if err != nil || elementType.name != "i64" {
+			return pureValueType{}, fmt.Errorf("wasm.slice_element_type")
+		}
+		return pureValueType{"slice:i64", 0x7e, 8}, nil
 	default:
 		return pureValueType{}, fmt.Errorf("wasm.pure_unsupported_type")
 	}

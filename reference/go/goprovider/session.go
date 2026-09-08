@@ -301,8 +301,13 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 			if !hasGraphEntity(instances, parameterTypeID) {
 				instances = append(instances, graphEntity{parameterTypeID, entity(parameterTypeID, "000000000000000000000000000090f2", []graphField{refField(0x9f20, integerID), unsignedField(0x9f21, length)})})
 			}
+		} else if isI64Slice(function.sig.Params().At(index).Type()) {
+			parameterTypeID = stableID("execution", "type", "slice", "i64")
+			if !hasGraphEntity(instances, parameterTypeID) {
+				instances = append(instances, graphEntity{parameterTypeID, entity(parameterTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
+			}
 		} else if !isInt64(function.sig.Params().At(index).Type()) {
-			return diagnostic("session.unsupported_parameter_type", "supported parameter types are int64, bool, string, and bounded fixed i64 arrays")
+			return diagnostic("session.unsupported_parameter_type", "supported parameter types are int64, bool, string, fixed i64 arrays, and i64 slices")
 		}
 		parameterIDs[index] = stableID("execution", function.id, "parameter", strconv.Itoa(index))
 		instances = append(instances, graphEntity{parameterIDs[index], entity(parameterIDs[index], "00000000000000000000000000009012", []graphField{

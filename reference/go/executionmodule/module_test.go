@@ -346,8 +346,22 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(23); err == nil {
+	if _, err := Declarations(24); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersionTwentyThreeAddsRuntimeSizedSlices(t *testing.T) {
+	previous, err := Declarations(22)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(23)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].Name != "SliceType" {
+		t.Fatalf("v23 declarations = %#v", current[len(previous):])
 	}
 }
 

@@ -217,7 +217,7 @@ func (context *stringLowering) lowerStateExpression(id wire.ID, expected string,
 		return context.lowerBoolean(id, map[wire.ID]bool{}, budget)
 	}
 	if expected == "i64" {
-		return lowerHelperInteger(context.graph, id, context.locals, context.used, map[wire.ID]bool{}, budget)
+		return context.lowerInteger(id, budget)
 	}
 	return nil, fmt.Errorf("wasm.pure_state_type")
 }
@@ -255,7 +255,7 @@ func (context *stringLowering) lowerBlock(id wire.ID, result string, parameterTy
 		if result == "bool" {
 			return context.lowerBoolean(values.List[0].Reference, map[wire.ID]bool{}, budget)
 		}
-		return lowerHelperInteger(context.graph, values.List[0].Reference, context.locals, context.used, map[wire.ID]bool{}, budget)
+		return context.lowerInteger(values.List[0].Reference, budget)
 	}
 	if statement.Schema != identity(0x90c0) {
 		return nil, fmt.Errorf("wasm.pure_return")
@@ -287,6 +287,52 @@ func (context *stringLowering) lowerBlock(id wire.ID, result string, parameterTy
 	code = append(code, 0x05)
 	code = append(code, elseCode...)
 	return append(code, 0x0b), nil
+}
+
+func (context *stringLowering) lowerInteger(id wire.ID, budget *int) ([]byte, error) {
+	expression, ok := context.graph.Entities[id]
+	if !ok || expression.Schema != identity(0x90f7) {
+		return lowerHelperInteger(context.graph, id, context.locals, context.used, map[wire.ID]bool{}, budget)
+	}
+	collection, initial, accumulator, element, body, err := foldFields(context.graph, expression)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateI64AddFoldBody(context.graph, body, accumulator, element); err != nil {
+		return nil, err
+	}
+	collectionEntity, ok := context.graph.Entities[collection]
+	if !ok || collectionEntity.Schema != identity(0x9013) {
+		return lowerHelperInteger(context.graph, id, context.locals, context.used, map[wire.ID]bool{}, budget)
+	}
+	parameter, err := field(collectionEntity, 0x9130)
+	local, exists := context.locals[parameter.Reference]
+	if err != nil || parameter.Tag != 6 || !exists {
+		return nil, fmt.Errorf("wasm.fold_parameter")
+	}
+	parameterEntity := context.graph.Entities[parameter.Reference]
+	typeValue, typeErr := field(parameterEntity, 0x9121)
+	valueType, valueTypeErr := pureType(context.graph, typeValue.Reference)
+	if typeErr != nil || valueTypeErr != nil || valueType.name != "slice:i64" {
+		return lowerHelperInteger(context.graph, id, context.locals, context.used, map[wire.ID]bool{}, budget)
+	}
+	initialCode, err := lowerHelperInteger(context.graph, initial, context.locals, context.used, map[wire.ID]bool{}, budget)
+	if err != nil {
+		return nil, err
+	}
+	accumulatorLocal := byte(len(context.locals) + len(context.extraLocals))
+	context.extraLocals = append(context.extraLocals, 0x7e)
+	indexLocal := byte(len(context.locals) + len(context.extraLocals))
+	context.extraLocals = append(context.extraLocals, 0x7f)
+	context.used[local] = true
+	code := append(initialCode, 0x21, accumulatorLocal, 0x41, 0x00, 0x21, indexLocal)
+	code = append(code, 0x02, 0x40, 0x03, 0x40) // block; loop
+	// Exit when index >= packed slice element count.
+	code = append(code, 0x20, indexLocal, 0x20, local, 0x42, 0x20, 0x88, 0xa7, 0x4f, 0x0d, 0x01)
+	// accumulator += load_i64(pointer + index*8)
+	code = append(code, 0x20, accumulatorLocal, 0x20, local, 0xa7, 0x20, indexLocal, 0x41, 0x03, 0x74, 0x6a, 0x29, 0x03, 0x00, 0x7c, 0x21, accumulatorLocal)
+	code = append(code, 0x20, indexLocal, 0x41, 0x01, 0x6a, 0x21, indexLocal, 0x0c, 0x00, 0x0b, 0x0b)
+	return append(code, 0x20, accumulatorLocal), nil
 }
 
 func (context *stringLowering) lowerString(id wire.ID, visiting map[wire.ID]bool, budget *int) ([]byte, error) {
@@ -648,6 +694,19 @@ func stringProviderBody(parameters []pureValueType, result pureValueType, abi Pu
 			body.Write([]byte{0x6a, 0x20, 2, 0x28, 2})
 			uleb(&body, offset+4)
 			body.Write([]byte{0x10, 6, 0x45, 0x04, 0x40, 0x41, 5, 0x0f, 0x0b})
+		case "slice:i64":
+			// Payload offset must be canonical and element count is bounded.
+			body.Write([]byte{0x20, 2, 0x28, 2})
+			uleb(&body, offset)
+			body.Write([]byte{0x20, 6, 0x47, 0x04, 0x40, 0x41, 4, 0x0f, 0x0b})
+			body.Write([]byte{0x20, 2, 0x28, 2})
+			uleb(&body, offset+4)
+			constI32(&body, 512)
+			body.Write([]byte{0x4b, 0x04, 0x40, 0x41, 4, 0x0f, 0x0b})
+			// cursor += element_count * 8; it must remain within the request.
+			body.Write([]byte{0x20, 6, 0x20, 2, 0x28, 2})
+			uleb(&body, offset+4)
+			body.Write([]byte{0x41, 0x03, 0x74, 0x6a, 0x22, 6, 0x20, 3, 0x4b, 0x04, 0x40, 0x41, 4, 0x0f, 0x0b})
 		}
 		offset += parameter.size
 	}
@@ -669,6 +728,12 @@ func stringProviderBody(parameters []pureValueType, result pureValueType, abi Pu
 			body.WriteByte(0x6a)
 			body.WriteByte(0xad)
 			body.Write([]byte{0x20, 2, 0x28, 2})
+			uleb(&body, offset+4)
+			body.Write([]byte{0xad, 0x42, 32, 0x86, 0x84})
+		case "slice:i64":
+			body.Write([]byte{0x20, 2, 0x28, 2})
+			uleb(&body, offset)
+			body.Write([]byte{0x6a, 0xad, 0x20, 2, 0x28, 2})
 			uleb(&body, offset+4)
 			body.Write([]byte{0xad, 0x42, 32, 0x86, 0x84})
 		}

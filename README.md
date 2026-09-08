@@ -281,6 +281,12 @@ JavaScript `reduce` converge on one canonical program; empty, signed, and
 overflow cases agree natively, in Wasm, and through Pulp. Run
 `./scripts/check-execution-v22.sh`.
 
+[`Core Execution v23`](spec/core-execution-v23.md) separates runtime-sized
+slices from fixed arrays and source runtime mechanics. Go `[]int64` and
+JavaScript `bigint[]` converge on one canonical slice fold; a bounded
+descriptor/payload ABI executes changing lengths through Wasm and Pulp. Run
+`./scripts/check-execution-v23.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

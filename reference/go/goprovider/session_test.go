@@ -307,6 +307,26 @@ func TestIncrementalSessionLiftsRangeAsDeterministicFold(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsRuntimeSizedSliceFold(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v23/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/slice", Entry: "Sum", Files: map[string]string{
+		"slice.go": "package slice\nfunc Sum(values []int64) int64 { total := int64(0); for _, value := range values { total += value }; return total }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("slice result = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "000000000000000000000000000090f8") || !strings.Contains(result.CanonicalG1, "000000000000000000000000000090f7") {
+		t.Fatal("slice or fold schema missing")
+	}
+}
+
 func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
 	if err != nil {

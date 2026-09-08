@@ -101,7 +101,7 @@ func matchGoFixedArrayFold(statements []ast.Stmt, signature *types.Signature, in
 	if parameter < 0 {
 		return nil, false
 	}
-	if _, ok := fixedI64ArrayLength(signature.Params().At(parameter).Type()); !ok {
+	if _, ok := fixedI64ArrayLength(signature.Params().At(parameter).Type()); !ok && !isI64Slice(signature.Params().At(parameter).Type()) {
 		return nil, false
 	}
 	update, ok := rangeStatement.Body.List[0].(*ast.AssignStmt)
@@ -472,7 +472,7 @@ func LiftControlFunction(project string, manifest Manifest, moduleG1 []byte, fun
 	}
 	for index := 0; index < signature.Params().Len(); index++ {
 		_, fixedArray := fixedI64ArrayLength(signature.Params().At(index).Type())
-		if !isInt64(signature.Params().At(index).Type()) && !isBool(signature.Params().At(index).Type()) && !isPureString(signature.Params().At(index).Type()) && !fixedArray {
+		if !isInt64(signature.Params().At(index).Type()) && !isBool(signature.Params().At(index).Type()) && !isPureString(signature.Params().At(index).Type()) && !fixedArray && !isI64Slice(signature.Params().At(index).Type()) {
 			return "", "", fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 		}
 	}
@@ -516,6 +516,11 @@ func LiftControlFunction(project string, manifest Manifest, moduleG1 []byte, fun
 			typeID = stableID("execution", "type", "fixed-array", "i64", strconv.FormatUint(length, 10))
 			if !hasGraphEntity(instances, typeID) {
 				instances = append(instances, graphEntity{typeID, entity(typeID, "000000000000000000000000000090f2", []graphField{refField(0x9f20, integerID), unsignedField(0x9f21, length)})})
+			}
+		} else if isI64Slice(signature.Params().At(index).Type()) {
+			typeID = stableID("execution", "type", "slice", "i64")
+			if !hasGraphEntity(instances, typeID) {
+				instances = append(instances, graphEntity{typeID, entity(typeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
 			}
 		}
 		parameterIDs[index] = stableID("execution", declaration.ID, "parameter", strconv.Itoa(index))

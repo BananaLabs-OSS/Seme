@@ -12,6 +12,7 @@ const moduleV19G1 = fs.readFileSync(new URL("../../modules/execution/v19/module.
 const moduleV20G1 = fs.readFileSync(new URL("../../modules/execution/v20/module.g1", import.meta.url), "utf8");
 const moduleV21G1 = fs.readFileSync(new URL("../../modules/execution/v21/module.g1", import.meta.url), "utf8");
 const moduleV22G1 = fs.readFileSync(new URL("../../modules/execution/v22/module.g1", import.meta.url), "utf8");
+const moduleV23G1 = fs.readFileSync(new URL("../../modules/execution/v23/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -155,5 +156,15 @@ export function Sum(values) { return values.reduce((total, value) => total + val
   const projected = projectJavaScript(first);
   assert.match(projected, /values\.reduce\(\(total, value\) => \(total \+ value\), 0n\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV22G1, packagePath: "example.test/fold", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts runtime-sized slice folds", () => {
+  const source = `/** @param {bigint[]} values @returns {bigint} */
+export function Sum(values) { return values.reduce((total, value) => total + value, 0n); }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV23G1, packagePath: "example.test/slice", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /@param \{bigint\[\]\} values/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV23G1, packagePath: "example.test/slice", revision: 1 });
   assert.equal(second, first);
 });
