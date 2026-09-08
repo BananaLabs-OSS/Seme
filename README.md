@@ -271,7 +271,9 @@ effect when denied. Run `./scripts/check-execution-v20.sh`.
 array construction and indexed reads. Idiomatic Go and JavaScript converge on
 one canonical graph; valid boundary indexes agree natively and through Wasm
 and Pulp, while negative and upper-bound reads trap in the certified target.
-Run `./scripts/check-execution-v21.sh`.
+Fixed i64 array parameters also cross a canonical packed Wasm ABI derived from
+their element type and length. Run `./scripts/check-execution-v21.sh` and
+`./scripts/check-execution-v21-boundary.sh`.
 
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic

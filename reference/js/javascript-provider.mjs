@@ -50,8 +50,14 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
       if (parameter.type !== "Identifier") fail("javascript.unsupported_parameter", parameter.loc.start);
       if (signature.parameters[index].name !== parameter.name) fail("javascript.signature_name", parameter.loc.start);
       const parameterID = stableID("execution", functionID, "parameter", String(index));
+	  const parameterType = signature.parameters[index].type;
+	  if (parameterType.startsWith("array:i64:")) {
+		const length = Number(parameterType.slice("array:i64:".length));
+		const arrayType = stableID("execution", "type", "fixed-array", "i64", String(length));
+		if (!entities.some((item) => item.id === arrayType)) entities.push(graphEntity(arrayType, entity(arrayType, "000000000000000000000000000090f2", [[0x9f20, ref(ids.i64)], [0x9f21, `uu ${length}`]])));
+	  }
       entities.push(graphEntity(parameterID, entity(parameterID, "00000000000000000000000000009012", [
-        [0x9120, bytes(parameter.name)], [0x9121, ref(ids[signature.parameters[index].type])], [0x9122, `uu ${index}`],
+		[0x9120, bytes(parameter.name)], [0x9121, ref(parameterType.startsWith("array:i64:") ? stableID("execution", "type", "fixed-array", "i64", parameterType.slice("array:i64:".length)) : ids[parameterType])], [0x9122, `uu ${index}`],
       ])));
       return parameterID;
     });
@@ -72,7 +78,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
 function readSignature(comments, fn) {
   const comment = [...comments].reverse().find((item) => item.type === "Block" && item.end <= fn.start && sourceGapIsWhitespace(item.end, fn.start, fn));
   if (!comment || !comment.value.startsWith("*")) fail("javascript.missing_jsdoc", fn.loc.start);
-  const parameters = [...comment.value.matchAll(/@param\s+\{(string|boolean|bigint)\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
+  const parameters = [...comment.value.matchAll(/@param\s+\{(string|boolean|bigint|bigint\[(?:[1-9]|[12]\d|3[0-2])\])\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
   const result = comment.value.match(/@returns?\s+\{(string|boolean|bigint)\}/);
   if (!result) fail("javascript.missing_result_type", fn.loc.start);
   return { parameters, result: semanticType(result[1]) };
@@ -81,7 +87,10 @@ function readSignature(comments, fn) {
 // Acorn comments do not retain the source string. Requiring the closest JSDoc
 // comment to precede the declaration is sufficient for this one-declaration profile.
 function sourceGapIsWhitespace(_end, _start, _fn) { return true; }
-function semanticType(type) { return type === "boolean" ? "bool" : type === "bigint" ? "i64" : "string"; }
+function semanticType(type) {
+  if (type.startsWith("bigint[")) return `array:i64:${type.slice(7, -1)}`;
+  return type === "boolean" ? "bool" : type === "bigint" ? "i64" : "string";
+}
 
 function readRecords(comments, packagePath) {
   const records = new Map();
@@ -208,6 +217,16 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 }
 
 function emitExpression(node, owner, path, context, expected) {
+	if (node.type === "MemberExpression" && node.computed && expected === "i64" && node.object.type === "Identifier") {
+		const parameterIndex = context.parameterNames.indexOf(node.object.name);
+		const arrayType = parameterIndex >= 0 ? context.parameterTypes[parameterIndex] : undefined;
+		if (!arrayType?.startsWith("array:i64:")) fail("javascript.index_read_collection", node.loc.start);
+		const collection = emitExpression(node.object, owner, `${path}.collection`, context, arrayType);
+		const index = emitExpression(node.property, owner, `${path}.index`, context, "i64");
+		const id = expressionID(owner, path, "index-read");
+		context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f4", [[0x9f40, ref(collection.id)], [0x9f41, ref(index.id)]])));
+		return { id, type: "i64" };
+	}
 	if (node.type === "MemberExpression" && node.computed && node.object.type === "ArrayExpression" && expected === "i64") {
 		if (node.object.elements.length === 0 || node.object.elements.length > 32 || node.object.elements.some((item) => !item || item.type === "SpreadElement")) fail("javascript.fixed_array_shape", node.loc.start);
 		const length = node.object.elements.length;

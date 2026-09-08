@@ -5,6 +5,7 @@ package wasmtarget
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"seme.local/reference/wire"
@@ -390,6 +391,44 @@ func lowerHelperInteger(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 		index, indexErr := field(expression, 0x9f41)
 		if collectionErr != nil || indexErr != nil || collection.Tag != 6 || index.Tag != 6 {
 			return nil, fmt.Errorf("wasm.helper_index_read")
+		}
+		collectionEntity, exists := graph.Entities[collection.Reference]
+		if !exists {
+			return nil, fmt.Errorf("wasm.helper_index_collection")
+		}
+		if collectionEntity.Schema == identity(0x9013) {
+			parameter, err := field(collectionEntity, 0x9130)
+			local, ok := parameterLocals[parameter.Reference]
+			if err != nil || !ok {
+				return nil, fmt.Errorf("wasm.helper_index_parameter")
+			}
+			parameterEntity, ok := graph.Entities[parameter.Reference]
+			if !ok {
+				return nil, fmt.Errorf("wasm.helper_index_parameter")
+			}
+			typeValue, err := field(parameterEntity, 0x9121)
+			if err != nil || typeValue.Tag != 6 {
+				return nil, fmt.Errorf("wasm.helper_index_parameter_type")
+			}
+			arrayType, err := pureType(graph, typeValue.Reference)
+			if err != nil || !strings.HasPrefix(arrayType.name, "fixed-array:i64:") {
+				return nil, fmt.Errorf("wasm.helper_index_parameter_type")
+			}
+			length := int64(arrayType.size / 8)
+			indexCode, err := lowerHelperInteger(graph, index.Reference, parameterLocals, used, visiting, budget)
+			if err != nil {
+				return nil, err
+			}
+			instructions := append([]byte{}, indexCode...)
+			instructions = append(instructions, 0x42)
+			var limit bytes.Buffer
+			sleb(&limit, length)
+			instructions = append(instructions, limit.Bytes()...)
+			instructions = append(instructions, 0x5a, 0x04, 0x40, 0x00, 0x0b, 0x20, local)
+			instructions = append(instructions, indexCode...)
+			instructions = append(instructions, 0xa7, 0x41, 0x08, 0x6c, 0x6a, 0x29, 0x03, 0x00)
+			used[local] = true
+			return instructions, nil
 		}
 		values, err := fixedI64ArrayValues(graph, collection.Reference)
 		if err != nil {

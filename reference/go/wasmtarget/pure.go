@@ -3,6 +3,7 @@ package wasmtarget
 import (
 	"bytes"
 	"fmt"
+	"strings"
 	"unicode/utf8"
 
 	"seme.local/reference/wire"
@@ -270,6 +271,9 @@ func pureEncoding(name string) string {
 	if name == "string" {
 		return "u32le-offset-u32le-length/utf8-scalar-exact"
 	}
+	if strings.HasPrefix(name, "fixed-array:i64:") {
+		return "packed-little-endian-twos-complement-i64"
+	}
 	return "little-endian-twos-complement-i64-modular"
 }
 
@@ -368,14 +372,27 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 		if collectionErr != nil || indexErr != nil || collection.Tag != 6 || index.Tag != 6 {
 			return fmt.Errorf("wasm.index_read_fields")
 		}
-		values, err := fixedI64ArrayValues(graph, collection.Reference)
-		if err != nil {
-			return err
+		collectionEntity, exists := graph.Entities[collection.Reference]
+		if !exists {
+			return fmt.Errorf("wasm.index_read_collection")
 		}
-		for _, value := range values {
-			if err := validatePureExpression(graph, value, "i64", parameterTypes, visiting, budget); err != nil {
+		if collectionEntity.Schema == identity(0x90f3) {
+			values, err := fixedI64ArrayValues(graph, collection.Reference)
+			if err != nil {
 				return err
 			}
+			for _, value := range values {
+				if err := validatePureExpression(graph, value, "i64", parameterTypes, visiting, budget); err != nil {
+					return err
+				}
+			}
+		} else if collectionEntity.Schema == identity(0x9013) {
+			parameter, err := field(collectionEntity, 0x9130)
+			if err != nil || parameter.Tag != 6 || !strings.HasPrefix(parameterTypes[parameter.Reference], "fixed-array:i64:") {
+				return fmt.Errorf("wasm.index_read_collection_type")
+			}
+		} else {
+			return fmt.Errorf("wasm.index_read_collection")
 		}
 		return validatePureExpression(graph, index.Reference, "i64", parameterTypes, visiting, budget)
 	default:
@@ -431,6 +448,17 @@ func pureType(graph wire.Envelope, id wire.ID) (pureValueType, error) {
 		return pureValueType{"bool", 0x7f, 1}, nil
 	case identity(0x9040):
 		return pureValueType{"string", 0x7e, 8}, nil
+	case identity(0x90f2):
+		element, elementErr := field(entity, 0x9f20)
+		length, lengthErr := field(entity, 0x9f21)
+		if elementErr != nil || lengthErr != nil || element.Tag != 6 || length.Tag != 3 || length.Unsigned == 0 || length.Unsigned > 32 {
+			return pureValueType{}, fmt.Errorf("wasm.fixed_array_type")
+		}
+		elementType, err := pureType(graph, element.Reference)
+		if err != nil || elementType.name != "i64" {
+			return pureValueType{}, fmt.Errorf("wasm.fixed_array_element_type")
+		}
+		return pureValueType{fmt.Sprintf("fixed-array:i64:%d", length.Unsigned), 0x7f, length.Unsigned * 8}, nil
 	default:
 		return pureValueType{}, fmt.Errorf("wasm.pure_unsupported_type")
 	}
@@ -555,13 +583,19 @@ func pureProviderBody(parameters []pureValueType, result pureValueType, abi Pure
 	}
 	offset = 0
 	for _, parameter := range parameters {
-		body.Write([]byte{0x20, 2})
-		if parameter.name == "i64" {
-			body.Write([]byte{0x29, 3})
+		if strings.HasPrefix(parameter.name, "fixed-array:i64:") {
+			body.Write([]byte{0x20, 2, 0x41})
+			sleb(&body, int64(offset))
+			body.WriteByte(0x6a)
 		} else {
-			body.Write([]byte{0x2d, 0})
+			body.Write([]byte{0x20, 2})
+			if parameter.name == "i64" {
+				body.Write([]byte{0x29, 3})
+			} else {
+				body.Write([]byte{0x2d, 0})
+			}
+			uleb(&body, offset)
 		}
-		uleb(&body, offset)
 		offset += parameter.size
 	}
 	body.Write([]byte{0x10, helperIndex, 0x21, 6})

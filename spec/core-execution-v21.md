@@ -19,6 +19,14 @@ JavaScript's bracket operator produces `undefined`. Core therefore treats an
 out-of-range read as invalid and leaves the host failure mechanism to the
 realization rather than falsely claiming identical exception mechanics.
 
-This slice does not yet support array-valued parameters/results, array locals,
-mutation, nested arrays, Boolean/string/record elements, slices, iteration, or
-collection values crossing the Wasm ABI. Those remain explicit follow-on work.
+The boundary extension also accepts Go `[N]int64` parameters and JavaScript
+`bigint[N]` JSDoc contracts for lengths 1–32. The Wasm ABI derives a packed
+`N * 8` byte field directly from the canonical `FixedArrayType`; generated code
+receives a bounded pointer into the validated request and performs typed dynamic
+loads. Exact-size requests and first/last indexes pass standalone and through
+Pulp. Truncated requests return the established malformed-request status, and
+negative or upper-bound indexes trap.
+
+This slice does not yet support array-valued results, array locals, mutation,
+nested arrays, Boolean/string/record elements, slices, or iteration. Those
+remain explicit follow-on work.

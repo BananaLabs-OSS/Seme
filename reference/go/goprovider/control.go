@@ -403,7 +403,8 @@ func LiftControlFunction(project string, manifest Manifest, moduleG1 []byte, fun
 		return "", "", fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 	}
 	for index := 0; index < signature.Params().Len(); index++ {
-		if !isInt64(signature.Params().At(index).Type()) && !isBool(signature.Params().At(index).Type()) && !isPureString(signature.Params().At(index).Type()) {
+		_, fixedArray := fixedI64ArrayLength(signature.Params().At(index).Type())
+		if !isInt64(signature.Params().At(index).Type()) && !isBool(signature.Params().At(index).Type()) && !isPureString(signature.Params().At(index).Type()) && !fixedArray {
 			return "", "", fmt.Errorf("provider.execution_unsupported_signature:%s", functionName)
 		}
 	}
@@ -443,6 +444,11 @@ func LiftControlFunction(project string, manifest Manifest, moduleG1 []byte, fun
 			typeID = booleanID
 		} else if isPureString(signature.Params().At(index).Type()) {
 			typeID = stringID
+		} else if length, ok := fixedI64ArrayLength(signature.Params().At(index).Type()); ok {
+			typeID = stableID("execution", "type", "fixed-array", "i64", strconv.FormatUint(length, 10))
+			if !hasGraphEntity(instances, typeID) {
+				instances = append(instances, graphEntity{typeID, entity(typeID, "000000000000000000000000000090f2", []graphField{refField(0x9f20, integerID), unsignedField(0x9f21, length)})})
+			}
 		}
 		parameterIDs[index] = stableID("execution", declaration.ID, "parameter", strconv.Itoa(index))
 		instances = append(instances, graphEntity{parameterIDs[index], entity(parameterIDs[index], "00000000000000000000000000009012", []graphField{
