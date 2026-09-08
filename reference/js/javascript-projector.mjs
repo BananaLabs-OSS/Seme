@@ -101,8 +101,11 @@ function parseG1(source) {
       if (list) {
         for (let item = 0; item < Number(list[1]); item += 1, index += 1) value.push(lines[index].trim());
       }
-      entity.fields.set(BigInt(`0x${match[1]}`), value);
+      const fieldID = BigInt(`0x${match[1]}`);
+      if (entity.fields.has(fieldID)) fail("javascript_projection.duplicate_field");
+      entity.fields.set(fieldID, value);
     }
+    if (graph.has(entity.id)) fail("javascript_projection.duplicate_entity");
     graph.set(entity.id, entity);
   }
   return graph;
@@ -131,6 +134,11 @@ function references(value) {
 function text(value) {
   const match = /^by ([-0-9a-f]*)$/.exec(atom(value));
   if (!match) fail("javascript_projection.invalid_bytes");
-  return match[1] === "-" ? "" : Buffer.from(match[1], "hex").toString("utf8");
+  if (match[1] === "-") return "";
+  try {
+    return new TextDecoder("utf-8", { fatal: true }).decode(Buffer.from(match[1], "hex"));
+  } catch {
+    fail("javascript_projection.invalid_utf8");
+  }
 }
 function fail(code) { throw new Error(code); }

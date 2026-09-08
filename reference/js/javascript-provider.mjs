@@ -165,7 +165,14 @@ function compose(moduleG1, revision, additions) {
     if (line.startsWith("en ")) { current = { id: line.split(/\s+/)[1], text: "" }; entities.push(current); }
     if (current) current.text += `${line}\n`;
   }
-  entities.push(...additions);
+  const unique = new Map(entities.map((item) => [item.id, item]));
+  for (const item of additions) {
+    const existing = unique.get(item.id);
+    if (existing && existing.text !== item.text) fail("javascript.identity_collision");
+    unique.set(item.id, item);
+  }
+  entities.length = 0;
+  entities.push(...unique.values());
   entities.sort((left, right) => left.id.localeCompare(right.id));
   return `# Generated exact JavaScript to Core Execution lift.\nve 1\nmo 00000000000000000000000000009000\nrv ${revision}\npc 0\nec ${entities.length}\n${entities.map((item) => `\n${item.text}`).join("")}`;
 }
