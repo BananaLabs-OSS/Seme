@@ -1,6 +1,7 @@
 package goprojector_test
 
 import (
+	"bytes"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,37 @@ import (
 	"seme.local/reference/goprojector"
 	"seme.local/reference/goprovider"
 )
+
+func TestProjectsGoInterfaceDispatchAndReliftsByteIdentically(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v27/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.ReadFile("../../../fixtures/go-execution-v27/adjuster.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/go-uab05-project", Entry: "Dispatch", Files: map[string]string{"adjuster.go": string(source)}})
+	if !first.Valid {
+		t.Fatalf("lift: %#v", first.Diagnostics)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "interfacedispatch")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondSession, _ := goprovider.NewIncrementalSession(module)
+	second := secondSession.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/go-uab05-project", Entry: "Dispatch", Files: map[string]string{"adjuster.go": string(projected)}})
+	if !second.Valid {
+		t.Fatalf("relift: %#v\n%s", second.Diagnostics, projected)
+	}
+	if !bytes.Equal([]byte(first.CanonicalG1), []byte(second.CanonicalG1)) {
+		t.Fatal("projection did not relift byte-identically")
+	}
+}
 
 func TestProjectsTypedMultiFileCallGraphAndRelifts(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v16/module.g1")

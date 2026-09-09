@@ -80,6 +80,15 @@ const (
 	sIterationBinding    = "000000000000000000000000000090f5"
 	sIterationRead       = "000000000000000000000000000090f6"
 	sFold                = "000000000000000000000000000090f7"
+	sReceiverBinding     = "0000000000000000000000000000a000"
+	sReceiverRead        = "0000000000000000000000000000a001"
+	sMethod              = "0000000000000000000000000000a002"
+	sMethodCall          = "0000000000000000000000000000a003"
+	sInterfaceType       = "0000000000000000000000000000a010"
+	sMethodRequirement   = "0000000000000000000000000000a011"
+	sSatisfactionWitness = "0000000000000000000000000000a012"
+	sInterfaceValue      = "0000000000000000000000000000a013"
+	sDynamicMethodCall   = "0000000000000000000000000000a014"
 )
 
 type entity struct {
@@ -94,6 +103,8 @@ type context struct {
 	locals     map[string]string
 	iterations map[string]string
 	variants   map[string]string
+	methods    map[string]string
+	receivers  map[string]string
 }
 type record struct {
 	name   string
@@ -183,6 +194,132 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 		}
 		out.WriteString("}\n\n")
 	}
+	methods := map[string]string{}
+	methodIDs := []string{}
+	for id, value := range graph {
+		if value.schema == sMethod {
+			name, e := text(value, "000000000000000000000000000a0020")
+			if e != nil || !identifier(name) {
+				return nil, fmt.Errorf("go_projection.invalid_method")
+			}
+			methods[id] = name
+			methodIDs = append(methodIDs, id)
+		}
+	}
+	sort.Strings(methodIDs)
+	interfaceIDs := []string{}
+	for id, value := range graph {
+		if value.schema == sInterfaceType {
+			interfaceIDs = append(interfaceIDs, id)
+		}
+	}
+	sort.Strings(interfaceIDs)
+	for _, iid := range interfaceIDs {
+		value := graph[iid]
+		name, e := text(value, "000000000000000000000000000a0100")
+		if e != nil || !identifier(name) {
+			return nil, fmt.Errorf("go_projection.invalid_interface")
+		}
+		requirements, e := refs(value, "000000000000000000000000000a0101")
+		if e != nil || len(requirements) == 0 {
+			return nil, fmt.Errorf("go_projection.invalid_interface")
+		}
+		fmt.Fprintf(&out, "type %s interface {\n", name)
+		for _, rid := range requirements {
+			requirement, ok := graph[rid]
+			if !ok || requirement.schema != sMethodRequirement {
+				return nil, fmt.Errorf("go_projection.invalid_requirement")
+			}
+			methodName, e := text(requirement, "000000000000000000000000000a0110")
+			if e != nil || !identifier(methodName) {
+				return nil, fmt.Errorf("go_projection.invalid_requirement")
+			}
+			types, e := refs(requirement, "000000000000000000000000000a0111")
+			if e != nil {
+				return nil, e
+			}
+			rendered := make([]string, len(types))
+			for i, t := range types {
+				rendered[i], e = typeName(graph, t)
+				if e != nil {
+					return nil, e
+				}
+			}
+			resultID, e := ref(requirement, "000000000000000000000000000a0112")
+			if e != nil {
+				return nil, e
+			}
+			result, e := typeName(graph, resultID)
+			if e != nil {
+				return nil, e
+			}
+			params := make([]string, len(rendered))
+			for i, t := range rendered {
+				params[i] = "argument" + strconv.Itoa(i) + " " + t
+			}
+			fmt.Fprintf(&out, "\t%s(%s) %s\n", methodName, strings.Join(params, ", "), result)
+		}
+		out.WriteString("}\n\n")
+	}
+	for _, mid := range methodIDs {
+		method := graph[mid]
+		receiverID, e := ref(method, "000000000000000000000000000a0021")
+		if e != nil {
+			return nil, e
+		}
+		receiver, ok := graph[receiverID]
+		if !ok || receiver.schema != sReceiverBinding {
+			return nil, fmt.Errorf("go_projection.invalid_receiver")
+		}
+		receiverTypeID, e := ref(receiver, "000000000000000000000000000a0001")
+		if e != nil {
+			return nil, e
+		}
+		receiverType, e := typeName(graph, receiverTypeID)
+		if e != nil {
+			return nil, e
+		}
+		parameterIDs, e := refs(method, "000000000000000000000000000a0022")
+		if e != nil {
+			return nil, e
+		}
+		params := map[string]string{}
+		declarations := []string{}
+		for _, pid := range parameterIDs {
+			p := graph[pid]
+			name, e := text(p, "00000000000000000000000000009120")
+			if e != nil || !identifier(name) {
+				return nil, fmt.Errorf("go_projection.invalid_parameter")
+			}
+			tid, e := ref(p, "00000000000000000000000000009121")
+			if e != nil {
+				return nil, e
+			}
+			typ, e := typeName(graph, tid)
+			if e != nil {
+				return nil, e
+			}
+			params[pid] = name
+			declarations = append(declarations, name+" "+typ)
+		}
+		resultID, e := ref(method, "000000000000000000000000000a0023")
+		if e != nil {
+			return nil, e
+		}
+		result, e := typeName(graph, resultID)
+		if e != nil {
+			return nil, e
+		}
+		bodyID, e := ref(method, "000000000000000000000000000a0024")
+		if e != nil {
+			return nil, e
+		}
+		body, e := projectBlock(bodyID, context{graph: graph, functions: names, parameters: params, records: records, locals: map[string]string{}, iterations: map[string]string{}, variants: map[string]string{}, methods: methods, receivers: map[string]string{receiverID: "self"}})
+		if e != nil {
+			return nil, e
+		}
+		fmt.Fprintf(&out, "func (self %s) %s(%s) %s {\n%s\n}\n\n", receiverType, methods[mid], strings.Join(declarations, ", "), result, body)
+	}
 	for _, id := range ids {
 		fn := graph[id]
 		paramIDs, err := refs(fn, "00000000000000000000000000009111")
@@ -223,7 +360,7 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 		if e != nil {
 			return nil, e
 		}
-		body, e := projectBlock(bodyID, context{graph: graph, functions: names, parameters: params, records: records, locals: map[string]string{}, iterations: map[string]string{}, variants: map[string]string{}})
+		body, e := projectBlock(bodyID, context{graph: graph, functions: names, parameters: params, records: records, locals: map[string]string{}, iterations: map[string]string{}, variants: map[string]string{}, methods: methods, receivers: map[string]string{}})
 		if e != nil {
 			return nil, e
 		}
@@ -937,6 +1074,100 @@ func expr(id string, c context) (string, error) {
 			return "", err
 		}
 		return a + "[" + b + "]", nil
+	case sReceiverRead:
+		binding, err := ref(e, "000000000000000000000000000a0010")
+		if err != nil {
+			return "", err
+		}
+		name, ok := c.receivers[binding]
+		if !ok {
+			return "", fmt.Errorf("go_projection.receiver_scope")
+		}
+		return name, nil
+	case sMethodCall:
+		receiver, err := ref(e, "000000000000000000000000000a0030")
+		if err != nil {
+			return "", err
+		}
+		method, err := ref(e, "000000000000000000000000000a0031")
+		if err != nil {
+			return "", err
+		}
+		arguments, err := refs(e, "000000000000000000000000000a0032")
+		if err != nil {
+			return "", err
+		}
+		name, ok := c.methods[method]
+		if !ok {
+			return "", fmt.Errorf("go_projection.method_scope")
+		}
+		r, err := expr(receiver, c)
+		if err != nil {
+			return "", err
+		}
+		args := make([]string, len(arguments))
+		for i, a := range arguments {
+			args[i], err = expr(a, c)
+			if err != nil {
+				return "", err
+			}
+		}
+		return r + "." + name + "(" + strings.Join(args, ", ") + ")", nil
+	case sInterfaceValue:
+		contract, err := ref(e, "000000000000000000000000000a0130")
+		if err != nil {
+			return "", err
+		}
+		value, err := ref(e, "000000000000000000000000000a0131")
+		if err != nil {
+			return "", err
+		}
+		witnessID, err := ref(e, "000000000000000000000000000a0132")
+		if err != nil {
+			return "", err
+		}
+		witness, ok := c.graph[witnessID]
+		if !ok || witness.schema != sSatisfactionWitness {
+			return "", fmt.Errorf("go_projection.interface_witness")
+		}
+		wContract, err := ref(witness, "000000000000000000000000000a0121")
+		if err != nil || wContract != contract {
+			return "", fmt.Errorf("go_projection.interface_witness")
+		}
+		return expr(value, c)
+	case sDynamicMethodCall:
+		receiver, err := ref(e, "000000000000000000000000000a0140")
+		if err != nil {
+			return "", err
+		}
+		requirementID, err := ref(e, "000000000000000000000000000a0141")
+		if err != nil {
+			return "", err
+		}
+		requirement, ok := c.graph[requirementID]
+		if !ok || requirement.schema != sMethodRequirement {
+			return "", fmt.Errorf("go_projection.dynamic_requirement")
+		}
+		name, err := text(requirement, "000000000000000000000000000a0110")
+		if err != nil || !identifier(name) {
+			return "", fmt.Errorf("go_projection.dynamic_requirement")
+		}
+		arguments, err := refs(e, "000000000000000000000000000a0142")
+		if err != nil {
+			return "", err
+		}
+		r, err := expr(receiver, c)
+		if err != nil {
+			return "", err
+		}
+		args := make([]string, len(arguments))
+		for i, a := range arguments {
+			args[i], err = expr(a, c)
+			if err != nil {
+				return "", err
+			}
+		}
+		return r + "." + name + "(" + strings.Join(args, ", ") + ")", nil
 	case sSliceConstruct:
 		typeID, err := ref(e, "000000000000000000000000000a0680")
 		if err != nil {
@@ -1178,6 +1409,12 @@ func typeName(g map[string]entity, id string) (string, error) {
 		name, err := text(e, "00000000000000000000000000009300")
 		if err != nil || !identifier(name) {
 			return "", fmt.Errorf("go_projection.invalid_record_name")
+		}
+		return name, nil
+	case sInterfaceType:
+		name, err := text(e, "000000000000000000000000000a0100")
+		if err != nil || !identifier(name) {
+			return "", fmt.Errorf("go_projection.invalid_interface_name")
 		}
 		return name, nil
 	case sFixedArrayType:
