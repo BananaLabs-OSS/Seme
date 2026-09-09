@@ -589,6 +589,9 @@ func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, 
 	if isI64Slice(value) {
 		return stableID("execution", "type", "slice", "i64"), true
 	}
+	if isI64Map(value) {
+		return stableID("execution", "type", "map", "i64", "i64"), true
+	}
 	if isBytes(value) {
 		return stableID("execution", "type", "bytes"), true
 	}
@@ -637,6 +640,10 @@ func goResultTypes(value types.Type) (types.Type, types.Type, bool) {
 	return success, failure, types.Identical(structure.Field(1).Type(), success) && types.Identical(structure.Field(2).Type(), failure)
 }
 func goBridgeTypeEntities(value types.Type, integerID, booleanID, stringID string) []graphEntity {
+	if isI64Map(value) {
+		id := stableID("execution", "type", "map", "i64", "i64")
+		return []graphEntity{{id, entity(id, "0000000000000000000000000000a040", []graphField{refField(0xa0400, integerID), refField(0xa0401, integerID)})}}
+	}
 	if isBytes(value) {
 		id := stableID("execution", "type", "bytes")
 		return []graphEntity{{id, entity(id, "00000000000000000000000000009041", nil)}}
@@ -651,6 +658,11 @@ func goBridgeTypeEntities(value types.Type, integerID, booleanID, stringID strin
 		return append(entities, graphEntity{id, entity(id, "00000000000000000000000000009042", []graphField{refField(0x9400, successID), refField(0x9401, failureID)})})
 	}
 	return nil
+}
+
+func isI64Map(value types.Type) bool {
+	mapping, ok := value.Underlying().(*types.Map)
+	return ok && isInt64(mapping.Key()) && isInt64(mapping.Elem())
 }
 
 func goFunctionSignature(value types.Type) (*types.Signature, bool) {

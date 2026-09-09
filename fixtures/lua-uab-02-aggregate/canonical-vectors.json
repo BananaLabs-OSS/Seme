@@ -1,0 +1,40 @@
+{
+  "valid": [
+    {
+      "name": "present",
+      "arguments": [
+        {"kind":"record","fields":{"bias":{"kind":"i64","i64":"5"}}},
+        {"kind":"array","items":[{"kind":"i64","i64":"2"},{"kind":"i64","i64":"7"}]},
+        {"kind":"slice","items":[{"kind":"i64","i64":"1"},{"kind":"i64","i64":"2"},{"kind":"i64","i64":"3"}]},
+        {"kind":"map","value_type":"i64","entries":[{"key":{"kind":"i64","i64":"-2"},"value":{"kind":"i64","i64":"4"}},{"key":{"kind":"i64","i64":"9"},"value":{"kind":"i64","i64":"11"}}]},
+        {"kind":"i64","i64":"9"}
+      ],
+      "result":{"kind":"i64","i64":"26"}
+    },
+    {
+      "name": "missing",
+      "arguments": [
+        {"kind":"record","fields":{"bias":{"kind":"i64","i64":"5"}}},
+        {"kind":"array","items":[{"kind":"i64","i64":"2"},{"kind":"i64","i64":"7"}]},
+        {"kind":"slice","items":[{"kind":"i64","i64":"1"},{"kind":"i64","i64":"2"},{"kind":"i64","i64":"3"}]},
+        {"kind":"map","value_type":"i64","entries":[{"key":{"kind":"i64","i64":"-2"},"value":{"kind":"i64","i64":"4"}},{"key":{"kind":"i64","i64":"9"},"value":{"kind":"i64","i64":"11"}}]},
+        {"kind":"i64","i64":"8"}
+      ],
+      "result":{"kind":"i64","i64":"15"}
+    },
+    {
+      "name": "wrapping",
+      "arguments": [
+        {"kind":"record","fields":{"bias":{"kind":"i64","i64":"9223372036854775807"}}},
+        {"kind":"array","items":[{"kind":"i64","i64":"0"},{"kind":"i64","i64":"1"}]},
+        {"kind":"slice"}, {"kind":"map","value_type":"i64"}, {"kind":"i64","i64":"0"}
+      ],
+      "result":{"kind":"i64","i64":"-9223372036854775808"}
+    }
+  ],
+  "malformed": [
+    {"name":"missing-record-field","arguments":[{"kind":"record","fields":{}},{"kind":"array","items":[{"kind":"i64","i64":"0"},{"kind":"i64","i64":"0"}]},{"kind":"slice"},{"kind":"map","value_type":"i64"},{"kind":"i64","i64":"0"}]},
+    {"name":"short-array","arguments":[{"kind":"record","fields":{"bias":{"kind":"i64","i64":"0"}}},{"kind":"array","items":[{"kind":"i64","i64":"0"}]},{"kind":"slice"},{"kind":"map","value_type":"i64"},{"kind":"i64","i64":"0"}]},
+    {"name":"wrong-map-value-type","arguments":[{"kind":"record","fields":{"bias":{"kind":"i64","i64":"0"}}},{"kind":"array","items":[{"kind":"i64","i64":"0"},{"kind":"i64","i64":"0"}]},{"kind":"slice"},{"kind":"map","value_type":"text"},{"kind":"i64","i64":"0"}]}
+  ]
+}

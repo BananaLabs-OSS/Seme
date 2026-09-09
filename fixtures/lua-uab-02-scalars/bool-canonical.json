@@ -1,0 +1,1 @@
+{"valid":[{"name":"false","arguments":[{"kind":"bool","bool":false}],"result":{"kind":"bool","bool":false}},{"name":"true","arguments":[{"kind":"bool","bool":true}],"result":{"kind":"bool","bool":true}}],"malformed":[{"name":"wrong-kind","arguments":[{"kind":"i64","i64":"1"}]}]}

@@ -1,0 +1,14 @@
+schema_version = 1
+name = "seme-pure-aggregate-function"
+version = "1.0.0"
+wasm = "pure-function.wasm"
+
+provides = ["seme.function-aggregate-v1"]
+consumes = []
+capabilities = []
+
+shared_memory_groups = []
+dedicated_thread = false
+snapshotable = false
+
+[config]

@@ -23,6 +23,7 @@ const (
 	sBoolean             = "00000000000000000000000000009020"
 	sString              = "00000000000000000000000000009040"
 	sStringLiteral       = "00000000000000000000000000009050"
+	sStringEqual         = "000000000000000000000000000090c2"
 	sConcat              = "000000000000000000000000000090c3"
 	sBlock               = "00000000000000000000000000009080"
 	sReturn              = "00000000000000000000000000009081"
@@ -51,6 +52,7 @@ const (
 	sOptionNone          = "0000000000000000000000000000a051"
 	sOptionSome          = "0000000000000000000000000000a052"
 	sBytesLiteral        = "0000000000000000000000000000a064"
+	sBytesEqual          = "0000000000000000000000000000a065"
 	sVariantBinding      = "0000000000000000000000000000a060"
 	sVariantRead         = "0000000000000000000000000000a061"
 	sResultMatch         = "0000000000000000000000000000a062"
@@ -127,6 +129,9 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "package %s\n\n", packageName)
+	if graphHasSchema(graph, sBytesEqual) {
+		out.WriteString("import \"bytes\"\n\n")
+	}
 	if graphHasSchema(graph, sOptionType) {
 		out.WriteString("type Option[T any] struct {\n\tSome bool\n\tValue T\n}\n\n")
 	}
@@ -574,6 +579,24 @@ func expr(id string, c context) (string, error) {
 			return "", err
 		}
 		return strconv.Quote(value), nil
+	case sStringEqual:
+		left, err := ref(e, "00000000000000000000000000009c20")
+		if err != nil {
+			return "", err
+		}
+		right, err := ref(e, "00000000000000000000000000009c21")
+		if err != nil {
+			return "", err
+		}
+		a, err := expr(left, c)
+		if err != nil {
+			return "", err
+		}
+		b, err := expr(right, c)
+		if err != nil {
+			return "", err
+		}
+		return a + " == " + b, nil
 	case sBytesLiteral:
 		value, err := rawBytes(e, "000000000000000000000000000a0640")
 		if err != nil {
@@ -584,6 +607,24 @@ func expr(id string, c context) (string, error) {
 			items[i] = strconv.FormatUint(uint64(item), 10)
 		}
 		return "[]byte{" + strings.Join(items, ", ") + "}", nil
+	case sBytesEqual:
+		left, err := ref(e, "000000000000000000000000000a0650")
+		if err != nil {
+			return "", err
+		}
+		right, err := ref(e, "000000000000000000000000000a0651")
+		if err != nil {
+			return "", err
+		}
+		a, err := expr(left, c)
+		if err != nil {
+			return "", err
+		}
+		b, err := expr(right, c)
+		if err != nil {
+			return "", err
+		}
+		return "bytes.Equal(" + a + ", " + b + ")", nil
 	case sOptionNone:
 		typeID, err := ref(e, "000000000000000000000000000a0510")
 		if err != nil {
@@ -642,7 +683,7 @@ func expr(id string, c context) (string, error) {
 		return strconv.FormatInt(int64(value), 10), nil
 	case sBoolLiteral:
 		value, err := scalar(e, "00000000000000000000000000009b00")
-		if err != nil || (value != "tr" && value != "fl") {
+		if err != nil || (value != "tr" && value != "fa") {
 			return "", fmt.Errorf("go_projection.invalid_boolean")
 		}
 		return strconv.FormatBool(value == "tr"), nil

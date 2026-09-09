@@ -138,21 +138,21 @@ export function Observe(first, second) { console.log(first); console.log(second)
 
 test("projects and re-lifts fixed array indexed reads", () => {
   const source = `/** @param {bigint} first @param {bigint} second @param {bigint} third @param {bigint} index @returns {bigint} */
-export function Pick(first, second, third, index) { return [first, second, third][index]; }`;
+export function Pick(first, second, third, index) { return Seme.index(Seme.array([first, second, third]), index); }`;
   const first = liftJavaScript({ source, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array", revision: 1 });
   const projected = projectJavaScript(first);
-  assert.match(projected, /\[first, second, third\]\[index\]/);
+  assert.match(projected, /Seme\.index\(Seme\.array\(\[first, second, third\]\), index\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array", revision: 1 });
   assert.equal(second, first);
 });
 
 test("projects and re-lifts a fixed array parameter", () => {
   const source = `/** @param {bigint[3]} values @param {bigint} index @returns {bigint} */
-export function Pick(values, index) { return values[index]; }`;
+export function Pick(values, index) { return Seme.index(values, index); }`;
   const first = liftJavaScript({ source, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array-boundary", revision: 1 });
   const projected = projectJavaScript(first);
   assert.match(projected, /@param \{bigint\[3\]\} values/);
-  assert.match(projected, /return values\[index\];/);
+  assert.match(projected, /return Seme\.index\(values, index\);/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array-boundary", revision: 1 });
   assert.equal(second, first);
 });
@@ -179,11 +179,11 @@ export function Sum(values) { return values.reduce((total, value) => total + val
 
 test("projects and re-lifts collection queries", () => {
   const source = `/** @param {bigint[]} values @param {bigint} fallback @returns {bigint} */
-export function LastOr(values, fallback) { if (values.length <= 0n) return fallback; return values[values.length - 1]; }`;
+export function LastOr(values, fallback) { if (values.length <= 0n) return fallback; return Seme.index(values, values.length - 1); }`;
   const first = liftJavaScript({ source, moduleG1: moduleV24G1, packagePath: "example.test/query", revision: 1 });
   const projected = projectJavaScript(first);
   assert.match(projected, /values\.length/);
-  assert.match(projected, /values\[\(values\.length - 1\)\]/);
+  assert.match(projected, /Seme\.index\(values, \(values\.length - 1\)\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV24G1, packagePath: "example.test/query", revision: 1 });
   assert.equal(second, first);
 });

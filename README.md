@@ -309,13 +309,12 @@ claimed targets. Run `./scripts/check-uab-v1-go-01.sh`,
 `./scripts/check-lua-provider-v1.sh`. The machine-readable profile score is
 reported by `./scripts/check-uab-v1-scorecard.sh`.
 
-UAB-02 foundations now bridge the frozen value vocabulary in all three
-languages. Direct JavaScript and Lua nested Option/Result/bytes programs execute
-through standalone Wasm and pinned Pulp, but the complete cells remain partial:
-the collection families do not yet share identical observation vectors across
-every native, canonical, projected, and target path. Run the language UAB-02
-gates for the current evidence without treating their aggregate success as a
-scorecard claim.
+UAB-02 is complete in all three language columns for the frozen value
+vocabulary. Shared scalar, collection, and tagged-composite observations agree
+across original and projected native source, independent structural canonical
+evaluation, standalone Wasm, and pinned Pulp, with representation-appropriate
+rejection evidence. Run `./scripts/check-uab-v1-go-02.sh`,
+`./scripts/check-javascript-uab-02.sh`, and `./scripts/check-lua-uab-02.sh`.
 
 [`Core Execution v25`](spec/core-execution-v25.md) adds neutral immutable
 collection append and update with dynamically sized slice results. Native Go

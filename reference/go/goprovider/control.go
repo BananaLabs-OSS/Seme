@@ -77,7 +77,7 @@ func matchGoTotalTaggedValue(statements []ast.Stmt, signature *types.Signature, 
 		return nil, false
 	}
 	branch, ok := statements[0].(*ast.IfStmt)
-	if !ok || branch.Init != nil || branch.Else != nil || len(branch.Body.List) != 1 {
+	if !ok || branch.Init != nil || branch.Else != nil || len(branch.Body.List) == 0 {
 		return nil, false
 	}
 	condition, ok := branch.Cond.(*ast.SelectorExpr)
@@ -98,10 +98,6 @@ func matchGoTotalTaggedValue(statements []ast.Stmt, signature *types.Signature, 
 	if parameter < 0 {
 		return nil, false
 	}
-	presentReturn, ok := branch.Body.List[0].(*ast.ReturnStmt)
-	if !ok || len(presentReturn.Results) != 1 {
-		return nil, false
-	}
 	absentReturn, ok := statements[1].(*ast.ReturnStmt)
 	if !ok || len(absentReturn.Results) != 1 {
 		return nil, false
@@ -110,6 +106,20 @@ func matchGoTotalTaggedValue(statements []ast.Stmt, signature *types.Signature, 
 	sourceType := signature.Params().At(parameter).Type()
 	if item, option := goOptionValueType(sourceType); option && condition.Sel.Name == "Some" {
 		bindingName := "value"
+		if nested, ok := analyzeNestedResultArm(branch.Body.List, source, item, signature, info, functions, records); ok {
+			none, err := analyzeGoExpressionWithProgram(absentReturn.Results[0], signature, info, nil, functions, records, nil)
+			if err != nil {
+				return nil, false
+			}
+			return &goExpression{kind: goOptionMatch, left: read, initial: none, body: nested, text: bindingName, typeID: goSemanticTypeIdentity(item)}, true
+		}
+		if len(branch.Body.List) != 1 {
+			return nil, false
+		}
+		presentReturn, ok := branch.Body.List[0].(*ast.ReturnStmt)
+		if !ok || len(presentReturn.Results) != 1 {
+			return nil, false
+		}
 		some, ok := analyzeTaggedArm(presentReturn.Results[0], source, "Value", bindingName, signature, info, functions, records)
 		if !ok {
 			return nil, false
@@ -121,6 +131,13 @@ func matchGoTotalTaggedValue(statements []ast.Stmt, signature *types.Signature, 
 		return &goExpression{kind: goOptionMatch, left: read, initial: none, body: some, text: bindingName, typeID: goSemanticTypeIdentity(item)}, true
 	}
 	if success, failure, result := goResultTypes(sourceType); result && condition.Sel.Name == "Ok" {
+		if len(branch.Body.List) != 1 {
+			return nil, false
+		}
+		presentReturn, ok := branch.Body.List[0].(*ast.ReturnStmt)
+		if !ok || len(presentReturn.Results) != 1 {
+			return nil, false
+		}
 		okName, errorName := "value", "failure"
 		okArm, ok := analyzeTaggedArm(presentReturn.Results[0], source, "Value", okName, signature, info, functions, records)
 		if !ok {
@@ -137,6 +154,103 @@ func matchGoTotalTaggedValue(statements []ast.Stmt, signature *types.Signature, 
 		return &goExpression{kind: goResultMatch, left: read, body: okArm, alternate: errorArm, text: okName, typeID: goSemanticTypeIdentity(success), errorName: errorName, errorTypeID: goSemanticTypeIdentity(failure)}, true
 	}
 	return nil, false
+}
+
+// analyzeNestedResultArm recognizes the ordinary Go spelling projected for a
+// total Result match nested inside an Option arm. It remains structural and
+// type-directed; arbitrary conditionals are handled by the general block path.
+func analyzeNestedResultArm(statements []ast.Stmt, option *ast.Ident, item types.Type, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goExpression, bool) {
+	if len(statements) != 2 {
+		return nil, false
+	}
+	success, failure, ok := goResultTypes(item)
+	if !ok {
+		return nil, false
+	}
+	branch, ok := statements[0].(*ast.IfStmt)
+	if !ok || branch.Init != nil || branch.Else != nil || len(branch.Body.List) != 1 {
+		return nil, false
+	}
+	condition, ok := branch.Cond.(*ast.SelectorExpr)
+	if !ok || condition.Sel.Name != "Ok" || !optionValueSelector(condition.X, option, info) {
+		return nil, false
+	}
+	okReturn, ok := branch.Body.List[0].(*ast.ReturnStmt)
+	errReturn, errOK := statements[1].(*ast.ReturnStmt)
+	if !ok || !errOK || len(okReturn.Results) != 1 || len(errReturn.Results) != 1 {
+		return nil, false
+	}
+	okArm, ok := analyzeNestedVariantExpression(okReturn.Results[0], option, "Value", signature, info, functions, records)
+	if !ok {
+		return nil, false
+	}
+	errArm, ok := analyzeNestedVariantExpression(errReturn.Results[0], option, "Error", signature, info, functions, records)
+	if !ok {
+		return nil, false
+	}
+	return &goExpression{kind: goResultMatch, left: &goExpression{kind: goVariantRead, text: "value"}, body: okArm, alternate: errArm, text: "value", typeID: goSemanticTypeIdentity(success), errorName: "failure", errorTypeID: goSemanticTypeIdentity(failure)}, true
+}
+
+func optionValueSelector(node ast.Expr, option *ast.Ident, info *types.Info) bool {
+	selector, ok := ast.Unparen(node).(*ast.SelectorExpr)
+	base, baseOK := func() (*ast.Ident, bool) {
+		if !ok {
+			return nil, false
+		}
+		value, yes := ast.Unparen(selector.X).(*ast.Ident)
+		return value, yes
+	}()
+	return ok && baseOK && selector.Sel.Name == "Value" && info.Uses[base] == info.Uses[option]
+}
+
+func nestedVariantSelector(node ast.Expr, option *ast.Ident, field string, info *types.Info) bool {
+	selector, ok := ast.Unparen(node).(*ast.SelectorExpr)
+	return ok && selector.Sel.Name == field && optionValueSelector(selector.X, option, info)
+}
+
+func analyzeNestedVariantExpression(node ast.Expr, option *ast.Ident, field string, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goExpression, bool) {
+	if nestedVariantSelector(node, option, field, info) {
+		return &goExpression{kind: goVariantRead}, true
+	}
+	if binary, ok := ast.Unparen(node).(*ast.BinaryExpr); ok && binary.Op == token.EQL && field == "Error" {
+		var other ast.Expr
+		if nestedVariantSelector(binary.X, option, field, info) {
+			other = binary.Y
+		} else if nestedVariantSelector(binary.Y, option, field, info) {
+			other = binary.X
+		} else {
+			return nil, false
+		}
+		value, err := analyzeGoExpressionWithProgram(other, signature, info, nil, functions, records, nil)
+		if err != nil {
+			return nil, false
+		}
+		return &goExpression{kind: goStringEqual, left: &goExpression{kind: goVariantRead}, right: value}, true
+	}
+	call, ok := ast.Unparen(node).(*ast.CallExpr)
+	selector, selectorOK := func() (*ast.SelectorExpr, bool) {
+		if !ok {
+			return nil, false
+		}
+		value, yes := ast.Unparen(call.Fun).(*ast.SelectorExpr)
+		return value, yes
+	}()
+	if field != "Value" || !selectorOK || !isBytesFunction(info, selector, "Equal") || len(call.Args) != 2 {
+		return nil, false
+	}
+	var other ast.Expr
+	if nestedVariantSelector(call.Args[0], option, field, info) {
+		other = call.Args[1]
+	} else if nestedVariantSelector(call.Args[1], option, field, info) {
+		other = call.Args[0]
+	} else {
+		return nil, false
+	}
+	value, err := analyzeGoExpressionWithProgram(other, signature, info, nil, functions, records, nil)
+	if err != nil {
+		return nil, false
+	}
+	return &goExpression{kind: goBytesEqual, left: &goExpression{kind: goVariantRead}, right: value}, true
 }
 
 func analyzeTaggedArm(node ast.Expr, source *ast.Ident, field, binding string, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goExpression, bool) {

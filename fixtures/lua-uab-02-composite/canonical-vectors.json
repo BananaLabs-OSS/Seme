@@ -1,0 +1,11 @@
+{"valid":[
+ {"name":"none","arguments":[{"kind":"option","variant":"none"}],"result":{"kind":"bool","bool":false}},
+ {"name":"ok","arguments":[{"kind":"option","variant":"some","payload":{"kind":"result","variant":"ok","payload":{"kind":"bytes","bytes_hex":"6f6b"}}}],"result":{"kind":"bool","bool":true}},
+ {"name":"wrong-bytes","arguments":[{"kind":"option","variant":"some","payload":{"kind":"result","variant":"ok","payload":{"kind":"bytes","bytes_hex":"6e6f"}}}],"result":{"kind":"bool","bool":false}},
+ {"name":"error","arguments":[{"kind":"option","variant":"some","payload":{"kind":"result","variant":"error","payload":{"kind":"text","text":"bad"}}}],"result":{"kind":"bool","bool":true}},
+ {"name":"wrong-error","arguments":[{"kind":"option","variant":"some","payload":{"kind":"result","variant":"error","payload":{"kind":"text","text":"no"}}}],"result":{"kind":"bool","bool":false}}
+],"malformed":[
+ {"name":"option-variant","arguments":[{"kind":"option","variant":"invalid"}]},
+ {"name":"some-without-payload","arguments":[{"kind":"option","variant":"some"}]},
+ {"name":"wrong-result-payload","arguments":[{"kind":"option","variant":"some","payload":{"kind":"result","variant":"ok","payload":{"kind":"text","text":"ok"}}}]}
+]}

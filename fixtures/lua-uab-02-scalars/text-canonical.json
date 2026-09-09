@@ -1,0 +1,1 @@
+{"valid":[{"name":"empty","arguments":[{"kind":"text","text":""}],"result":{"kind":"text","text":"!"}},{"name":"unicode","arguments":[{"kind":"text","text":"世界🚀"}],"result":{"kind":"text","text":"世界🚀!"}}],"malformed":[{"name":"wrong-kind","arguments":[{"kind":"bytes","bytes_hex":"21"}]}]}

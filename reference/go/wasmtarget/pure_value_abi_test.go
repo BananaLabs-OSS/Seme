@@ -69,7 +69,7 @@ func TestPureValueLayoutRejectsMalformedAndRecursiveTypes(t *testing.T) {
 		{"missing", "wasm.pure_value_type_missing", wire.Envelope{Entities: map[wire.ID]wire.Entity{}}},
 		{"wrong field kind", "wasm.pure_option_type_fields", wire.Envelope{Entities: map[wire.ID]wire.Entity{optionType: {ID: optionType, Schema: identity(0xa050), Fields: map[wire.ID]wire.Value{identity(0xa0500): unsigned(1)}}}}},
 		{"recursive", "wasm.pure_value_type_cycle_or_size", wire.Envelope{Entities: map[wire.ID]wire.Entity{optionType: {ID: optionType, Schema: identity(0xa050), Fields: map[wire.ID]wire.Value{identity(0xa0500): ref(optionType)}}}}},
-		{"unsupported", "wasm.pure_value_type_unsupported", wire.Envelope{Entities: map[wire.ID]wire.Entity{optionType: {ID: optionType, Schema: identity(0x9030), Fields: map[wire.ID]wire.Value{}}}}},
+		{"malformed record", "wasm.pure_record_type_fields", wire.Envelope{Entities: map[wire.ID]wire.Entity{optionType: {ID: optionType, Schema: identity(0x9030), Fields: map[wire.ID]wire.Value{}}}}},
 	}
 	for _, item := range tests {
 		t.Run(item.name, func(t *testing.T) {
@@ -78,6 +78,69 @@ func TestPureValueLayoutRejectsMalformedAndRecursiveTypes(t *testing.T) {
 				t.Fatalf("error = %v, want %s", err, item.want)
 			}
 		})
+	}
+}
+
+func TestPureValueLayoutCertifiesRecordArraySliceAndMapComposition(t *testing.T) {
+	i64, record, first, second := identity(0x5101), identity(0x5102), identity(0x5103), identity(0x5104)
+	array, slice, mapping := identity(0x5105), identity(0x5106), identity(0x5107)
+	g := wire.Envelope{Entities: map[wire.ID]wire.Entity{
+		i64:     {ID: i64, Schema: identity(0x9010), Fields: map[wire.ID]wire.Value{identity(0x9100): unsigned(64), identity(0x9101): {Tag: 2}, identity(0x9102): unsigned(0)}},
+		first:   {ID: first, Schema: identity(0x9031), Fields: map[wire.ID]wire.Value{identity(0x9310): byteValue("left"), identity(0x9311): ref(i64), identity(0x9312): unsigned(0)}},
+		second:  {ID: second, Schema: identity(0x9031), Fields: map[wire.ID]wire.Value{identity(0x9310): byteValue("right"), identity(0x9311): ref(i64), identity(0x9312): unsigned(1)}},
+		record:  {ID: record, Schema: identity(0x9030), Fields: map[wire.ID]wire.Value{identity(0x9301): refs(first, second)}},
+		array:   {ID: array, Schema: identity(0x90f2), Fields: map[wire.ID]wire.Value{identity(0x9f20): ref(i64), identity(0x9f21): unsigned(2)}},
+		slice:   {ID: slice, Schema: identity(0x90f8), Fields: map[wire.ID]wire.Value{identity(0x9f80): ref(i64)}},
+		mapping: {ID: mapping, Schema: identity(0xa040), Fields: map[wire.ID]wire.Value{identity(0xa0400): ref(i64), identity(0xa0401): ref(i64)}},
+	}}
+	for _, test := range []struct {
+		id    wire.ID
+		kind  string
+		fixed uint64
+	}{{record, "record", 16}, {array, "array<i64,2>", 16}, {slice, "slice<i64>", 8}, {mapping, "map<i64,i64>", 8}} {
+		layout, err := CertifyPureValueLayout(g, test.id)
+		if err != nil {
+			t.Fatalf("%s: %v", test.kind, err)
+		}
+		if layout.Type != test.kind || layout.FixedSize != test.fixed {
+			t.Fatalf("layout = %#v", layout)
+		}
+	}
+	sliceLayout, _ := CertifyPureValueLayout(g, slice)
+	validSlice := make([]byte, 24)
+	binary.LittleEndian.PutUint32(validSlice, 8)
+	binary.LittleEndian.PutUint32(validSlice[4:], 2)
+	if err := ValidatePureValueBytes(sliceLayout, validSlice); err != nil {
+		t.Fatal(err)
+	}
+	mapLayout, _ := CertifyPureValueLayout(g, mapping)
+	validMap := make([]byte, 40)
+	binary.LittleEndian.PutUint32(validMap, 8)
+	binary.LittleEndian.PutUint32(validMap[4:], 2)
+	binary.LittleEndian.PutUint64(validMap[8:], uint64(1))
+	binary.LittleEndian.PutUint64(validMap[24:], uint64(2))
+	if err := ValidatePureValueBytes(mapLayout, validMap); err != nil {
+		t.Fatal(err)
+	}
+	binary.LittleEndian.PutUint64(validMap[24:], uint64(1))
+	if err := ValidatePureValueBytes(mapLayout, validMap); err == nil {
+		t.Fatal("duplicate map key accepted")
+	}
+
+	program, function := identity(0x5110), identity(0x5111)
+	parameterTypes := []wire.ID{record, array, slice, mapping}
+	parameterIDs := []wire.ID{identity(0x5112), identity(0x5113), identity(0x5114), identity(0x5115)}
+	g.Entities[program] = wire.Entity{ID: program, Schema: identity(0x9015), Fields: map[wire.ID]wire.Value{identity(0x9150): refs(function), identity(0x9151): ref(function)}}
+	g.Entities[function] = wire.Entity{ID: function, Schema: identity(0x9011), Fields: map[wire.ID]wire.Value{identity(0x9111): refs(parameterIDs...), identity(0x9112): ref(i64)}}
+	for index, id := range parameterIDs {
+		g.Entities[id] = wire.Entity{ID: id, Schema: identity(0x9012), Fields: map[wire.ID]wire.Value{identity(0x9121): ref(parameterTypes[index]), identity(0x9122): unsigned(uint64(index))}}
+	}
+	abi, err := CertifyPureCompositeABI(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if abi.RequestFixedSize != 48 || abi.ResponseFixedSize != 8 || len(abi.Parameters) != 4 {
+		t.Fatalf("composed ABI = %#v", abi)
 	}
 }
 

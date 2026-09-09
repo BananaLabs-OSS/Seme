@@ -27,6 +27,23 @@ func (c CompositeFunctionCertificate) ABI() PureCompositeABI {
 
 func clonePureValueLayout(in PureValueLayout) PureValueLayout {
 	out := in
+	if in.Elements != nil {
+		value := clonePureValueLayout(*in.Elements)
+		out.Elements = &value
+	}
+	if in.Key != nil {
+		value := clonePureValueLayout(*in.Key)
+		out.Key = &value
+	}
+	if in.Value != nil {
+		value := clonePureValueLayout(*in.Value)
+		out.Value = &value
+	}
+	out.Fields = make([]PureValueFieldLayout, len(in.Fields))
+	for i, field := range in.Fields {
+		out.Fields[i] = field
+		out.Fields[i].Value = clonePureValueLayout(field.Value)
+	}
 	out.Variants = make([]PureValueVariantLayout, len(in.Variants))
 	for i, variant := range in.Variants {
 		out.Variants[i] = variant

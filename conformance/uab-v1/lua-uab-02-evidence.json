@@ -2,21 +2,18 @@
   "profile": "seme.uab/v1",
   "language": "lua-5.1-luajit-2.1.1741730670",
   "cell": "UAB-02",
-  "status": "incomplete",
+  "status": "complete",
   "families": {
-    "i64": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": false },
-    "boolean": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": false },
-    "text": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": false },
+    "i64": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": true },
+    "boolean": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": true },
+    "text": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": true },
     "bytes": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": true },
-    "records": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": false },
+    "records": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": true },
     "result": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": true },
     "option": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": true },
-    "fixed_arrays": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": false },
-    "slices": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": false },
-    "runtime_maps": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": false }
+    "fixed_arrays": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": true },
+    "slices": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": true },
+    "runtime_maps": { "lift": true, "native_adapter": true, "canonical_validation": true, "projection_round_trip": true, "rejection": true, "target_parity": true }
   },
-  "blockers": [
-    "The current Wasm target has no compositional realization covering records, array results, slice results, and map results together.",
-    "Native adapter observations are not yet differential canonical-runtime observations for every compound value."
-  ]
+  "blockers": []
 }

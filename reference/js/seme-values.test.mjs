@@ -3,6 +3,11 @@ import test from "node:test";
 import { Seme } from "./seme-values.mjs";
 
 test("explicit native composite values preserve tags and exact bytes", () => {
+  const array = Seme.array([-7n, 0n, 42n]);
+  assert.equal(Seme.index(array, 2n), 42n);
+  assert.equal(Seme.length(array), 3n);
+  assert.throws(() => Seme.index(array, -1n), /seme.index_out_of_bounds/);
+  assert.throws(() => Seme.index(array, 3n), /seme.index_out_of_bounds/);
   const octets = Seme.bytes([0, 255, 42]);
   assert.deepEqual([...octets], [0, 255, 42]);
   assert.deepEqual(Seme.none(), { tag: "none" });

@@ -42,7 +42,7 @@ do
 done
 
 printf '%s\n' '/** @param {bigint[3]} values @param {bigint} index @returns {bigint} */' \
-  'export function Pick(values, index) { return values[index]; }' > "$work/program.mjs"
+  'export function Pick(values, index) { return Seme.index(values, index); }' > "$work/program.mjs"
 node "$repo/reference/js/javascript-provider-cli.mjs" --source "$work/program.mjs" \
   --module "$repo/modules/execution/v21/module.g1" --package example.com/seme-fixed-array-boundary-proof \
   --revision 1 --out "$work/js.g1"

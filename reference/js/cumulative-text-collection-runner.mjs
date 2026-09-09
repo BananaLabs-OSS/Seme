@@ -62,4 +62,8 @@ const empty = await run("sum", [], "sum:non-positive");
 await run("世界🚀", [1n], "世界🚀:positive");
 await rejectsMalformedInput(new Uint8Array([0x61]), 17, 17);
 await rejectsMalformedInput(new Uint8Array([0xc3, 0x28]), 16, 18);
-console.log(JSON.stringify({ positive, negative, empty, unicode: "exact", composition: "existing-generic", input: "unchanged", malformed: "rejected" }));
+if (process.argv[3] === "--observations") {
+  console.log(JSON.stringify({ empty, negative, positive, unicode: "世界🚀:positive" }));
+} else {
+  console.log(JSON.stringify({ positive, negative, empty, unicode: "exact", composition: "existing-generic", input: "unchanged", malformed: "rejected" }));
+}

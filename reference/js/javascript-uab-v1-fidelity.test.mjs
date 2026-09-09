@@ -16,6 +16,16 @@ function lift(source, name) {
 
 const cases = [
   {
+    name: "raw fixed-array indexing is not silently assigned checked Seme bounds",
+    source: "/** @param {bigint[3]} values @param {bigint} index @returns {bigint} */ export function Pick(values, index) { return values[index]; }",
+    diagnostic: /javascript\.raw_index_requires_adapter:1:\d+/,
+  },
+  {
+    name: "raw slice indexing is not silently assigned checked Seme bounds",
+    source: "/** @param {bigint[]} values @param {bigint} index @returns {bigint} */ export function Pick(values, index) { return values[index]; }",
+    diagnostic: /javascript\.raw_index_requires_adapter:1:\d+/,
+  },
+  {
     name: "Number is not silently treated as canonical i64",
     source: "/** @returns {bigint} */ export function Value() { return 1; }",
     diagnostic: /javascript\.unsupported_expression:1:59/,

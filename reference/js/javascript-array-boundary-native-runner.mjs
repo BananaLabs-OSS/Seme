@@ -1,3 +1,6 @@
+import { Seme } from "./seme-values.mjs";
+globalThis.Seme = Seme;
+
 const [moduleURL, firstText, secondText, thirdText, indexText, functionName = "Pick"] = process.argv.slice(2);
 if (!moduleURL || [firstText, secondText, thirdText, indexText].some((value) => !/^-?\d+$/.test(value))) {
   throw new Error("usage: javascript-array-boundary-native-runner MODULE FIRST SECOND THIRD INDEX [FUNCTION]");

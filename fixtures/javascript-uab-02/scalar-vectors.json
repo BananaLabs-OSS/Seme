@@ -1,0 +1,11 @@
+{
+  "valid": [
+    {"name":"negative-enabled","value":"-7","enabled":true,"label":"雪","result":"雪:non-positive"},
+    {"name":"zero-enabled","value":"0","enabled":true,"label":"","result":":non-positive"},
+    {"name":"positive-enabled","value":"42","enabled":true,"label":"🦀","result":"🦀:positive"},
+    {"name":"negative-disabled","value":"-7","enabled":false,"label":"off","result":"off:positive"},
+    {"name":"minimum","value":"-9223372036854775808","enabled":true,"label":"min","result":"min:non-positive"},
+    {"name":"maximum","value":"9223372036854775807","enabled":true,"label":"max","result":"max:positive"}
+  ],
+  "malformed": ["noncanonical-boolean", "invalid-utf8", "trailing-bytes"]
+}

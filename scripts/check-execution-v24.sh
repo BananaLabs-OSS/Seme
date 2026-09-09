@@ -48,7 +48,7 @@ for index in ffffffffffffffff 0300000000000000; do
 done
 
 printf '%s\n' '/** @param {bigint[]} values @param {bigint} fallback @returns {bigint} */' \
-  'export function LastOr(values, fallback) { if (values.length <= 0n) return fallback; return values[values.length - 1]; }' > "$work/program.mjs"
+  'export function LastOr(values, fallback) { if (values.length <= 0n) return fallback; return Seme.index(values, values.length - 1); }' > "$work/program.mjs"
 node "$repo/reference/js/javascript-provider-cli.mjs" --source "$work/program.mjs" \
   --module "$repo/modules/execution/v24/module.g1" --package example.com/seme-collection-query-proof \
   --entry LastOr --revision 1 --out "$work/js.g1"

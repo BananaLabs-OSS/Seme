@@ -1,47 +1,34 @@
-# Go UAB-02 partial-evidence audit
+# Go UAB-02 evidence
 
-Go UAB-02 is **not certified**. `scripts/check-uab-v1-go-02.sh` checks all
-currently available prerequisites, but deliberately reports partial evidence.
-It must not be used to award the cell or change the scorecard.
+`scripts/check-uab-v1-go-02.sh` is the complete evidence gate for the bounded
+Go UAB-02 cell. It proves signed i64, Boolean, text, opaque bytes, records,
+`Result`, `Option`, fixed arrays, slices, and runtime-keyed maps. It does not
+claim general Go, standard-library, generic, or collection compatibility.
 
-The direct Go projector tests prove lift, native execution, direct projection,
-byte-identical re-lift, and rejection. The historical Core gates independently
-prove standalone target and pinned Pulp behavior. That aggregation does not
-satisfy the frozen cell wording: native Go and canonical execution must produce
-the same boundary/adversarial observations, and the target must produce those
-same observations.
+The scalar gate drives one source-derived program through original Go, direct
+canonical lift and independent structural evaluation, direct Go projection, byte-identical re-lift, standalone Wasm,
+and Pulp pinned at `acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. Its shared
+observations include i64 zero and modular overflow, both Boolean values, empty
+text, and exact Unicode text.
 
-Exact missing links:
+The composite gate does the same, including distinct canonical evaluation, for a directly lifted
+`Option<Result<bytes,text>> -> bool` Go program. Original and projected Go,
+standalone Wasm, and pinned Pulp agree on none, matching and nonmatching opaque
+bytes, and matching and nonmatching error text. Eight malformed tag, inactive
+payload, descriptor, length, contiguity, trailing-data, and UTF-8 vectors reject
+through both standalone and Pulp boundaries. `Result` and `Option` remain
+explicit neutral tagged schemas; bytes are never replaced by text or i64
+slices.
 
-- `i64`, Boolean, and text projection use the UAB-01 multi-call native oracle,
-  while cumulative v30 target evidence executes different programs and vectors.
-- bytes, `Result`, and `Option` projection executes independent constructors and
-  matches. The composite target instead executes a hand-authored
-  `Option<Result<bytes,text>> -> bool` canonical program. No Go source is yet
-  lifted into that exact target program and run against its none, ok, error,
-  malformed-tag, length, and payload vectors.
-- records, fixed arrays, slices, and maps use the same broad semantics and often
-  the same source fixtures, but the projector-native tests use different inputs
-  from the standalone/Pulp gates. Their successful observations therefore have
-  not been compared byte-for-byte across all three paths.
-- rejection is also split: projector rejection, canonical corruption rejection,
-  and target malformed-input rejection are not driven from one per-family
-  adversarial vector table.
+Records, arrays, slices, and maps share one direct Go aggregate fixture that is
+lifted, structurally evaluated as canonical Seme, projected/re-lifted, and run
+through standalone Wasm and pinned Pulp. Historical gates supply additional
+isolated rejection evidence. The shared observations
+cover Unicode record text, every valid array index and both bounds, empty,
+signed, variable, modular, maximum-sized and malformed slices, and repeated,
+negative, absent, reordered, empty, maximum-sized and malformed maps.
 
-Certification requires a per-family vector table consumed by the original Go,
-the directly projected/re-lifted Go, canonical execution, standalone Wasm, and
-pinned Pulp paths, with exact observation comparison and the same malformed or
-out-of-bounds cases. For bytes/`Result`/`Option`, the generic target path must
-first lower the canonical graph produced from the matching Go source (or the Go
-bridge must be shown to produce the existing composite program byte-identically).
-
-`Result` and `Option` use explicit neutral tagged schemas and total matches;
-they are not encoded as Go multiple returns, nullable pointers, sentinels, or
-one another. Bytes remain opaque bytes rather than text or integer slices.
-Projection emits ordinary bounded Go declarations and never uses JavaScript or
-another language as an intermediate representation.
-
-The prerequisite target gates archive and build Pulp commit
-`acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. Absence of that local pinned
-checkout is a failed evidence gate, not permission to substitute a moving
-revision or skip target parity.
+Fail-closed evidence additionally corrupts record order, array/slice/map types
+and bounds, Option and match identities, Program call membership, and
+unsupported canonical expressions. No language intermediary participates in
+Go projection.
