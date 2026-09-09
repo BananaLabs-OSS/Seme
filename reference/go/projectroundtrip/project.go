@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"seme.local/reference/projectbundle"
 	"seme.local/reference/projectsource"
@@ -13,8 +14,8 @@ import (
 
 // PublishProjected combines canonically regenerated tracked files with
 // byte-exact preserved regions from a detached bundle. It never reads the
-// original project root. The projected map must contain exactly the tracked
-// paths and no preserved path.
+// original project root. Projected tracked paths may differ from the original
+// presentation, but they may not collide with any preserved path.
 func PublishProjected(dest string, original projectsource.Snapshot, bundle projectbundle.Bundle, projected map[string][]byte, policy projectsource.Policy) (result projectsource.Snapshot, err error) {
 	if err := projectsource.ValidateSnapshot(original); err != nil {
 		return result, err
@@ -22,17 +23,20 @@ func PublishProjected(dest string, original projectsource.Snapshot, bundle proje
 	if err := projectbundle.Validate(original, bundle); err != nil {
 		return result, err
 	}
-	tracked := map[string]bool{}
+	preserved := map[string]projectsource.Unit{}
 	for _, unit := range original.Units {
-		if unit.Class == projectsource.Tracked {
-			tracked[unit.Path] = true
+		if unit.Class != projectsource.Tracked {
+			preserved[unit.Path] = unit
 		}
 	}
-	if len(projected) != len(tracked) {
+	if len(projected) == 0 {
 		return result, fmt.Errorf("project_round_trip.projected_set")
 	}
 	for path := range projected {
-		if !tracked[path] {
+		if _, collision := preserved[path]; collision {
+			return result, fmt.Errorf("project_round_trip.projected_path:%s", path)
+		}
+		if filepath.ToSlash(filepath.Clean(filepath.FromSlash(path))) != path || path == "." || filepath.IsAbs(path) || path == ".." || strings.HasPrefix(path, "../") || strings.Contains(path, "\\") {
 			return result, fmt.Errorf("project_round_trip.projected_path:%s", path)
 		}
 	}
@@ -62,17 +66,16 @@ func PublishProjected(dest string, original projectsource.Snapshot, bundle proje
 	}()
 
 	for _, unit := range original.Units {
-		data := projected[unit.Path]
-		if unit.Class != projectsource.Tracked {
-			var ok bool
-			data, ok = bundle.Lookup(unit.SHA256)
-			if !ok {
-				return result, fmt.Errorf("project_round_trip.bundle_missing:%s", unit.Path)
-			}
-			digest := sha256.Sum256(data)
-			if int64(len(data)) != unit.Size || hex.EncodeToString(digest[:]) != unit.SHA256 {
-				return result, fmt.Errorf("project_round_trip.preservation:%s", unit.Path)
-			}
+		if unit.Class == projectsource.Tracked {
+			continue
+		}
+		data, ok := bundle.Lookup(unit.SHA256)
+		if !ok {
+			return result, fmt.Errorf("project_round_trip.bundle_missing:%s", unit.Path)
+		}
+		digest := sha256.Sum256(data)
+		if int64(len(data)) != unit.Size || hex.EncodeToString(digest[:]) != unit.SHA256 {
+			return result, fmt.Errorf("project_round_trip.preservation:%s", unit.Path)
 		}
 		path := filepath.Join(stage, filepath.FromSlash(unit.Path))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -91,22 +94,38 @@ func PublishProjected(dest string, original projectsource.Snapshot, bundle proje
 			return result, closeErr
 		}
 	}
+	for path, data := range projected {
+		output := filepath.Join(stage, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
+			return result, err
+		}
+		if err := os.WriteFile(output, data, 0o644); err != nil {
+			return result, err
+		}
+	}
 
 	result, err = projectsource.Discover(stage, original.RootIdentity, original.Toolchain, policy)
 	if err != nil {
 		return projectsource.Snapshot{}, err
 	}
-	if len(result.Units) != len(original.Units) {
+	if len(result.Units) != len(preserved)+len(projected) {
 		return projectsource.Snapshot{}, fmt.Errorf("project_round_trip.unit_count")
 	}
-	for i, before := range original.Units {
-		after := result.Units[i]
-		if before.Path != after.Path || before.Class != after.Class || before.Preservation != after.Preservation {
-			return projectsource.Snapshot{}, fmt.Errorf("project_round_trip.classification:%s", before.Path)
+	seenProjected := map[string]bool{}
+	for _, after := range result.Units {
+		if before, ok := preserved[after.Path]; ok {
+			if before != after {
+				return projectsource.Snapshot{}, fmt.Errorf("project_round_trip.preservation:%s", before.Path)
+			}
+			continue
 		}
-		if before.Class != projectsource.Tracked && before != after {
-			return projectsource.Snapshot{}, fmt.Errorf("project_round_trip.preservation:%s", before.Path)
+		if _, ok := projected[after.Path]; !ok || after.Class != projectsource.Tracked || after.Preservation != projectsource.SemanticProjection {
+			return projectsource.Snapshot{}, fmt.Errorf("project_round_trip.classification:%s", after.Path)
 		}
+		seenProjected[after.Path] = true
+	}
+	if len(seenProjected) != len(projected) {
+		return projectsource.Snapshot{}, fmt.Errorf("project_round_trip.projected_set")
 	}
 	if _, err := os.Lstat(dest); err == nil {
 		return projectsource.Snapshot{}, fmt.Errorf("project_round_trip.destination_exists")

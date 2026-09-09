@@ -327,3 +327,15 @@ changed nothing outside repository source and temporary test directories.
 Resolution-fidelity and expanded source/inventory/bundle rejection tests used
 the existing Go toolchain and disposable `/tmp` caches. Repeated test runs
 installed no dependency and changed no persistent environment configuration.
+
+## 2026-09-09 — Go UPB-01 completion
+
+The completed bounded Go UPB-01 gate reused the installed Go 1.25.6 native
+fixture toolchain, the Go 1.26.0 reference-provider toolchain, Node 22, the
+checked Seme bootstrap, and pinned Pulp source at
+`acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. Multi-package projection,
+native rebuild, byte-identical semantic re-lift, standalone Wasm, Pulp, and
+atomic-rejection evidence ran only in automatically removed directories under
+`/tmp`; focused Go tests also used disposable `GOCACHE` directories there. No
+software or dependency was installed, and no shell, SSH, editor, toolchain,
+global, workstation, or persistent environment setting was changed.
