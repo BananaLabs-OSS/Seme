@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 29 {
+	if version < 2 || version > 30 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -192,6 +192,14 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0xa033, "Sequence", []Field{field(0xa0330, "sequence.steps", 5, 0, 2), field(0xa0331, "sequence.result", 5, 0, 0)}},
 			Schema{0xa034, "MutableClosureConstruct", []Field{field(0xa0340, "mutable_closure.type", 5, 0xa020, 0), field(0xa0341, "mutable_closure.parameters", 5, 0x9012, 2), field(0xa0342, "mutable_closure.captures", 5, 0xa030, 2), field(0xa0343, "mutable_closure.body", 5, 0, 0)}},
 			Schema{0xa035, "StatefulIndirectCall", []Field{field(0xa0350, "stateful_call.callee", 5, 0, 0), field(0xa0351, "stateful_call.arguments", 5, 0, 2)}},
+		)
+	}
+	if version >= 30 {
+		schemas = append(schemas,
+			Schema{0xa040, "MapType", []Field{field(0xa0400, "map.key", 5, 0, 0), field(0xa0401, "map.value", 5, 0, 0)}},
+			Schema{0xa041, "EmptyMap", []Field{field(0xa0410, "empty_map.type", 5, 0xa040, 0)}},
+			Schema{0xa042, "MapLookup", []Field{field(0xa0420, "map_lookup.map", 5, 0, 0), field(0xa0421, "map_lookup.key", 5, 0, 0)}},
+			Schema{0xa043, "MapUpdate", []Field{field(0xa0430, "map_update.map", 5, 0, 0), field(0xa0431, "map_update.key", 5, 0, 0), field(0xa0432, "map_update.value", 5, 0, 0)}},
 		)
 	}
 	return schemas, nil

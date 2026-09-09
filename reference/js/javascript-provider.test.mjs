@@ -18,6 +18,7 @@ const moduleV26G1 = fs.readFileSync(new URL("../../modules/execution/v26/module.
 const moduleV27G1 = fs.readFileSync(new URL("../../modules/execution/v27/module.g1", import.meta.url), "utf8");
 const moduleV28G1 = fs.readFileSync(new URL("../../modules/execution/v28/module.g1", import.meta.url), "utf8");
 const moduleV29G1 = fs.readFileSync(new URL("../../modules/execution/v29/module.g1", import.meta.url), "utf8");
+const moduleV30G1 = fs.readFileSync(new URL("../../modules/execution/v30/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -296,4 +297,12 @@ function MakeCounter(start) { let value = start; return (delta) => { value = val
 export function Run(start, first, second) { const counter = MakeCounter(start); counter(first); return counter(second); }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV29G1, packagePath: "example.test/mutable-closure", revision: 1 });
   for (const suffix of ["a030", "a031", "a032", "a033", "a034", "a035"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
+});
+
+test("lifts runtime-keyed maps as immutable canonical folds", () => {
+  const source = `/** @param {bigint[]} values @param {bigint} key @returns {bigint} */
+export function Tally(values, key) { return values.reduce((counts, value) => new Map(counts).set(value, (counts.get(value) ?? 0n) + 1n), new Map()).get(key) ?? 0n; }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/runtime-map", revision: 1 });
+  for (const suffix of ["a040", "a041", "a042", "a043"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
+  assert.match(canonical, /000000000000000000000000000090f7/);
 });

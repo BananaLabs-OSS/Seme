@@ -206,6 +206,11 @@ function readRecords(comments, packagePath) {
 
 function typeID(type, context) {
   if (ids[type]) return ids[type];
+	if (type === "map:i64:i64") {
+		const id = stableID("execution", "type", "map", "i64", "i64");
+		if (context.entities && !context.entities.some((item) => item.id === id)) context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a040", [[0xa0400, ref(ids.i64)], [0xa0401, ref(ids.i64)]])));
+		return id;
+	}
 	if (type.startsWith("function:")) {
 		const [parameterText, resultType] = type.slice("function:".length).split("=>");
 		const parameterTypes = parameterText === "" ? [] : parameterText.split(",");
@@ -400,6 +405,41 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 }
 
 function emitExpression(node, owner, path, context, expected) {
+	if (node.type === "NewExpression" && node.callee.type === "Identifier" && node.callee.name === "Map" && node.arguments.length === 0 && expected === "map:i64:i64") {
+		const id = expressionID(owner, path, "empty-map");
+		context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a041", [[0xa0410, ref(typeID(expected, context))]])));
+		return { id, type: expected };
+	}
+	if (node.type === "LogicalExpression" && node.operator === "??" && expected === "i64" && node.right.type === "Literal" && node.right.value === 0n && node.left.type === "CallExpression" && node.left.callee.type === "MemberExpression" && !node.left.callee.computed && node.left.callee.property.name === "get" && node.left.arguments.length === 1) {
+		const map = emitExpression(node.left.callee.object, owner, `${path}.map`, context, "map:i64:i64");
+		const key = emitExpression(node.left.arguments[0], owner, `${path}.key`, context, "i64");
+		const id = expressionID(owner, path, "map-lookup");
+		context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a042", [[0xa0420, ref(map.id)], [0xa0421, ref(key.id)]])));
+		return { id, type: "i64" };
+	}
+	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.name === "set" && node.arguments.length === 2 && node.callee.object.type === "NewExpression" && node.callee.object.callee.type === "Identifier" && node.callee.object.callee.name === "Map" && node.callee.object.arguments.length === 1 && expected === "map:i64:i64") {
+		const map = emitExpression(node.callee.object.arguments[0], owner, `${path}.map`, context, expected);
+		const key = emitExpression(node.arguments[0], owner, `${path}.key`, context, "i64");
+		const value = emitExpression(node.arguments[1], owner, `${path}.value`, context, "i64");
+		const id = expressionID(owner, path, "map-update");
+		context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a043", [[0xa0430, ref(map.id)], [0xa0431, ref(key.id)], [0xa0432, ref(value.id)]])));
+		return { id, type: expected };
+	}
+	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.name === "reduce" && node.arguments.length === 2 && expected === "map:i64:i64") {
+		const callback = node.arguments[0];
+		if (callback.type !== "ArrowFunctionExpression" || callback.async || callback.params.length !== 2 || callback.params.some((item) => item.type !== "Identifier") || callback.body.type === "BlockStatement") fail("javascript.map_fold_shape", node.loc.start);
+		const collection = emitExpression(node.callee.object, owner, `${path}.collection`, context, "slice:i64");
+		const initial = emitExpression(node.arguments[1], owner, `${path}.initial`, context, expected);
+		const accumulatorID = expressionID(owner, path, "fold-accumulator-binding");
+		const elementID = expressionID(owner, path, "fold-element-binding");
+		context.entities.push(graphEntity(accumulatorID, entity(accumulatorID, "000000000000000000000000000090f5", [[0x9f50, bytes(callback.params[0].name)], [0x9f51, ref(typeID(expected, context))]])));
+		context.entities.push(graphEntity(elementID, entity(elementID, "000000000000000000000000000090f5", [[0x9f50, bytes(callback.params[1].name)], [0x9f51, ref(ids.i64)]])));
+		const foldContext = { ...context, iterationBindings: new Map([[callback.params[0].name, { id: accumulatorID, type: expected }], [callback.params[1].name, { id: elementID, type: "i64" }]]) };
+		const body = emitExpression(callback.body, owner, `${path}.body`, foldContext, expected);
+		const id = expressionID(owner, path, "fold");
+		context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f7", [[0x9f70, ref(collection.id)], [0x9f71, ref(initial.id)], [0x9f72, ref(accumulatorID)], [0x9f73, ref(elementID)], [0x9f74, ref(body.id)]])));
+		return { id, type: expected };
+	}
 	if ((node.type === "ArrowFunctionExpression" || node.type === "FunctionExpression") && expected.startsWith("function:")) {
 		if (node.async || node.generator || node.params.some((item) => item.type !== "Identifier")) fail("javascript.unsupported_closure", node.loc.start);
 		const [parameterText, resultType] = expected.slice("function:".length).split("=>");
@@ -605,6 +645,13 @@ function emitExpression(node, owner, path, context, expected) {
 		return { id, type: "i64" };
 	}
   if (node.type === "Identifier") {
+	const iterationBinding = context.iterationBindings?.get(node.name);
+	if (iterationBinding) {
+		if (iterationBinding.type !== expected) fail("javascript.iteration_binding_type", node.loc.start);
+		const id = expressionID(owner, path, "iteration-binding-read");
+		context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f6", [[0x9f60, ref(iterationBinding.id)]])));
+		return { id, type: expected };
+	}
 	const closureParameter = context.closureParameters?.get(node.name);
 	if (closureParameter) {
 		if (closureParameter.type !== expected) fail("javascript.closure_parameter_type", node.loc.start);
@@ -774,6 +821,8 @@ function dynamicIndexExpression(node, owner, path, context) {
 }
 
 function inferExpressionType(node, context) {
+  if (node.type === "NewExpression" && node.callee.type === "Identifier" && node.callee.name === "Map") return "map:i64:i64";
+  if (node.type === "LogicalExpression" && node.operator === "??") return inferExpressionType(node.right, context);
   if (node.type === "ThisExpression" && context.receiver) return context.receiver.type;
   if (node.type === "Identifier") {
     const parameter = context.parameterNames.indexOf(node.name);
@@ -783,6 +832,7 @@ function inferExpressionType(node, context) {
   }
   if (node.type === "Literal" && typeof node.value === "string") return "string";
   if (node.type === "Literal" && typeof node.value === "boolean") return "bool";
+  if (node.type === "Literal" && typeof node.value === "bigint") return "i64";
 	if (node.type === "MemberExpression" && !node.computed && node.property.name === "length") return "i64";
   if (node.type === "ObjectExpression") {
 	const propertyNames = new Set(node.properties.map((property) => property.key?.name ?? property.key?.value));
@@ -801,6 +851,8 @@ function inferExpressionType(node, context) {
   }
 	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "BigInt" && node.callee.property.name === "asIntN" && node.arguments.length === 2 && node.arguments[0].type === "Literal" && node.arguments[0].value === 64) return "i64";
 	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed) {
+		if (node.callee.property.name === "set") return "map:i64:i64";
+		if (node.callee.property.name === "reduce" && node.arguments[0]?.type === "ArrowFunctionExpression" && node.arguments[0].body.type === "CallExpression" && node.arguments[0].body.callee.type === "MemberExpression" && node.arguments[0].body.callee.property.name === "set") return "map:i64:i64";
 		const receiverType = inferExpressionType(node.callee.object, context);
 		if (receiverType.startsWith("interface:")) {
 			const requirement = context.interfacesByName.get(receiverType.slice("interface:".length))?.requirements.find((item) => item.name === node.callee.property.name);
