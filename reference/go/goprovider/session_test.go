@@ -2,9 +2,90 @@ package goprovider
 
 import (
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestIncrementalSessionPublishesStablePackageMetadata(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v35/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	makeSnapshot := func(revision uint64, reverse bool) DocumentSnapshot {
+		files := map[string]string{}
+		add := func(name, source string) { files[name] = source }
+		entries := [][2]string{
+			{"app/main.go", `package app
+import "example.test/project/mid"
+func Apply(v int64) int64 { return mid.Apply(v) }
+func hidden(v int64) int64 { return v }`},
+			{"mid/mid.go", `package mid
+import "example.test/project/leaf"
+func Apply(v int64) int64 { return leaf.Apply(v) }`},
+			{"leaf/leaf.go", `package leaf
+func Apply(v int64) int64 { return v + 1 }
+func private(v int64) int64 { return v }`},
+		}
+		if reverse {
+			for i := len(entries) - 1; i >= 0; i-- {
+				add(entries[i][0], entries[i][1])
+			}
+		} else {
+			for _, x := range entries {
+				add(x[0], x[1])
+			}
+		}
+		return DocumentSnapshot{Revision: revision, ModulePath: "example.test/project", PackagePath: "example.test/project/app", Entry: "Apply", Files: files}
+	}
+	a, _ := NewIncrementalSession(module)
+	first := a.Apply(makeSnapshot(1, false))
+	if !first.Valid {
+		t.Fatalf("first=%#v", first)
+	}
+	b, _ := NewIncrementalSession(module)
+	reordered := b.Apply(makeSnapshot(99, true))
+	if !reordered.Valid {
+		t.Fatalf("reordered=%#v", reordered)
+	}
+	if !reflect.DeepEqual(first.Packages, reordered.Packages) {
+		t.Fatalf("metadata depends on file/client revision ordering\n%#v\n%#v", first.Packages, reordered.Packages)
+	}
+	if len(first.Packages) != 3 {
+		t.Fatalf("packages=%#v", first.Packages)
+	}
+	byName := map[string]PackageMetadata{}
+	for _, p := range first.Packages {
+		byName[p.Name] = p
+	}
+	if !byName["example.test/project/app"].Root || byName["example.test/project/mid"].Root {
+		t.Fatal("root marker incorrect")
+	}
+	if !reflect.DeepEqual(byName["example.test/project/app"].Dependencies, []string{"example.test/project/mid"}) || !reflect.DeepEqual(byName["example.test/project/mid"].Dependencies, []string{"example.test/project/leaf"}) {
+		t.Fatalf("dependency closure=%#v", first.Packages)
+	}
+	ids := map[string]bool{}
+	for _, p := range first.Packages {
+		if len(p.Functions) != 1 || p.Functions[0].Name != "Apply" {
+			t.Fatalf("unexported function leaked: %#v", p.Functions)
+		}
+		if ids[p.Functions[0].ID] {
+			t.Fatal("same-name functions collided")
+		}
+		ids[p.Functions[0].ID] = true
+		if len(p.Functions[0].Parameters) != 1 || p.Functions[0].Result == "" {
+			t.Fatal("signature metadata missing")
+		}
+	}
+	first.Packages[0].Dependencies = []string{"mutated"}
+	first.Packages[0].Functions[0].Parameters[0] = "mutated"
+	bad := makeSnapshot(2, false)
+	bad.Files["app/main.go"] = "package app\nfunc Apply("
+	retained := a.Apply(bad)
+	if retained.Valid || len(retained.Packages) != 3 || reflect.DeepEqual(retained.Packages, first.Packages) {
+		t.Fatalf("invalid snapshot did not retain copy-safe metadata: %#v", retained)
+	}
+}
 
 func TestIncrementalSessionComposesCumulativeTextCollectionFlow(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
