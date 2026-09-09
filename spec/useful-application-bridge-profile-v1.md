@@ -51,6 +51,12 @@ meaning. `N/A` is not permitted in v1.
 | UAB-11 | One cumulative stateful application using UAB-01 through UAB-10 together | required | required | required |
 | UAB-12 | Cross-language equivalence: all three projections re-lift to the same canonical application | required | required | required |
 
+The frozen machine-readable denominator and current evidence claims live in
+`conformance/uab-v1/scorecard.json`. Run `./scripts/check-uab-v1-scorecard.sh`
+to validate its exact 36-cell shape and compute the per-language and overall
+scores. Evidence names may be added to a cell only by a gate that directly
+produces that evidence.
+
 ## Required application proof
 
 The cumulative fixture is not a collection of one-feature functions. It must
