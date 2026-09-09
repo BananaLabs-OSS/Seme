@@ -298,6 +298,37 @@ func scalarTypeKind(schema wire.ID) (string, bool) {
 	return "", false
 }
 
+func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
+	e, ok := g.Entities[expressionID]
+	if !ok {
+		return wire.ID{}, false
+	}
+	if e.Schema == id(0x9013) {
+		parameter, err := field(e, 0x9130)
+		if err != nil || parameter.Tag != 6 {
+			return wire.ID{}, false
+		}
+		p, ok := g.Entities[parameter.Reference]
+		if !ok || p.Schema != id(0x9012) {
+			return wire.ID{}, false
+		}
+		t, err := field(p, 0x9121)
+		return t.Reference, err == nil && t.Tag == 6
+	}
+	fields := map[wire.ID]uint64{id(0x90fb): 0x9fb0, id(0x90fc): 0x9fc0, id(0xa066): 0xa0660, id(0xa043): 0xa0430, id(0xa067): 0xa0670}
+	if key, yes := fields[e.Schema]; yes {
+		base, err := field(e, key)
+		if err == nil && base.Tag == 6 {
+			return expressionType(g, base.Reference)
+		}
+	}
+	if e.Schema == id(0xa041) {
+		t, err := field(e, 0xa0410)
+		return t.Reference, err == nil && t.Tag == 6
+	}
+	return wire.ID{}, false
+}
+
 func evalBlock(g wire.Envelope, block wire.ID, env map[wire.ID]Value, budget int) (Value, error) {
 	v, returned, err := execBlock(g, block, env, budget)
 	if err != nil {
@@ -742,6 +773,135 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.length")
 		}
 		return Value{Kind: "i64", I64: fmt.Sprint(len(base.Items))}, nil
+	case id(0x90fb), id(0x90fc), id(0xa066):
+		collectionField, indexField, valueField := uint64(0x9fb0), uint64(0), uint64(0x9fb1)
+		if e.Schema == id(0x90fc) {
+			collectionField, indexField, valueField = 0x9fc0, 0x9fc1, 0x9fc2
+		}
+		if e.Schema == id(0xa066) {
+			collectionField, indexField, valueField = 0xa0660, 0xa0661, 0
+		}
+		collectionID, ce := refField(collectionField)
+		if ce != nil {
+			return Value{}, fmt.Errorf("canonicaleval.slice_operation_fields")
+		}
+		base, er := eval(g, collectionID, env, budget-1)
+		if er != nil {
+			return Value{}, er
+		}
+		if base.Kind != "slice" || len(base.Items) > 512 {
+			return Value{}, fmt.Errorf("canonicaleval.slice_operation")
+		}
+		items := append([]Value(nil), base.Items...)
+		if indexField != 0 {
+			indexID, ie := refField(indexField)
+			if ie != nil {
+				return Value{}, fmt.Errorf("canonicaleval.slice_operation_fields")
+			}
+			index, ie := eval(g, indexID, env, budget-1)
+			raw, parsed := new(big.Int).SetString(index.I64, 10)
+			if ie != nil || index.Kind != "i64" || !parsed || !raw.IsUint64() || raw.Uint64() >= uint64(len(items)) {
+				return Value{}, fmt.Errorf("canonicaleval.slice_operation_index")
+			}
+			position := int(raw.Uint64())
+			if valueField == 0 {
+				items = append(append([]Value(nil), items[:position]...), items[position+1:]...)
+			} else {
+				valueID, ve := refField(valueField)
+				if ve != nil {
+					return Value{}, fmt.Errorf("canonicaleval.slice_operation_fields")
+				}
+				value, ve := eval(g, valueID, env, budget-1)
+				if ve != nil {
+					return Value{}, ve
+				}
+				items[position] = value
+			}
+		} else {
+			valueID, ve := refField(valueField)
+			if ve != nil {
+				return Value{}, fmt.Errorf("canonicaleval.slice_operation_fields")
+			}
+			value, ve := eval(g, valueID, env, budget-1)
+			if ve != nil || len(items) == 512 {
+				return Value{}, fmt.Errorf("canonicaleval.slice_append")
+			}
+			items = append(items, value)
+		}
+		result := Value{Kind: "slice", Items: items}
+		if typeID, ok := expressionType(g, collectionID); !ok || validateValue(g, typeID, result, budget-1) != nil {
+			return Value{}, fmt.Errorf("canonicaleval.slice_operation_type")
+		}
+		return result, nil
+	case id(0xa041):
+		typeID, te := refField(0xa0410)
+		if te != nil {
+			return Value{}, fmt.Errorf("canonicaleval.empty_map")
+		}
+		t, ok := g.Entities[typeID]
+		value, ve := field(t, 0xa0401)
+		valueEntity, exists := g.Entities[value.Reference]
+		kind, known := scalarTypeKind(valueEntity.Schema)
+		if !ok || t.Schema != id(0xa040) || ve != nil || !exists || !known {
+			return Value{}, fmt.Errorf("canonicaleval.empty_map_type")
+		}
+		return Value{Kind: "map", ValueType: kind}, nil
+	case id(0xa043), id(0xa067):
+		mapField, keyField, valueField := uint64(0xa0430), uint64(0xa0431), uint64(0xa0432)
+		if e.Schema == id(0xa067) {
+			mapField, keyField, valueField = 0xa0670, 0xa0671, 0
+		}
+		mapID, me := refField(mapField)
+		keyID, ke := refField(keyField)
+		if me != nil || ke != nil {
+			return Value{}, fmt.Errorf("canonicaleval.map_operation_fields")
+		}
+		m, er := eval(g, mapID, env, budget-1)
+		key, ker := eval(g, keyID, env, budget-1)
+		if er != nil {
+			return Value{}, er
+		}
+		if ker != nil {
+			return Value{}, ker
+		}
+		if m.Kind != "map" {
+			return Value{}, fmt.Errorf("canonicaleval.map_operation")
+		}
+		entries := append([]Entry(nil), m.Entries...)
+		found := -1
+		for i, item := range entries {
+			if equal(item.Key, key) {
+				found = i
+				break
+			}
+		}
+		if valueField == 0 {
+			if found >= 0 {
+				entries = append(entries[:found], entries[found+1:]...)
+			}
+		} else {
+			valueID, ve := refField(valueField)
+			if ve != nil {
+				return Value{}, fmt.Errorf("canonicaleval.map_operation_fields")
+			}
+			value, ve := eval(g, valueID, env, budget-1)
+			if ve != nil {
+				return Value{}, ve
+			}
+			if found >= 0 {
+				entries[found].Value = value
+			} else {
+				if len(entries) == 512 {
+					return Value{}, fmt.Errorf("canonicaleval.map_size")
+				}
+				entries = append(entries, Entry{Key: key, Value: value})
+			}
+		}
+		result := Value{Kind: "map", ValueType: m.ValueType, Entries: entries}
+		if typeID, ok := expressionType(g, mapID); !ok || validateValue(g, typeID, result, budget-1) != nil {
+			return Value{}, fmt.Errorf("canonicaleval.map_operation_type")
+		}
+		return result, nil
 	case id(0xa042):
 		mapID, me := refField(0xa0420)
 		keyID, ke := refField(0xa0421)
