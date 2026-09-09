@@ -791,14 +791,18 @@ func TestIncrementalSessionLoadsLocalModulePackageClosure(t *testing.T) {
 		t.Fatal(err)
 	}
 	result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/project", PackagePath: "example.test/project/application", Entry: "Apply", Files: map[string]string{
-		"model/value.go":     "package model\nfunc Increment(value int64) int64 { return value + 1 }\n",
-		"application/app.go": "package application\nimport \"example.test/project/model\"\nfunc Apply(value int64) int64 { return model.Increment(value) }\n",
+		"model/value.go":     "package model\nfunc Apply(value int64) int64 { return value + 1 }\n",
+		"application/app.go": "package application\nimport \"example.test/project/model\"\nfunc Apply(value int64) int64 { return model.Apply(value) }\n",
 	}})
 	if !result.Valid {
 		t.Fatalf("diagnostics=%#v", result.Diagnostics)
 	}
 	if strings.Count(result.CanonicalG1, " 00000000000000000000000000009011 1 ") != 2 || !strings.Contains(result.CanonicalG1, " 00000000000000000000000000009060 1 ") {
 		t.Fatal("unified imported call graph missing")
+	}
+	wantEntry := stableID("session-declaration", "example.test/project/application", "Apply")
+	if !strings.Contains(result.CanonicalG1, "fi 00000000000000000000000000009151 rf "+wantEntry) {
+		t.Fatal("same-named dependency function became the program entry")
 	}
 }
 

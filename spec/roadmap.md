@@ -163,3 +163,22 @@ enforcement complete for the scoped logging profile.
 
 Additional projections, mechanics, ecosystems, and targets follow these proofs
 and use the same provider, patch, target-contract, and conformance boundaries.
+
+## 7. Useful Project Bridge v1
+
+Status: defined at 0/36; every project-level cell is initially unclaimed.
+
+The completed UAB-v1 proves a bounded application semantic vocabulary. It does
+not by itself prove that Seme can preserve an ordinary project's source closure,
+dependency graph, resources, configuration, service boundaries, build plan, or
+multi-file revision workflow. [`Useful Project Bridge v1`](useful-project-bridge-profile-v1.md)
+defines those as a separate 12-by-3 matrix with seven evidence classes per
+cell.
+
+UPB work begins with neutral project contracts and synthetic conformance
+projects. A downstream product may maintain an external pinned consumer
+harness, but its source, names, architecture, and special cases do not enter
+Seme. In particular, Workbench is a possible later consumer, not the profile's
+fixture or success criterion. The empty baseline is validated by
+`../scripts/check-upb-v1-scorecard.sh`; shape validation is not execution
+evidence.
