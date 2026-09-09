@@ -115,7 +115,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 			}
 		}
 	}
-	if len(bySchema(graph, 0xa034))+len(bySchema(graph, 0xa035)) > 0 {
+	if entryHasSchema(graph, programs[0], 0xa034, 0xa035) {
 		entry, entryErr := field(programs[0], 0x9151)
 		if entryErr != nil || entry.Tag != 6 {
 			return nil, PureABI{}, fmt.Errorf("wasm.pure_entry_membership")
@@ -126,7 +126,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 		}
 		return certifyPureMutableClosureFunction(graph, programs[0], function)
 	}
-	if len(bySchema(graph, 0xa023))+len(bySchema(graph, 0xa024)) > 0 {
+	if entryHasSchema(graph, programs[0], 0xa023, 0xa024) {
 		entry, entryErr := field(programs[0], 0x9151)
 		if entryErr != nil || entry.Tag != 6 {
 			return nil, PureABI{}, fmt.Errorf("wasm.pure_entry_membership")
@@ -268,6 +268,50 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	}
 	wasm, err := pureModule(parameterTypes, resultType, instructions, abi, false)
 	return wasm, abi, err
+}
+
+// entryHasSchema follows canonical references outward from the selected entry.
+// Unreachable declarations must not select a physical backend for the program:
+// a source package may legitimately contain both immutable and mutable closure
+// functions while exposing either one as a particular canonical program entry.
+func entryHasSchema(graph wire.Envelope, program wire.Entity, schemas ...uint64) bool {
+	entry, err := field(program, 0x9151)
+	if err != nil || entry.Tag != 6 {
+		return false
+	}
+	want := map[wire.ID]bool{}
+	for _, schema := range schemas {
+		want[identity(schema)] = true
+	}
+	seen := map[wire.ID]bool{}
+	var visit func(wire.ID) bool
+	visit = func(current wire.ID) bool {
+		if seen[current] {
+			return false
+		}
+		seen[current] = true
+		entity, ok := graph.Entities[current]
+		if !ok {
+			return false
+		}
+		if want[entity.Schema] {
+			return true
+		}
+		for _, value := range entity.Fields {
+			if value.Tag == 6 && visit(value.Reference) {
+				return true
+			}
+			if value.Tag == 7 {
+				for _, item := range value.List {
+					if item.Tag == 6 && visit(item.Reference) {
+						return true
+					}
+				}
+			}
+		}
+		return false
+	}
+	return visit(entry.Reference)
 }
 
 func lowerPureBlock(graph wire.Envelope, id wire.ID, resultType string, parameterTypes map[wire.ID]string, parameterLocals map[wire.ID]byte, used map[byte]bool, visiting map[wire.ID]bool, budget *int) ([]byte, error) {

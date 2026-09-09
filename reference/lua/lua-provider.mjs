@@ -59,6 +59,16 @@ const schema = {
   assignPlace: "000000000000000000000000000090e3",
   whileStatement: "000000000000000000000000000090e4",
   whenStatement: "000000000000000000000000000090f0",
+  branch: "000000000000000000000000000090c0",
+  recordConstruct: "00000000000000000000000000009033",
+  receiverBinding: "0000000000000000000000000000a000",
+  receiverRead: "0000000000000000000000000000a001",
+  method: "0000000000000000000000000000a002",
+  interfaceType: "0000000000000000000000000000a010",
+  methodRequirement: "0000000000000000000000000000a011",
+  satisfactionWitness: "0000000000000000000000000000a012",
+  interfaceValue: "0000000000000000000000000000a013",
+  dynamicMethodCall: "0000000000000000000000000000a014",
 };
 
 /**
@@ -91,13 +101,56 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
 
   const additions = [];
   for (const type of declarations.flatMap((item) => [...item.parameters.map((parameter) => parameter.type), item.resultType])) ensureType(type, additions, records);
+  const methodNames = new Set([...implementationBindings.values()].flatMap((item) => [...item.methods.values()]));
   const descriptions = declarations.map((declaration) => ({
     ...declaration,
     id: stableID("session-declaration", packagePath, declaration.name),
   }));
   const descriptionsByName = new Map(descriptions.map((item) => [item.name, item]));
 
-  for (const description of descriptions) {
+  const protocols = new Map();
+  for (const protocol of protocolBindings.values()) {
+    const requirements = protocol.requirements.map((name) => {
+      const implementations = [...implementationBindings.values()].filter((item) => item.protocol === protocol.binding);
+      const signatures = implementations.map((item) => descriptionsByName.get(item.methods.get(name)));
+      if (!signatures.length || signatures.some((item) => !item || item.parameters.length !== 2 || !item.parameters[0].type.startsWith("record:") || item.parameters[1].type !== "i64" || item.resultType !== "i64")) fail("lua.protocol_method_signature");
+      const id = stableID("execution", "requirement", packagePath, protocol.name, name);
+      additions.push(graphEntity(id, entity(id, schema.methodRequirement, [[0xa0110, bytes(name)], [0xa0111, refs([ids.i64])], [0xa0112, ref(ids.i64)]])));
+      return { name, id };
+    });
+    const id = stableID("execution", "interface", packagePath, protocol.name);
+    additions.push(graphEntity(id, entity(id, schema.interfaceType, [[0xa0100, bytes(protocol.name)], [0xa0101, refs(requirements.map((item) => item.id))]])));
+    protocols.set(protocol.binding, { ...protocol, id, requirements });
+  }
+  const implementations = new Map();
+  for (const implementation of implementationBindings.values()) {
+    const protocol = protocols.get(implementation.protocol);
+    const prefix = implementation.binding.endsWith(protocol.name) ? implementation.binding.slice(0, -protocol.name.length) : implementation.binding;
+    const methodIDs = [];
+    let concreteID;
+    for (const requirement of protocol.requirements) {
+      const description = descriptionsByName.get(implementation.methods.get(requirement.name));
+      const receiverType = description.parameters[0].type;
+      if (implementation.concreteKind !== "record") fail("lua.implementation_concrete_kind");
+      concreteID ??= typeID(receiverType);
+      if (concreteID !== typeID(receiverType)) fail("lua.implementation_receiver_kind");
+      const receiverID = stableID("execution", "receiver", packagePath, implementation.binding);
+      if (!additions.some((item) => item.id === receiverID)) additions.push(graphEntity(receiverID, entity(receiverID, schema.receiverBinding, [[0xa0000, bytes(prefix || "self")], [0xa0001, ref(concreteID)]])));
+      const parameter = description.parameters[1], parameterID = stableID("execution", description.id, "parameter", "0");
+      additions.push(graphEntity(parameterID, entity(parameterID, schema.parameter, [[0x9120, bytes(parameter.name)], [0x9121, ref(ids.i64)], [0x9122, "uu 0"]])));
+      const methodContext = { description: { ...description, parameters: [parameter] }, parameterIDs: [parameterID], descriptionsByName, additions, records, receiver: { id: receiverID, name: description.parameters[0].name, type: receiverType } };
+      const expression = emitExpression(description.expression, methodContext, "body.statement.expression");
+      const returnedID = stableID("execution", description.id, "body.statement", "return"), blockID = stableID("execution", description.id, "body", "block");
+      additions.push(graphEntity(returnedID, entity(returnedID, schema.returned, [[0x9810, refs([expression])]])), graphEntity(blockID, entity(blockID, schema.block, [[0x9800, refs([returnedID])]])));
+      additions.push(graphEntity(description.id, entity(description.id, schema.method, [[0xa0020, bytes(requirement.name)], [0xa0021, ref(receiverID)], [0xa0022, refs([parameterID])], [0xa0023, ref(ids.i64)], [0xa0024, ref(blockID)]])));
+      methodIDs.push(description.id);
+    }
+    const witnessID = stableID("execution", "witness", packagePath, implementation.binding);
+    additions.push(graphEntity(witnessID, entity(witnessID, schema.satisfactionWitness, [[0xa0120, ref(concreteID)], [0xa0121, ref(protocol.id)], [0xa0122, refs(methodIDs)]])));
+    implementations.set(implementation.binding, { ...implementation, protocol, prefix, concreteID, witnessID });
+  }
+
+  for (const description of descriptions.filter((item) => !methodNames.has(item.name))) {
     const parameterIDs = description.parameters.map((parameter, index) => {
       const id = stableID("execution", description.id, "parameter", String(index));
       additions.push(graphEntity(id, entity(id, schema.parameter, [
@@ -108,6 +161,7 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
     const context = { description, parameterIDs, descriptionsByName, additions, records };
     let blockID;
     if (description.statements) blockID = emitControlBlock(description.statements, { ...context, symbols: new Map(description.parameters.map((p, i) => [p.name, { kind: "parameter", type: p.type, id: parameterIDs[i] }])) }, "body", true);
+    else if (description.expression.kind === "protocol_dispatch") blockID = emitProtocolDispatch(description.expression, { ...context, implementations }, "body");
     else {
       const expression = emitExpression(description.expression, context, "body.statement.expression");
       const returnedID = stableID("execution", description.id, "body.statement", "return");
@@ -119,7 +173,7 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
       [0x9110, bytes(description.name)], [0x9111, refs(parameterIDs)], [0x9112, ref(typeID(description.resultType))], [0x9113, ref(blockID)],
     ])));
   }
-  const functionIDs = descriptions.map((item) => item.id).sort();
+  const functionIDs = descriptions.filter((item) => !methodNames.has(item.name)).map((item) => item.id).sort();
   const programID = stableID("session-program", packagePath);
   additions.push(graphEntity(programID, entity(programID, schema.program, [
     [0x9150, refs(functionIDs)], [0x9151, ref(stableID("session-declaration", packagePath, entry.name))],
@@ -162,6 +216,33 @@ function emitControlBlock(statements, context, path, requireReturn = false) {
   }
   if (requireReturn && !terminal) fail("lua.requires_return", context.description.location);
   const block = stableID("execution", context.description.id, path, "block"); context.additions.push(graphEntity(block, entity(block, schema.block, [[0x9800, refs(emitted)]]))); return block;
+}
+
+function emitProtocolDispatch(expression, context, path) {
+  const whenFalse = context.implementations.get(expression.whenFalse), whenTrue = context.implementations.get(expression.whenTrue);
+  if (!whenFalse || !whenTrue || whenFalse.protocol.id !== whenTrue.protocol.id) fail("lua.protocol_dispatch_implementation", expression.location);
+  const requirement = whenFalse.protocol.requirements.find((item) => item.name === expression.requirement);
+  const record = context.records.get(expression.record);
+  const fieldIndex = record?.fields.findIndex((item) => item.name === expression.field) ?? -1;
+  if (!requirement || fieldIndex < 0 || record.fields.length !== 1 || record.fields[fieldIndex].type !== "i64" || whenFalse.concreteID !== record.id || whenTrue.concreteID !== record.id) fail("lua.protocol_dispatch_contract", expression.location);
+  const condition = parameterRead(expression.condition, "bool", context, `${path}.condition`, expression.location);
+  const makeCall = (implementation, side) => {
+    const value = parameterRead(expression.receiver, "i64", context, `${path}.${side}.receiver.field`, expression.location);
+    const construct = stableID("execution", context.description.id, path, side, "record");
+    context.additions.push(graphEntity(construct, entity(construct, schema.recordConstruct, [[0x9330, ref(record.id)], [0x9331, refs([value])]])));
+    const boxed = stableID("execution", context.description.id, path, side, "interface-value");
+    context.additions.push(graphEntity(boxed, entity(boxed, schema.interfaceValue, [[0xa0130, ref(implementation.protocol.id)], [0xa0131, ref(construct)], [0xa0132, ref(implementation.witnessID)]])));
+    const argument = parameterRead(expression.argument, "i64", context, `${path}.${side}.argument`, expression.location);
+    const call = stableID("execution", context.description.id, path, side, "dynamic-call");
+    context.additions.push(graphEntity(call, entity(call, schema.dynamicMethodCall, [[0xa0140, ref(boxed)], [0xa0141, ref(requirement.id)], [0xa0142, refs([argument])]])));
+    const returned = stableID("execution", context.description.id, path, side, "return"), block = stableID("execution", context.description.id, path, side, "block");
+    context.additions.push(graphEntity(returned, entity(returned, schema.returned, [[0x9810, refs([call])]])), graphEntity(block, entity(block, schema.block, [[0x9800, refs([returned])]])));
+    return block;
+  };
+  const falseBlock = makeCall(whenFalse, "false"), trueBlock = makeCall(whenTrue, "true");
+  const branch = stableID("execution", context.description.id, path, "branch"), block = stableID("execution", context.description.id, path, "block");
+  context.additions.push(graphEntity(branch, entity(branch, schema.branch, [[0x9c00, ref(condition)], [0x9c01, ref(trueBlock)], [0x9c02, ref(falseBlock)]])), graphEntity(block, entity(block, schema.block, [[0x9800, refs([branch])]])));
+  return block;
 }
 
 function controlExpressionType(expression, context) {
@@ -363,6 +444,12 @@ function findTopLevelOperator(value, operator) { let depth = 0, quoted = false; 
 function emitExpression(expression, context, path) {
   if(expression.kind.startsWith("nested_"))return emitNestedExpression(expression,context.description.resultType,context,path);
   if (expression.kind === "identifier") {
+    if (context.receiver?.name === expression.name) {
+      if (context.receiver.type !== context.description.resultType) fail("lua.receiver_return_type", expression.location);
+      const id = stableID("execution", context.description.id, "expression", path, "receiver-read");
+      context.additions.push(graphEntity(id, entity(id, schema.receiverRead, [[0xa0010, ref(context.receiver.id)]])));
+      return id;
+    }
     const index = context.description.parameters.findIndex((parameter) => parameter.name === expression.name);
     if (index < 0) fail("lua.unknown_identifier", expression.location);
     if (context.description.parameters[index].type !== context.description.resultType) fail("lua.return_type", expression.location);
@@ -372,6 +459,15 @@ function emitExpression(expression, context, path) {
   }
   if (["some", "none", "ok", "err"].includes(expression.kind)) return emitConstructor(expression, context, path);
   if (expression.kind === "field") {
+    if (context.receiver?.name === expression.base) {
+      const record = context.records.get(context.receiver.type.split(":").slice(2).join(":"));
+      const fieldIndex = record?.fields.findIndex((item) => item.name === expression.field) ?? -1;
+      if (fieldIndex < 0 || record.fields[fieldIndex].type !== context.description.resultType) fail("lua.field_result_type", expression.location);
+      const readID = stableID("execution", context.description.id, "expression", `${path}.base`, "receiver-read"), id = stableID("execution", context.description.id, "expression", path, "field-read");
+      context.additions.push(graphEntity(readID, entity(readID, schema.receiverRead, [[0xa0010, ref(context.receiver.id)]])));
+      context.additions.push(graphEntity(id, entity(id, schema.fieldRead, [[0x9320, ref(readID)], [0x9321, ref(stableID("execution", record.id, "field", String(fieldIndex)))]])));
+      return id;
+    }
     const index = context.description.parameters.findIndex((parameter) => parameter.name === expression.base);
     if (index < 0) fail("lua.unknown_identifier", expression.location);
     const parameterType = context.description.parameters[index].type;

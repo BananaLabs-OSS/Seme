@@ -171,8 +171,12 @@ func certifyPureInterfaceDispatchFunction(graph wire.Envelope, program, function
 	}
 
 	type selected struct {
-		witness wire.ID
-		callee  wire.Entity
+		witness      wire.ID
+		callee       wire.Entity
+		contract     wire.ID
+		requirement  wire.ID
+		concreteType wire.ID
+		direct       bool
 	}
 	readBranch := func(blockID wire.ID) (selected, error) {
 		branchBlock := graph.Entities[blockID]
@@ -186,27 +190,56 @@ func certifyPureInterfaceDispatchFunction(graph wire.Envelope, program, function
 			return selected{}, fmt.Errorf("wasm.interface_dispatch_branch")
 		}
 		call := graph.Entities[values.List[0].Reference]
-		calleeValue, x := field(call, 0x9600)
-		args, y := field(call, 0x9601)
-		if call.Schema != identity(0x9060) || x != nil || y != nil || args.Tag != 7 || len(args.List) != 2 {
-			return selected{}, fmt.Errorf("wasm.interface_dispatch_call")
+		calleeValue, calleeErr := field(call, 0x9600)
+		args, argsErr := field(call, 0x9601)
+		direct := call.Schema == identity(0xa014)
+		var ifaceValue wire.Value
+		var requirement wire.Value
+		if direct {
+			ifaceValue, _ = field(call, 0xa0140)
+			requirement, _ = field(call, 0xa0141)
+			args, argsErr = field(call, 0xa0142)
+			if ifaceValue.Tag != 6 || requirement.Tag != 6 || argsErr != nil || args.Tag != 7 || len(args.List) != 1 || args.List[0].Tag != 6 {
+				return selected{}, fmt.Errorf("wasm.interface_dispatch_call")
+			}
+		} else {
+			if call.Schema != identity(0x9060) || calleeErr != nil || argsErr != nil || args.Tag != 7 || len(args.List) != 2 || args.List[0].Tag != 6 || args.List[1].Tag != 6 {
+				return selected{}, fmt.Errorf("wasm.interface_dispatch_call")
+			}
+			ifaceValue = args.List[0]
 		}
-		iface := graph.Entities[args.List[0].Reference]
+		iface := graph.Entities[ifaceValue.Reference]
+		contract, contractErr := field(iface, 0xa0130)
 		witness, wErr := field(iface, 0xa0132)
 		concreteValue, vErr := field(iface, 0xa0131)
-		if iface.Schema != identity(0xa013) || wErr != nil || vErr != nil {
+		if iface.Schema != identity(0xa013) || contractErr != nil || contract.Tag != 6 || wErr != nil || witness.Tag != 6 || vErr != nil || concreteValue.Tag != 6 {
 			return selected{}, fmt.Errorf("wasm.interface_dispatch_value")
 		}
+		concreteEntity := graph.Entities[concreteValue.Reference]
+		concreteType, concreteTypeErr := field(concreteEntity, 0x9330)
+		if concreteEntity.Schema != identity(0x9033) || concreteTypeErr != nil || concreteType.Tag != 6 {
+			return selected{}, fmt.Errorf("wasm.interface_dispatch_concrete")
+		}
 		stateCode, stateErr := lowerTransitionI64(graph, concreteValue.Reference, locals, nil, map[wire.ID]bool{})
-		valueCode, valueErr := lowerTransitionI64(graph, args.List[1].Reference, locals, nil, map[wire.ID]bool{})
+		argument := args.List[0]
+		if !direct {
+			argument = args.List[1]
+		}
+		valueCode, valueErr := lowerTransitionI64(graph, argument.Reference, locals, nil, map[wire.ID]bool{})
 		if stateErr != nil || valueErr != nil || !bytes.Equal(stateCode, []byte{0x20, 1}) || !bytes.Equal(valueCode, []byte{0x20, 2}) {
 			return selected{}, fmt.Errorf("wasm.interface_dispatch_binding")
+		}
+		if direct {
+			if err := validateI64Requirement(graph, graph.Entities[requirement.Reference]); err != nil {
+				return selected{}, err
+			}
+			return selected{witness: witness.Reference, contract: contract.Reference, requirement: requirement.Reference, concreteType: concreteType.Reference, direct: true}, nil
 		}
 		callee := graph.Entities[calleeValue.Reference]
 		if callee.Schema != identity(0x9011) {
 			return selected{}, fmt.Errorf("wasm.interface_dispatch_callee")
 		}
-		return selected{witness.Reference, callee}, nil
+		return selected{witness: witness.Reference, callee: callee, contract: contract.Reference, concreteType: concreteType.Reference}, nil
 	}
 	trueSelection, err := readBranch(thenBlock.Reference)
 	if err != nil {
@@ -216,27 +249,42 @@ func certifyPureInterfaceDispatchFunction(graph wire.Envelope, program, function
 	if err != nil {
 		return nil, PureABI{}, err
 	}
-	if trueSelection.callee.ID != falseSelection.callee.ID || trueSelection.witness == falseSelection.witness {
+	if trueSelection.direct != falseSelection.direct || trueSelection.witness == falseSelection.witness || trueSelection.contract != falseSelection.contract || (trueSelection.direct && trueSelection.requirement != falseSelection.requirement) || (!trueSelection.direct && trueSelection.callee.ID != falseSelection.callee.ID) {
 		return nil, PureABI{}, fmt.Errorf("wasm.interface_dispatch_selection")
+	}
+	contractEntity := graph.Entities[trueSelection.contract]
+	contractRequirements, contractErr := field(contractEntity, 0xa0101)
+	if contractEntity.Schema != identity(0xa010) || contractErr != nil || contractRequirements.Tag != 7 || len(contractRequirements.List) != 1 || contractRequirements.List[0].Tag != 6 || (trueSelection.direct && contractRequirements.List[0].Reference != trueSelection.requirement) {
+		return nil, PureABI{}, fmt.Errorf("wasm.interface_dispatch_contract")
 	}
 	// Certify the independently declared interface call and every witness before
 	// using the branch-selected witnesses as physical dispatch cases.
-	if _, _, err := certifyPureInterfaceApplyFunction(graph, program, trueSelection.callee); err != nil {
-		return nil, PureABI{}, err
+	if !trueSelection.direct {
+		if _, _, err := certifyPureInterfaceApplyFunction(graph, program, trueSelection.callee); err != nil {
+			return nil, PureABI{}, err
+		}
 	}
 	var cases []interfaceDispatchCase
-	for _, witnessID := range []wire.ID{falseSelection.witness, trueSelection.witness} {
+	for index, witnessID := range []wire.ID{falseSelection.witness, trueSelection.witness} {
 		witness := graph.Entities[witnessID]
-		concrete, _ := field(witness, 0xa0120)
-		methods, _ := field(witness, 0xa0122)
+		concrete, cErr := field(witness, 0xa0120)
+		contract, iErr := field(witness, 0xa0121)
+		methods, mErr := field(witness, 0xa0122)
+		selectedConcrete := []wire.ID{falseSelection.concreteType, trueSelection.concreteType}[index]
+		if witness.Schema != identity(0xa012) || cErr != nil || iErr != nil || mErr != nil || concrete.Tag != 6 || concrete.Reference != selectedConcrete || contract.Reference != trueSelection.contract || methods.Tag != 7 || len(methods.List) != 1 || methods.List[0].Tag != 6 {
+			return nil, PureABI{}, fmt.Errorf("wasm.interface_dispatch_witness")
+		}
 		method := graph.Entities[methods.List[0].Reference]
-		applyBody, _ := field(trueSelection.callee, 0x9113)
-		applyBlock := graph.Entities[applyBody.Reference]
-		applyStatements, _ := field(applyBlock, 0x9800)
-		applyReturn := graph.Entities[applyStatements.List[0].Reference]
-		applyValues, _ := field(applyReturn, 0x9810)
-		dynamic := graph.Entities[applyValues.List[0].Reference]
-		requirementID, _ := field(dynamic, 0xa0141)
+		requirementID := wire.Value{Tag: 6, Reference: trueSelection.requirement}
+		if !trueSelection.direct {
+			applyBody, _ := field(trueSelection.callee, 0x9113)
+			applyBlock := graph.Entities[applyBody.Reference]
+			applyStatements, _ := field(applyBlock, 0x9800)
+			applyReturn := graph.Entities[applyStatements.List[0].Reference]
+			applyValues, _ := field(applyReturn, 0x9810)
+			dynamic := graph.Entities[applyValues.List[0].Reference]
+			requirementID, _ = field(dynamic, 0xa0141)
+		}
 		code, err := certifyInterfaceMethod(graph, method, concrete.Reference, graph.Entities[requirementID.Reference])
 		if err != nil {
 			return nil, PureABI{}, err
