@@ -2,6 +2,7 @@ package projectmodule
 
 import (
 	"bytes"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -24,5 +25,54 @@ func TestEmitUsesFreshIdentityAndExactImports(t *testing.T) {
 	}
 	if strings.Contains(first.String(), "0000000000000000000000000000c000") {
 		t.Fatal("collides with Target Contract v1")
+	}
+}
+
+func TestEmitV2ExtendsV1WithExactAncestryAndNeutralSources(t *testing.T) {
+	var first, second bytes.Buffer
+	if err := EmitVersion(&first, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := EmitVersion(&second, 2); err != nil {
+		t.Fatal(err)
+	}
+	if first.String() != second.String() {
+		t.Fatal("nondeterministic v2")
+	}
+	for _, want := range []string{"rv " + RevisionV2ID, "pc 1\n" + RevisionID, "en " + ModuleID + " 00000000000000000000000000000012 2 3", "fi 00000000000000000000000000000122 li 30", "0000000000000000000000000000e012", "0000000000000000000000000000e164", "toolchain_profile.language", "source_classification.code", "source_unit.normalized_relative_path", "source_unit.preservation_mode", "source_inventory.inventory_revision", "source_inventory.semantic_revision", "source_inventory.units"} {
+		value := want
+		if strings.Contains(want, ".") {
+			value = fmt.Sprintf("%x", want)
+		}
+		if !strings.Contains(first.String(), value) {
+			t.Fatalf("missing %s", want)
+		}
+	}
+	for _, bad := range []string{"go_source", "javascript_source", "workbench", "workshop", "ironclad"} {
+		if strings.Contains(strings.ToLower(first.String()), bad) {
+			t.Fatalf("language/project-specific contamination %q", bad)
+		}
+	}
+	if err := EmitVersion(&bytes.Buffer{}, 3); err == nil {
+		t.Fatal("accepted unknown version")
+	}
+}
+
+func TestV2ClosedEnumsRejectUnknownValues(t *testing.T) {
+	for value := uint64(0); value <= 4; value++ {
+		if err := ValidateSourceClassification(value); err != nil {
+			t.Fatalf("classification %d: %v", value, err)
+		}
+	}
+	if ValidateSourceClassification(5) == nil {
+		t.Fatal("accepted unknown classification")
+	}
+	for value := uint64(0); value <= 3; value++ {
+		if err := ValidatePreservationMode(value); err != nil {
+			t.Fatalf("preservation %d: %v", value, err)
+		}
+	}
+	if ValidatePreservationMode(4) == nil {
+		t.Fatal("accepted unknown preservation mode")
 	}
 }

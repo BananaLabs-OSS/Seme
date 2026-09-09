@@ -299,3 +299,12 @@ fixture used the already installed Go 1.25.6 toolchain with a temporary
 was installed or changed.
 No software, dependency, global setting, SSH setting, or persistent
 environment configuration was installed or changed.
+
+## 2026-09-09 — Project Contract v2 source-inventory foundation
+
+Project Contract v2 generation, deterministic source discovery, and exact
+round-trip staging reused the existing Go toolchains and Seme bootstrap.
+Focused unit and race tests redirected `GOCACHE` to disposable directories
+under `/tmp`; the contract reproduction gate used an automatically removed
+`mktemp` directory. No software, dependency, global setting, SSH setting, or
+persistent environment configuration was installed or changed.

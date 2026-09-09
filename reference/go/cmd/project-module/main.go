@@ -1,4 +1,4 @@
-// Command project-module emits Project Contract v1.
+// Command project-module emits a versioned Project Contract.
 package main
 
 import (
@@ -10,6 +10,7 @@ import (
 
 func main() {
 	outPath := flag.String("out", "", "optional output path")
+	version := flag.Int("version", 1, "Project Contract version")
 	flag.Parse()
 	out := os.Stdout
 	if *outPath != "" {
@@ -20,7 +21,7 @@ func main() {
 		defer file.Close()
 		out = file
 	}
-	if err := projectmodule.Emit(out); err != nil {
+	if err := projectmodule.EmitVersion(out, *version); err != nil {
 		log.Fatal(err)
 	}
 }
