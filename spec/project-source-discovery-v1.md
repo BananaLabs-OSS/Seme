@@ -13,7 +13,8 @@ configured count or size overruns reject.
 Every file receives exactly one classification:
 
 - tracked: a configured source extension outside ignored and vendored roots;
-- ignored: a file under an explicitly ignored prefix;
+- ignored: a file under an explicitly ignored prefix or matching an explicitly
+  ignored suffix (the Go UPB-01 profile uses this for `_test.go`);
 - generated: a file beginning with the configured generated marker;
 - vendored: a file under an explicitly vendored prefix; or
 - opaque: every remaining regular file.
@@ -36,3 +37,18 @@ tree before staging, validates the staged tree before publication, refuses an
 existing destination, and removes failed staging directories. This is a
 bounded conformance primitive, not yet the semantic Go projector or a general
 source-control implementation.
+
+`reference/go/sourceinventory` emits the typed Project Contract v2 entities as
+a separate canonical artifact. It embeds only the closed semantic
+ProjectSnapshot reference closure needed to validate its binding; raw source
+bytes are excluded. Its validator independently checks the exact Project v2
+contract pin, semantic closure and revision, source revision, stable entity
+identities, nonempty sorted units, closed class/preservation mappings,
+toolchain membership, exports, and absence of orphan entities.
+
+`reference/go/projectbundle` captures the bytes into a detached content store
+with one sorted blob per distinct SHA-256 digest. Missing, changed, duplicate,
+unsorted, and unreferenced blobs reject. The bundle remains valid after the
+original tree is moved, proving that later projection need not trust mutable
+original paths. The bundle is transport material and is not embedded in the
+semantic Project or SourceInventory artifacts.

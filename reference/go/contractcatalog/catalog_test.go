@@ -36,6 +36,24 @@ func TestResolveProjectContractSet(t *testing.T) {
 	}
 }
 
+func TestResolveProjectContractSetV2(t *testing.T) {
+	e, p, _ := artifacts(t)
+	v2, err := os.ReadFile("../../../modules/project/v2/module.seme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := ResolveProjectContractSetV2(e, p, v2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Validated() || set.Project().Pin().Revision != projectRevV2 || len(set.Project().Exports()) != 30 {
+		t.Fatal("unexpected v2 contract set")
+	}
+	if _, err := ResolveProjectContractSet(e, p, v2); err == nil {
+		t.Fatal("v1 resolver accepted v2 substitution")
+	}
+}
+
 func TestResolveRejectsUntrustedContractInputs(t *testing.T) {
 	e, p, r := artifacts(t)
 	tests := map[string]func() error{

@@ -10,7 +10,7 @@ import (
 )
 
 func policy() Policy {
-	return Policy{TrackedExtensions: []string{".go"}, IgnoredPrefixes: []string{"ignored/"}, VendoredPrefixes: []string{"vendor/"}, GeneratedHeader: []byte("// Code generated "), MaxFiles: 32, MaxFileBytes: 1024, MaxTotalBytes: 4096}
+	return Policy{TrackedExtensions: []string{".go"}, IgnoredPrefixes: []string{"ignored/"}, IgnoredSuffixes: []string{"_test.go"}, VendoredPrefixes: []string{"vendor/"}, GeneratedHeader: []byte("// Code generated "), MaxFiles: 32, MaxFileBytes: 1024, MaxTotalBytes: 4096}
 }
 func toolchain() Toolchain {
 	return Toolchain{Language: "go", Toolchain: "go1.26", Profile: "linux-amd64/bounded-v1", SemanticRevision: "go-bounded-v1"}
@@ -97,6 +97,22 @@ func TestRejectsSymlink(t *testing.T) {
 	}
 }
 
+func TestRejectsSymlinkInRootPath(t *testing.T) {
+	parent := t.TempDir()
+	realRoot := filepath.Join(parent, "real")
+	if err := os.Mkdir(realRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write(t, realRoot, "a.go", "package p")
+	linkedRoot := filepath.Join(parent, "linked")
+	if err := os.Symlink(realRoot, linkedRoot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Discover(linkedRoot, "p", toolchain(), policy()); err == nil || !strings.Contains(err.Error(), "root_symlink_component") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestRejectsNonregularFile(t *testing.T) {
 	root := t.TempDir()
 	if err := syscall.Mkfifo(filepath.Join(root, "pipe"), 0600); err != nil {
@@ -111,6 +127,7 @@ func TestRejectsPolicyTraversalAndAmbiguity(t *testing.T) {
 	root := t.TempDir()
 	write(t, root, "a.go", "package p")
 	tests := map[string]Policy{"traversal": func() Policy { p := policy(); p.IgnoredPrefixes = []string{"../escape/"}; return p }(), "same-prefix": func() Policy { p := policy(); p.VendoredPrefixes = []string{"ignored/"}; return p }(), "overlap": func() Policy { p := policy(); p.VendoredPrefixes = []string{"ignored/nested/"}; return p }(), "extension": func() Policy { p := policy(); p.TrackedExtensions = []string{".go", ".go"}; return p }()}
+	tests["suffix"] = func() Policy { p := policy(); p.IgnoredSuffixes = []string{"_test.go", "_test.go"}; return p }()
 	for name, p := range tests {
 		t.Run(name, func(t *testing.T) {
 			if _, err := Discover(root, "p", toolchain(), p); err == nil {
@@ -135,5 +152,11 @@ func TestRejectsBoundsAndIdentity(t *testing.T) {
 	badToolchain.Profile = ""
 	if _, err := Discover(root, "p", badToolchain, policy()); err == nil {
 		t.Fatal("accepted incomplete toolchain")
+	}
+}
+
+func TestRejectsEmptyProject(t *testing.T) {
+	if _, err := Discover(t.TempDir(), "p", toolchain(), policy()); err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("err=%v", err)
 	}
 }

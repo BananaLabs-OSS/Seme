@@ -24,6 +24,7 @@ var (
 	packageRev      = mustID("0000000000000000000000000000b001")
 	projectModule   = mustID("0000000000000000000000000000e000")
 	projectRev      = mustID("0000000000000000000000000000e001")
+	projectRevV2    = mustID("0000000000000000000000000000e002")
 )
 
 type Pin struct{ Module, Revision wire.ID }
@@ -212,9 +213,34 @@ func (s ProjectContractSet) Package() Contract   { return s.packages }
 func (s ProjectContractSet) Project() Contract   { return s.project }
 
 func ResolveProjectContractSet(execution, packages, project []byte) (ProjectContractSet, error) {
+	return resolveProjectContractSet(execution, packages, project, false)
+}
+
+// ResolveProjectContractSetV2 resolves the source-inventory revision without
+// changing the v1 resolver used by executable Project artifacts.
+func ResolveProjectContractSetV2(execution, packages, project []byte) (ProjectContractSet, error) {
+	return resolveProjectContractSet(execution, packages, project, true)
+}
+
+func resolveProjectContractSet(execution, packages, project []byte, sourceInventory bool) (ProjectContractSet, error) {
 	execPin := Pin{executionModule, executionRev}
 	packagePin := Pin{packageModule, packageRev}
 	projectPin := Pin{projectModule, projectRev}
+	projectVersion := uint64(1)
+	requiredProjectExports := []wire.ID{mustID("0000000000000000000000000000e010"), mustID("0000000000000000000000000000e011")}
+	projectDigest := mustDigest("5c8f22e9fee59c378f77ebdfd171d6220ccde8f3e1aafde0400830880e005dcc")
+	if sourceInventory {
+		projectPin.Revision = projectRevV2
+		projectVersion = 2
+		requiredProjectExports = append(requiredProjectExports,
+			mustID("0000000000000000000000000000e012"),
+			mustID("0000000000000000000000000000e013"),
+			mustID("0000000000000000000000000000e014"),
+			mustID("0000000000000000000000000000e015"),
+			mustID("0000000000000000000000000000e016"),
+		)
+		projectDigest = mustDigest("19d499668b244b49a5dba2abc1441bdab025846ff5a21ef13739176d372ba000")
+	}
 	x, err := Resolve(execution, Expectation{Pin: execPin, ModuleVersion: 35, RequiredExports: []wire.ID{mustID("00000000000000000000000000009015")}, Digest: mustDigest("54fdd39b5d78f7f12da37fd43505e0a7962bad9d9808b54a16c20e4cf95e736a")})
 	if err != nil {
 		return ProjectContractSet{}, fmt.Errorf("execution:%w", err)
@@ -223,7 +249,7 @@ func ResolveProjectContractSet(execution, packages, project []byte) (ProjectCont
 	if err != nil {
 		return ProjectContractSet{}, fmt.Errorf("package:%w", err)
 	}
-	r, err := Resolve(project, Expectation{Pin: projectPin, ModuleVersion: 1, RequiredExports: []wire.ID{mustID("0000000000000000000000000000e010"), mustID("0000000000000000000000000000e011")}, Imports: []Pin{packagePin, execPin}, Digest: mustDigest("5c8f22e9fee59c378f77ebdfd171d6220ccde8f3e1aafde0400830880e005dcc")})
+	r, err := Resolve(project, Expectation{Pin: projectPin, ModuleVersion: projectVersion, RequiredExports: requiredProjectExports, Imports: []Pin{packagePin, execPin}, Digest: projectDigest})
 	if err != nil {
 		return ProjectContractSet{}, fmt.Errorf("project:%w", err)
 	}
