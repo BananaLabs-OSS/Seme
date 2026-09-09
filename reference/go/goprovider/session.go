@@ -193,6 +193,13 @@ func (loader *snapshotSourceImporter) Import(path string) (*types.Package, error
 	}
 	paths, local := loader.groups[path]
 	if !local {
+		module := loader.snapshot.ModulePath
+		if module == "" {
+			module = loader.snapshot.PackagePath
+		}
+		if path == module || strings.HasPrefix(path, module+"/") {
+			return nil, fmt.Errorf("go.local_import_missing:%s", path)
+		}
 		pkg, err := build.Default.Import(path, "", build.FindOnly)
 		if err != nil || !pkg.Goroot {
 			return nil, fmt.Errorf("go.external_import_unsupported:%s", path)
@@ -1032,7 +1039,11 @@ func parseDiagnostics(err error) []SessionDiagnostic {
 func typeDiagnostic(err error) SessionDiagnostic {
 	if typed, ok := err.(types.Error); ok {
 		code := "go.type"
-		if strings.Contains(typed.Msg, "go.external_import_unsupported:") {
+		if strings.Contains(typed.Msg, "go.local_import_missing:") {
+			code = "go.local_import_missing"
+		} else if strings.Contains(typed.Msg, "go.import_cycle:") {
+			code = "go.import_cycle"
+		} else if strings.Contains(typed.Msg, "go.external_import_unsupported:") {
 			code = "go.external_import_unsupported"
 		}
 		return SessionDiagnostic{Code: code, Message: typed.Msg, File: filepath.ToSlash(typed.Fset.Position(typed.Pos).Filename), Line: typed.Fset.Position(typed.Pos).Line, Column: typed.Fset.Position(typed.Pos).Column, Severity: "error"}

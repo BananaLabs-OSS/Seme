@@ -3,6 +3,7 @@ package goprovider
 import (
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -131,5 +132,76 @@ func TestResolutionPreservesInaccessibleDeclarationLocation(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("diagnostics=%#v", result.Diagnostics)
+	}
+}
+
+func TestResolutionStructuralImportFailuresCarryLocations(t *testing.T) {
+	tests := []struct {
+		name, code, file string
+		line             int
+		files            map[string]string
+	}{
+		{"missing-local-import", "go.local_import_missing", "app/main.go", 2, map[string]string{"app/main.go": "package app\nimport \"example.test/located/missing\"\nfunc Apply(v int64) int64 { return missing.Apply(v) }\n"}},
+		{"package-clause-mismatch", "go.type", "app/b.go", 1, map[string]string{"app/a.go": "package app\nfunc Apply(v int64) int64 { return v }\n", "app/b.go": "package other\nfunc Other(v int64) int64 { return v }\n"}},
+		{"import-cycle", "go.import_cycle", "dep/dep.go", 2, map[string]string{"app/app.go": "package app\nimport \"example.test/located/dep\"\nfunc Apply(v int64) int64 { return dep.Apply(v) }\n", "dep/dep.go": "package dep\nimport \"example.test/located/app\"\nfunc Apply(v int64) int64 { return app.Apply(v) }\n"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			session, _ := NewIncrementalSession(resolutionModule(t))
+			result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/located", PackagePath: "example.test/located/app", Entry: "Apply", Files: test.files})
+			if result.Valid || result.CanonicalG1 != "" || len(result.Resolution.Packages) != 0 {
+				t.Fatalf("invalid structure published state: %#v", result)
+			}
+			found := false
+			for _, d := range result.Diagnostics {
+				if d.Code == test.code && d.File == test.file && d.Line == test.line && d.Column > 0 {
+					found = true
+				}
+			}
+			if !found {
+				t.Fatalf("diagnostics=%#v", result.Diagnostics)
+			}
+		})
+	}
+}
+
+func TestResolutionDiagnosticsAreDeterministicAndOrdered(t *testing.T) {
+	makeSnapshot := func(revision uint64, reverse bool) DocumentSnapshot {
+		files := map[string]string{}
+		items := [][2]string{{"app/z.go", "package app\nfunc Other(v int64) int64 { return missingZ + v }\n"}, {"app/a.go", "package app\nfunc Apply(v int64) int64 { return missingA + v }\n"}}
+		if reverse {
+			items[0], items[1] = items[1], items[0]
+		}
+		for _, item := range items {
+			files[item[0]] = item[1]
+		}
+		return DocumentSnapshot{Revision: revision, ModulePath: "example.test/diagnostics", PackagePath: "example.test/diagnostics/app", Entry: "Apply", Files: files}
+	}
+	a, _ := NewIncrementalSession(resolutionModule(t))
+	b, _ := NewIncrementalSession(resolutionModule(t))
+	left, right := a.Apply(makeSnapshot(1, false)), b.Apply(makeSnapshot(99, true))
+	if left.Valid || right.Valid || len(left.Diagnostics) < 2 || !reflect.DeepEqual(left.Diagnostics, right.Diagnostics) {
+		t.Fatalf("diagnostics differ:\n%#v\n%#v", left.Diagnostics, right.Diagnostics)
+	}
+	for i := 1; i < len(left.Diagnostics); i++ {
+		prior, next := left.Diagnostics[i-1], left.Diagnostics[i]
+		if prior.File > next.File || (prior.File == next.File && prior.Line > next.Line) {
+			t.Fatalf("diagnostics not ordered: %#v", left.Diagnostics)
+		}
+	}
+}
+
+func TestUnsupportedExternalImportRetainsLastValidAtomically(t *testing.T) {
+	session, _ := NewIncrementalSession(resolutionModule(t))
+	valid := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/atomic", PackagePath: "example.test/atomic", Entry: "Apply", Files: map[string]string{"main.go": "package atomic\nfunc Apply(v int64) int64 { return v }\n"}})
+	if !valid.Valid {
+		t.Fatal(valid.Diagnostics)
+	}
+	invalid := session.Apply(DocumentSnapshot{Revision: 2, ModulePath: "example.test/atomic", PackagePath: "example.test/atomic", Entry: "Apply", Files: map[string]string{"main.go": "package atomic\nimport foreign \"example.invalid/dependency\"\nfunc Apply(v int64) int64 { return foreign.Apply(v) }\n"}})
+	if !invalid.Accepted || invalid.Valid || invalid.LastValidRevision != 1 || invalid.CanonicalG1 != valid.CanonicalG1 || !reflect.DeepEqual(invalid.Packages, valid.Packages) || !reflect.DeepEqual(invalid.Resolution, valid.Resolution) {
+		t.Fatalf("external failure leaked partial state: %#v", invalid)
+	}
+	if len(invalid.Diagnostics) == 0 || invalid.Diagnostics[0].Code != "go.external_import_unsupported" || invalid.Diagnostics[0].File != "main.go" || invalid.Diagnostics[0].Line != 2 || !strings.Contains(invalid.Diagnostics[0].Message, "example.invalid/dependency") {
+		t.Fatalf("external diagnostic=%#v", invalid.Diagnostics)
 	}
 }
