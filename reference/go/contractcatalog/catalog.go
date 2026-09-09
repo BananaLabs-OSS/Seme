@@ -37,10 +37,11 @@ type Expectation struct {
 }
 
 type Contract struct {
-	Envelope wire.Envelope
-	Digest   [sha256.Size]byte
-	Exports  []wire.ID
-	Imports  []Pin
+	envelope  wire.Envelope
+	digest    [sha256.Size]byte
+	exports   []wire.ID
+	imports   []Pin
+	validated bool
 }
 
 // Resolve accepts only the one canonical byte representation described by e.
@@ -112,7 +113,44 @@ func Resolve(source []byte, e Expectation) (Contract, error) {
 	if !samePins(imports, e.Imports) {
 		return Contract{}, fmt.Errorf("contract_catalog.import_pins")
 	}
-	return Contract{Envelope: graph, Digest: digest, Exports: exports, Imports: imports}, nil
+	return Contract{envelope: graph, digest: digest, exports: append([]wire.ID(nil), exports...), imports: append([]Pin(nil), imports...), validated: true}, nil
+}
+
+// Validated reports whether this value was produced by Resolve rather than
+// assembled as an unchecked struct literal.
+func (c Contract) Validated() bool           { return c.validated }
+func (c Contract) Pin() Pin                  { return Pin{Module: c.envelope.Module, Revision: c.envelope.Revision} }
+func (c Contract) Digest() [sha256.Size]byte { return c.digest }
+func (c Contract) Exports() []wire.ID        { return append([]wire.ID(nil), c.exports...) }
+func (c Contract) Imports() []Pin            { return append([]Pin(nil), c.imports...) }
+func (c Contract) Envelope() wire.Envelope   { return cloneEnvelope(c.envelope) }
+
+func cloneEnvelope(in wire.Envelope) wire.Envelope {
+	out := wire.Envelope{Module: in.Module, Revision: in.Revision, Parents: append([]wire.ID(nil), in.Parents...), Entities: make(map[wire.ID]wire.Entity, len(in.Entities))}
+	for eid, e := range in.Entities {
+		fields := make(map[wire.ID]wire.Value, len(e.Fields))
+		for fid, v := range e.Fields {
+			fields[fid] = cloneValue(v)
+		}
+		e.Fields = fields
+		out.Entities[eid] = e
+	}
+	return out
+}
+func cloneValue(v wire.Value) wire.Value {
+	v.Bytes = append([]byte(nil), v.Bytes...)
+	v.List = append([]wire.Value(nil), v.List...)
+	for i := range v.List {
+		v.List[i] = cloneValue(v.List[i])
+	}
+	if v.Record != nil {
+		r := make(map[wire.ID]wire.Value, len(v.Record))
+		for k, x := range v.Record {
+			r[k] = cloneValue(x)
+		}
+		v.Record = r
+	}
+	return v
 }
 
 func typedRefs(entity wire.Entity, field wire.ID, optional bool) ([]wire.ID, error) {
@@ -161,7 +199,17 @@ func samePins(a, b []Pin) bool {
 	return true
 }
 
-type ProjectContractSet struct{ Execution, Package, Project Contract }
+type ProjectContractSet struct {
+	execution Contract
+	packages  Contract
+	project   Contract
+	validated bool
+}
+
+func (s ProjectContractSet) Validated() bool     { return s.validated }
+func (s ProjectContractSet) Execution() Contract { return s.execution }
+func (s ProjectContractSet) Package() Contract   { return s.packages }
+func (s ProjectContractSet) Project() Contract   { return s.project }
 
 func ResolveProjectContractSet(execution, packages, project []byte) (ProjectContractSet, error) {
 	execPin := Pin{executionModule, executionRev}
@@ -179,7 +227,7 @@ func ResolveProjectContractSet(execution, packages, project []byte) (ProjectCont
 	if err != nil {
 		return ProjectContractSet{}, fmt.Errorf("project:%w", err)
 	}
-	return ProjectContractSet{Execution: x, Package: p, Project: r}, nil
+	return ProjectContractSet{execution: x, packages: p, project: r, validated: true}, nil
 }
 
 func mustID(s string) wire.ID {
