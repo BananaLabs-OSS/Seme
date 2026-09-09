@@ -12,7 +12,11 @@ module="$repo/modules/execution/v35/module.g1"
 package=seme.uab11/application
 language=${UAB11_LANGUAGE:-javascript}
 cd "$repo"
-if [ "$language" = lua ]; then
+if [ "$language" = go ]; then
+  (cd reference/go && go build -buildvcs=false -o "$work/session" ./cmd/go-session-proof)
+  "$work/session" --module "$module" --project fixtures/go-uab-11 \
+    --package example.test/go-uab-11/application --entry Apply --revision 1 --out "$work/program.g1"
+elif [ "$language" = lua ]; then
   node reference/lua/lua-provider-cli.mjs \
     --source fixtures/lua-uab-11/policy.lua --source fixtures/lua-uab-11/application.lua \
     --module "$module" --package "$package" --revision 1 --entry Apply --out "$work/program.g1"
@@ -23,7 +27,10 @@ else
 fi
 bootstrap/seme-k0-linux-amd64 compiler/g1-compiler.k0 "$work/program.g1" "$work/program.seme"
 bootstrap/seme-k0-linux-amd64 compiler/kernel-wire-validator.k0 "$work/program.seme"
-if [ "$language" = lua ]; then
+if [ "$language" = go ]; then
+  (cd reference/go && go build -buildvcs=false -o "$work/projector" ./cmd/go-projector)
+  "$work/projector" -package application "$work/program.g1" "$work/projected.go"
+elif [ "$language" = lua ]; then
   node reference/lua/lua-projector-cli.mjs "$work/program.g1" "$work/projected.lua"
 else
   node reference/js/javascript-projector-cli.mjs "$work/program.g1" "$work/projected.mjs"

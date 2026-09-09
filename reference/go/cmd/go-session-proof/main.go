@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"seme.local/reference/goprovider"
@@ -26,21 +25,41 @@ func main() {
 	}
 	module, err := os.ReadFile(*modulePath)
 	fatal(err)
-	entries, err := os.ReadDir(*project)
-	fatal(err)
-	sort.Slice(entries, func(left, right int) bool { return entries[left].Name() < entries[right].Name() })
 	files := map[string]string{}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
-			continue
+	fatal(filepath.WalkDir(*project, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
 		}
-		content, err := os.ReadFile(filepath.Join(*project, entry.Name()))
-		fatal(err)
-		files[entry.Name()] = string(content)
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") || strings.HasSuffix(entry.Name(), "_test.go") {
+			return nil
+		}
+		relative, err := filepath.Rel(*project, path)
+		if err != nil {
+			return err
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		files[filepath.ToSlash(relative)] = string(content)
+		return nil
+	}))
+	moduleData, err := os.ReadFile(filepath.Join(*project, "go.mod"))
+	fatal(err)
+	moduleRoot := ""
+	fields := strings.Fields(string(moduleData))
+	for i := 0; i+1 < len(fields); i++ {
+		if fields[i] == "module" {
+			moduleRoot = fields[i+1]
+			break
+		}
+	}
+	if moduleRoot == "" {
+		fatal(fmt.Errorf("go.mod module path missing"))
 	}
 	session, err := goprovider.NewIncrementalSession(module)
 	fatal(err)
-	result := session.Apply(goprovider.DocumentSnapshot{Revision: *revision, PackagePath: *packagePath, Entry: *entry, Files: files})
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: *revision, ModulePath: moduleRoot, PackagePath: *packagePath, Entry: *entry, Files: files})
 	if !result.Accepted || !result.Valid {
 		fatal(fmt.Errorf("snapshot disposition %s: %#v", result.Disposition, result.Diagnostics))
 	}

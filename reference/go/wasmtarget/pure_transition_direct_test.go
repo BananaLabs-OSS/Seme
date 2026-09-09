@@ -81,3 +81,20 @@ func TestDirectTransitionTargetRejectsForgeries(t *testing.T) {
 		})
 	}
 }
+
+func TestComposedTransitionABIUsesTwoPhysicalResults(t *testing.T) {
+	for _, name := range []string{
+		"transition:i64,i64",
+		"state-transition:record:i64,i64",
+		"result:i64,i64",
+	} {
+		if !isI64PairResult(name) {
+			t.Fatalf("%q was not classified as a two-i64 Wasm result", name)
+		}
+	}
+	for _, name := range []string{"i64", "record:i64", "string"} {
+		if isI64PairResult(name) {
+			t.Fatalf("%q was incorrectly classified as a two-i64 Wasm result", name)
+		}
+	}
+}

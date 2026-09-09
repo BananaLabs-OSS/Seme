@@ -21,6 +21,7 @@ func Sum(values []int64) int64 {
  for _, value := range values { total += value }
  return total
 }
+
 func Describe(prefix string, values []int64) string {
  total := Sum(values)
  if total <= 0 { return prefix + ":non-positive" }
@@ -64,6 +65,7 @@ func (state Accumulator) Add(delta int64) Transition[Accumulator, int64] {
  next := Accumulator{Value: state.Value + delta}
  return Transition[Accumulator, int64]{State: next, Result: next.Value}
 }
+
 func Sum(values []int64) int64 {
  total := int64(0)
  for _, value := range values { total += value }
@@ -752,5 +754,102 @@ func TestIncrementalSessionLiftsTotalReturnControlAndRetainsIt(t *testing.T) {
 	}
 	if len(invalid.Diagnostics) == 0 || invalid.Diagnostics[0].Code != "go.type" || invalid.Diagnostics[0].Line == 0 {
 		t.Fatalf("control diagnostic = %#v", invalid.Diagnostics)
+	}
+}
+
+func TestIncrementalSessionDeclaresAggregateRecordFields(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v35/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package aggregate
+type State struct { Name string; Values []int64; Counters map[int64]int64 }
+func Name(state State) string { return state.Name }
+`
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/aggregate-record", Entry: "Name", Files: map[string]string{"state.go": source}})
+	if !result.Valid {
+		t.Fatalf("diagnostics=%#v", result.Diagnostics)
+	}
+	for _, schema := range []string{"00000000000000000000000000009030", "000000000000000000000000000090f8", "0000000000000000000000000000a040"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("missing schema %s", schema)
+		}
+	}
+}
+
+func TestIncrementalSessionLoadsLocalModulePackageClosure(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v35/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/project", PackagePath: "example.test/project/application", Entry: "Apply", Files: map[string]string{
+		"model/value.go":     "package model\nfunc Increment(value int64) int64 { return value + 1 }\n",
+		"application/app.go": "package application\nimport \"example.test/project/model\"\nfunc Apply(value int64) int64 { return model.Increment(value) }\n",
+	}})
+	if !result.Valid {
+		t.Fatalf("diagnostics=%#v", result.Diagnostics)
+	}
+	if strings.Count(result.CanonicalG1, " 00000000000000000000000000009011 1 ") != 2 || !strings.Contains(result.CanonicalG1, " 00000000000000000000000000009060 1 ") {
+		t.Fatal("unified imported call graph missing")
+	}
+}
+
+func TestIncrementalSessionSinglePackageMayUseSemanticPathDifferentFromModule(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{
+		Revision: 1, ModulePath: "disk.example/module", PackagePath: "semantic.example/application", Entry: "Run",
+		Files: map[string]string{
+			"sum.go": "package application\nfunc Sum(left, right int64) int64 { return left + right }\n",
+			"run.go": "package application\nfunc Run(left, right int64) int64 { return Sum(left, right) }\n",
+		},
+	})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("result=%#v", result)
+	}
+}
+
+func TestIncrementalSessionLiftsCumulativeApplicationPackageClosure(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v35/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for _, name := range []string{"model/model.go", "policy/policy.go", "application/application.go"} {
+		data, readErr := os.ReadFile("../../../fixtures/go-uab-11/" + name)
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		files[name] = string(data)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/go-uab-11", PackagePath: "example.test/go-uab-11/application", Entry: "Apply", Files: files})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("result=%#v", result)
+	}
+	for _, schema := range []string{"0000000000000000000000000000a044", "0000000000000000000000000000a062", "000000000000000000000000000090f1"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("missing cumulative schema %s", schema)
+		}
+	}
+	if len(result.Sources) < 8 {
+		t.Fatalf("package closure sources=%d", len(result.Sources))
 	}
 }

@@ -21,6 +21,7 @@ import (
 // caller-owned, strictly increasing sequence number; Files never touch disk.
 type DocumentSnapshot struct {
 	Revision    uint64
+	ModulePath  string
 	PackagePath string
 	Entry       string
 	Files       map[string]string
@@ -104,13 +105,183 @@ func cloneSources(sources []SourceIdentity) []SourceIdentity {
 }
 
 type sessionFunction struct {
-	id, name string
-	fn       *ast.FuncDecl
-	sig      *types.Signature
-	info     *types.Info
-	file     string
-	fset     *token.FileSet
-	method   bool
+	id, name   string
+	fn         *ast.FuncDecl
+	sig        *types.Signature
+	info       *types.Info
+	file       string
+	fset       *token.FileSet
+	method     bool
+	receiverID string
+}
+
+type checkedSessionPackage struct {
+	path        string
+	pkg         *types.Package
+	files       []*ast.File
+	info        *types.Info
+	fset        *token.FileSet
+	semanticIDs map[types.Object]string
+	receiverIDs map[types.Object]string
+}
+
+type snapshotSourceImporter struct {
+	snapshot    DocumentSnapshot
+	groups      map[string][]string
+	loaded      map[string]*checkedSessionPackage
+	checking    map[string]bool
+	diagnostics *[]SessionDiagnostic
+}
+
+func (loader *snapshotSourceImporter) Import(path string) (*types.Package, error) {
+	if unit := loader.loaded[path]; unit != nil {
+		return unit.pkg, nil
+	}
+	paths, local := loader.groups[path]
+	if !local {
+		return importer.Default().Import(path)
+	}
+	if loader.checking[path] {
+		return nil, fmt.Errorf("go.import_cycle:%s", path)
+	}
+	loader.checking[path] = true
+	defer delete(loader.checking, path)
+	fset := token.NewFileSet()
+	files := make([]*ast.File, 0, len(paths))
+	for _, name := range paths {
+		file, err := parser.ParseFile(fset, name, loader.snapshot.Files[name], parser.AllErrors|parser.ParseComments)
+		if err != nil {
+			*loader.diagnostics = append(*loader.diagnostics, parseDiagnostics(err)...)
+			return nil, err
+		}
+		files = append(files, file)
+	}
+	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
+	config := types.Config{Importer: loader, Error: func(err error) { *loader.diagnostics = append(*loader.diagnostics, typeDiagnostic(err)) }}
+	pkg, err := config.Check(path, fset, files, info)
+	if err != nil {
+		return nil, err
+	}
+	semanticIDs := map[types.Object]string{}
+	receiverIDs := map[types.Object]string{}
+	for _, file := range files {
+		for _, declaration := range file.Decls {
+			switch node := declaration.(type) {
+			case *ast.FuncDecl:
+				if id := semeIdentityDirective(node.Doc); id != "" {
+					semanticIDs[info.Defs[node.Name]] = id
+				}
+				if id := semeReceiverDirective(node.Doc); id != "" {
+					receiverIDs[info.Defs[node.Name]] = id
+				}
+			case *ast.GenDecl:
+				for _, spec := range node.Specs {
+					if typed, ok := spec.(*ast.TypeSpec); ok {
+						doc := typed.Doc
+						if doc == nil {
+							doc = node.Doc
+						}
+						if id := semeIdentityDirective(doc); id != "" {
+							semanticIDs[info.Defs[typed.Name]] = id
+						}
+					}
+				}
+			}
+		}
+	}
+	loader.loaded[path] = &checkedSessionPackage{path: path, pkg: pkg, files: files, info: info, fset: fset, semanticIDs: semanticIDs, receiverIDs: receiverIDs}
+	return pkg, nil
+}
+
+func semeIdentityDirective(group *ast.CommentGroup) string {
+	if group == nil {
+		return ""
+	}
+	for _, comment := range group.List {
+		value := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
+		if !strings.HasPrefix(value, "seme:id ") {
+			continue
+		}
+		id := strings.TrimSpace(strings.TrimPrefix(value, "seme:id "))
+		if len(id) != 32 {
+			continue
+		}
+		if _, err := hex.DecodeString(id); err == nil {
+			return id
+		}
+	}
+	return ""
+}
+
+func semeReceiverDirective(group *ast.CommentGroup) string {
+	if group == nil {
+		return ""
+	}
+	for _, comment := range group.List {
+		value := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
+		if !strings.HasPrefix(value, "seme:receiver ") {
+			continue
+		}
+		id := strings.TrimSpace(strings.TrimPrefix(value, "seme:receiver "))
+		if len(id) != 32 {
+			continue
+		}
+		if _, err := hex.DecodeString(id); err == nil {
+			return id
+		}
+	}
+	return ""
+}
+
+func checkSessionPackages(snapshot DocumentSnapshot) ([]*checkedSessionPackage, []SessionDiagnostic) {
+	module := snapshot.ModulePath
+	if module == "" {
+		module = snapshot.PackagePath
+	}
+	groups := map[string][]string{}
+	var diagnostics []SessionDiagnostic
+	for name, source := range snapshot.Files {
+		if filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		directory := filepath.ToSlash(filepath.Dir(name))
+		if directory == "." {
+			directory = ""
+		}
+		path := module
+		if directory != "" {
+			path += "/" + directory
+		}
+		groups[path] = append(groups[path], filepath.ToSlash(name))
+		_ = source
+	}
+	for path := range groups {
+		sort.Strings(groups[path])
+	}
+	// A single-package editor snapshot may use a semantic package identity that
+	// intentionally differs from its on-disk go.mod path. Preserve that
+	// long-standing mode while reserving ModulePath for genuine multi-package
+	// source closures.
+	if len(groups) == 1 && snapshot.PackagePath != module {
+		if rootFiles, exists := groups[module]; exists {
+			delete(groups, module)
+			groups[snapshot.PackagePath] = rootFiles
+		}
+	}
+	loader := &snapshotSourceImporter{snapshot: snapshot, groups: groups, loaded: map[string]*checkedSessionPackage{}, checking: map[string]bool{}, diagnostics: &diagnostics}
+	if _, err := loader.Import(snapshot.PackagePath); err != nil && len(diagnostics) == 0 {
+		diagnostics = append(diagnostics, SessionDiagnostic{Code: "go.type", Message: err.Error(), Severity: "error"})
+	}
+	paths := make([]string, 0, len(loader.loaded))
+	for path := range loader.loaded {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	units := make([]*checkedSessionPackage, 0, len(paths))
+	for _, path := range paths {
+		units = append(units, loader.loaded[path])
+	}
+	return units, sortedDiagnostics(diagnostics)
 }
 
 type goInterfaceInfo struct {
@@ -124,68 +295,49 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	if snapshot.PackagePath == "" {
 		return "", nil, []SessionDiagnostic{{Code: "session.package_path_missing", Message: "package path is required", Severity: "error"}}
 	}
-	paths := make([]string, 0, len(snapshot.Files))
-	for path := range snapshot.Files {
-		if filepath.Ext(path) == ".go" && !strings.HasSuffix(path, "_test.go") {
-			paths = append(paths, filepath.ToSlash(path))
-		}
-	}
-	sort.Strings(paths)
-	if len(paths) == 0 {
-		return "", nil, []SessionDiagnostic{{Code: "session.no_go_files", Message: "snapshot contains no non-test Go files", Severity: "error"}}
-	}
-	fset := token.NewFileSet()
-	files := make([]*ast.File, 0, len(paths))
-	var diagnostics []SessionDiagnostic
-	for _, path := range paths {
-		file, err := parser.ParseFile(fset, path, snapshot.Files[path], parser.AllErrors)
-		if err != nil {
-			diagnostics = append(diagnostics, parseDiagnostics(err)...)
-			continue
-		}
-		files = append(files, file)
-	}
-	if len(diagnostics) != 0 || len(files) != len(paths) {
-		return "", nil, sortedDiagnostics(diagnostics)
-	}
-	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}, Selections: map[*ast.SelectorExpr]*types.Selection{}}
-	config := types.Config{Importer: importer.Default(), Error: func(err error) {
-		diagnostics = append(diagnostics, typeDiagnostic(err))
-	}}
-	if _, err := config.Check(snapshot.PackagePath, fset, files, info); err != nil {
-		return "", nil, sortedDiagnostics(diagnostics)
+	units, diagnostics := checkSessionPackages(snapshot)
+	if len(diagnostics) != 0 || len(units) == 0 {
+		return "", nil, diagnostics
 	}
 	var functions []sessionFunction
-	for _, file := range files {
-		for _, declaration := range file.Decls {
-			fn, ok := declaration.(*ast.FuncDecl)
-			if !ok {
-				continue
+	for _, unit := range units {
+		for _, file := range unit.files {
+			for _, declaration := range file.Decls {
+				fn, ok := declaration.(*ast.FuncDecl)
+				if !ok {
+					continue
+				}
+				object, ok := unit.info.Defs[fn.Name].(*types.Func)
+				if !ok {
+					continue
+				}
+				signature, ok := object.Type().(*types.Signature)
+				if !ok {
+					continue
+				}
+				position := unit.fset.Position(fn.Pos())
+				declarationID := unit.semanticIDs[object]
+				if declarationID == "" {
+					declarationID = stableID("session-declaration", unit.path, fn.Name.Name)
+				}
+				if fn.Recv != nil {
+					receiverName := receiverTypeName(signature.Recv().Type())
+					if unit.semanticIDs[object] == "" {
+						declarationID = stableID("session-method", unit.path, receiverName, fn.Name.Name)
+					}
+				}
+				functions = append(functions, sessionFunction{
+					id: declarationID, name: fn.Name.Name,
+					fn: fn, sig: signature, info: unit.info, file: filepath.ToSlash(position.Filename), fset: unit.fset, method: fn.Recv != nil,
+					receiverID: unit.receiverIDs[object],
+				})
 			}
-			object, ok := info.Defs[fn.Name].(*types.Func)
-			if !ok {
-				continue
-			}
-			signature, ok := object.Type().(*types.Signature)
-			if !ok {
-				continue
-			}
-			position := fset.Position(fn.Pos())
-			declarationID := stableID("session-declaration", snapshot.PackagePath, fn.Name.Name)
-			if fn.Recv != nil {
-				receiverName := receiverTypeName(signature.Recv().Type())
-				declarationID = stableID("session-method", snapshot.PackagePath, receiverName, fn.Name.Name)
-			}
-			functions = append(functions, sessionFunction{
-				id: declarationID, name: fn.Name.Name,
-				fn: fn, sig: signature, info: info, file: filepath.ToSlash(position.Filename), fset: fset, method: fn.Recv != nil,
-			})
 		}
 	}
 	sort.Slice(functions, func(left, right int) bool { return functions[left].id < functions[right].id })
 	functionObjects := make(map[types.Object]string, len(functions))
 	for _, function := range functions {
-		functionObjects[info.Defs[function.fn.Name]] = function.id
+		functionObjects[function.info.Defs[function.fn.Name]] = function.id
 	}
 	integerID := stableID("execution", "type", "i64")
 	booleanID := stableID("execution", "type", "bool")
@@ -198,90 +350,122 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 		{bytesID, entity(bytesID, "00000000000000000000000000009041", nil)},
 	}
 	records := make(map[*types.Named]goRecordInfo)
-	for identifier, object := range info.Defs {
-		typeName, ok := object.(*types.TypeName)
-		if !ok {
-			continue
-		}
-		named, namedOK := typeName.Type().(*types.Named)
-		if !namedOK {
-			continue
-		}
-		structure, structOK := named.Underlying().(*types.Struct)
-		if !structOK || structure.NumFields() == 0 {
-			continue
-		}
-		recordID := stableID("execution", "record", snapshot.PackagePath, identifier.Name)
-		record := goRecordInfo{id: recordID, fields: map[*types.Var]string{}}
-		fieldIDs := make([]string, structure.NumFields())
-		var fieldEntities []graphEntity
-		valid := true
-		for index := 0; index < structure.NumFields(); index++ {
-			field := structure.Field(index)
-			typeID := integerID
-			if isBool(field.Type()) {
-				typeID = booleanID
-			} else if isPureString(field.Type()) {
-				typeID = stringID
-			} else if !isInt64(field.Type()) {
-				valid = false
-				break
+	for _, unit := range units {
+		for identifier, object := range unit.info.Defs {
+			typeName, ok := object.(*types.TypeName)
+			if !ok {
+				continue
 			}
-			fieldID := stableID("execution", recordID, "field", strconv.Itoa(index))
-			fieldIDs[index] = fieldID
-			record.fields[field] = fieldID
-			record.ordered = append(record.ordered, field)
-			fieldEntities = append(fieldEntities, graphEntity{fieldID, entity(fieldID, "00000000000000000000000000009031", []graphField{
-				bytesField(0x9310, field.Name()), refField(0x9311, typeID), unsignedField(0x9312, uint64(index)),
-			})})
+			named, namedOK := typeName.Type().(*types.Named)
+			if !namedOK {
+				continue
+			}
+			structure, structOK := named.Underlying().(*types.Struct)
+			if !structOK || structure.NumFields() == 0 {
+				continue
+			}
+			recordID := unit.semanticIDs[object]
+			if recordID == "" {
+				recordID = stableID("execution", "record", unit.path, identifier.Name)
+			}
+			record := goRecordInfo{id: recordID, fields: map[*types.Var]string{}}
+			fieldIDs := make([]string, structure.NumFields())
+			var fieldEntities []graphEntity
+			valid := true
+			for index := 0; index < structure.NumFields(); index++ {
+				field := structure.Field(index)
+				typeID := integerID
+				if isBool(field.Type()) {
+					typeID = booleanID
+				} else if isPureString(field.Type()) {
+					typeID = stringID
+				} else if isI64Slice(field.Type()) || isI64Map(field.Type()) || isBytes(field.Type()) {
+					typeID = goSemanticTypeIdentity(field.Type())
+					for _, typeEntity := range goBridgeTypeEntities(field.Type(), integerID, booleanID, stringID) {
+						if !hasGraphEntity(instances, typeEntity.id) {
+							instances = append(instances, typeEntity)
+						}
+					}
+				} else if !isInt64(field.Type()) {
+					valid = false
+					break
+				}
+				fieldID := stableID("execution", recordID, "field", strconv.Itoa(index))
+				fieldIDs[index] = fieldID
+				record.fields[field] = fieldID
+				record.ordered = append(record.ordered, field)
+				fieldEntities = append(fieldEntities, graphEntity{fieldID, entity(fieldID, "00000000000000000000000000009031", []graphField{
+					bytesField(0x9310, field.Name()), refField(0x9311, typeID), unsignedField(0x9312, uint64(index)),
+				})})
+			}
+			if valid {
+				records[named] = record
+				instances = append(instances, fieldEntities...)
+				instances = append(instances, graphEntity{recordID, entity(recordID, "00000000000000000000000000009030", []graphField{bytesField(0x9300, identifier.Name), refsField(0x9301, fieldIDs)})})
+			}
 		}
-		if valid {
-			records[named] = record
-			instances = append(instances, fieldEntities...)
-			instances = append(instances, graphEntity{recordID, entity(recordID, "00000000000000000000000000009030", []graphField{bytesField(0x9300, identifier.Name), refsField(0x9301, fieldIDs)})})
+	}
+	for _, function := range functions {
+		if !function.method || function.receiverID == "" {
+			continue
+		}
+		value := function.sig.Recv().Type()
+		if pointer, ok := value.(*types.Pointer); ok {
+			value = pointer.Elem()
+		}
+		if named, ok := value.(*types.Named); ok {
+			if record, exists := findGoRecord(records, named); exists {
+				record.receiverID = function.receiverID
+				records[named.Origin()] = record
+			}
 		}
 	}
 	var interfaces []goInterfaceInfo
-	for identifier, object := range info.Defs {
-		typeName, ok := object.(*types.TypeName)
-		if !ok {
-			continue
-		}
-		named, ok := typeName.Type().(*types.Named)
-		if !ok {
-			continue
-		}
-		contract, ok := named.Underlying().(*types.Interface)
-		if !ok {
-			continue
-		}
-		contract = contract.Complete()
-		interfaceID := stableID("execution", "interface", snapshot.PackagePath, identifier.Name)
-		declaration := goInterfaceInfo{named: named, id: interfaceID}
-		valid := contract.NumMethods() > 0
-		for index := 0; valid && index < contract.NumMethods(); index++ {
-			method := contract.Method(index)
-			signature, ok := method.Type().(*types.Signature)
-			if !ok || signature.Params().Len() != 1 || !isInt64(signature.Params().At(0).Type()) || signature.Results().Len() != 1 || !isInt64(signature.Results().At(0).Type()) {
-				valid = false
-				break
+	for _, unit := range units {
+		for identifier, object := range unit.info.Defs {
+			typeName, ok := object.(*types.TypeName)
+			if !ok {
+				continue
 			}
-			requirementID := stableID("execution", interfaceID, "requirement", method.Name())
-			declaration.requirements = append(declaration.requirements, method)
-			declaration.requirementIDs = append(declaration.requirementIDs, requirementID)
-			instances = append(instances, graphEntity{requirementID, entity(requirementID, "0000000000000000000000000000a011", []graphField{
-				bytesField(0xa0110, method.Name()), refsField(0xa0111, []string{integerID}), refField(0xa0112, integerID),
+			named, ok := typeName.Type().(*types.Named)
+			if !ok {
+				continue
+			}
+			contract, ok := named.Underlying().(*types.Interface)
+			if !ok {
+				continue
+			}
+			contract = contract.Complete()
+			interfaceID := unit.semanticIDs[object]
+			if interfaceID == "" {
+				interfaceID = stableID("execution", "interface", unit.path, identifier.Name)
+			}
+			declaration := goInterfaceInfo{named: named, id: interfaceID}
+			valid := contract.NumMethods() > 0
+			for index := 0; valid && index < contract.NumMethods(); index++ {
+				method := contract.Method(index)
+				signature, ok := method.Type().(*types.Signature)
+				if !ok || signature.Params().Len() != 1 || !isInt64(signature.Params().At(0).Type()) || signature.Results().Len() != 1 || !isInt64(signature.Results().At(0).Type()) {
+					valid = false
+					break
+				}
+				requirementID := stableID("execution", interfaceID, "requirement", method.Name())
+				declaration.requirements = append(declaration.requirements, method)
+				declaration.requirementIDs = append(declaration.requirementIDs, requirementID)
+				instances = append(instances, graphEntity{requirementID, entity(requirementID, "0000000000000000000000000000a011", []graphField{
+					bytesField(0xa0110, method.Name()), refsField(0xa0111, []string{integerID}), refField(0xa0112, integerID),
+				})})
+				functionObjects[method] = requirementID
+			}
+			if !valid {
+				continue
+			}
+			instances = append(instances, graphEntity{interfaceID, entity(interfaceID, "0000000000000000000000000000a010", []graphField{
+				bytesField(0xa0100, identifier.Name), refsField(0xa0101, declaration.requirementIDs),
 			})})
-			functionObjects[method] = requirementID
+			records[named] = goRecordInfo{id: interfaceID}
+			interfaces = append(interfaces, declaration)
 		}
-		if !valid {
-			continue
-		}
-		instances = append(instances, graphEntity{interfaceID, entity(interfaceID, "0000000000000000000000000000a010", []graphField{
-			bytesField(0xa0100, identifier.Name), refsField(0xa0101, declaration.requirementIDs),
-		})})
-		records[named] = goRecordInfo{id: interfaceID}
-		interfaces = append(interfaces, declaration)
 	}
 	for named, record := range records {
 		if _, isInterface := named.Underlying().(*types.Interface); isInterface {
@@ -353,7 +537,8 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 			}
 		}
 		if entryID == "" {
-			return "", nil, []SessionDiagnostic{{Code: "session.entry_missing", Message: "requested entry function is not supported", Severity: "error"}}
+			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.entry_missing", Message: "requested entry function is not supported", Severity: "error"})
+			return "", nil, sortedDiagnostics(diagnostics)
 		}
 	}
 	programID := stableID("session-program", snapshot.PackagePath)
@@ -496,7 +681,7 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		if !ok {
 			return diagnostic("session.unsupported_receiver_type", "value receiver must have a supported record type")
 		}
-		receiverID := goReceiverID(function.sig)
+		receiverID := goReceiverID(function.sig, records)
 		instances = append(instances,
 			graphEntity{receiverID, entity(receiverID, "0000000000000000000000000000a000", []graphField{bytesField(0xa0000, "self"), refField(0xa0001, receiverTypeID)})},
 			graphEntity{function.id, entity(function.id, "0000000000000000000000000000a002", []graphField{bytesField(0xa0020, function.name), refField(0xa0021, receiverID), refsField(0xa0022, parameterIDs), refField(0xa0023, resultTypeID), refField(0xa0024, bodyID)})},
@@ -516,8 +701,17 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	return instances, source, nil
 }
 
-func goReceiverID(signature *types.Signature) string {
+func goReceiverID(signature *types.Signature, records map[*types.Named]goRecordInfo) string {
 	receiver := signature.Recv()
+	value := receiver.Type()
+	if pointer, ok := value.(*types.Pointer); ok {
+		value = pointer.Elem()
+	}
+	if named, ok := value.(*types.Named); ok {
+		if record, exists := findGoRecord(records, named); exists && record.receiverID != "" {
+			return record.receiverID
+		}
+	}
 	return stableID("execution", "receiver", receiver.Pkg().Path(), receiverTypeName(receiver.Type()))
 }
 
@@ -532,6 +726,7 @@ func receiverTypeName(value types.Type) string {
 }
 
 func goTransitionTypes(value types.Type) (types.Type, types.Type, bool) {
+	value = types.Unalias(value)
 	named, ok := value.(*types.Named)
 	if !ok || named.Obj() == nil || named.Obj().Name() != "Transition" || named.TypeArgs() == nil || named.TypeArgs().Len() != 2 {
 		return nil, nil, false
@@ -552,6 +747,7 @@ func goTransitionTypeID(state, result types.Type) string {
 }
 
 func goSemanticTypeIdentity(value types.Type) string {
+	value = types.Unalias(value)
 	if isInt64(value) {
 		return stableID("execution", "type", "i64")
 	}
@@ -564,11 +760,20 @@ func goSemanticTypeIdentity(value types.Type) string {
 	if isBytes(value) {
 		return stableID("execution", "type", "bytes")
 	}
+	if isI64Slice(value) {
+		return stableID("execution", "type", "slice", "i64")
+	}
+	if isI64Map(value) {
+		return stableID("execution", "type", "map", "i64", "i64")
+	}
 	if item, ok := goOptionValueType(value); ok {
 		return stableID("execution", "type", "option", goSemanticTypeIdentity(item))
 	}
 	if success, failure, ok := goResultTypes(value); ok {
 		return stableID("execution", "type", "result", goSemanticTypeIdentity(success), goSemanticTypeIdentity(failure))
+	}
+	if state, result, ok := goTransitionTypes(value); ok {
+		return goTransitionTypeID(state, result)
 	}
 	if named, ok := value.(*types.Named); ok && named.Obj() != nil && named.Obj().Pkg() != nil {
 		return stableID("execution", "record", named.Obj().Pkg().Path(), named.Obj().Name())
@@ -577,6 +782,7 @@ func goSemanticTypeIdentity(value types.Type) string {
 }
 
 func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, records map[*types.Named]goRecordInfo) (string, bool) {
+	value = types.Unalias(value)
 	if isInt64(value) {
 		return integerID, true
 	}
@@ -616,6 +822,7 @@ func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, 
 }
 
 func goOptionValueType(value types.Type) (types.Type, bool) {
+	value = types.Unalias(value)
 	named, ok := value.(*types.Named)
 	if !ok || named.Obj() == nil || named.Obj().Name() != "Option" || named.TypeArgs().Len() != 1 {
 		return nil, false
@@ -628,6 +835,7 @@ func goOptionValueType(value types.Type) (types.Type, bool) {
 	return item, types.Identical(structure.Field(1).Type(), item)
 }
 func goResultTypes(value types.Type) (types.Type, types.Type, bool) {
+	value = types.Unalias(value)
 	named, ok := value.(*types.Named)
 	if !ok || named.Obj() == nil || named.Obj().Name() != "Result" || named.TypeArgs().Len() != 2 {
 		return nil, nil, false
@@ -640,6 +848,10 @@ func goResultTypes(value types.Type) (types.Type, types.Type, bool) {
 	return success, failure, types.Identical(structure.Field(1).Type(), success) && types.Identical(structure.Field(2).Type(), failure)
 }
 func goBridgeTypeEntities(value types.Type, integerID, booleanID, stringID string) []graphEntity {
+	if isI64Slice(value) {
+		id := stableID("execution", "type", "slice", "i64")
+		return []graphEntity{{id, entity(id, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})}}
+	}
 	if isI64Map(value) {
 		id := stableID("execution", "type", "map", "i64", "i64")
 		return []graphEntity{{id, entity(id, "0000000000000000000000000000a040", []graphField{refField(0xa0400, integerID), refField(0xa0401, integerID)})}}
@@ -657,6 +869,11 @@ func goBridgeTypeEntities(value types.Type, integerID, booleanID, stringID strin
 		entities := append(goBridgeTypeEntities(success, integerID, booleanID, stringID), goBridgeTypeEntities(failure, integerID, booleanID, stringID)...)
 		return append(entities, graphEntity{id, entity(id, "00000000000000000000000000009042", []graphField{refField(0x9400, successID), refField(0x9401, failureID)})})
 	}
+	if state, result, ok := goTransitionTypes(value); ok {
+		id, stateID, resultID := goTransitionTypeID(state, result), goSemanticTypeIdentity(state), goSemanticTypeIdentity(result)
+		entities := append(goBridgeTypeEntities(state, integerID, booleanID, stringID), goBridgeTypeEntities(result, integerID, booleanID, stringID)...)
+		return append(entities, graphEntity{id, entity(id, "0000000000000000000000000000a004", []graphField{refField(0xa0040, stateID), refField(0xa0041, resultID)})})
+	}
 	return nil
 }
 
@@ -666,6 +883,7 @@ func isI64Map(value types.Type) bool {
 }
 
 func goFunctionSignature(value types.Type) (*types.Signature, bool) {
+	value = types.Unalias(value)
 	if named, ok := value.(*types.Named); ok {
 		value = named.Underlying()
 	}

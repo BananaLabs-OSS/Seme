@@ -1,6 +1,6 @@
-# Go UAB-11 unscored implementation checkpoint
+# Go UAB-11 complete evidence
 
-This is progress evidence, not a completed cell claim.
+This document records the completed Go cumulative application cell.
 
 The ordinary Go fixture in `fixtures/go-uab-11` supplies three native packages
 (`model`, `policy`, and `application`) and the frozen cumulative behavior. Its
@@ -16,10 +16,15 @@ Shared canonical infrastructure now includes:
 - recursive transition layouts; and
 - deterministic recursive encoding/decoding of the cumulative boundary value.
 
-The Go cell remains unscored. `IncrementalSession` currently accepts one Go
-package snapshot, uses the installed-package importer, and admits only scalar
-record fields. The generic provider must gain source-module closure loading,
-aggregate and instantiated-generic types, comma-ok map lookup, and the remaining
-ordinary statements used by the fixture. The generic Wasm lowerer must then
-lower the resulting graph and its recursive ABI; no cumulative application or
-package-name dispatch is permitted.
+`IncrementalSession` now groups and type-checks source packages through a local
+module importer, emits one unified call graph, preserves semantic provenance,
+and handles the fixture's aggregate records, instantiated bridge types,
+comma-ok map lookup, closures, control flow, transitions, and effects. The
+projected ordinary Go program compiles, executes the native corpus, and
+re-lifts byte-identically.
+
+`scripts/check-go-uab-11.sh` proves all five evidence classes over 128
+independent sequences of 16 stateful commands. The same 2,048 observations
+agree through native and projected Go, generic canonical evaluation,
+standalone Wasm, and pinned Pulp. Capability denial and malformed source,
+canonical graph, and recursive ABI inputs reject atomically.

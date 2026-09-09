@@ -22,24 +22,26 @@ type Outcome = model.Result[model.Transition[State, int64], int64]
 
 func Apply(state State, command Command) Outcome {
 	oldCounter, found := state.Counters[command.Key]
-	if !found {
-		return model.Failure[model.Transition[State, int64]](int64(1))
+	if found {
+		if 0 <= command.Index && command.Index <= int64(len(state.Values))-1 {
+			index := command.Index
+			result := policy.Evaluate(state.Values, command.Scale, command.Delta, command.Amount)
+			if result.Ok {
+				adjusted := result.Value
+				values := append(slices.Replace(slices.Clone(state.Values), int(index), int(index)+1, adjusted), adjusted)
+				newCounter := oldCounter + adjusted
+				counters := func(input map[int64]int64, key, value int64) map[int64]int64 {
+					output := maps.Clone(input)
+					output[key] = value
+					return output
+				}(state.Counters, command.Key, newCounter)
+				next := State{Name: state.Name, Values: values, Counters: counters}
+				log.Print(true)
+				return Outcome{Ok: true, Value: model.Transition[State, int64]{State: next, Result: newCounter}}
+			}
+			return Outcome{Error: result.Error}
+		}
+		return Outcome{Error: 2}
 	}
-	if command.Index < 0 || command.Index >= int64(len(state.Values)) {
-		return model.Failure[model.Transition[State, int64]](int64(2))
-	}
-	result := policy.Evaluate(state.Values, command.Scale, command.Delta, command.Amount)
-	if !result.Ok {
-		return model.Failure[model.Transition[State, int64]](result.Error)
-	}
-	adjusted := result.Value
-	values := slices.Clone(state.Values)
-	values[command.Index] = adjusted
-	values = append(values, adjusted)
-	counters := maps.Clone(state.Counters)
-	newCounter := oldCounter + adjusted
-	counters[command.Key] = newCounter
-	next := State{Name: state.Name, Values: values, Counters: counters}
-	log.Print(true)
-	return model.Success[model.Transition[State, int64], int64](model.Transition[State, int64]{State: next, Result: newCounter})
+	return Outcome{Error: 1}
 }

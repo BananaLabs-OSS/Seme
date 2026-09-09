@@ -893,7 +893,7 @@ func pureStringModule(parameters []pureValueType, result pureValueType, helper [
 		parameterWasm[index] = parameter.wasm
 	}
 	helperResults := []byte{result.wasm}
-	if result.name == "transition:i64,i64" || result.name == "result:i64,i64" {
+	if isI64PairResult(result.name) {
 		helperResults = []byte{0x7e, 0x7e}
 	}
 	functionType(&types, parameterWasm, helperResults)
@@ -1018,7 +1018,7 @@ func stringConcatBody() []byte {
 func stringProviderBody(parameters []pureValueType, result pureValueType, abi PureABI) []byte {
 	var body bytes.Buffer
 	// cursor plus result temporary.
-	if result.name == "transition:i64,i64" || result.name == "result:i64,i64" {
+	if isI64PairResult(result.name) {
 		body.Write([]byte{2, 1, 0x7f, 2, 0x7e})
 	} else {
 		body.Write([]byte{2, 1, 0x7f, 1, result.wasm})
@@ -1103,7 +1103,7 @@ func stringProviderBody(parameters []pureValueType, result pureValueType, abi Pu
 		offset += parameter.size
 	}
 	body.Write([]byte{0x10, 5})
-	if result.name == "transition:i64,i64" || result.name == "result:i64,i64" {
+	if isI64PairResult(result.name) {
 		body.Write([]byte{0x21, 8, 0x21, 7})
 	} else {
 		body.Write([]byte{0x21, 7})
@@ -1154,7 +1154,7 @@ func stringProviderBody(parameters []pureValueType, result pureValueType, abi Pu
 		body.Write([]byte{0x20, 5, 0x20, 7, 0x42, 32, 0x88, 0xa7, 0x36, 2, 0, 0x41, 0, 0x0b})
 		return body.Bytes()
 	}
-	if result.name == "transition:i64,i64" || result.name == "result:i64,i64" {
+	if isI64PairResult(result.name) {
 		constI32(&body, stringScratch)
 		body.Write([]byte{0x20, 7, 0x37, 3, 0})
 		constI32(&body, stringScratch+8)
@@ -1178,4 +1178,12 @@ func stringProviderBody(parameters []pureValueType, result pureValueType, abi Pu
 	sleb(&body, int64(result.size))
 	body.Write([]byte{0x36, 2, 0, 0x41, 0, 0x0b})
 	return body.Bytes()
+}
+
+// isI64PairResult centralizes the physical multi-value result classification.
+// The composed target retains the more precise ABI name for a transition whose
+// state is a single-i64 record, but it has the same two-i64 Wasm realization as
+// the original scalar transition and result pair profiles.
+func isI64PairResult(name string) bool {
+	return name == "transition:i64,i64" || name == "state-transition:record:i64,i64" || name == "result:i64,i64"
 }

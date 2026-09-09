@@ -572,6 +572,51 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 	for index, raw := range statements {
 		switch statement := raw.(type) {
 		case *ast.AssignStmt:
+			// Go's two-result map lookup is one semantic operation. Normalize its
+			// value and presence results into ordinary immutable bindings backed by
+			// MapLookupOption, so later stages never need Go's tuple convention.
+			if statement.Tok == token.DEFINE && len(statement.Lhs) == 2 && len(statement.Rhs) == 1 {
+				lookup, ok := ast.Unparen(statement.Rhs[0]).(*ast.IndexExpr)
+				mapping, mapOK := info.TypeOf(lookup.X).Underlying().(*types.Map)
+				if !ok || !mapOK || !isInt64(mapping.Key()) || !isInt64(mapping.Elem()) {
+					return nil, fmt.Errorf("control.multi_binding_shape")
+				}
+				mapExpression, err := analyzeGoExpressionWithProgram(lookup.X, signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
+				keyExpression, err := analyzeGoExpressionWithProgram(lookup.Index, signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
+				optionType := stableID("execution", "type", "option", goSemanticTypeIdentity(mapping.Elem()))
+				newLookup := func() *goExpression {
+					return &goExpression{kind: goMapLookupOption, left: mapExpression, right: keyExpression, typeID: optionType}
+				}
+				for resultIndex, target := range statement.Lhs {
+					name, nameOK := target.(*ast.Ident)
+					if !nameOK || name.Name == "_" {
+						return nil, fmt.Errorf("control.multi_binding_target")
+					}
+					object := info.Defs[name]
+					if object == nil {
+						return nil, fmt.Errorf("control.local_binding_type")
+					}
+					local := *next
+					*next++
+					var initializer *goExpression
+					localType := "i64"
+					if resultIndex == 0 {
+						initializer = &goExpression{kind: goOptionMatch, left: newLookup(), initial: &goExpression{kind: goIntegerLiteral}, body: &goExpression{kind: goVariantRead}, text: "value", typeID: goSemanticTypeIdentity(mapping.Elem())}
+					} else {
+						localType = "bool"
+						initializer = &goExpression{kind: goOptionMatch, left: newLookup(), initial: &goExpression{kind: goBooleanLiteral}, body: &goExpression{kind: goBooleanLiteral, boolean: true}, text: "value", typeID: goSemanticTypeIdentity(mapping.Elem())}
+					}
+					block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer, mutable: mutable[object]})
+					locals[object] = local
+				}
+				continue
+			}
 			if (statement.Tok != token.DEFINE && statement.Tok != token.ASSIGN) || len(statement.Lhs) != 1 || len(statement.Rhs) != 1 {
 				return nil, fmt.Errorf("control.local_binding_shape")
 			}
@@ -588,7 +633,10 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			}
 			named, isRecord := object.Type().(*types.Named)
 			_, recordSupported := records[named]
-			if !isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type()) && !isI64Slice(object.Type()) && !isI64Map(object.Type()) && !(isRecord && recordSupported) {
+			_, _, isResult := goResultTypes(object.Type())
+			functionSignature, isFunction := goFunctionSignature(object.Type())
+			isFunction = isFunction && isUnaryI64Function(functionSignature)
+			if !isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type()) && !isI64Slice(object.Type()) && !isI64Map(object.Type()) && !isResult && !isFunction && !(isRecord && recordSupported) {
 				return nil, fmt.Errorf("control.local_binding_type")
 			}
 			initializer, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
@@ -621,6 +669,12 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if isI64Map(object.Type()) {
 				localType = stableID("execution", "type", "map", "i64", "i64")
 			}
+			if isResult {
+				localType = goSemanticTypeIdentity(object.Type())
+			}
+			if isFunction {
+				localType = goFunctionTypeID(functionSignature)
+			}
 			block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer, mutable: mutable[object]})
 			locals[object] = local
 		case *ast.ReturnStmt:
@@ -644,9 +698,6 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				}
 				block.statements = append(block.statements, &goStatement{condition: condition, whenBlock: body})
 				continue
-			}
-			if index != 0 && len(block.statements) != index {
-				return nil, fmt.Errorf("control.statement_order")
 			}
 			branch, err := analyzeTerminalIfScoped(statement, statements[index+1:], signature, info, locals, functions, records, mutable, next)
 			if err != nil {
