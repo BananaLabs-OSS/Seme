@@ -208,3 +208,15 @@ source. Verification ran in an automatically removed temporary copy; the
 repository, Pulp checkout, and workstation configuration were not modified.
 No software, dependency, global setting, SSH setting, or persistent environment
 configuration was installed or changed.
+
+## 2026-09-09 — UAB-v1 UAB-01 language bridges
+
+Go and JavaScript UAB-01 verification used the existing workstation Go 1.26
+and Node 22 toolchains, Seme bootstrap, repository-local dependencies, and
+pinned Pulp source. Lua verification reused Neovim 0.11.2's existing embedded
+LuaJIT 2.1 runtime with all XDG data, state, and cache paths redirected to an
+automatically removed temporary directory. An initial local Go build could not
+download Go 1.26 because of the restricted environment and made no change; the
+official gates were rerun successfully with the existing workstation Go 1.26
+toolchain. No software, dependency, global setting, SSH setting, or persistent
+environment configuration was installed or changed.

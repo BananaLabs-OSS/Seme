@@ -122,6 +122,86 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
   return compose(moduleG1, stableID("session-revision", packagePath, String(revision)), entities);
 }
 
+// Lift one semantic JavaScript package from independently parsed ECMAScript
+// modules. File order is deliberately irrelevant: paths establish the stable
+// package snapshot order, while semantic identities remain package/name based.
+// The bounded package profile accepts only relative named imports between files
+// in the supplied snapshot; imports affect native module linkage, not Core
+// meaning, and are removed before the already-certified declaration lift.
+export function liftJavaScriptPackage({ files, packagePath, revision, moduleG1, entryName }) {
+  if (!Array.isArray(files) || files.length < 2) fail("javascript_package.requires_multiple_files");
+  const normalized = files.map((file) => {
+    if (!file || typeof file.path !== "string" || typeof file.source !== "string") fail("javascript_package.invalid_file");
+    const path = normalizePackagePath(file.path);
+    return { path, source: file.source };
+  }).sort((left, right) => left.path.localeCompare(right.path));
+  if (new Set(normalized.map((file) => file.path)).size !== normalized.length) fail("javascript_package.duplicate_file");
+  const available = new Set(normalized.map((file) => file.path));
+  const chunks = [];
+  const ranges = [];
+  let nextLine = 1;
+  for (const file of normalized) {
+    let program;
+    try {
+      program = parse(file.source, { ecmaVersion: 2024, sourceType: "module", locations: true });
+    } catch (error) {
+      const location = error.loc ? `:${file.path}:${error.loc.line}:${error.loc.column + 1}` : `:${file.path}`;
+      throw new Error(`javascript.parse${location}`);
+    }
+    for (const declaration of program.body.filter((item) => item.type === "ImportDeclaration")) {
+      if (!declaration.source || typeof declaration.source.value !== "string" || !declaration.source.value.startsWith(".") || declaration.specifiers.some((item) => item.type !== "ImportSpecifier")) {
+        throw new Error(`javascript_package.unsupported_import:${file.path}:${declaration.loc.start.line}:${declaration.loc.start.column + 1}`);
+      }
+      const target = resolvePackageImport(file.path, declaration.source.value);
+      if (!available.has(target)) throw new Error(`javascript_package.import_missing:${file.path}:${declaration.loc.start.line}:${declaration.loc.start.column + 1}`);
+    }
+    let cursor = 0;
+    let stripped = "";
+    for (const declaration of program.body.filter((item) => item.type === "ImportDeclaration")) {
+      stripped += file.source.slice(cursor, declaration.start);
+      stripped += file.source.slice(declaration.start, declaration.end).replace(/[^\n]/g, " ");
+      cursor = declaration.end;
+    }
+    stripped += file.source.slice(cursor);
+    const lineCount = stripped.split("\n").length;
+    ranges.push({ path: file.path, first: nextLine, last: nextLine + lineCount - 1 });
+    chunks.push(stripped);
+    nextLine += lineCount;
+  }
+  try {
+    return liftJavaScript({ source: chunks.join("\n"), packagePath, revision, moduleG1, entryName });
+  } catch (error) {
+    const located = /^(javascript\.[^:]+):(\d+):(\d+)$/.exec(error.message);
+    if (!located) throw error;
+    const line = Number(located[2]);
+    const range = ranges.find((item) => line >= item.first && line <= item.last);
+    if (!range) throw error;
+    throw new Error(`${located[1]}:${range.path}:${line - range.first + 1}:${located[3]}`);
+  }
+}
+
+function normalizePackagePath(path) {
+  if (path.startsWith("/") || path.includes("\\") || path.split("/").some((part) => part === "" || part === "." || part === "..")) fail("javascript_package.invalid_path");
+  return path;
+}
+
+function resolvePackageImport(from, specifier) {
+  const parts = from.split("/");
+  parts.pop();
+  for (const part of specifier.split("/")) {
+    if (part === "." || part === "") continue;
+    if (part === "..") {
+      if (!parts.length) fail("javascript_package.import_escape");
+      parts.pop();
+    } else {
+      parts.push(part);
+    }
+  }
+  let resolved = parts.join("/");
+  if (!/\.[cm]?js$/.test(resolved)) resolved += ".js";
+  return resolved;
+}
+
 function readSignature(comments, fn) {
   const comment = [...comments].reverse().find((item) => item.type === "Block" && item.end <= fn.start && sourceGapIsWhitespace(item.end, fn.start, fn));
   if (!comment || !comment.value.startsWith("*")) fail("javascript.missing_jsdoc", fn.loc.start);

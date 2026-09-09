@@ -170,9 +170,13 @@ interface dispatch with explicit satisfaction witnesses; and immutable lexical
 closures with explicit environments; and explicitly state-threaded mutable
 closure environments; and runtime-keyed maps composed through collection
 folds. Go and JavaScript have native parity and projection evidence for
-selected shapes.
+selected shapes. A direct bounded Lua provider and projector now cover the
+UAB-01 Boolean function/call slice without using either language as an
+intermediate representation.
 
-The repository does **not** yet justify a nonzero UAB-v1 cell score because:
+The repository currently justifies 3/36 UAB-v1 cells: UAB-01 passes all five
+evidence classes independently for Go, JavaScript, and Lua. It does not yet
+justify any other cell because:
 
 - the Core checkpoint sequence and both cumulative architectural composition
   gates are complete, establishing the prerequisite for this profile;
@@ -181,11 +185,12 @@ The repository does **not** yet justify a nonzero UAB-v1 cell score because:
 - some Go and JavaScript provider recognition remains deliberately
   shape-constrained;
 - JavaScript projection does not cover its general runtime semantics; and
-- no Lua provider, projector, native oracle suite, or conformance column exists.
+- the Lua bridge deliberately supports only the first bounded Boolean
+  function/call profile.
 
-Until the 36 cells have machine-readable results, the dashboard reports 0/36
-profile cells alongside any clearly labeled historical estimate; it must not
-convert that estimate into a profile score.
+The machine-readable scorecard records all 36 cells and reports only cells
+whose complete gates pass. Historical estimates remain separate and must not
+be converted into profile scores.
 
 ## Delivery sequence after Core v30
 

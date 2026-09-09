@@ -11,7 +11,7 @@ Percentages answer different questions and must not be conflated:
 | Collection sequence | 100% | All five planned checkpoints v21 through v25 are implemented and independently gated. This is completion of that bounded sequence, not all collection behavior. |
 | Bounded Go/JavaScript semantic bridge | about 82% | Estimate for the deliberately supported, tested language subset—not either complete language. |
 | Useful small-application subset | about 75% | Estimate against the semantics needed for modest deterministic applications. |
-| Useful Application Bridge Profile v1 | 0/36 cells | The denominator is now frozen, but no cell is scored until all five required evidence classes pass; Core composition is its prerequisite, not a substitute. |
+| Useful Application Bridge Profile v1 | 3/36 cells (8.33%) | UAB-01 passes all five evidence classes independently for Go, JavaScript, and Lua. The other 33 cells remain unclaimed. |
 | Broad Go/JavaScript ecosystem compatibility | under 5% | Real packages depend on much larger language, runtime, standard-library, build, and foreign-interface surfaces. |
 | Universal-language vision | about 2% | Only Go and JavaScript have bounded adapters; universal multi-runtime interoperability remains a long-horizon goal. |
 
