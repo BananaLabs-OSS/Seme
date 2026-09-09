@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -36,10 +37,10 @@ type Toolchain struct {
 }
 
 type Policy struct {
-	TrackedExtensions, IgnoredPrefixes, VendoredPrefixes []string
-	GeneratedHeader                                      []byte
-	MaxFiles                                             int
-	MaxFileBytes, MaxTotalBytes                          int64
+	TrackedExtensions, IgnoredPrefixes, IgnoredSuffixes, VendoredPrefixes []string
+	GeneratedHeader                                                       []byte
+	MaxFiles                                                              int
+	MaxFileBytes, MaxTotalBytes                                           int64
 }
 type Unit struct {
 	Path         string
@@ -54,6 +55,56 @@ type Snapshot struct {
 	Units                         []Unit
 }
 
+// ValidateSnapshot checks a detached inventory without reading source bytes.
+func ValidateSnapshot(s Snapshot) error {
+	if s.RootIdentity == "" || s.Toolchain.Language == "" || s.Toolchain.Toolchain == "" || s.Toolchain.Profile == "" || s.Toolchain.SemanticRevision == "" {
+		return fmt.Errorf("project_source.identity")
+	}
+	if len(s.Units) == 0 {
+		return fmt.Errorf("project_source.empty")
+	}
+	if len(s.ContentRevision) != 64 {
+		return fmt.Errorf("project_source.revision_shape")
+	}
+	if _, err := hex.DecodeString(s.ContentRevision); err != nil {
+		return fmt.Errorf("project_source.revision_shape")
+	}
+	prior := ""
+	for i, u := range s.Units {
+		if err := validPath(u.Path); err != nil {
+			return err
+		}
+		if i > 0 && u.Path <= prior {
+			return fmt.Errorf("project_source.unit_order:%s", u.Path)
+		}
+		prior = u.Path
+		if u.Size < 0 {
+			return fmt.Errorf("project_source.unit_size:%s", u.Path)
+		}
+		digest, err := hex.DecodeString(u.SHA256)
+		if err != nil || len(digest) != sha256.Size {
+			return fmt.Errorf("project_source.unit_digest:%s", u.Path)
+		}
+		switch u.Class {
+		case Tracked, Ignored, Generated, Vendored, Opaque:
+		default:
+			return fmt.Errorf("project_source.unit_class:%s", u.Path)
+		}
+		switch u.Preservation {
+		case ByteExact, SemanticProjection:
+		default:
+			return fmt.Errorf("project_source.unit_preservation:%s", u.Path)
+		}
+		if (u.Class == Tracked) != (u.Preservation == SemanticProjection) {
+			return fmt.Errorf("project_source.unit_preservation_mapping:%s", u.Path)
+		}
+	}
+	if revision(s) != s.ContentRevision {
+		return fmt.Errorf("project_source.revision_mismatch")
+	}
+	return nil
+}
+
 func Discover(root, identity string, toolchain Toolchain, policy Policy) (Snapshot, error) {
 	if identity == "" || toolchain.Language == "" || toolchain.Toolchain == "" || toolchain.Profile == "" || toolchain.SemanticRevision == "" {
 		return Snapshot{}, fmt.Errorf("project_source.identity")
@@ -65,12 +116,13 @@ func Discover(root, identity string, toolchain Toolchain, policy Policy) (Snapsh
 	if err != nil {
 		return Snapshot{}, err
 	}
-	info, err := os.Lstat(abs)
-	if err != nil {
-		return Snapshot{}, err
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil || resolved != abs {
+		return Snapshot{}, fmt.Errorf("project_source.root_symlink_component")
 	}
-	if !info.IsDir() {
-		return Snapshot{}, fmt.Errorf("project_source.root_not_directory")
+	rootInfo, err := os.Lstat(abs)
+	if err != nil || rootInfo.Mode()&os.ModeSymlink != 0 || !rootInfo.IsDir() {
+		return Snapshot{}, fmt.Errorf("project_source.root_not_plain_directory")
 	}
 	var units []Unit
 	var total int64
@@ -89,7 +141,7 @@ func Discover(root, identity string, toolchain Toolchain, policy Policy) (Snapsh
 		if e = validPath(slash); e != nil {
 			return e
 		}
-		info, e = d.Info()
+		info, e := d.Info()
 		if e != nil {
 			return e
 		}
@@ -112,7 +164,7 @@ func Discover(root, identity string, toolchain Toolchain, policy Policy) (Snapsh
 		if total > policy.MaxTotalBytes {
 			return fmt.Errorf("project_source.total_size")
 		}
-		data, e := os.ReadFile(path)
+		data, e := readRegular(abs, path, policy.MaxFileBytes)
 		if e != nil {
 			return e
 		}
@@ -137,7 +189,41 @@ func Discover(root, identity string, toolchain Toolchain, policy Policy) (Snapsh
 	sort.Slice(units, func(i, j int) bool { return units[i].Path < units[j].Path })
 	out := Snapshot{RootIdentity: identity, Toolchain: toolchain, Units: units}
 	out.ContentRevision = revision(out)
+	if err := ValidateSnapshot(out); err != nil {
+		return Snapshot{}, err
+	}
 	return out, nil
+}
+
+func readRegular(root, path string, limit int64) ([]byte, error) {
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil || resolved != path || !strings.HasPrefix(path, root+string(filepath.Separator)) {
+		return nil, fmt.Errorf("project_source.symlink_component:%s", path)
+	}
+	before, err := os.Lstat(path)
+	if err != nil || before.Mode()&os.ModeSymlink != 0 || !before.Mode().IsRegular() {
+		return nil, fmt.Errorf("project_source.not_plain_file:%s", path)
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !opened.Mode().IsRegular() || !os.SameFile(before, opened) {
+		return nil, fmt.Errorf("project_source.changed_file:%s", path)
+	}
+	data, err := io.ReadAll(io.LimitReader(file, limit+1))
+	if err != nil || int64(len(data)) > limit {
+		return nil, fmt.Errorf("project_source.read_file:%s", path)
+	}
+	after, err := file.Stat()
+	pathAfter, pathErr := os.Lstat(path)
+	resolvedAfter, resolveErr := filepath.EvalSymlinks(path)
+	if err != nil || pathErr != nil || resolveErr != nil || resolvedAfter != path || pathAfter.Mode()&os.ModeSymlink != 0 || !os.SameFile(before, after) || !os.SameFile(before, pathAfter) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return nil, fmt.Errorf("project_source.changed_file:%s", path)
+	}
+	return data, nil
 }
 
 func Verify(root string, expected Snapshot, policy Policy) error {
@@ -156,6 +242,31 @@ func Verify(root string, expected Snapshot, policy Policy) error {
 	return nil
 }
 
+// ReadVerified returns one inventoried file only when the root is plain and
+// the currently opened bytes still match the unit's declared size and digest.
+func ReadVerified(root string, unit Unit) ([]byte, error) {
+	abs, err := filepath.Abs(root)
+	if err != nil {
+		return nil, err
+	}
+	resolved, err := filepath.EvalSymlinks(abs)
+	if err != nil || resolved != abs {
+		return nil, fmt.Errorf("project_source.root_symlink_component")
+	}
+	if err := validPath(unit.Path); err != nil {
+		return nil, err
+	}
+	data, err := readRegular(abs, filepath.Join(abs, filepath.FromSlash(unit.Path)), unit.Size)
+	if err != nil {
+		return nil, err
+	}
+	digest := sha256.Sum256(data)
+	if int64(len(data)) != unit.Size || hex.EncodeToString(digest[:]) != unit.SHA256 {
+		return nil, fmt.Errorf("project_source.digest_drift:%s", unit.Path)
+	}
+	return data, nil
+}
+
 func validatePolicy(p *Policy) error {
 	if p.MaxFiles <= 0 || p.MaxFileBytes <= 0 || p.MaxTotalBytes <= 0 || p.MaxFileBytes > p.MaxTotalBytes {
 		return fmt.Errorf("project_source.bounds")
@@ -169,6 +280,13 @@ func validatePolicy(p *Policy) error {
 			return fmt.Errorf("project_source.extension_policy:%s", x)
 		}
 		ext[x] = true
+	}
+	suffix := map[string]bool{}
+	for _, x := range p.IgnoredSuffixes {
+		if x == "" || strings.ContainsAny(x, "/\\") || suffix[x] {
+			return fmt.Errorf("project_source.suffix_policy:%s", x)
+		}
+		suffix[x] = true
 	}
 	seen := map[string]Class{}
 	for _, group := range []struct {
@@ -215,6 +333,9 @@ func classify(path string, data []byte, p Policy) (Class, error) {
 	ignored, vendored := false, false
 	for _, x := range p.IgnoredPrefixes {
 		ignored = ignored || strings.HasPrefix(path, x)
+	}
+	for _, x := range p.IgnoredSuffixes {
+		ignored = ignored || strings.HasSuffix(path, x)
 	}
 	for _, x := range p.VendoredPrefixes {
 		vendored = vendored || strings.HasPrefix(path, x)
