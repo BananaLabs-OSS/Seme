@@ -25,11 +25,11 @@ type Value struct {
 	ValueType     string           `json:"value_type,omitempty"`
 	Variant       string           `json:"variant,omitempty"`
 	Payload       *Value           `json:"payload,omitempty"`
+	State         *Value           `json:"state,omitempty"`
+	Result        *Value           `json:"result,omitempty"`
 	interfaceType wire.ID
 	witness       wire.ID
 	closure       *closureValue
-	state         *Value
-	result        *Value
 }
 type closureValue struct {
 	typeID     wire.ID
@@ -137,6 +137,11 @@ func validateType(g wire.Envelope, x wire.ID, visiting map[wire.ID]bool, budget 
 			return er
 		}
 		return recurse(0x9401)
+	case id(0xa004):
+		if er := recurse(0xa0040); er != nil {
+			return er
+		}
+		return recurse(0xa0041)
 	case id(0x9030):
 		v, er := field(e, 0x9301)
 		if er != nil || v.Tag != 7 || len(v.List) == 0 {
@@ -294,6 +299,18 @@ func validateValue(g wire.Envelope, typeID wire.ID, v Value, budget int) error {
 			return fmt.Errorf("result_type")
 		}
 		return validateValue(g, inner.Reference, *v.Payload, budget-1)
+	case id(0xa004):
+		stateType, se := field(t, 0xa0040)
+		resultType, re := field(t, 0xa0041)
+		if se != nil || re != nil || stateType.Tag != 6 || resultType.Tag != 6 || v.Kind != "transition" || v.State == nil || v.Result == nil {
+			return fmt.Errorf("transition")
+		}
+		if e := validateValue(g, stateType.Reference, *v.State, budget-1); e != nil {
+			return fmt.Errorf("transition_state:%w", e)
+		}
+		if e := validateValue(g, resultType.Reference, *v.Result, budget-1); e != nil {
+			return fmt.Errorf("transition_result:%w", e)
+		}
 	default:
 		return fmt.Errorf("unsupported_type")
 	}
@@ -378,6 +395,10 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 	}
 	if e.Schema == id(0xa068) {
 		t, err := field(e, 0xa0680)
+		return t.Reference, err == nil && t.Tag == 6
+	}
+	if e.Schema == id(0xa005) {
+		t, err := field(e, 0xa0050)
 		return t.Reference, err == nil && t.Tag == 6
 	}
 	return wire.ID{}, false
@@ -653,7 +674,26 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return result, nil
 		}
 		state := Value{Kind: "closure", closure: next}
-		return Value{Kind: "transition", state: &state, result: &result}, nil
+		return Value{Kind: "transition", State: &state, Result: &result}, nil
+	case id(0xa005):
+		typeID, te := refField(0xa0050)
+		stateID, se := refField(0xa0051)
+		resultID, re := refField(0xa0052)
+		transitionType, exists := g.Entities[typeID]
+		stateType, ste := field(transitionType, 0xa0040)
+		resultType, rte := field(transitionType, 0xa0041)
+		if te != nil || se != nil || re != nil || !exists || transitionType.Schema != id(0xa004) || ste != nil || rte != nil || stateType.Tag != 6 || resultType.Tag != 6 {
+			return Value{}, fmt.Errorf("canonicaleval.transition")
+		}
+		state, err := eval(g, stateID, env, budget-1)
+		if err != nil || validateValue(g, stateType.Reference, state, budget-1) != nil {
+			return Value{}, fmt.Errorf("canonicaleval.transition_state")
+		}
+		result, err := eval(g, resultID, env, budget-1)
+		if err != nil || validateValue(g, resultType.Reference, result, budget-1) != nil {
+			return Value{}, fmt.Errorf("canonicaleval.transition_result")
+		}
+		return Value{Kind: "transition", State: &state, Result: &result}, nil
 	case id(0xa032):
 		capture, ce := refField(0xa0320)
 		valueID, ve := refField(0xa0321)
@@ -696,13 +736,13 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 		}
 		transitionID, er := refField(key)
 		transition, err := eval(g, transitionID, env, budget-1)
-		if er != nil || err != nil || transition.Kind != "transition" || transition.state == nil || transition.result == nil {
+		if er != nil || err != nil || transition.Kind != "transition" || transition.State == nil || transition.Result == nil {
 			return Value{}, fmt.Errorf("canonicaleval.transition_projection")
 		}
 		if e.Schema == id(0xa006) {
-			return *transition.state, nil
+			return *transition.State, nil
 		}
-		return *transition.result, nil
+		return *transition.Result, nil
 	case id(0xa001):
 		receiver, er := refField(0xa0010)
 		if er != nil {

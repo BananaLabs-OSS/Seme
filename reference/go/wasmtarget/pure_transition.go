@@ -65,6 +65,36 @@ func certifyPureTransitionFunction(graph wire.Envelope, program, function wire.E
 		return nil, PureABI{}, fmt.Errorf("wasm.transition_entry_return")
 	}
 	call := graph.Entities[values.List[0].Reference]
+	if call.Schema == identity(0xa005) {
+		directGraph, normalizeErr := normalizePureLocals(graph, body.Reference, parameterTypes)
+		if normalizeErr != nil {
+			return nil, PureABI{}, normalizeErr
+		}
+		transition := directGraph.Entities[values.List[0].Reference]
+		typeRef, typeErr := field(transition, 0xa0050)
+		state, stateErr := field(transition, 0xa0051)
+		result, resultErr := field(transition, 0xa0052)
+		if typeErr != nil || stateErr != nil || resultErr != nil || typeRef.Tag != 6 || typeRef.Reference != transitionType.ID || state.Tag != 6 || result.Tag != 6 {
+			return nil, PureABI{}, fmt.Errorf("wasm.transition_value")
+		}
+		actualStateType, stateTypeErr := directTransitionExpressionType(directGraph, state.Reference, map[wire.ID]bool{}, 32)
+		actualResultType, resultTypeErr := directTransitionExpressionType(directGraph, result.Reference, map[wire.ID]bool{}, 32)
+		if stateTypeErr != nil || resultTypeErr != nil || actualStateType != stateType.Reference || actualResultType != valueType.Reference {
+			return nil, PureABI{}, fmt.Errorf("wasm.transition_value_type")
+		}
+		locals := map[wire.ID]byte{parameterIDs[0]: 0, parameterIDs[1]: 1}
+		stateCode, lowerErr := lowerTransitionI64(directGraph, state.Reference, locals, nil, map[wire.ID]bool{})
+		if lowerErr != nil {
+			return nil, PureABI{}, lowerErr
+		}
+		resultCode, lowerErr := lowerTransitionI64(directGraph, result.Reference, locals, nil, map[wire.ID]bool{})
+		if lowerErr != nil {
+			return nil, PureABI{}, lowerErr
+		}
+		abi := transitionABI(graph, program, function)
+		wasm, lowerErr := pureTransitionModule(stateCode, resultCode, abi)
+		return wasm, abi, lowerErr
+	}
 	receiver, rErr := field(call, 0xa0030)
 	methodValue, mErr := field(call, 0xa0031)
 	arguments, argsErr := field(call, 0xa0032)
@@ -134,11 +164,98 @@ func certifyPureTransitionFunction(graph wire.Envelope, program, function wire.E
 	if err != nil {
 		return nil, PureABI{}, err
 	}
-	abi := PureABI{Contract: "seme.pure-abi/v1", Provider: "seme.function-v1", Target: "wasm32-pulp-reactor-v1", Fidelity: "exact", CanonicalModule: graph.Module.String(), CanonicalRevision: graph.Revision.String(), CanonicalProgram: program.ID.String(), Function: function.ID.String(), RequestSize: 16, ResponseSize: 16,
-		Parameters: []PureABIField{{Index: 0, Type: "record:i64", Offset: 0, Size: 8, Encoding: "little-endian-i64"}, {Index: 1, Type: "i64", Offset: 8, Size: 8, Encoding: "little-endian-i64"}},
-		Result:     PureABIField{Index: 0, Type: "state-transition:record:i64,i64", Offset: 0, Size: 16, Encoding: "state-then-result-little-endian-i64"}}
+	abi := transitionABI(graph, program, function)
 	wasm, err := pureTransitionModule(stateCode, resultCode, abi)
 	return wasm, abi, err
+}
+
+func directTransitionExpressionType(graph wire.Envelope, expressionID wire.ID, visiting map[wire.ID]bool, budget int) (wire.ID, error) {
+	if budget == 0 || visiting[expressionID] {
+		return wire.ID{}, fmt.Errorf("wasm.transition_expression_cycle_or_budget")
+	}
+	visiting[expressionID] = true
+	defer delete(visiting, expressionID)
+	expression, ok := graph.Entities[expressionID]
+	if !ok {
+		return wire.ID{}, fmt.Errorf("wasm.transition_expression_type")
+	}
+	referenceType := func(entity wire.Entity, key uint64) (wire.ID, error) {
+		value, err := field(entity, key)
+		if err != nil || value.Tag != 6 {
+			return wire.ID{}, fmt.Errorf("wasm.transition_expression_type")
+		}
+		return value.Reference, nil
+	}
+	switch expression.Schema {
+	case identity(0x9013):
+		parameterID, err := referenceType(expression, 0x9130)
+		parameter, exists := graph.Entities[parameterID]
+		if err != nil || !exists || parameter.Schema != identity(0x9012) {
+			return wire.ID{}, fmt.Errorf("wasm.transition_expression_type")
+		}
+		return referenceType(parameter, 0x9121)
+	case identity(0x9032):
+		baseID, baseErr := referenceType(expression, 0x9320)
+		memberID, memberErr := referenceType(expression, 0x9321)
+		baseType, typeErr := directTransitionExpressionType(graph, baseID, visiting, budget-1)
+		record, recordExists := graph.Entities[baseType]
+		members, membersErr := field(record, 0x9301)
+		member, memberExists := graph.Entities[memberID]
+		owned := false
+		if membersErr == nil && members.Tag == 7 {
+			for _, candidate := range members.List {
+				owned = owned || candidate.Tag == 6 && candidate.Reference == memberID
+			}
+		}
+		if baseErr != nil || memberErr != nil || typeErr != nil || !recordExists || record.Schema != identity(0x9030) || !memberExists || member.Schema != identity(0x9031) || !owned {
+			return wire.ID{}, fmt.Errorf("wasm.transition_expression_type")
+		}
+		return referenceType(member, 0x9311)
+	case identity(0x9033):
+		typeID, typeErr := referenceType(expression, 0x9330)
+		values, valuesErr := field(expression, 0x9331)
+		record := graph.Entities[typeID]
+		members, membersErr := field(record, 0x9301)
+		if typeErr != nil || valuesErr != nil || membersErr != nil || record.Schema != identity(0x9030) || values.Tag != 7 || members.Tag != 7 || len(values.List) != len(members.List) {
+			return wire.ID{}, fmt.Errorf("wasm.transition_expression_type")
+		}
+		for i := range values.List {
+			if values.List[i].Tag != 6 || members.List[i].Tag != 6 {
+				return wire.ID{}, fmt.Errorf("wasm.transition_expression_type")
+			}
+			actual, err := directTransitionExpressionType(graph, values.List[i].Reference, visiting, budget-1)
+			memberType, memberErr := referenceType(graph.Entities[members.List[i].Reference], 0x9311)
+			if err != nil || memberErr != nil || actual != memberType {
+				return wire.ID{}, fmt.Errorf("wasm.transition_expression_type")
+			}
+		}
+		return typeID, nil
+	case identity(0x9014), identity(0x9090):
+		leftField, rightField, typeField := uint64(0x9140), uint64(0x9141), uint64(0x9142)
+		if expression.Schema == identity(0x9090) {
+			leftField, rightField, typeField = 0x9900, 0x9901, 0x9902
+		}
+		leftID, leftErr := referenceType(expression, leftField)
+		rightID, rightErr := referenceType(expression, rightField)
+		resultType, resultErr := referenceType(expression, typeField)
+		leftType, leftTypeErr := directTransitionExpressionType(graph, leftID, visiting, budget-1)
+		rightType, rightTypeErr := directTransitionExpressionType(graph, rightID, visiting, budget-1)
+		if leftErr != nil || rightErr != nil || resultErr != nil || leftTypeErr != nil || rightTypeErr != nil || leftType != resultType || rightType != resultType {
+			return wire.ID{}, fmt.Errorf("wasm.transition_expression_type")
+		}
+		if scalar, err := pureType(graph, resultType); err != nil || scalar.name != "i64" {
+			return wire.ID{}, fmt.Errorf("wasm.transition_expression_type")
+		}
+		return resultType, nil
+	default:
+		return wire.ID{}, fmt.Errorf("wasm.transition_expression_type")
+	}
+}
+
+func transitionABI(graph wire.Envelope, program, function wire.Entity) PureABI {
+	return PureABI{Contract: "seme.pure-abi/v1", Provider: "seme.function-v1", Target: "wasm32-pulp-reactor-v1", Fidelity: "exact", CanonicalModule: graph.Module.String(), CanonicalRevision: graph.Revision.String(), CanonicalProgram: program.ID.String(), Function: function.ID.String(), RequestSize: 16, ResponseSize: 16,
+		Parameters: []PureABIField{{Index: 0, Type: "record:i64", Offset: 0, Size: 8, Encoding: "little-endian-i64"}, {Index: 1, Type: "i64", Offset: 8, Size: 8, Encoding: "little-endian-i64"}},
+		Result:     PureABIField{Index: 0, Type: "state-transition:record:i64,i64", Offset: 0, Size: 16, Encoding: "state-then-result-little-endian-i64"}}
 }
 
 func validateSingleI64Record(graph wire.Envelope, id wire.ID) error {

@@ -336,4 +336,17 @@ function Seme.protocol_dispatch(condition, when_false, when_true, requirement, r
   return Seme.dynamic_call(Seme.interface_value(implementation, receiver), requirement, argument)
 end
 
+function Seme.immutable_closure_run(base, value)
+  local captured = base
+  local closure = function(argument) return Seme.add(captured, argument) end
+  return closure(value)
+end
+
+function Seme.mutable_closure_run(start, first, second)
+  local captured = start
+  local closure = function(delta) captured = Seme.add(captured, delta); return captured end
+  closure(first)
+  return closure(second)
+end
+
 return Seme

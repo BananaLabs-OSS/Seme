@@ -1,0 +1,12 @@
+{
+  "immutable": [
+    {"name":"capture-positive","arguments":["5","7"],"result":"12"},
+    {"name":"capture-negative","arguments":["-5","2"],"result":"-3"},
+    {"name":"capture-wrap","arguments":["9223372036854775807","1"],"result":"-9223372036854775808"}
+  ],
+  "mutable": [
+    {"name":"mutation-persists","arguments":["10","3","4"],"result":"17"},
+    {"name":"order-distinguishes","arguments":["1","20","2"],"result":"23"},
+    {"name":"mutation-wrap","arguments":["9223372036854775807","1","1"],"result":"-9223372036854775807"}
+  ]
+}
