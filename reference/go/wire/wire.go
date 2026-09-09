@@ -29,6 +29,7 @@ type Value struct {
 	Reference ID
 	List      []Value
 	Record    map[ID]Value
+	Hole      ID
 }
 type Entity struct {
 	ID, Schema ID
@@ -80,12 +81,17 @@ func Decode(data []byte) (Envelope, error) {
 		if err != nil {
 			return Envelope{}, err
 		}
+		if len(out.Parents) > 0 && !idLess(out.Parents[len(out.Parents)-1], id) {
+			return Envelope{}, errors.New("wire.parents_order")
+		}
 		out.Parents = append(out.Parents, id)
 	}
 	count, err := r.uleb()
 	if err != nil {
 		return Envelope{}, err
 	}
+	var previous ID
+	first := true
 	for ; count > 0; count-- {
 		entity, err := r.entity()
 		if err != nil {
@@ -94,6 +100,10 @@ func Decode(data []byte) (Envelope, error) {
 		if _, exists := out.Entities[entity.ID]; exists {
 			return Envelope{}, errors.New("wire.duplicate_entity")
 		}
+		if !first && !idLess(previous, entity.ID) {
+			return Envelope{}, errors.New("wire.entities_order")
+		}
+		previous, first = entity.ID, false
 		out.Entities[entity.ID] = entity
 	}
 	if r.position != len(data) {
@@ -119,6 +129,8 @@ func (r *reader) entity() (Entity, error) {
 		return Entity{}, err
 	}
 	entity := Entity{ID: id, Schema: schema, Version: version, Fields: map[ID]Value{}}
+	var previous ID
+	first := true
 	for ; count > 0; count-- {
 		field, err := r.id()
 		if err != nil {
@@ -128,6 +140,13 @@ func (r *reader) entity() (Entity, error) {
 		if err != nil {
 			return Entity{}, err
 		}
+		if _, exists := entity.Fields[field]; exists {
+			return Entity{}, errors.New("wire.duplicate_field")
+		}
+		if !first && !idLess(previous, field) {
+			return Entity{}, errors.New("wire.fields_order")
+		}
+		previous, first = field, false
 		entity.Fields[field] = value
 	}
 	return entity, nil
@@ -162,6 +181,8 @@ func (r *reader) value() (Value, error) {
 		var n uint64
 		n, err = r.uleb()
 		v.Record = map[ID]Value{}
+		var previous ID
+		first := true
 		for ; err == nil && n > 0; n-- {
 			var field ID
 			field, err = r.id()
@@ -170,10 +191,17 @@ func (r *reader) value() (Value, error) {
 			}
 			var item Value
 			item, err = r.value()
+			if _, exists := v.Record[field]; exists {
+				return Value{}, errors.New("wire.duplicate_record_field")
+			}
+			if !first && !idLess(previous, field) {
+				return Value{}, errors.New("wire.record_order")
+			}
+			previous, first = field, false
 			v.Record[field] = item
 		}
 	case 9:
-		_, err = r.id()
+		v.Hole, err = r.id()
 	default:
 		err = fmt.Errorf("wire.tag:%d", v.Tag)
 	}
@@ -198,15 +226,31 @@ func (r *reader) take(n int) ([]byte, error) {
 }
 func (r *reader) uleb() (uint64, error) {
 	var value uint64
+	count := 0
 	for shift := uint(0); shift < 64; shift += 7 {
 		b, err := r.take(1)
 		if err != nil {
 			return 0, err
 		}
+		count++
+		if shift == 63 && b[0]&0xfe != 0 {
+			return 0, errors.New("wire.uleb_overflow")
+		}
 		value |= uint64(b[0]&0x7f) << shift
 		if b[0]&0x80 == 0 {
+			if count > 1 && b[0] == 0 {
+				return 0, errors.New("wire.uleb_noncanonical")
+			}
 			return value, nil
 		}
 	}
 	return 0, errors.New("wire.uleb")
+}
+func idLess(a, b ID) bool {
+	for i := range a {
+		if a[i] != b[i] {
+			return a[i] < b[i]
+		}
+	}
+	return false
 }

@@ -6,7 +6,7 @@ mechanics. Its collision-audited module identity is `...e000`, revision
 `...e001`.
 
 `ProjectIdentity` contains the stable project name. `ProjectSnapshot` contains
-that identity, a content-derived revision digest as bytes, an ordered nonempty
+that identity, a 32-byte SHA-256 content revision, an ordered nonempty
 list of Package Contract v1 `Package` references, one root Package contained in
 that list, and one Core Execution v35 `ExecutableProgram` reference.
 
@@ -19,12 +19,25 @@ This version defines structure only. Providers do not yet emit snapshots, and
 it does not define package discovery, dependency resolution, workspace layout,
 or projection policy.
 
-## Unclaimed snapshot invariants
+## Snapshot digest and validation
 
-No ProjectSnapshot conformance claim is made yet. A subsequent instance
-validator must reject an empty package list, a root outside that list, a
-Program whose functions are not owned by the listed package contracts,
-duplicate Package identities, unordered package references, and a revision
-that is not the specified digest of immutable canonical snapshot content.
-Until that validator and its malformed fixtures land, v1 proves the module's
-schema, imports, identities, generation, and wire validity only.
+The revision is SHA-256 over the domain bytes `project-snapshot-v1` followed by
+a zero byte, the raw 16-byte identity, each ordered raw Package identity, the
+root and Program identities, and deterministic typed encodings for the
+identity, every listed Package, the Program, and all entities transitively
+referenced by them. Thus changing package metadata, Program membership, or
+function semantics invalidates a stale revision. The instance validator
+requires exactly one snapshot and requires the envelope's own Module entity to
+contain a Kernel Import resolving Project Contract `...e000` exactly to
+revision `...e001`; ancestry alone is not authority. It also requires sorted
+unique and nonempty Package references, the root
+exactly once in that list, Package v1 and ExecutableProgram schemas on
+referenced entities, and the matching digest.
+Package-to-function ownership remains a Package Contract concern and is not
+claimed by this structural validator.
+
+The validator consumes canonical `.seme` wire bytes through the shared typed
+wire decoder, not construction G1 text. Value tags, entity versions,
+record members, list items, references, and hole identities participate in the
+digest. Duplicate entity fields or record members and malformed envelope or
+count framing reject during wire decoding before project semantics run.
