@@ -89,6 +89,19 @@ const (
 	sSatisfactionWitness = "0000000000000000000000000000a012"
 	sInterfaceValue      = "0000000000000000000000000000a013"
 	sDynamicMethodCall   = "0000000000000000000000000000a014"
+	sFunctionType        = "0000000000000000000000000000a020"
+	sCaptureBinding      = "0000000000000000000000000000a021"
+	sCaptureRead         = "0000000000000000000000000000a022"
+	sClosureConstruct    = "0000000000000000000000000000a023"
+	sIndirectCall        = "0000000000000000000000000000a024"
+	sTransitionState     = "0000000000000000000000000000a006"
+	sTransitionResult    = "0000000000000000000000000000a007"
+	sMutableCapture      = "0000000000000000000000000000a030"
+	sMutableCaptureRead  = "0000000000000000000000000000a031"
+	sCaptureUpdate       = "0000000000000000000000000000a032"
+	sSequence            = "0000000000000000000000000000a033"
+	sMutableClosure      = "0000000000000000000000000000a034"
+	sStatefulCall        = "0000000000000000000000000000a035"
 )
 
 type entity struct {
@@ -96,15 +109,17 @@ type entity struct {
 	fields     map[string][]string
 }
 type context struct {
-	graph      map[string]entity
-	functions  map[string]string
-	parameters map[string]string
-	records    map[string]record
-	locals     map[string]string
-	iterations map[string]string
-	variants   map[string]string
-	methods    map[string]string
-	receivers  map[string]string
+	graph       map[string]entity
+	functions   map[string]string
+	parameters  map[string]string
+	records     map[string]record
+	locals      map[string]string
+	iterations  map[string]string
+	variants    map[string]string
+	methods     map[string]string
+	receivers   map[string]string
+	captures    map[string]string
+	transitions map[string]string
 }
 type record struct {
 	name   string
@@ -314,7 +329,7 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 		if e != nil {
 			return nil, e
 		}
-		body, e := projectBlock(bodyID, context{graph: graph, functions: names, parameters: params, records: records, locals: map[string]string{}, iterations: map[string]string{}, variants: map[string]string{}, methods: methods, receivers: map[string]string{receiverID: "self"}})
+		body, e := projectBlock(bodyID, context{graph: graph, functions: names, parameters: params, records: records, locals: map[string]string{}, iterations: map[string]string{}, variants: map[string]string{}, methods: methods, receivers: map[string]string{receiverID: "self"}, captures: map[string]string{}, transitions: map[string]string{}})
 		if e != nil {
 			return nil, e
 		}
@@ -360,7 +375,7 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 		if e != nil {
 			return nil, e
 		}
-		body, e := projectBlock(bodyID, context{graph: graph, functions: names, parameters: params, records: records, locals: map[string]string{}, iterations: map[string]string{}, variants: map[string]string{}, methods: methods, receivers: map[string]string{}})
+		body, e := projectBlock(bodyID, context{graph: graph, functions: names, parameters: params, records: records, locals: map[string]string{}, iterations: map[string]string{}, variants: map[string]string{}, methods: methods, receivers: map[string]string{}, captures: map[string]string{}, transitions: map[string]string{}})
 		if e != nil {
 			return nil, e
 		}
@@ -381,6 +396,16 @@ func projectBlock(id string, c context) (string, error) {
 	statements, err := refs(b, "00000000000000000000000000009800")
 	if err != nil || len(statements) == 0 {
 		return "", fmt.Errorf("go_projection.unsupported_block")
+	}
+	if len(statements) == 1 {
+		if returned, ok := c.graph[statements[0]]; ok && returned.schema == sReturn {
+			values, e := refs(returned, "00000000000000000000000000009810")
+			if e == nil && len(values) == 1 {
+				if closure, ok := c.graph[values[0]]; ok && closure.schema == sMutableClosure {
+					return projectMutableClosureReturn(closure, c)
+				}
+			}
+		}
 	}
 	lines := []string{}
 	for index, statementID := range statements {
@@ -409,6 +434,12 @@ func projectBlock(id string, c context) (string, error) {
 			initializer, err := expr(initializerID, c)
 			if err != nil {
 				return "", err
+			}
+			if initialEntity, ok := c.graph[initializerID]; ok && initialEntity.schema == sStatefulCall {
+				lines = append(lines, "\t"+initializer)
+				c.transitions[bindingID] = initializer
+				c.locals[bindingID] = name
+				continue
 			}
 			lines = append(lines, "\t"+name+" := "+initializer)
 			c.locals[bindingID] = name
@@ -447,6 +478,9 @@ func projectBlock(id string, c context) (string, error) {
 			valueID, err := ref(statement, "00000000000000000000000000009e31")
 			if err != nil {
 				return "", err
+			}
+			if state, ok := c.graph[valueID]; ok && state.schema == sTransitionState {
+				continue
 			}
 			value, err := expr(valueID, c)
 			if err != nil {
@@ -618,6 +652,94 @@ func projectTaggedReturn(id string, c context) ([]string, bool, error) {
 	return []string{"\tif " + value + ".Ok {", indentBlock(okText), "\t}", errorText}, true, nil
 }
 func indentBlock(value string) string { return "\t" + strings.ReplaceAll(value, "\n", "\n\t") }
+
+func projectMutableClosureReturn(closure entity, c context) (string, error) {
+	parameters, err := refs(closure, "000000000000000000000000000a0341")
+	if err != nil || len(parameters) != 1 {
+		return "", fmt.Errorf("go_projection.mutable_closure_parameter")
+	}
+	captures, err := refs(closure, "000000000000000000000000000a0342")
+	if err != nil || len(captures) != 1 {
+		return "", fmt.Errorf("go_projection.mutable_closure_capture")
+	}
+	bodyID, err := ref(closure, "000000000000000000000000000a0343")
+	if err != nil {
+		return "", err
+	}
+	capture, ok := c.graph[captures[0]]
+	if !ok || capture.schema != sMutableCapture {
+		return "", fmt.Errorf("go_projection.mutable_closure_capture")
+	}
+	captureName, err := text(capture, "000000000000000000000000000a0300")
+	if err != nil || !identifier(captureName) {
+		return "", fmt.Errorf("go_projection.mutable_closure_capture")
+	}
+	initialID, err := ref(capture, "000000000000000000000000000a0302")
+	if err != nil {
+		return "", err
+	}
+	initial, err := expr(initialID, c)
+	if err != nil {
+		return "", err
+	}
+	parameter, ok := c.graph[parameters[0]]
+	if !ok || parameter.schema != sParameter {
+		return "", fmt.Errorf("go_projection.mutable_closure_parameter")
+	}
+	parameterName, err := text(parameter, "00000000000000000000000000009120")
+	if err != nil || !identifier(parameterName) {
+		return "", fmt.Errorf("go_projection.mutable_closure_parameter")
+	}
+	typeID, err := ref(parameter, "00000000000000000000000000009121")
+	if err != nil {
+		return "", err
+	}
+	typ, err := typeName(c.graph, typeID)
+	if err != nil {
+		return "", err
+	}
+	sequence, ok := c.graph[bodyID]
+	if !ok || sequence.schema != sSequence {
+		return "", fmt.Errorf("go_projection.mutable_closure_sequence")
+	}
+	steps, err := refs(sequence, "000000000000000000000000000a0330")
+	if err != nil || len(steps) != 1 {
+		return "", fmt.Errorf("go_projection.mutable_closure_sequence")
+	}
+	update, ok := c.graph[steps[0]]
+	if !ok || update.schema != sCaptureUpdate {
+		return "", fmt.Errorf("go_projection.mutable_closure_update")
+	}
+	updatedCapture, err := ref(update, "000000000000000000000000000a0320")
+	if err != nil || updatedCapture != captures[0] {
+		return "", fmt.Errorf("go_projection.mutable_closure_update")
+	}
+	updatedID, err := ref(update, "000000000000000000000000000a0321")
+	if err != nil {
+		return "", err
+	}
+	resultID, err := ref(sequence, "000000000000000000000000000a0331")
+	if err != nil {
+		return "", err
+	}
+	next := c
+	next.parameters = cloneNames(c.parameters)
+	next.captures = cloneNames(c.captures)
+	next.parameters[parameters[0]] = parameterName
+	next.captures[captures[0]] = captureName
+	updated, err := expr(updatedID, next)
+	if err != nil {
+		return "", err
+	}
+	if strings.HasPrefix(updated, "(") && strings.HasSuffix(updated, ")") {
+		updated = updated[1 : len(updated)-1]
+	}
+	result, err := expr(resultID, next)
+	if err != nil {
+		return "", err
+	}
+	return "\t" + captureName + " := " + initial + "\n\treturn func(" + parameterName + " " + typ + ") int64 {\n\t\t" + captureName + " = " + updated + "\n\t\treturn " + result + "\n\t}", nil
+}
 
 func projectFoldReturn(resultID string, c context) ([]string, bool, error) {
 	foldID := resultID
@@ -1168,6 +1290,159 @@ func expr(id string, c context) (string, error) {
 			}
 		}
 		return r + "." + name + "(" + strings.Join(args, ", ") + ")", nil
+	case sCaptureRead:
+		binding, err := ref(e, "000000000000000000000000000a0220")
+		if err != nil {
+			return "", err
+		}
+		value, ok := c.captures[binding]
+		if !ok {
+			return "", fmt.Errorf("go_projection.capture_scope")
+		}
+		return value, nil
+	case sClosureConstruct:
+		typeID, err := ref(e, "000000000000000000000000000a0230")
+		if err != nil {
+			return "", err
+		}
+		parameters, err := refs(e, "000000000000000000000000000a0231")
+		if err != nil {
+			return "", err
+		}
+		captures, err := refs(e, "000000000000000000000000000a0232")
+		if err != nil {
+			return "", err
+		}
+		bodyID, err := ref(e, "000000000000000000000000000a0233")
+		if err != nil {
+			return "", err
+		}
+		functionType, ok := c.graph[typeID]
+		if !ok || functionType.schema != sFunctionType {
+			return "", fmt.Errorf("go_projection.closure_type")
+		}
+		typeParams, err := refs(functionType, "000000000000000000000000000a0200")
+		if err != nil || len(typeParams) != len(parameters) {
+			return "", fmt.Errorf("go_projection.closure_arity")
+		}
+		resultID, err := ref(functionType, "000000000000000000000000000a0201")
+		if err != nil {
+			return "", err
+		}
+		result, err := typeName(c.graph, resultID)
+		if err != nil {
+			return "", err
+		}
+		next := c
+		next.parameters = cloneNames(c.parameters)
+		next.captures = cloneNames(c.captures)
+		declarations := make([]string, len(parameters))
+		for i, pid := range parameters {
+			p, ok := c.graph[pid]
+			if !ok || p.schema != sParameter {
+				return "", fmt.Errorf("go_projection.closure_parameter")
+			}
+			name, er := text(p, "00000000000000000000000000009120")
+			if er != nil || !identifier(name) {
+				return "", fmt.Errorf("go_projection.closure_parameter")
+			}
+			typ, er := typeName(c.graph, typeParams[i])
+			if er != nil {
+				return "", er
+			}
+			next.parameters[pid] = name
+			declarations[i] = name + " " + typ
+		}
+		for _, captureID := range captures {
+			binding, ok := c.graph[captureID]
+			if !ok || binding.schema != sCaptureBinding {
+				return "", fmt.Errorf("go_projection.closure_capture")
+			}
+			captured, er := ref(binding, "000000000000000000000000000a0212")
+			if er != nil {
+				return "", er
+			}
+			rendered, er := expr(captured, c)
+			if er != nil {
+				return "", er
+			}
+			next.captures[captureID] = rendered
+		}
+		body, err := expr(bodyID, next)
+		if err != nil {
+			return "", err
+		}
+		return "func(" + strings.Join(declarations, ", ") + ") " + result + " { return " + body + " }", nil
+	case sIndirectCall:
+		callee, err := ref(e, "000000000000000000000000000a0240")
+		if err != nil {
+			return "", err
+		}
+		arguments, err := refs(e, "000000000000000000000000000a0241")
+		if err != nil {
+			return "", err
+		}
+		fn, err := expr(callee, c)
+		if err != nil {
+			return "", err
+		}
+		args := make([]string, len(arguments))
+		for i, a := range arguments {
+			args[i], err = expr(a, c)
+			if err != nil {
+				return "", err
+			}
+		}
+		return fn + "(" + strings.Join(args, ", ") + ")", nil
+	case sMutableCaptureRead:
+		binding, err := ref(e, "000000000000000000000000000a0310")
+		if err != nil {
+			return "", err
+		}
+		value, ok := c.captures[binding]
+		if !ok {
+			return "", fmt.Errorf("go_projection.mutable_capture_scope")
+		}
+		return value, nil
+	case sStatefulCall:
+		callee, err := ref(e, "000000000000000000000000000a0350")
+		if err != nil {
+			return "", err
+		}
+		arguments, err := refs(e, "000000000000000000000000000a0351")
+		if err != nil {
+			return "", err
+		}
+		fn, err := expr(callee, c)
+		if err != nil {
+			return "", err
+		}
+		args := make([]string, len(arguments))
+		for i, a := range arguments {
+			args[i], err = expr(a, c)
+			if err != nil {
+				return "", err
+			}
+		}
+		return fn + "(" + strings.Join(args, ", ") + ")", nil
+	case sTransitionResult, sTransitionState:
+		fieldID := "000000000000000000000000000a0070"
+		if e.schema == sTransitionState {
+			fieldID = "000000000000000000000000000a0060"
+		}
+		valueID, err := ref(e, fieldID)
+		if err != nil {
+			return "", err
+		}
+		if read, ok := c.graph[valueID]; ok && read.schema == sLocalRead {
+			binding, er := ref(read, "00000000000000000000000000009d20")
+			if er == nil {
+				if value, yes := c.transitions[binding]; yes {
+					return value, nil
+				}
+			}
+		}
+		return expr(valueID, c)
 	case sSliceConstruct:
 		typeID, err := ref(e, "000000000000000000000000000a0680")
 		if err != nil {
@@ -1417,6 +1692,27 @@ func typeName(g map[string]entity, id string) (string, error) {
 			return "", fmt.Errorf("go_projection.invalid_interface_name")
 		}
 		return name, nil
+	case sFunctionType:
+		parameters, err := refs(e, "000000000000000000000000000a0200")
+		if err != nil {
+			return "", err
+		}
+		resultID, err := ref(e, "000000000000000000000000000a0201")
+		if err != nil {
+			return "", err
+		}
+		rendered := make([]string, len(parameters))
+		for i, p := range parameters {
+			rendered[i], err = typeName(g, p)
+			if err != nil {
+				return "", err
+			}
+		}
+		result, err := typeName(g, resultID)
+		if err != nil {
+			return "", err
+		}
+		return "func(" + strings.Join(rendered, ", ") + ") " + result, nil
 	case sFixedArrayType:
 		element, err := ref(e, "00000000000000000000000000009f20")
 		if err != nil {
