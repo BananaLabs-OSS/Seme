@@ -249,8 +249,11 @@ function mapValueDescriptor(typeID, context) {
   return type.slice("seme.".length);
 }
 function mapExpressionDescriptor(expressionID, context) {
-  const expression = required(context.graph, expressionID, schema.read);
-  const parameter = required(context.graph, reference(field(expression, 0x9130)), schema.parameter);
-  return mapValueDescriptor(reference(field(parameter, 0x9121)), context);
+  const expression = required(context.graph, expressionID);
+  if(expression.schema===schema.read){const parameter=required(context.graph,reference(field(expression,0x9130)),schema.parameter);return mapValueDescriptor(reference(field(parameter,0x9121)),context);}
+  if(expression.schema===schema.emptyMap)return mapValueDescriptor(reference(field(expression,0xa0410)),context);
+  if(expression.schema===schema.mapUpdate)return mapExpressionDescriptor(reference(field(expression,0xa0430)),context);
+  if(expression.schema===schema.mapRemove)return mapExpressionDescriptor(reference(field(expression,0xa0670)),context);
+  fail("lua_projection.map_expression_type");
 }
 function fail(code) { throw new Error(code); }

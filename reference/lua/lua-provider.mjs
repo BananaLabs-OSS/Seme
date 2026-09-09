@@ -301,6 +301,12 @@ function parseExpression(text, file, line) {
     if (arguments_.length !== 2) fail("lua.add_arity", { file, line, column: 1 });
     return { kind: "add", left: parseExpression(arguments_[0], file, line), right: parseExpression(arguments_[1], file, line), location: { file, line, column: 1 } };
   }
+  const nestedFold=/^Seme\.fold\((.*),\s*([A-Za-z_][A-Za-z0-9_]*),\s*function\(([A-Za-z_][A-Za-z0-9_]*),\s*([A-Za-z_][A-Za-z0-9_]*)\)\s*return\s*Seme\.add\(\3,\s*\4\)\s*end\)$/.exec(text);
+  if(nestedFold&&nestedFold[1].includes("Seme."))return{kind:"nested_fold",arguments:[parseExpression(nestedFold[1],file,line),parseExpression(nestedFold[2],file,line)],accumulator:nestedFold[3],element:nestedFold[4],location:{file,line,column:1}};
+  const nestedLookup=/^Seme\.lookup_zero\((.*),\s*([A-Za-z_][A-Za-z0-9_]*),\s*"(i64|text|bytes)"\)$/.exec(text);
+  if(nestedLookup&&nestedLookup[1].includes("Seme."))return{kind:"nested_lookup_zero",arguments:[parseExpression(nestedLookup[1],file,line),parseExpression(nestedLookup[2],file,line)],descriptor:nestedLookup[3],location:{file,line,column:1}};
+  const nested=/^Seme\.(slice|collection_append|collection_update|slice_remove|length|index_zero|map_update|map_remove)\((.*)\)$/.exec(text);
+  if(nested&&nested[2].includes("Seme.")){const arguments_=splitCallArguments(nested[2],file,line).map(value=>parseExpression(value,file,line));return{kind:`nested_${nested[1]}`,arguments:arguments_,location:{file,line,column:1}};}
   const composite = /^Seme\.match_option\(([A-Za-z_][A-Za-z0-9_]*), false, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.match_result\(\2, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.bytes_equal\(\3, Seme\.bytes_literal\("([^"]*)"\)\) end, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.text_equal\(\5, "([^"]*)"\) end\) end\)$/.exec(text);
   if (composite) return { kind: "composite_match", value: composite[1], some: composite[2], ok: composite[3], bytes: composite[4], error: composite[5], text: composite[6], location: { file, line, column: 1 } };
   const field = /^Seme\.field\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\)$/.exec(text);
@@ -343,6 +349,7 @@ function parseExpression(text, file, line) {
 function findTopLevelOperator(value, operator) { let depth = 0, quoted = false; for (let index = 0; index <= value.length - operator.length; index += 1) { const c = value[index]; if (c === '"' && value[index - 1] !== "\\") quoted = !quoted; else if (!quoted && c === "(") depth += 1; else if (!quoted && c === ")") depth -= 1; if (!quoted && depth === 0 && value.slice(index, index + operator.length) === operator) return index; } return -1; }
 
 function emitExpression(expression, context, path) {
+  if(expression.kind.startsWith("nested_"))return emitNestedExpression(expression,context.description.resultType,context,path);
   if (expression.kind === "identifier") {
     const index = context.description.parameters.findIndex((parameter) => parameter.name === expression.name);
     if (index < 0) fail("lua.unknown_identifier", expression.location);
@@ -411,6 +418,24 @@ function emitExpression(expression, context, path) {
   const id = stableID("execution", context.description.id, "expression", path, "call");
   context.additions.push(graphEntity(id, entity(id, schema.call, [[0x9600, ref(callee.id)], [0x9601, refs(arguments_)]])));
   return id;
+}
+
+function emitNestedExpression(expression,expected,context,path){
+  // Nested expressions can introduce collection types that are absent from the
+  // public function signature. Materialize those types as part of the graph;
+  // a reference to a stable type identity is never sufficient on its own.
+  ensureType(expected, context.additions, context.records);
+  const kind=expression.kind.slice(7),args=expression.arguments,id=stableID("execution",context.description.id,"expression",path,kind);
+  const emit=(value,type,suffix)=>value.kind.startsWith("nested_")?emitNestedExpression(value,type,context,`${path}.${suffix}`):value.kind==="identifier"?parameterRead(value.name,type,context,`${path}.${suffix}`,value.location):(()=>{const nestedContext={...context,description:{...context.description,resultType:type}};return emitExpression(value,nestedContext,`${path}.${suffix}`)})();
+  if(kind==="fold"){if(expected!=="i64"||args.length!==2)fail("lua.fold_result_type",expression.location);const collection=emit(args[0],"slice:i64","collection"),initial=emit(args[1],"i64","initial"),accumulator=stableID("execution",context.description.id,path,"accumulator"),element=stableID("execution",context.description.id,path,"element"),left=stableID("execution",context.description.id,path,"left"),right=stableID("execution",context.description.id,path,"right"),body=stableID("execution",context.description.id,path,"body");context.additions.push(graphEntity(accumulator,entity(accumulator,schema.iterationBinding,[[0x9f50,bytes(expression.accumulator)],[0x9f51,ref(ids.i64)]])),graphEntity(element,entity(element,schema.iterationBinding,[[0x9f50,bytes(expression.element)],[0x9f51,ref(ids.i64)]])),graphEntity(left,entity(left,schema.iterationRead,[[0x9f60,ref(accumulator)]])),graphEntity(right,entity(right,schema.iterationRead,[[0x9f60,ref(element)]])),graphEntity(body,entity(body,schema.integerAdd,[[0x9140,ref(left)],[0x9141,ref(right)],[0x9142,ref(ids.i64)]])),graphEntity(id,entity(id,schema.fold,[[0x9f70,ref(collection)],[0x9f71,ref(initial)],[0x9f72,ref(accumulator)],[0x9f73,ref(element)],[0x9f74,ref(body)]])));return id;}
+  if(kind==="lookup_zero"){if(expected!==expression.descriptor||args.length!==2)fail("lua.map_lookup_type",expression.location);const mapType=`map:i64:${expected}`,map=emit(args[0],mapType,"map"),key=emit(args[1],"i64","key");context.additions.push(graphEntity(id,entity(id,schema.mapLookup,[[0xa0420,ref(map)],[0xa0421,ref(key)]])));return id;}
+  if(kind==="slice"){if(expected!=="slice:i64"||args.length>512)fail("lua.slice_construct_type_or_bound",expression.location);const values=args.map((value,index)=>emit(value,"i64",`element.${index}`));context.additions.push(graphEntity(id,entity(id,schema.sliceConstruct,[[0xa0680,ref(typeID(expected))],[0xa0681,refs(values)]])));return id;}
+  if(kind==="collection_append"){if(expected!=="slice:i64"||args.length!==2)fail("lua.collection_append_type",expression.location);const base=emit(args[0],expected,"collection"),value=emit(args[1],"i64","value");context.additions.push(graphEntity(id,entity(id,schema.collectionAppend,[[0x9fb0,ref(base)],[0x9fb1,ref(value)]])));return id;}
+  if(kind==="collection_update"){if(expected!=="slice:i64"||args.length!==3)fail("lua.collection_update_type",expression.location);const base=emit(args[0],expected,"collection"),index=emit(args[1],"i64","index"),value=emit(args[2],"i64","value");context.additions.push(graphEntity(id,entity(id,schema.collectionUpdate,[[0x9fc0,ref(base)],[0x9fc1,ref(index)],[0x9fc2,ref(value)]])));return id;}
+  if(kind==="slice_remove"){if(expected!=="slice:i64"||args.length!==2)fail("lua.slice_remove_type",expression.location);const base=emit(args[0],expected,"collection"),index=emit(args[1],"i64","index");context.additions.push(graphEntity(id,entity(id,schema.sliceRemove,[[0xa0660,ref(base)],[0xa0661,ref(index)]])));return id;}
+  if(kind==="length"||kind==="index_zero"){if(expected!=="i64"||(kind==="length"?args.length!==1:args.length!==2))fail("lua.collection_query_type",expression.location);const base=emit(args[0],"slice:i64","collection");if(kind==="length"){context.additions.push(graphEntity(id,entity(id,schema.collectionLength,[[0x9f90,ref(base)]])));return id;}const index=emit(args[1],"i64","index");context.additions.push(graphEntity(id,entity(id,schema.dynamicIndexRead,[[0x9fa0,ref(base)],[0x9fa1,ref(index)]])));return id;}
+  if(kind==="map_update"||kind==="map_remove"){if(!expected.startsWith("map:")||args.length!==(kind==="map_update"?3:2))fail("lua.map_mutation_type",expression.location);const[,keyType,valueType]=expected.split(":"),base=emit(args[0],expected,"map"),key=emit(args[1],keyType,"key");if(kind==="map_remove"){context.additions.push(graphEntity(id,entity(id,schema.mapRemove,[[0xa0670,ref(base)],[0xa0671,ref(key)]])));return id;}const value=emit(args[2],valueType,"value");context.additions.push(graphEntity(id,entity(id,schema.mapUpdate,[[0xa0430,ref(base)],[0xa0431,ref(key)],[0xa0432,ref(value)]])));return id;}
+  fail("lua.nested_expression_profile",expression.location);
 }
 
 function splitCallArguments(value, file, line) {
