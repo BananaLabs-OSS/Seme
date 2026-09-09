@@ -13,7 +13,7 @@ const args = (item, wrongIndex = false) => [
 if (mode === "canonical") {
   console.log(JSON.stringify({
     valid: vectors.valid.map(item => ({name: item.name, arguments: args(item), result: i64(item.result)})),
-    malformed: vectors.malformed.map(item => ({name: item.name, arguments: args(item, item.category === "index-kind")})),
+    malformed: vectors.malformed.map(item => ({name: item.name, arguments: item.category === "collection-kind" ? [{kind: "text", text: "not-a-slice"}, ...args(item).slice(1)] : args(item)})),
   }));
 } else if (mode === "expected") {
   console.log(JSON.stringify({valid: Object.fromEntries(vectors.valid.map(item => [item.name, item.result])), malformed: vectors.malformed.length}));

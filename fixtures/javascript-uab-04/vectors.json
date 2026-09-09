@@ -8,6 +8,6 @@
     {"name":"negative-index","category":"index","values":["1","2"],"index":"-1","replacement":"0","appended":"0","removeIndex":"0","keepKey":"1","removeKey":"2"},
     {"name":"upper-index","category":"index","values":["1","2"],"index":"2","replacement":"0","appended":"0","removeIndex":"0","keepKey":"1","removeKey":"2"},
     {"name":"remove-upper-index","category":"remove-index","values":["1","2"],"index":"0","replacement":"0","appended":"0","removeIndex":"3","keepKey":"1","removeKey":"2"},
-    {"name":"wrong-index-kind","category":"index-kind","values":["1","2"],"index":"0","replacement":"0","appended":"0","removeIndex":"0","keepKey":"1","removeKey":"2"}
+    {"name":"wrong-collection-kind","category":"collection-kind","values":["1","2"],"index":"0","replacement":"0","appended":"0","removeIndex":"0","keepKey":"1","removeKey":"2"}
   ]
 }

@@ -91,7 +91,11 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 		if !ok || function.Schema != identity(0x9011) {
 			return nil, PureABI{}, fmt.Errorf("wasm.pure_entry_function")
 		}
-		return certifyPureMapFunction(graph, programs[0], function)
+		if wasm, abi, err := certifyPureMapFunction(graph, programs[0], function); err == nil {
+			return wasm, abi, nil
+		}
+		// Non-tally maps continue through generic compositional certification.
+		// The fast path is selected only by its complete structural certificate.
 	}
 	if entry, entryErr := field(programs[0], 0x9151); entryErr == nil && entry.Tag == 6 {
 		if function, ok := graph.Entities[entry.Reference]; ok && function.Schema == identity(0x9011) {
@@ -475,7 +479,7 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 		if err != nil {
 			return err
 		}
-		if _, _, err := fixedI64Collection(graph, collection, parameterTypes); err != nil {
+		if err := validateI64Collection(graph, collection, parameterTypes); err != nil {
 			return err
 		}
 		if err := validatePureExpression(graph, initial, "i64", parameterTypes, visiting, budget); err != nil {
@@ -487,7 +491,13 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 			return fmt.Errorf("wasm.collection_length_result_type")
 		}
 		collection, err := field(expression, 0x9f90)
-		if err != nil || collection.Tag != 6 || validateI64Collection(graph, collection.Reference, parameterTypes) != nil {
+		if err != nil || collection.Tag != 6 {
+			return fmt.Errorf("wasm.collection_length_collection")
+		}
+		if err := validateI64Collection(graph, collection.Reference, parameterTypes); err != nil {
+			if strings.Contains(err.Error(), "cycle") {
+				return err
+			}
 			return fmt.Errorf("wasm.collection_length_collection")
 		}
 		return nil
@@ -497,7 +507,13 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 		}
 		collection, collectionErr := field(expression, 0x9fa0)
 		index, indexErr := field(expression, 0x9fa1)
-		if collectionErr != nil || indexErr != nil || collection.Tag != 6 || index.Tag != 6 || validateI64Collection(graph, collection.Reference, parameterTypes) != nil {
+		if collectionErr != nil || indexErr != nil || collection.Tag != 6 || index.Tag != 6 {
+			return fmt.Errorf("wasm.dynamic_index_fields")
+		}
+		if err := validateI64Collection(graph, collection.Reference, parameterTypes); err != nil {
+			if strings.Contains(err.Error(), "cycle") {
+				return err
+			}
 			return fmt.Errorf("wasm.dynamic_index_fields")
 		}
 		return validatePureExpression(graph, index.Reference, "i64", parameterTypes, visiting, budget)
@@ -531,12 +547,70 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 			return err
 		}
 		return validatePureExpression(graph, value.Reference, "i64", parameterTypes, visiting, budget)
+	case identity(0xa066):
+		if expected != "slice:i64" {
+			return fmt.Errorf("wasm.slice_remove_result_type")
+		}
+		collection, ce := field(expression, 0xa0660)
+		index, ie := field(expression, 0xa0661)
+		if ce != nil || ie != nil || collection.Tag != 6 || index.Tag != 6 {
+			return fmt.Errorf("wasm.slice_remove_fields")
+		}
+		if err := validatePureExpression(graph, collection.Reference, "slice:i64", parameterTypes, visiting, budget); err != nil {
+			return err
+		}
+		return validatePureExpression(graph, index.Reference, "i64", parameterTypes, visiting, budget)
+	case identity(0xa068):
+		if expected != "slice:i64" {
+			return fmt.Errorf("wasm.slice_construct_result_type")
+		}
+		typeValue, te := field(expression, 0xa0680)
+		elements, ee := field(expression, 0xa0681)
+		if te != nil || ee != nil || typeValue.Tag != 6 || elements.Tag != 7 || len(elements.List) > 512 {
+			return fmt.Errorf("wasm.slice_construct_fields")
+		}
+		t, ok := graph.Entities[typeValue.Reference]
+		element, er := field(t, 0x9f80)
+		if !ok || t.Schema != identity(0x90f8) || er != nil || !isI64Type(graph, element.Reference) {
+			return fmt.Errorf("wasm.slice_construct_type")
+		}
+		for _, item := range elements.List {
+			if item.Tag != 6 {
+				return fmt.Errorf("wasm.slice_construct_element")
+			}
+			if err := validatePureExpression(graph, item.Reference, "i64", parameterTypes, visiting, budget); err != nil {
+				return err
+			}
+		}
+		return nil
+	case identity(0xa042):
+		if expected != "i64" {
+			return fmt.Errorf("wasm.map_lookup_result_type")
+		}
+		mapping, me := field(expression, 0xa0420)
+		key, ke := field(expression, 0xa0421)
+		if me != nil || ke != nil || mapping.Tag != 6 || key.Tag != 6 {
+			return fmt.Errorf("wasm.map_lookup_fields")
+		}
+		if err := validatePureExpression(graph, key.Reference, "i64", parameterTypes, visiting, budget); err != nil {
+			return err
+		}
+		return validateSymbolicMap(graph, mapping.Reference, parameterTypes, visiting, budget)
 	default:
 		return fmt.Errorf("wasm.pure_unsupported_expression")
 	}
 }
 
 func validateI64Collection(graph wire.Envelope, id wire.ID, parameterTypes map[wire.ID]string) error {
+	return validateI64CollectionSeen(graph, id, parameterTypes, map[wire.ID]bool{}, 513)
+}
+
+func validateI64CollectionSeen(graph wire.Envelope, id wire.ID, parameterTypes map[wire.ID]string, seen map[wire.ID]bool, budget int) error {
+	if budget == 0 || seen[id] {
+		return fmt.Errorf("wasm.collection_cycle_or_size")
+	}
+	seen[id] = true
+	defer delete(seen, id)
 	collection, ok := graph.Entities[id]
 	if !ok {
 		return fmt.Errorf("wasm.collection_missing")
@@ -544,6 +618,27 @@ func validateI64Collection(graph wire.Envelope, id wire.ID, parameterTypes map[w
 	if collection.Schema == identity(0x90f3) {
 		_, err := fixedI64ArrayValues(graph, id)
 		return err
+	}
+	if collection.Schema == identity(0xa068) {
+		typeValue, te := field(collection, 0xa0680)
+		elements, ee := field(collection, 0xa0681)
+		if te != nil || ee != nil || typeValue.Tag != 6 || elements.Tag != 7 || len(elements.List) > 512 {
+			return fmt.Errorf("wasm.collection_construct")
+		}
+		t, ok := graph.Entities[typeValue.Reference]
+		element, er := field(t, 0x9f80)
+		if !ok || t.Schema != identity(0x90f8) || er != nil || !isI64Type(graph, element.Reference) {
+			return fmt.Errorf("wasm.collection_construct_type")
+		}
+		return nil
+	}
+	chainFields := map[wire.ID]uint64{identity(0x90fb): 0x9fb0, identity(0x90fc): 0x9fc0, identity(0xa066): 0xa0660}
+	if key, yes := chainFields[collection.Schema]; yes {
+		base, err := field(collection, key)
+		if err != nil || base.Tag != 6 {
+			return fmt.Errorf("wasm.collection_chain")
+		}
+		return validateI64CollectionSeen(graph, base.Reference, parameterTypes, seen, budget-1)
 	}
 	if collection.Schema != identity(0x9013) {
 		return fmt.Errorf("wasm.collection_expression")
@@ -563,6 +658,57 @@ func validateI64Collection(graph wire.Envelope, id wire.ID, parameterTypes map[w
 		return fmt.Errorf("wasm.collection_type")
 	}
 	return nil
+}
+
+func validateSymbolicMap(graph wire.Envelope, expressionID wire.ID, parameterTypes map[wire.ID]string, visiting map[wire.ID]bool, budget *int) error {
+	if *budget == 0 || visiting[expressionID] {
+		return fmt.Errorf("wasm.symbolic_map_cycle_or_size")
+	}
+	*budget--
+	visiting[expressionID] = true
+	defer delete(visiting, expressionID)
+	e, ok := graph.Entities[expressionID]
+	if !ok {
+		return fmt.Errorf("wasm.symbolic_map_missing")
+	}
+	if e.Schema == identity(0xa041) {
+		t, err := field(e, 0xa0410)
+		if err != nil || t.Tag != 6 {
+			return fmt.Errorf("wasm.symbolic_empty_map")
+		}
+		mt, ok := graph.Entities[t.Reference]
+		k, ke := field(mt, 0xa0400)
+		v, ve := field(mt, 0xa0401)
+		if !ok || mt.Schema != identity(0xa040) || ke != nil || ve != nil || !isI64Type(graph, k.Reference) || !isI64Type(graph, v.Reference) {
+			return fmt.Errorf("wasm.symbolic_map_type")
+		}
+		return nil
+	}
+	if e.Schema != identity(0xa043) && e.Schema != identity(0xa067) {
+		return fmt.Errorf("wasm.symbolic_map_expression")
+	}
+	mf, kf, vf := uint64(0xa0430), uint64(0xa0431), uint64(0xa0432)
+	if e.Schema == identity(0xa067) {
+		mf, kf, vf = 0xa0670, 0xa0671, 0
+	}
+	m, me := field(e, mf)
+	k, ke := field(e, kf)
+	if me != nil || ke != nil || m.Tag != 6 || k.Tag != 6 {
+		return fmt.Errorf("wasm.symbolic_map_fields")
+	}
+	if err := validatePureExpression(graph, k.Reference, "i64", parameterTypes, visiting, budget); err != nil {
+		return err
+	}
+	if vf != 0 {
+		v, ve := field(e, vf)
+		if ve != nil || v.Tag != 6 {
+			return fmt.Errorf("wasm.symbolic_map_fields")
+		}
+		if err := validatePureExpression(graph, v.Reference, "i64", parameterTypes, visiting, budget); err != nil {
+			return err
+		}
+	}
+	return validateSymbolicMap(graph, m.Reference, parameterTypes, visiting, budget)
 }
 
 func foldFields(graph wire.Envelope, fold wire.Entity) (wire.ID, wire.ID, wire.ID, wire.ID, wire.ID, error) {

@@ -357,27 +357,80 @@ func (context *stringLowering) lowerSlice(id wire.ID, budget *int) ([]byte, erro
 		context.used[local] = true
 		return []byte{0x20, local}, nil
 	}
+	if expression.Schema == identity(0xa068) {
+		typeValue, te := field(expression, 0xa0680)
+		elements, ee := field(expression, 0xa0681)
+		if te != nil || ee != nil || typeValue.Tag != 6 || elements.Tag != 7 || len(elements.List) > 512 {
+			return nil, fmt.Errorf("wasm.slice_construct_fields")
+		}
+		sliceType, ok := context.graph.Entities[typeValue.Reference]
+		elementType, et := field(sliceType, 0x9f80)
+		if !ok || sliceType.Schema != identity(0x90f8) || et != nil || !isI64Type(context.graph, elementType.Reference) {
+			return nil, fmt.Errorf("wasm.slice_construct_type")
+		}
+		if len(elements.List) == 0 {
+			return []byte{0x42, 0x00}, nil
+		}
+		output := context.newLocal(0x7f)
+		var code []byte
+		code = append(code, 0x41)
+		count := &bytes.Buffer{}
+		sleb(count, int64(len(elements.List)*8))
+		code = append(code, count.Bytes()...)
+		code = append(code, 0x10, 0x00, 0x22, output, 0x45, 0x04, 0x40, 0x00, 0x0b)
+		for index, item := range elements.List {
+			if item.Tag != 6 {
+				return nil, fmt.Errorf("wasm.slice_construct_element")
+			}
+			value, err := context.lowerInteger(item.Reference, budget)
+			if err != nil {
+				return nil, err
+			}
+			code = append(code, 0x20, output, 0x41)
+			offset := &bytes.Buffer{}
+			sleb(offset, int64(index*8))
+			code = append(code, offset.Bytes()...)
+			code = append(code, 0x6a)
+			code = append(code, value...)
+			code = append(code, 0x37, 0x03, 0x00)
+		}
+		code = append(code, 0x20, output, 0xad, 0x42)
+		length := &bytes.Buffer{}
+		sleb(length, int64(len(elements.List)))
+		code = append(code, length.Bytes()...)
+		code = append(code, 0x42, 0x20, 0x86, 0x84)
+		return code, nil
+	}
 	appendOperation := expression.Schema == identity(0x90fb)
 	updateOperation := expression.Schema == identity(0x90fc)
-	if !appendOperation && !updateOperation {
+	removeOperation := expression.Schema == identity(0xa066)
+	if !appendOperation && !updateOperation && !removeOperation {
 		return nil, fmt.Errorf("wasm.slice_expression")
 	}
 	collectionField, valueField := uint64(0x9fb0), uint64(0x9fb1)
 	if updateOperation {
 		collectionField, valueField = 0x9fc0, 0x9fc2
+	} else if removeOperation {
+		collectionField = 0xa0660
 	}
 	collection, collectionErr := field(expression, collectionField)
 	value, valueErr := field(expression, valueField)
-	if collectionErr != nil || valueErr != nil || collection.Tag != 6 || value.Tag != 6 {
+	if removeOperation {
+		valueErr = nil
+	}
+	if collectionErr != nil || valueErr != nil || collection.Tag != 6 || (!removeOperation && value.Tag != 6) {
 		return nil, fmt.Errorf("wasm.slice_fields")
 	}
 	collectionCode, err := context.lowerSlice(collection.Reference, budget)
 	if err != nil {
 		return nil, err
 	}
-	valueCode, err := context.lowerInteger(value.Reference, budget)
-	if err != nil {
-		return nil, err
+	var valueCode []byte
+	if !removeOperation {
+		valueCode, err = context.lowerInteger(value.Reference, budget)
+		if err != nil {
+			return nil, err
+		}
 	}
 	sourceLocal := context.newLocal(0x7e)
 	countLocal := context.newLocal(0x7f)
@@ -385,8 +438,10 @@ func (context *stringLowering) lowerSlice(id wire.ID, budget *int) ([]byte, erro
 	outputLocal := context.newLocal(0x7f)
 	code := append(collectionCode, 0x21, sourceLocal)
 	code = append(code, 0x20, sourceLocal, 0x42, 0x20, 0x88, 0xa7, 0x21, countLocal)
-	code = append(code, valueCode...)
-	code = append(code, 0x21, valueLocal)
+	if !removeOperation {
+		code = append(code, valueCode...)
+		code = append(code, 0x21, valueLocal)
+	}
 	var indexLocal byte
 	if appendOperation {
 		code = append(code, 0x20, countLocal, 0x41)
@@ -395,7 +450,11 @@ func (context *stringLowering) lowerSlice(id wire.ID, budget *int) ([]byte, erro
 		code = append(code, limit.Bytes()...)
 		code = append(code, 0x4f, 0x04, 0x40, 0x00, 0x0b) // count >= 512
 	} else {
-		index, indexErr := field(expression, 0x9fc1)
+		indexField := uint64(0x9fc1)
+		if removeOperation {
+			indexField = 0xa0661
+		}
+		index, indexErr := field(expression, indexField)
 		if indexErr != nil || index.Tag != 6 {
 			return nil, fmt.Errorf("wasm.slice_update_index")
 		}
@@ -410,8 +469,17 @@ func (context *stringLowering) lowerSlice(id wire.ID, budget *int) ([]byte, erro
 	code = append(code, 0x20, countLocal)
 	if appendOperation {
 		code = append(code, 0x41, 0x01, 0x6a)
+	} else if removeOperation {
+		code = append(code, 0x41, 0x01, 0x6b)
 	}
 	code = append(code, 0x41, 0x03, 0x74, 0x10, 0x00, 0x22, outputLocal, 0x45, 0x04, 0x40, 0x00, 0x0b)
+	if removeOperation {
+		// Copy the prefix and suffix around the removed element into fresh storage.
+		code = append(code, 0x20, outputLocal, 0x20, sourceLocal, 0xa7, 0x20, indexLocal, 0xa7, 0x41, 0x03, 0x74, 0xfc, 0x0a, 0x00, 0x00)
+		code = append(code, 0x20, outputLocal, 0x20, indexLocal, 0xa7, 0x41, 0x03, 0x74, 0x6a, 0x20, sourceLocal, 0xa7, 0x20, indexLocal, 0xa7, 0x41, 0x01, 0x6a, 0x41, 0x03, 0x74, 0x6a, 0x20, countLocal, 0x20, indexLocal, 0xa7, 0x6b, 0x41, 0x01, 0x6b, 0x41, 0x03, 0x74, 0xfc, 0x0a, 0x00, 0x00)
+		code = append(code, 0x20, outputLocal, 0xad, 0x20, countLocal, 0x41, 0x01, 0x6b, 0xad, 0x42, 0x20, 0x86, 0x84)
+		return code, nil
+	}
 	// Copy before writing so the result cannot alias the source collection.
 	code = append(code, 0x20, outputLocal, 0x20, sourceLocal, 0xa7, 0x20, countLocal, 0x41, 0x03, 0x74, 0xfc, 0x0a, 0x00, 0x00)
 	code = append(code, 0x20, outputLocal)
@@ -431,6 +499,49 @@ func (context *stringLowering) lowerSlice(id wire.ID, budget *int) ([]byte, erro
 
 func (context *stringLowering) lowerInteger(id wire.ID, budget *int) ([]byte, error) {
 	expression, ok := context.graph.Entities[id]
+	if ok && expression.Schema == identity(0x90f9) {
+		collection, err := field(expression, 0x9f90)
+		if err != nil || collection.Tag != 6 {
+			return nil, fmt.Errorf("wasm.collection_length_collection")
+		}
+		code, err := context.lowerSlice(collection.Reference, budget)
+		if err != nil {
+			return nil, err
+		}
+		return append(code, 0x42, 0x20, 0x88), nil // packed descriptor >> 32
+	}
+	if ok && expression.Schema == identity(0x90fa) {
+		collection, ce := field(expression, 0x9fa0)
+		index, ie := field(expression, 0x9fa1)
+		if ce != nil || ie != nil || collection.Tag != 6 || index.Tag != 6 {
+			return nil, fmt.Errorf("wasm.dynamic_index_fields")
+		}
+		collectionCode, err := context.lowerSlice(collection.Reference, budget)
+		if err != nil {
+			return nil, err
+		}
+		indexCode, err := context.lowerInteger(index.Reference, budget)
+		if err != nil {
+			return nil, err
+		}
+		descriptorLocal := context.newLocal(0x7e)
+		indexLocal := context.newLocal(0x7e)
+		code := append(collectionCode, 0x21, descriptorLocal)
+		code = append(code, indexCode...)
+		code = append(code, 0x21, indexLocal)
+		// Unsigned comparison rejects negative indices as well as indices >= count.
+		code = append(code, 0x20, indexLocal, 0x20, descriptorLocal, 0x42, 0x20, 0x88, 0x5a, 0x04, 0x40, 0x00, 0x0b)
+		code = append(code, 0x20, descriptorLocal, 0xa7, 0x20, indexLocal, 0xa7, 0x41, 0x03, 0x74, 0x6a, 0x29, 0x03, 0x00)
+		return code, nil
+	}
+	if ok && expression.Schema == identity(0xa042) {
+		mapping, me := field(expression, 0xa0420)
+		key, ke := field(expression, 0xa0421)
+		if me != nil || ke != nil || mapping.Tag != 6 || key.Tag != 6 {
+			return nil, fmt.Errorf("wasm.symbolic_map_lookup_fields")
+		}
+		return context.lowerSymbolicMapLookup(mapping.Reference, key.Reference, budget)
+	}
 	if ok && expression.Schema == identity(0x90e2) {
 		place, err := field(expression, 0x9e20)
 		if err != nil || place.Tag != 6 || context.placeTypes[place.Reference] != "i64" {
@@ -470,20 +581,9 @@ func (context *stringLowering) lowerInteger(id wire.ID, budget *int) ([]byte, er
 	if err := validateI64AddFoldBody(context.graph, body, accumulator, element); err != nil {
 		return nil, err
 	}
-	collectionEntity, ok := context.graph.Entities[collection]
-	if !ok || collectionEntity.Schema != identity(0x9013) {
-		return lowerHelperInteger(context.graph, id, context.locals, context.used, map[wire.ID]bool{}, budget)
-	}
-	parameter, err := field(collectionEntity, 0x9130)
-	local, exists := context.locals[parameter.Reference]
-	if err != nil || parameter.Tag != 6 || !exists {
-		return nil, fmt.Errorf("wasm.fold_parameter")
-	}
-	parameterEntity := context.graph.Entities[parameter.Reference]
-	typeValue, typeErr := field(parameterEntity, 0x9121)
-	valueType, valueTypeErr := pureType(context.graph, typeValue.Reference)
-	if typeErr != nil || valueTypeErr != nil || valueType.name != "slice:i64" {
-		return lowerHelperInteger(context.graph, id, context.locals, context.used, map[wire.ID]bool{}, budget)
+	collectionCode, err := context.lowerSlice(collection, budget)
+	if err != nil {
+		return nil, err
 	}
 	initialCode, err := lowerHelperInteger(context.graph, initial, context.locals, context.used, map[wire.ID]bool{}, budget)
 	if err != nil {
@@ -491,15 +591,86 @@ func (context *stringLowering) lowerInteger(id wire.ID, budget *int) ([]byte, er
 	}
 	accumulatorLocal := context.newLocal(0x7e)
 	indexLocal := context.newLocal(0x7f)
-	context.used[local] = true
-	code := append(initialCode, 0x21, accumulatorLocal, 0x41, 0x00, 0x21, indexLocal)
+	collectionLocal := context.newLocal(0x7e)
+	code := append(collectionCode, 0x21, collectionLocal)
+	code = append(code, initialCode...)
+	code = append(code, 0x21, accumulatorLocal, 0x41, 0x00, 0x21, indexLocal)
 	code = append(code, 0x02, 0x40, 0x03, 0x40) // block; loop
 	// Exit when index >= packed slice element count.
-	code = append(code, 0x20, indexLocal, 0x20, local, 0x42, 0x20, 0x88, 0xa7, 0x4f, 0x0d, 0x01)
+	code = append(code, 0x20, indexLocal, 0x20, collectionLocal, 0x42, 0x20, 0x88, 0xa7, 0x4f, 0x0d, 0x01)
 	// accumulator += load_i64(pointer + index*8)
-	code = append(code, 0x20, accumulatorLocal, 0x20, local, 0xa7, 0x20, indexLocal, 0x41, 0x03, 0x74, 0x6a, 0x29, 0x03, 0x00, 0x7c, 0x21, accumulatorLocal)
+	code = append(code, 0x20, accumulatorLocal, 0x20, collectionLocal, 0xa7, 0x20, indexLocal, 0x41, 0x03, 0x74, 0x6a, 0x29, 0x03, 0x00, 0x7c, 0x21, accumulatorLocal)
 	code = append(code, 0x20, indexLocal, 0x41, 0x01, 0x6a, 0x21, indexLocal, 0x0c, 0x00, 0x0b, 0x0b)
 	return append(code, 0x20, accumulatorLocal), nil
+}
+
+func (context *stringLowering) lowerSymbolicMapLookup(mappingID, queryID wire.ID, budget *int) ([]byte, error) {
+	if *budget == 0 {
+		return nil, fmt.Errorf("wasm.symbolic_map_budget")
+	}
+	*budget--
+	mapping, ok := context.graph.Entities[mappingID]
+	if !ok {
+		return nil, fmt.Errorf("wasm.symbolic_map_missing")
+	}
+	switch mapping.Schema {
+	case identity(0xa041):
+		typeValue, err := field(mapping, 0xa0410)
+		if err != nil || typeValue.Tag != 6 {
+			return nil, fmt.Errorf("wasm.symbolic_empty_map")
+		}
+		mapType, exists := context.graph.Entities[typeValue.Reference]
+		keyType, ke := field(mapType, 0xa0400)
+		valueType, ve := field(mapType, 0xa0401)
+		if !exists || mapType.Schema != identity(0xa040) || ke != nil || ve != nil || !isI64Type(context.graph, keyType.Reference) || !isI64Type(context.graph, valueType.Reference) {
+			return nil, fmt.Errorf("wasm.symbolic_map_type")
+		}
+		return []byte{0x42, 0x00}, nil
+	case identity(0xa043), identity(0xa067):
+		mapField, keyField, valueField := uint64(0xa0430), uint64(0xa0431), uint64(0xa0432)
+		remove := mapping.Schema == identity(0xa067)
+		if remove {
+			mapField, keyField = 0xa0670, 0xa0671
+		}
+		base, be := field(mapping, mapField)
+		key, ke := field(mapping, keyField)
+		if be != nil || ke != nil || base.Tag != 6 || key.Tag != 6 {
+			return nil, fmt.Errorf("wasm.symbolic_map_fields")
+		}
+		queryCode, err := context.lowerInteger(queryID, budget)
+		if err != nil {
+			return nil, err
+		}
+		keyCode, err := context.lowerInteger(key.Reference, budget)
+		if err != nil {
+			return nil, err
+		}
+		elseCode, err := context.lowerSymbolicMapLookup(base.Reference, queryID, budget)
+		if err != nil {
+			return nil, err
+		}
+		var thenCode []byte
+		if remove {
+			thenCode = []byte{0x42, 0x00}
+		} else {
+			value, ve := field(mapping, valueField)
+			if ve != nil || value.Tag != 6 {
+				return nil, fmt.Errorf("wasm.symbolic_map_fields")
+			}
+			thenCode, err = context.lowerInteger(value.Reference, budget)
+			if err != nil {
+				return nil, err
+			}
+		}
+		code := append(queryCode, keyCode...)
+		code = append(code, 0x51, 0x04, 0x7e)
+		code = append(code, thenCode...)
+		code = append(code, 0x05)
+		code = append(code, elseCode...)
+		return append(code, 0x0b), nil
+	default:
+		return nil, fmt.Errorf("wasm.symbolic_map_expression")
+	}
 }
 
 func (context *stringLowering) lowerString(id wire.ID, visiting map[wire.ID]bool, budget *int) ([]byte, error) {
