@@ -10,6 +10,9 @@ import (
 	"sort"
 
 	"seme.local/reference/contractcatalog"
+	"seme.local/reference/executioninstance"
+	"seme.local/reference/packageinstance"
+	"seme.local/reference/projectinstance"
 	"seme.local/reference/projectsnapshot"
 	"seme.local/reference/wire"
 )
@@ -57,6 +60,9 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 	if in.Identity == "" || in.RootPackage == "" || len(in.Packages) == 0 {
 		return nil, fmt.Errorf("project_emitter.input")
 	}
+	if err := executioninstance.Validate(contracts.Execution(), in.Execution); err != nil {
+		return nil, fmt.Errorf("project_emitter.execution:%w", err)
+	}
 	program, err := soleProgram(in.Execution)
 	if err != nil {
 		return nil, err
@@ -80,6 +86,13 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 		return nil, fmt.Errorf("project_emitter.root")
 	}
 	packageList := make([]wire.ID, 0, len(packages))
+	for _, p := range packages {
+		packageList = append(packageList, packageIDs[p.Name])
+	}
+	orderedPackages, err := dependencyOrder(packages)
+	if err != nil {
+		return nil, err
+	}
 	functionOwners := map[wire.ID]string{}
 	for _, p := range packages {
 		for _, x := range p.Interfaces {
@@ -90,9 +103,8 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 		}
 	}
 
-	for _, p := range packages {
+	for _, p := range orderedPackages {
 		pid := packageIDs[p.Name]
-		packageList = append(packageList, pid)
 		interfaces := append([]Interface(nil), p.Interfaces...)
 		sort.Slice(interfaces, func(i, j int) bool {
 			if interfaces[i].Name != interfaces[j].Name {
@@ -154,17 +166,20 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 				return nil, err
 			}
 		}
-		version, err := packageSemanticDigest(p.Name, interfaceRefs, dependencyRefs, entities)
-		if err != nil {
-			return nil, err
-		}
 		if err := put(entities, wire.Entity{ID: pid, Schema: packageSchema, Version: 1, Fields: map[wire.ID]wire.Value{
-			id("0000000000000000000000000000b100"): blob([]byte(p.Name)), id("0000000000000000000000000000b101"): blob(version),
+			id("0000000000000000000000000000b100"): blob([]byte(p.Name)), id("0000000000000000000000000000b101"): blob(nil),
 			id("0000000000000000000000000000b102"): list(interfaceRefs), id("0000000000000000000000000000b103"): list(dependencyRefs),
 			id("0000000000000000000000000000b104"): list(nil), id("0000000000000000000000000000b105"): list(nil), id("0000000000000000000000000000b106"): list(nil),
 		}}); err != nil {
 			return nil, err
 		}
+		version, err := packageinstance.Revision(wire.Envelope{Entities: entities}, pid)
+		if err != nil {
+			return nil, err
+		}
+		entity := entities[pid]
+		entity.Fields[id("0000000000000000000000000000b101")] = blob(version)
+		entities[pid] = entity
 	}
 	sortIDs(packageList)
 	identity := stableID("project-identity", in.Identity)
@@ -206,22 +221,65 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 	}}); err != nil {
 		return nil, err
 	}
-	unsigned, err := wire.Encode(envelope)
+	envelope.Revision, err = projectinstance.ArtifactRevision(envelope)
 	if err != nil {
 		return nil, err
 	}
-	artifactHash := sha256.New()
-	artifactHash.Write([]byte("seme.project.artifact.v1\x00"))
-	artifactHash.Write(unsigned)
-	copy(envelope.Revision[:], artifactHash.Sum(nil)[:16])
 	out, err := wire.Encode(envelope)
 	if err != nil {
 		return nil, err
 	}
-	if err = projectsnapshot.Validate(out); err != nil {
+	if err = projectinstance.Validate(out); err != nil {
+		return nil, err
+	}
+	if err = packageinstance.Validate(out); err != nil {
 		return nil, err
 	}
 	return out, nil
+}
+
+func dependencyOrder(packages []Package) ([]Package, error) {
+	byName := make(map[string]Package, len(packages))
+	for _, p := range packages {
+		byName[p.Name] = p
+	}
+	state := map[string]uint8{}
+	ordered := make([]Package, 0, len(packages))
+	var visit func(string) error
+	visit = func(name string) error {
+		switch state[name] {
+		case 1:
+			return fmt.Errorf("project_emitter.dependency_cycle:%s", name)
+		case 2:
+			return nil
+		}
+		p, ok := byName[name]
+		if !ok {
+			return fmt.Errorf("project_emitter.dependency_target:%s", name)
+		}
+		state[name] = 1
+		deps := append([]Dependency(nil), p.Dependencies...)
+		sort.Slice(deps, func(i, j int) bool {
+			if deps[i].Package != deps[j].Package {
+				return deps[i].Package < deps[j].Package
+			}
+			return deps[i].Name < deps[j].Name
+		})
+		for _, dependency := range deps {
+			if err := visit(dependency.Package); err != nil {
+				return err
+			}
+		}
+		state[name] = 2
+		ordered = append(ordered, p)
+		return nil
+	}
+	for _, p := range packages {
+		if err := visit(p.Name); err != nil {
+			return nil, err
+		}
+	}
+	return ordered, nil
 }
 
 func soleProgram(e wire.Envelope) (wire.ID, error) {
@@ -323,30 +381,6 @@ func validateInterfaceSignature(x Interface, entities map[wire.ID]wire.Entity) e
 		return fmt.Errorf("project_emitter.interface_signature_result:%s", x.Function)
 	}
 	return nil
-}
-func packageSemanticDigest(name string, interfaces, dependencies []wire.Value, entities map[wire.ID]wire.Entity) ([]byte, error) {
-	owned := map[wire.ID]wire.Entity{}
-	for _, item := range interfaces {
-		part, err := closure(entities, item.Reference)
-		if err != nil {
-			return nil, err
-		}
-		for eid, entity := range part {
-			owned[eid] = entity
-		}
-	}
-	for _, item := range dependencies {
-		owned[item.Reference] = entities[item.Reference]
-	}
-	canonical, err := wire.Encode(wire.Envelope{Entities: owned})
-	if err != nil {
-		return nil, err
-	}
-	h := sha256.New()
-	h.Write([]byte("seme.package.semantic.v1\x00"))
-	writeBlob(h, []byte(name))
-	writeBlob(h, canonical)
-	return h.Sum(nil), nil
 }
 func writeBlob(h interface{ Write([]byte) (int, error) }, b []byte) {
 	var n [8]byte

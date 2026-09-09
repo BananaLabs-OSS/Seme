@@ -31,11 +31,22 @@ func execution() (wire.Envelope, wire.ID, wire.ID) {
 	function := stableID("test", "function")
 	integer := stableID("test", "integer")
 	parameter := stableID("test", "parameter")
-	return wire.Envelope{Entities: map[wire.ID]wire.Entity{
-		program:   {ID: program, Schema: programSchema, Version: 1, Fields: map[wire.ID]wire.Value{fProgramFunctions: list([]wire.Value{ref(function)}), fProgramEntry: ref(function)}},
-		function:  {ID: function, Schema: functionSchema, Version: 1, Fields: map[wire.ID]wire.Value{id("00000000000000000000000000009111"): list([]wire.Value{ref(parameter)}), id("00000000000000000000000000009112"): ref(integer)}},
-		parameter: {ID: parameter, Schema: id("00000000000000000000000000009012"), Version: 1, Fields: map[wire.ID]wire.Value{id("00000000000000000000000000009121"): ref(integer)}},
-		integer:   {ID: integer, Schema: id("00000000000000000000000000009010"), Version: 1, Fields: map[wire.ID]wire.Value{}},
+	body := stableID("test", "body")
+	return wire.Envelope{Module: id("00000000000000000000000000009000"), Entities: map[wire.ID]wire.Entity{
+		program: {ID: program, Schema: programSchema, Version: 1, Fields: map[wire.ID]wire.Value{fProgramFunctions: list([]wire.Value{ref(function)}), fProgramEntry: ref(function)}},
+		function: {ID: function, Schema: functionSchema, Version: 1, Fields: map[wire.ID]wire.Value{
+			id("00000000000000000000000000009110"): blob([]byte("Apply")), id("00000000000000000000000000009111"): list([]wire.Value{ref(parameter)}),
+			id("00000000000000000000000000009112"): ref(integer), id("00000000000000000000000000009113"): ref(body),
+		}},
+		parameter: {ID: parameter, Schema: id("00000000000000000000000000009012"), Version: 1, Fields: map[wire.ID]wire.Value{
+			id("00000000000000000000000000009120"): blob([]byte("value")), id("00000000000000000000000000009121"): ref(integer), id("00000000000000000000000000009122"): {Tag: 4, Unsigned: 0},
+		}},
+		integer: {ID: integer, Schema: id("00000000000000000000000000009010"), Version: 1, Fields: map[wire.ID]wire.Value{
+			id("00000000000000000000000000009100"): {Tag: 4, Unsigned: 64}, id("00000000000000000000000000009101"): {Tag: 2}, id("00000000000000000000000000009102"): {Tag: 4, Unsigned: 0},
+		}},
+		body: {ID: body, Schema: id("00000000000000000000000000009070"), Version: 1, Fields: map[wire.ID]wire.Value{
+			id("00000000000000000000000000009700"): {Tag: 4, Unsigned: 0}, id("00000000000000000000000000009701"): ref(integer),
+		}},
 	}}, function, integer
 }
 
