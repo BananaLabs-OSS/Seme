@@ -1,0 +1,2 @@
+// Code generated seme-upb01; DO NOT EDIT.
+generated fixture payload

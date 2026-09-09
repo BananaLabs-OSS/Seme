@@ -55,11 +55,14 @@ func main() {
 			fatal(json.NewEncoder(os.Stdout).Encode(value))
 			continue
 		}
-		if len(parts) != 2 || len(boundary.RequiredCapabilities) != 1 {
-			fatal(fmt.Errorf("observe requires one capability and a Boolean trace"))
+		if len(parts) != 2 || len(boundary.RequiredCapabilities) > 1 {
+			fatal(fmt.Errorf("observe supports zero or one capability and a Boolean trace"))
 		}
 		var observed []bool
 		fatal(json.Unmarshal([]byte(parts[1]), &observed))
+		if len(boundary.RequiredCapabilities) == 0 && len(observed) != 0 {
+			fatal(fmt.Errorf("observe received an undeclared capability trace"))
+		}
 		effects := make([]canonicaleval.EffectObservation, len(observed))
 		for i, item := range observed {
 			effects[i] = canonicaleval.EffectObservation{Capability: boundary.RequiredCapabilities[0], Value: item}

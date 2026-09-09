@@ -309,3 +309,13 @@ Focused unit and race tests redirected `GOCACHE` to disposable directories
 under `/tmp`; the contract reproduction gate used an automatically removed
 `mktemp` directory. No software, dependency, global setting, SSH setting, or
 persistent environment configuration was installed or changed.
+
+## 2026-09-09 — Go UPB-01 foundation gate
+
+The Go UPB-01 foundation reused Go 1.25.6, Node 22, the checked Seme
+bootstrap, repository-local dependencies, and pinned Pulp source at
+`acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. Native, canonical, standalone
+Wasm, and Pulp runs plus all caches and copied Pulp sources lived in an
+automatically removed directory under `/tmp`. No software, dependency, global
+setting, SSH setting, or persistent environment configuration was installed
+or changed.

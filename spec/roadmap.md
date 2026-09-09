@@ -175,10 +175,13 @@ multi-file revision workflow. [`Useful Project Bridge v1`](useful-project-bridge
 defines those as a separate 12-by-3 matrix with seven evidence classes per
 cell.
 
-UPB work now has a neutral Project Contract, immutable contract catalog,
-composed instance validators, and the bounded Go Project Build v1 three-package
-source-to-Seme gate. These are foundations; the score remains 0/36 until one
-cell has all seven required evidence classes. A downstream product may maintain an external pinned consumer
+UPB work now has neutral Project Contract v1 semantic snapshots and Project
+Contract v2 detached source inventories, an immutable contract catalog,
+composed instance validators, deterministic five-class Go discovery, a
+digest-addressed byte bundle, and bounded Go Project Build/UPB-01 foundation
+gates. These are foundations; the score remains 0/36 until the Go proof adds a
+true semantic multi-package projection, independent fidelity evidence, and the
+complete atomic adversary set. A downstream product may maintain an external pinned consumer
 harness, but its source, names, architecture, and special cases do not enter
 Seme. In particular, Workbench is a possible later consumer, not the profile's
 fixture or success criterion. The empty baseline is validated by
