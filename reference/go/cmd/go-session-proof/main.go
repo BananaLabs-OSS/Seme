@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"seme.local/reference/goprojector"
 	"seme.local/reference/goprovider"
 )
 
@@ -63,7 +64,22 @@ func main() {
 	if !result.Accepted || !result.Valid {
 		fatal(fmt.Errorf("snapshot disposition %s: %#v", result.Disposition, result.Diagnostics))
 	}
-	fatal(os.WriteFile(*out, []byte(result.CanonicalG1), 0o644))
+	canonical := []byte(result.CanonicalG1)
+	var enveloped []byte
+	for _, source := range files {
+		graph, present, verifyErr := goprojector.VerifyProjectionEnvelope([]byte(source))
+		fatal(verifyErr)
+		if present {
+			if enveloped != nil {
+				fatal(fmt.Errorf("multiple projection envelopes"))
+			}
+			enveloped = graph
+		}
+	}
+	if enveloped != nil {
+		canonical = enveloped
+	}
+	fatal(os.WriteFile(*out, canonical, 0o644))
 }
 
 func fatal(err error) {

@@ -12,6 +12,91 @@ import (
 	"seme.local/reference/goprovider"
 )
 
+func TestProjectionEnvelopeRequiresExactIndependentReprojection(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v13/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/envelope", Entry: "Add", Files: map[string]string{"program.go": "package envelope\nfunc Add(value int64) int64 { return value + 1 }\n"}})
+	if !result.Valid {
+		t.Fatalf("lift=%#v", result.Diagnostics)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "envelope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, present, err := goprojector.VerifyProjectionEnvelope(projected)
+	if err != nil || !present || !bytes.Equal(verified, []byte(result.CanonicalG1)) {
+		t.Fatalf("verify present=%v err=%v", present, err)
+	}
+	changedSource := bytes.Replace(projected, []byte("value + 1"), []byte("value + 2"), 1)
+	if _, present, err := goprojector.VerifyProjectionEnvelope(changedSource); !present || err == nil {
+		t.Fatal("semantic source edit retained projection identity")
+	}
+	changedDigest := append([]byte(nil), projected...)
+	digestMarker := bytes.Index(changedDigest, []byte("//seme:projection-v1 ")) + len("//seme:projection-v1 ")
+	if digestMarker < len("//seme:projection-v1 ") {
+		t.Fatal("digest envelope missing")
+	}
+	if changedDigest[digestMarker] == 'a' {
+		changedDigest[digestMarker] = 'b'
+	} else {
+		changedDigest[digestMarker] = 'a'
+	}
+	if _, present, err := goprojector.VerifyProjectionEnvelope(changedDigest); !present || err == nil {
+		t.Fatal("forged digest accepted")
+	}
+	changedEnvelope := append([]byte(nil), projected...)
+	marker := bytes.Index(changedEnvelope, []byte("//seme:graph "))
+	if marker < 0 {
+		t.Fatal("graph envelope missing")
+	}
+	position := marker + len("//seme:graph ")
+	if changedEnvelope[position] == 'A' {
+		changedEnvelope[position] = 'B'
+	} else {
+		changedEnvelope[position] = 'A'
+	}
+	if _, present, err := goprojector.VerifyProjectionEnvelope(changedEnvelope); !present || err == nil {
+		t.Fatal("forged graph payload accepted")
+	}
+
+	different := session.Apply(goprovider.DocumentSnapshot{Revision: 2, PackagePath: "example.test/envelope", Entry: "Add", Files: map[string]string{"program.go": "package envelope\nfunc Add(value int64) int64 { return value + 2 }\n"}})
+	if !different.Valid {
+		t.Fatalf("different lift=%#v", different.Diagnostics)
+	}
+	differentProjection, err := goprojector.Project([]byte(different.CanonicalG1), "envelope")
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelopeBounds := func(source []byte) (int, int) {
+		start := bytes.Index(source, []byte("//seme:projection-v1 "))
+		if start < 0 {
+			return -1, -1
+		}
+		endRelative := bytes.Index(source[start:], []byte("\n\n"))
+		if endRelative < 0 {
+			return -1, -1
+		}
+		return start, start + endRelative
+	}
+	leftStart, leftEnd := envelopeBounds(projected)
+	rightStart, rightEnd := envelopeBounds(differentProjection)
+	if leftStart < 0 || rightStart < 0 {
+		t.Fatal("projection bounds")
+	}
+	validDifferentGraphClaimingOldSource := append([]byte(nil), projected[:leftStart]...)
+	validDifferentGraphClaimingOldSource = append(validDifferentGraphClaimingOldSource, differentProjection[rightStart:rightEnd]...)
+	validDifferentGraphClaimingOldSource = append(validDifferentGraphClaimingOldSource, projected[leftEnd:]...)
+	if _, present, err := goprojector.VerifyProjectionEnvelope(validDifferentGraphClaimingOldSource); !present || err == nil {
+		t.Fatal("valid but different graph retained old source identity")
+	}
+}
+
 func TestProjectsGoInterfaceDispatchAndReliftsByteIdentically(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v27/module.g1")
 	if err != nil {

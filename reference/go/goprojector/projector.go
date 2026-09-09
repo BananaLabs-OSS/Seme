@@ -4,9 +4,14 @@
 package goprojector
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"go/format"
+	"go/parser"
+	"go/token"
 	"sort"
 	"strconv"
 	"strings"
@@ -178,6 +183,7 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "package %s\n\n", packageName)
+	writeProjectionEnvelope(&out, g1)
 	imports := []string{}
 	if graphHasSchema(graph, sBytesEqual) {
 		imports = append(imports, "bytes")
@@ -405,6 +411,67 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 	return formatted, nil
 }
 
+func writeProjectionEnvelope(out *strings.Builder, graph []byte) {
+	digest := sha256.Sum256(graph)
+	fmt.Fprintf(out, "//seme:projection-v1 %x\n", digest[:])
+	encoded := base64.RawStdEncoding.EncodeToString(graph)
+	for len(encoded) > 0 {
+		count := 120
+		if len(encoded) < count {
+			count = len(encoded)
+		}
+		fmt.Fprintf(out, "//seme:graph %s\n", encoded[:count])
+		encoded = encoded[count:]
+	}
+	out.WriteString("\n")
+}
+
+// VerifyProjectionEnvelope returns the exact canonical graph carried by a
+// projector-produced Go source file only when independently projecting that
+// graph reproduces the complete source byte-for-byte. The envelope therefore
+// preserves canonical identity without trusting editable provenance comments.
+func VerifyProjectionEnvelope(source []byte) ([]byte, bool, error) {
+	file, err := parser.ParseFile(token.NewFileSet(), "projected.go", source, parser.ParseComments)
+	if err != nil {
+		return nil, false, err
+	}
+	var digestText string
+	var encoded strings.Builder
+	for _, group := range file.Comments {
+		for _, comment := range group.List {
+			value := strings.TrimSpace(strings.TrimPrefix(comment.Text, "//"))
+			if strings.HasPrefix(value, "seme:projection-v1 ") {
+				digestText = strings.TrimSpace(strings.TrimPrefix(value, "seme:projection-v1 "))
+			}
+			if strings.HasPrefix(value, "seme:graph ") {
+				encoded.WriteString(strings.TrimSpace(strings.TrimPrefix(value, "seme:graph ")))
+			}
+		}
+	}
+	if digestText == "" && encoded.Len() == 0 {
+		return nil, false, nil
+	}
+	if len(digestText) != 64 || encoded.Len() == 0 {
+		return nil, true, fmt.Errorf("go_projection.envelope_incomplete")
+	}
+	graph, err := base64.RawStdEncoding.DecodeString(encoded.String())
+	if err != nil {
+		return nil, true, fmt.Errorf("go_projection.envelope_encoding")
+	}
+	digest := sha256.Sum256(graph)
+	if fmt.Sprintf("%x", digest[:]) != digestText {
+		return nil, true, fmt.Errorf("go_projection.envelope_digest")
+	}
+	reprojected, err := Project(graph, file.Name.Name)
+	if err != nil {
+		return nil, true, fmt.Errorf("go_projection.envelope_graph:%w", err)
+	}
+	if !bytes.Equal(reprojected, source) {
+		return nil, true, fmt.Errorf("go_projection.envelope_source_mismatch")
+	}
+	return graph, true, nil
+}
+
 func graphHasUnfoldedMapUpdate(graph map[string]entity) bool {
 	foldBodies := map[string]bool{}
 	for _, item := range graph {
@@ -471,10 +538,17 @@ func projectBlock(id string, c context) (string, error) {
 				return "", err
 			}
 			if initialEntity, ok := c.graph[initializerID]; ok && initialEntity.schema == sStatefulCall {
-				lines = append(lines, "\t"+initializer)
-				c.transitions[bindingID] = initializer
+				lines = append(lines, "\t"+name+" := "+initializer)
+				c.transitions[bindingID] = name
 				c.locals[bindingID] = name
 				continue
+			}
+			if typeID, x := ref(binding, "00000000000000000000000000009d01"); x == nil {
+				if typ, exists := c.graph[typeID]; exists && typ.schema == sInteger {
+					if initial, exists := c.graph[initializerID]; exists && initial.schema == sIntegerLiteral {
+						initializer = "int64(" + initializer + ")"
+					}
+				}
 			}
 			lines = append(lines, "\t"+name+" := "+initializer)
 			c.locals[bindingID] = name
@@ -498,6 +572,13 @@ func projectBlock(id string, c context) (string, error) {
 			initializer, err := expr(initializerID, c)
 			if err != nil {
 				return "", err
+			}
+			if typeID, x := ref(place, "00000000000000000000000000009e01"); x == nil {
+				if typ, exists := c.graph[typeID]; exists && typ.schema == sInteger {
+					if initial, exists := c.graph[initializerID]; exists && initial.schema == sIntegerLiteral {
+						initializer = "int64(" + initializer + ")"
+					}
+				}
 			}
 			lines = append(lines, "\t"+name+" := "+initializer)
 			c.locals[placeID] = name

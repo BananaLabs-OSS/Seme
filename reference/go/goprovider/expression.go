@@ -1099,13 +1099,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			if !cloneSelectorOK || !isSlicesFunction(info, cloneSelector, "Clone") || len(clone.Args) != 1 || clone.Ellipsis.IsValid() {
 				return nil, fmt.Errorf("expression.collection_update_alias")
 			}
-			indexName, indexOK := goI64IndexIdentifier(expression.Args[1], info)
+			indexKey, indexOK := goI64IndexExpressionKey(expression.Args[1], info)
 			end, endOK := ast.Unparen(expression.Args[2]).(*ast.BinaryExpr)
-			endIndex, endIndexOK := func() (*ast.Ident, bool) {
+			endIndex, endIndexOK := func() (string, bool) {
 				if !endOK {
-					return nil, false
+					return "", false
 				}
-				return goI64IndexIdentifier(end.X, info)
+				return goI64IndexExpressionKey(end.X, info)
 			}()
 			one, oneOK := func() (*ast.BasicLit, bool) {
 				if !endOK {
@@ -1114,7 +1114,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				value, ok := ast.Unparen(end.Y).(*ast.BasicLit)
 				return value, ok
 			}()
-			if !indexOK || !endIndexOK || !oneOK || end.Op != token.ADD || one.Kind != token.INT || one.Value != "1" || info.Uses[indexName] != info.Uses[endIndex] {
+			if !indexOK || !endIndexOK || !oneOK || end.Op != token.ADD || one.Kind != token.INT || one.Value != "1" || indexKey != endIndex {
 				return nil, fmt.Errorf("expression.collection_update_range")
 			}
 			collection, err := analyzeGoExpressionWithProgram(clone.Args[0], signature, info, locals, functions, records, mutableLocals)
@@ -1143,13 +1143,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			if !cloneSelectorOK || !isSlicesFunction(info, cloneSelector, "Clone") || len(clone.Args) != 1 || clone.Ellipsis.IsValid() {
 				return nil, fmt.Errorf("expression.slice_remove_alias")
 			}
-			indexName, indexOK := goI64IndexIdentifier(expression.Args[1], info)
+			indexKey, indexOK := goI64IndexExpressionKey(expression.Args[1], info)
 			end, endOK := ast.Unparen(expression.Args[2]).(*ast.BinaryExpr)
-			endIndex, endIndexOK := func() (*ast.Ident, bool) {
+			endIndex, endIndexOK := func() (string, bool) {
 				if !endOK {
-					return nil, false
+					return "", false
 				}
-				return goI64IndexIdentifier(end.X, info)
+				return goI64IndexExpressionKey(end.X, info)
 			}()
 			one, oneOK := func() (*ast.BasicLit, bool) {
 				if !endOK {
@@ -1158,7 +1158,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				value, ok := ast.Unparen(end.Y).(*ast.BasicLit)
 				return value, ok
 			}()
-			if !indexOK || !endIndexOK || !oneOK || end.Op != token.ADD || one.Kind != token.INT || one.Value != "1" || info.Uses[indexName] != info.Uses[endIndex] {
+			if !indexOK || !endIndexOK || !oneOK || end.Op != token.ADD || one.Kind != token.INT || one.Value != "1" || indexKey != endIndex {
 				return nil, fmt.Errorf("expression.slice_remove_range")
 			}
 			collection, err := analyzeGoExpressionWithProgram(clone.Args[0], signature, info, locals, functions, records, mutableLocals)
@@ -1451,6 +1451,24 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return nil, fmt.Errorf("expression.unknown_transition_field")
 		}
+		if item, option := goOptionValueType(info.TypeOf(expression.X)); option {
+			value, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			match := &goExpression{kind: goOptionMatch, left: value, text: "value", typeID: goSemanticTypeIdentity(item)}
+			switch field.Name() {
+			case "Some":
+				match.initial = &goExpression{kind: goBooleanLiteral}
+				match.body = &goExpression{kind: goBooleanLiteral, boolean: true}
+			case "Value":
+				match.initial = &goExpression{kind: goIntegerLiteral}
+				match.body = &goExpression{kind: goVariantRead}
+			default:
+				return nil, fmt.Errorf("expression.unknown_option_field")
+			}
+			return match, nil
+		}
 		if success, failure, result := goResultTypes(info.TypeOf(expression.X)); result {
 			value, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
@@ -1738,6 +1756,37 @@ func goI64IndexIdentifier(expression ast.Expr, info *types.Info) (*ast.Ident, bo
 	typeName, ok := ast.Unparen(conversion.Fun).(*ast.Ident)
 	identifier, identifierOK := ast.Unparen(conversion.Args[0]).(*ast.Ident)
 	return identifier, ok && identifierOK && typeName.Name == "int" && info.Uses[typeName] == types.Universe.Lookup("int") && isInt64(info.TypeOf(identifier))
+}
+
+func goI64IndexExpressionKey(expression ast.Expr, info *types.Info) (string, bool) {
+	expression = ast.Unparen(expression)
+	if conversion, ok := expression.(*ast.CallExpr); ok && len(conversion.Args) == 1 {
+		if typeName, yes := ast.Unparen(conversion.Fun).(*ast.Ident); yes && typeName.Name == "int" && info.Uses[typeName] == types.Universe.Lookup("int") {
+			return goI64IndexExpressionKey(conversion.Args[0], info)
+		}
+	}
+	switch value := expression.(type) {
+	case *ast.Ident:
+		object := info.Uses[value]
+		return fmt.Sprintf("object:%p", object), object != nil && isInt64(info.TypeOf(value))
+	case *ast.SelectorExpr:
+		selection := info.Selections[value]
+		if selection == nil {
+			return "", false
+		}
+		base, ok := goI64IndexExpressionBaseKey(value.X, info)
+		return base + "." + selection.Obj().Id(), ok && isInt64(info.TypeOf(value))
+	default:
+		return "", false
+	}
+}
+
+func goI64IndexExpressionBaseKey(expression ast.Expr, info *types.Info) (string, bool) {
+	if identifier, ok := ast.Unparen(expression).(*ast.Ident); ok {
+		object := info.Uses[identifier]
+		return fmt.Sprintf("object:%p", object), object != nil
+	}
+	return "", false
 }
 
 func isGoStringExpression(expression ast.Expr, info *types.Info) bool {
