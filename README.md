@@ -319,6 +319,16 @@ comment/filename-only edits reproduce byte-identical artifacts; a dependency
 behavior edit changes them. Run `./scripts/check-go-project-build-v1.sh`. This
 is supporting evidence, not a completed seven-class UPB cell.
 
+Project Contract v2 now adds a separate canonical SourceInventory bound to the
+semantic ProjectSnapshot. The Go UPB-01 foundation discovers every file into
+tracked, ignored, generated, vendored, or opaque classes; rejects unsafe paths
+and drift; emits and validates the inventory; captures detached digest-addressed
+bytes; preserves nonsemantic regions; and repeats the existing native,
+canonical, Wasm, and Pulp behavior proof. Run
+`./scripts/check-go-upb-01.sh`. The score remains 0/36 because a genuine
+semantic multi-package Go projection, independent fidelity record, and full
+atomic adversary set are still required.
+
 UAB-01 is complete in all three language columns: native multi-source packages,
 typed named functions, parameters, and calls lift directly to canonical Seme,
 project back to their own ecosystem, re-lift identically, and agree with the

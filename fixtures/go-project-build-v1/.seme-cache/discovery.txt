@@ -1,0 +1,1 @@
+This ignored file remains inventoried and byte-preserved.
