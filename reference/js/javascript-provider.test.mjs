@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
-import { liftJavaScript } from "./javascript-provider.mjs";
+import { javascriptDeclarationIdentity, liftJavaScript } from "./javascript-provider.mjs";
 
 const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v14/module.g1", import.meta.url), "utf8");
 const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.g1", import.meta.url), "utf8");
@@ -66,6 +66,18 @@ test("repeated reads retain one semantic identity", () => {
   const canonical = liftJavaScript({ source: repeated, moduleG1, packagePath: "example.test/repeated", revision: 1 });
   const ids = [...canonical.matchAll(/^en ([0-9a-f]{32}) /gm)].map((match) => match[1]);
   assert.equal(new Set(ids).size, ids.length);
+});
+
+test("recovers a declaration identity across a native rename", () => {
+  const packagePath = "example.test/identity";
+  const original = `/** @param {string} value @returns {string} */\nexport function Identity(value) { return value; }`;
+  const renamed = original.replace("Identity", "Preserve");
+  const identity = javascriptDeclarationIdentity(packagePath, "Identity");
+  const evidence = { version: 1, packagePath, renames: [{ previousName: "Identity", currentName: "Preserve", identity }] };
+  const canonical = liftJavaScript({ source: renamed, moduleG1: moduleV30G1, packagePath, revision: 2, entryName: "Preserve", identityEvidence: evidence });
+  assert.match(canonical, new RegExp(`en ${identity} 00000000000000000000000000009011`));
+  assert.throws(() => liftJavaScript({ source: renamed, moduleG1: moduleV30G1, packagePath, revision: 2, entryName: "Preserve", identityEvidence: { ...evidence, renames: [{ ...evidence.renames[0], identity: "00".repeat(16) }] } }), /javascript\.identity_evidence_forged/);
+  assert.throws(() => liftJavaScript({ source: original + "\n/** @param {string} value @returns {string} */\nfunction Preserve(value) { return value; }", moduleG1: moduleV30G1, packagePath, revision: 2, identityEvidence: evidence }), /javascript\.identity_evidence_mismatch/);
 });
 
 test("lifts ordered const bindings as lexical local semantics", () => {

@@ -109,8 +109,13 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
   const methodNames = new Set([...implementationBindings.values()].flatMap((item) => [...item.methods.values()]));
   const descriptions = declarations.map((declaration) => ({
     ...declaration,
-    id: stableID("session-declaration", packagePath, declaration.name),
+    id: declaration.identity ?? stableID("session-declaration", packagePath, declaration.name),
   }));
+  const identities = new Set();
+  for (const description of descriptions) {
+    if (identities.has(description.id)) fail("lua.duplicate_semantic_identity", description.location);
+    identities.add(description.id);
+  }
   const descriptionsByName = new Map(descriptions.map((item) => [item.name, item]));
 
   const protocols = new Map();
@@ -186,7 +191,7 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
   const functionIDs = descriptions.filter((item) => !methodNames.has(item.name)).map((item) => item.id).sort();
   const programID = stableID("session-program", packagePath);
   additions.push(graphEntity(programID, entity(programID, schema.program, [
-    [0x9150, refs(functionIDs)], [0x9151, ref(stableID("session-declaration", packagePath, entry.name))],
+    [0x9150, refs(functionIDs)], [0x9151, ref(descriptionsByName.get(entry.name).id)],
   ])));
   return compose(moduleG1, stableID("session-revision", packagePath, String(revision)), additions);
 }
@@ -334,8 +339,8 @@ function parseSource(source, file, records) {
     if (meaningful.length === 1) {
       const returned = /^\s*return\s+(.+?)\s*$/.exec(meaningful[0].text);
       if (!returned) fail("lua.requires_return", { file, line: meaningful[0].line, column: 1 });
-      declarations.push({ name: match[2], parameters: signature.parameters, resultType: signature.resultType, expression: parseExpression(returned[1], file, meaningful[0].line), exported: !match[1], location });
-    } else declarations.push({ name: match[2], parameters: signature.parameters, resultType: signature.resultType, statements: parseControlBlock(meaningful, file), exported: !match[1], location });
+      declarations.push({ name: match[2], identity: signature.identity, parameters: signature.parameters, resultType: signature.resultType, expression: parseExpression(returned[1], file, meaningful[0].line), exported: !match[1], location });
+    } else declarations.push({ name: match[2], identity: signature.identity, parameters: signature.parameters, resultType: signature.resultType, statements: parseControlBlock(meaningful, file), exported: !match[1], location });
   }
   if (annotations.length) fail("lua.orphan_annotation", { file, line: annotations[0].line, column: 1 });
   return declarations;
@@ -366,11 +371,14 @@ function parseControlBlock(lines, file, start = 0, nested = false) {
 function validateAnnotations(annotations, parameters, location, records) {
   const declared = annotations.filter((item) => item.text.startsWith("---@param ")).map((item) => /^---@param\s+([A-Za-z_][A-Za-z0-9_]*)\s+(\S+)$/.exec(item.text));
   const result = annotations.filter((item) => item.text.startsWith("---@return "));
+  const identities = annotations.filter((item) => item.text.startsWith("---@seme-id "));
+  const identity = identities.length === 1 ? /^---@seme-id\s+(80[0-9a-f]{30})$/.exec(identities[0].text) : null;
   const returned = result.length === 1 ? /^---@return\s+(\S+)$/.exec(result[0].text) : null;
   if (declared.some((item) => !item) || !returned) fail("lua.unsupported_annotation", location);
+  if (identities.length && !identity) fail("lua.invalid_semantic_identity", { ...location, line: identities[0].line });
   if (declared.length !== parameters.length || declared.some((item, index) => item[1] !== parameters[index])) fail("lua.signature_mismatch", location);
-  if (annotations.length !== declared.length + 1) fail("lua.unsupported_annotation", location);
-  return { parameters: declared.map((item) => ({ name: item[1], type: annotationType(item[2], location, records) })), resultType: annotationType(returned[1], location, records) };
+  if (annotations.length !== declared.length + 1 + identities.length) fail("lua.unsupported_annotation", location);
+  return { identity: identity?.[1], parameters: declared.map((item) => ({ name: item[1], type: annotationType(item[2], location, records) })), resultType: annotationType(returned[1], location, records) };
 }
 function annotationType(value, location, records) {
   const scalar = ({ boolean: "bool", "seme.i64": "i64", "seme.text": "text", "seme.bytes": "bytes" })[value];

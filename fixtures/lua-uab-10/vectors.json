@@ -1,0 +1,11 @@
+{
+  "valid": [
+    {"name":"false","arguments":[{"kind":"bool","bool":false}],"result":{"kind":"bool","bool":false}},
+    {"name":"true","arguments":[{"kind":"bool","bool":true}],"result":{"kind":"bool","bool":true}}
+  ],
+  "malformed": [
+    {"name":"missing","arguments":[]},
+    {"name":"extra","arguments":[{"kind":"bool","bool":true},{"kind":"bool","bool":false}]},
+    {"name":"wrong-type","arguments":[{"kind":"i64","i64":"0"}]}
+  ]
+}

@@ -479,7 +479,8 @@ func declarationsForPackage(project, packagePath, directory string, files []Nati
 				}
 			}
 			if len(matches) > 1 {
-				return nil, fmt.Errorf("provider.identity_ambiguous:%s", candidate.object.Name())
+				position := fset.Position(candidate.node.Name.Pos())
+				return nil, fmt.Errorf("provider.identity_ambiguous:%s:%s:%d:%d", candidate.object.Name(), candidate.relative, position.Line, position.Column)
 			}
 			if len(matches) == 1 {
 				identity = matches[0].ID
