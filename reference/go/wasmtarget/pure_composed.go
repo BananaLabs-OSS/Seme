@@ -75,13 +75,20 @@ func certifyComposedPureFunction(graph wire.Envelope, program, function wire.Ent
 	if err != nil {
 		return nil, PureABI{}, err
 	}
-	if value.kind != "transition" {
+	abi.ResponseSize = 16
+	resultName, encoding := "state-transition:record:i64,i64", "state-then-result-little-endian-i64"
+	if value.kind == "result:i64,i64" {
+		declared, _ := field(function, 0x9112)
+		if declared.Tag != 6 || value.typeID != declared.Reference {
+			return nil, PureABI{}, fmt.Errorf("wasm.composed_result_type")
+		}
+		resultName, encoding = "result:i64,i64", "variant-tag-u64-then-payload-i64"
+	} else if value.kind != "transition" {
 		return nil, PureABI{}, fmt.Errorf("wasm.composed_result_kind")
 	}
-	abi.ResponseSize = 16
-	abi.Result = PureABIField{Index: 0, Type: "state-transition:record:i64,i64", Offset: 0, Size: 16, Encoding: "state-then-result-little-endian-i64"}
+	abi.Result = PureABIField{Index: 0, Type: resultName, Offset: 0, Size: 16, Encoding: encoding}
 	helper := append(append([]byte{}, value.state...), value.result...)
-	wasm, err := pureStringModule(parameterTypes, pureValueType{name: "transition:i64,i64", wasm: 0x7e, size: 16}, helper, abi, nil, l.extra)
+	wasm, err := pureStringModule(parameterTypes, pureValueType{name: resultName, wasm: 0x7e, size: 16}, helper, abi, nil, l.extra)
 	return wasm, abi, err
 }
 
@@ -189,6 +196,8 @@ func validateComposedExpr(graph wire.Envelope, id wire.ID, members map[wire.ID]b
 		refs = []uint64{0x9d20}
 	case identity(0xa001):
 		refs = []uint64{0xa0010}
+	case identity(0xa061):
+		refs = []uint64{0xa0610}
 	case identity(0x9070):
 		if value, x := field(e, 0x9700); x != nil || value.Tag != 3 {
 			return fmt.Errorf("wasm.composed_literal")
@@ -196,6 +205,8 @@ func validateComposedExpr(graph wire.Envelope, id wire.ID, members map[wire.ID]b
 		return nil
 	case identity(0x9014):
 		refs = []uint64{0x9140, 0x9141}
+	case identity(0x9021):
+		refs = []uint64{0x9160, 0x9161}
 	case identity(0x9032):
 		refs = []uint64{0x9320, 0x9321}
 	case identity(0x9033):
@@ -207,6 +218,34 @@ func validateComposedExpr(graph wire.Envelope, id wire.ID, members map[wire.ID]b
 		refs = []uint64{0xa0060}
 	case identity(0xa007):
 		refs = []uint64{0xa0070}
+	case identity(0x9043):
+		refs = []uint64{0x9410, 0x9411}
+	case identity(0x9044):
+		refs = []uint64{0x9420, 0x9421}
+	case identity(0xa062):
+		value, x := requiredComposedRef(e, 0xa0620)
+		if x != nil {
+			return x
+		}
+		if x = validateComposedExpr(graph, value, members, stack, visiting, budget-1); x != nil {
+			return x
+		}
+		for _, fieldID := range []uint64{0xa0621, 0xa0623} {
+			binding, x := requiredComposedRef(e, fieldID)
+			if x != nil || graph.Entities[binding].Schema != identity(0xa060) {
+				return fmt.Errorf("wasm.composed_result_binding")
+			}
+		}
+		for _, fieldID := range []uint64{0xa0622, 0xa0624} {
+			body, x := requiredComposedRef(e, fieldID)
+			if x != nil {
+				return x
+			}
+			if x = validateComposedBlock(graph, body, members, stack, visiting, budget-1); x != nil {
+				return x
+			}
+		}
+		return nil
 	case identity(0x90f6):
 		refs = []uint64{0x9f60}
 	case identity(0x90f7):
@@ -272,7 +311,7 @@ func validateComposedExpr(graph wire.Envelope, id wire.ID, members map[wire.ID]b
 			return x
 		}
 		childSchema := graph.Entities[child].Schema
-		if childSchema == identity(0x9012) || childSchema == identity(0x90d0) || childSchema == identity(0xa000) || childSchema == identity(0x9030) || childSchema == identity(0x9031) || childSchema == identity(0xa004) || childSchema == identity(0x90f5) {
+		if childSchema == identity(0x9012) || childSchema == identity(0x90d0) || childSchema == identity(0xa000) || childSchema == identity(0x9030) || childSchema == identity(0x9031) || childSchema == identity(0xa004) || childSchema == identity(0x9042) || childSchema == identity(0xa060) || childSchema == identity(0x90f5) {
 			continue
 		}
 		if x = validateComposedExpr(graph, child, members, stack, visiting, budget-1); x != nil {
@@ -372,6 +411,9 @@ func (l *composedLowerer) block(id wire.ID, scope composedScope) (composedValue,
 			if a.kind == "transition" {
 				return composedValue{kind: "transition", state: choose(a.state, b.state), result: choose(a.result, b.result)}, nil
 			}
+			if a.kind == "result:i64,i64" {
+				return composedValue{kind: a.kind, typeID: a.typeID, state: choose(a.state, b.state), result: choose(a.result, b.result)}, nil
+			}
 			return composedValue{kind: a.kind, code: choose(a.code, b.code)}, nil
 		default:
 			return composedValue{}, fmt.Errorf("wasm.composed_statement:%s", statement.Schema.String())
@@ -404,6 +446,13 @@ func (l *composedLowerer) expr(id wire.ID, scope composedScope) (composedValue, 
 			return composedValue{}, fmt.Errorf("wasm.composed_local_scope")
 		}
 		return value, nil
+	case identity(0xa061):
+		binding, _ := field(e, 0xa0610)
+		value, ok := scope.values[binding.Reference]
+		if !ok {
+			return composedValue{}, fmt.Errorf("wasm.composed_variant_scope")
+		}
+		return value, nil
 	case identity(0x90f6):
 		binding, _ := field(e, 0x9f60)
 		value, ok := scope.values[binding.Reference]
@@ -426,6 +475,18 @@ func (l *composedLowerer) expr(id wire.ID, scope composedScope) (composedValue, 
 		return composedValue{kind: "i64", code: code.Bytes()}, nil
 	case identity(0x9014):
 		return l.binary(e, 0x9140, 0x9141, 0x7c, scope)
+	case identity(0x9021):
+		left, _ := field(e, 0x9160)
+		right, _ := field(e, 0x9161)
+		a, err := l.expr(left.Reference, scope)
+		if err != nil {
+			return composedValue{}, err
+		}
+		b, err := l.expr(right.Reference, scope)
+		if err != nil || a.kind != "i64" || b.kind != "i64" {
+			return composedValue{}, fmt.Errorf("wasm.composed_compare")
+		}
+		return composedValue{kind: "bool", code: append(append(a.code, b.code...), 0x57)}, nil
 	case identity(0x9033):
 		typeRef, _ := field(e, 0x9330)
 		values, _ := field(e, 0x9331)
@@ -468,6 +529,71 @@ func (l *composedLowerer) expr(id wire.ID, scope composedScope) (composedValue, 
 			return composedValue{}, err
 		}
 		return composedValue{kind: "transition", state: a.code, result: b.code}, nil
+	case identity(0x9043), identity(0x9044):
+		typeField, valueField, tag := uint64(0x9410), uint64(0x9411), int64(0)
+		if e.Schema == identity(0x9044) {
+			typeField, valueField, tag = 0x9420, 0x9421, 1
+		}
+		typeRef, _ := field(e, typeField)
+		valueRef, _ := field(e, valueField)
+		resultType := l.graph.Entities[typeRef.Reference]
+		okType, a := field(resultType, 0x9400)
+		errorType, b := field(resultType, 0x9401)
+		value, err := l.expr(valueRef.Reference, scope)
+		okPhysical, okErr := pureType(l.graph, okType.Reference)
+		errorPhysical, errorErr := pureType(l.graph, errorType.Reference)
+		if a != nil || b != nil || resultType.Schema != identity(0x9042) || value.kind != "i64" || err != nil || okErr != nil || errorErr != nil || okPhysical.name != "i64" || errorPhysical.name != "i64" {
+			return composedValue{}, fmt.Errorf("wasm.composed_result_construct")
+		}
+		var tagCode bytes.Buffer
+		tagCode.WriteByte(0x42)
+		sleb(&tagCode, tag)
+		return composedValue{kind: "result:i64,i64", typeID: typeRef.Reference, state: tagCode.Bytes(), result: value.code}, nil
+	case identity(0xa062):
+		valueRef, _ := field(e, 0xa0620)
+		value, err := l.expr(valueRef.Reference, scope)
+		if err != nil || value.kind != "result:i64,i64" {
+			return composedValue{}, fmt.Errorf("wasm.composed_result_match")
+		}
+		okBinding, _ := field(e, 0xa0621)
+		okBody, _ := field(e, 0xa0622)
+		errorBinding, _ := field(e, 0xa0623)
+		errorBody, _ := field(e, 0xa0624)
+		resultType := l.graph.Entities[value.typeID]
+		okExpected, _ := field(resultType, 0x9400)
+		errorExpected, _ := field(resultType, 0x9401)
+		okEntity, okExists := l.graph.Entities[okBinding.Reference]
+		errorEntity, errorExists := l.graph.Entities[errorBinding.Reference]
+		okActual, okTypeErr := field(okEntity, 0xa0601)
+		errorActual, errorTypeErr := field(errorEntity, 0xa0601)
+		if !okExists || !errorExists || okEntity.Schema != identity(0xa060) || errorEntity.Schema != identity(0xa060) || okTypeErr != nil || errorTypeErr != nil || okActual.Reference != okExpected.Reference || errorActual.Reference != errorExpected.Reference {
+			return composedValue{}, fmt.Errorf("wasm.composed_result_binding_type")
+		}
+		okValues := map[wire.ID]composedValue{}
+		errorValues := map[wire.ID]composedValue{}
+		for k, v := range scope.values {
+			okValues[k] = v
+			errorValues[k] = v
+		}
+		payload := composedValue{kind: "i64", code: value.result}
+		okValues[okBinding.Reference] = payload
+		errorValues[errorBinding.Reference] = payload
+		ok, err := l.block(okBody.Reference, composedScope{values: okValues, receiver: scope.receiver})
+		if err != nil {
+			return composedValue{}, err
+		}
+		bad, err := l.block(errorBody.Reference, composedScope{values: errorValues, receiver: scope.receiver})
+		if err != nil || ok.kind != bad.kind || ok.kind != "result:i64,i64" || ok.typeID != bad.typeID {
+			return composedValue{}, fmt.Errorf("wasm.composed_result_branches")
+		}
+		test := append(append([]byte{}, value.state...), 0x50)
+		choose := func(a, b []byte) []byte {
+			out := append(append(append([]byte{}, test...), 0x04, 0x7e), a...)
+			out = append(out, 0x05)
+			out = append(out, b...)
+			return append(out, 0x0b)
+		}
+		return composedValue{kind: ok.kind, typeID: ok.typeID, state: choose(ok.state, bad.state), result: choose(ok.result, bad.result)}, nil
 	case identity(0xa006), identity(0xa007):
 		var fieldID uint64 = 0xa0060
 		if e.Schema == identity(0xa007) {

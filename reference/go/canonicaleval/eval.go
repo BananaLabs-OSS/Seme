@@ -591,6 +591,31 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 		return lv, rv, er
 	}
 	switch e.Schema {
+	case id(0x9043), id(0x9044):
+		typeField, valueField, variant := uint64(0x9410), uint64(0x9411), "ok"
+		if e.Schema == id(0x9044) {
+			typeField, valueField, variant = 0x9420, 0x9421, "error"
+		}
+		typeID, te := refField(typeField)
+		valueID, ve := refField(valueField)
+		resultType, exists := g.Entities[typeID]
+		okType, oe := field(resultType, 0x9400)
+		errorType, ee := field(resultType, 0x9401)
+		if te != nil || ve != nil || !exists || resultType.Schema != id(0x9042) || oe != nil || ee != nil || okType.Tag != 6 || errorType.Tag != 6 {
+			return Value{}, fmt.Errorf("canonicaleval.result_construct")
+		}
+		value, err := eval(g, valueID, env, budget-1)
+		if err != nil {
+			return Value{}, err
+		}
+		expected := okType.Reference
+		if variant == "error" {
+			expected = errorType.Reference
+		}
+		if validateValue(g, expected, value, 16) != nil {
+			return Value{}, fmt.Errorf("canonicaleval.result_construct_type")
+		}
+		return Value{Kind: "result", Variant: variant, Payload: &value}, nil
 	case id(0xa022), id(0xa031):
 		key := uint64(0xa0220)
 		if e.Schema == id(0xa031) {

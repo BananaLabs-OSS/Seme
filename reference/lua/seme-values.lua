@@ -357,5 +357,12 @@ function Seme.transition_step(counter, delta, field_name)
 end
 function Seme.transition_state(value) return unpack_value(value, "transition").state end
 function Seme.transition_result(value) return unpack_value(value, "transition").result end
+function Seme.check_positive(value)
+  if Seme.less_equal(Seme.i64("0"), value) and Seme.i64_decimal(value) ~= "0" then return Seme.ok(value) end
+  return Seme.err(Seme.i64("99"))
+end
+function Seme.increment_positive(value)
+  return Seme.match_result(Seme.check_positive(value), function(accepted) return Seme.ok(Seme.add(accepted, Seme.i64("1"))) end, function(error_) return Seme.err(error_) end)
+end
 
 return Seme
