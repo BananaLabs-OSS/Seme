@@ -3,11 +3,108 @@
 package wire
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
+	"sort"
 )
+
+// Encode writes the unique canonical Kernel v1 wire representation.
+func Encode(e Envelope) ([]byte, error) {
+	var b bytes.Buffer
+	b.WriteString("SEMEK1\r\n")
+	putU(&b, 1)
+	b.Write(e.Module[:])
+	b.Write(e.Revision[:])
+	parents := append([]ID(nil), e.Parents...)
+	sort.Slice(parents, func(i, j int) bool { return idLess(parents[i], parents[j]) })
+	for i := 1; i < len(parents); i++ {
+		if parents[i] == parents[i-1] {
+			return nil, errors.New("wire.duplicate_parent")
+		}
+	}
+	putU(&b, uint64(len(parents)))
+	for _, parent := range parents {
+		b.Write(parent[:])
+	}
+	ids := make([]ID, 0, len(e.Entities))
+	for entityID := range e.Entities {
+		ids = append(ids, entityID)
+	}
+	sort.Slice(ids, func(i, j int) bool { return idLess(ids[i], ids[j]) })
+	putU(&b, uint64(len(ids)))
+	for _, entityID := range ids {
+		entity := e.Entities[entityID]
+		if entity.ID != entityID {
+			return nil, errors.New("wire.entity_key_mismatch")
+		}
+		b.Write(entity.ID[:])
+		b.Write(entity.Schema[:])
+		putU(&b, entity.Version)
+		keys := make([]ID, 0, len(entity.Fields))
+		for fieldID := range entity.Fields {
+			keys = append(keys, fieldID)
+		}
+		sort.Slice(keys, func(i, j int) bool { return idLess(keys[i], keys[j]) })
+		putU(&b, uint64(len(keys)))
+		for _, fieldID := range keys {
+			b.Write(fieldID[:])
+			if err := putValue(&b, entity.Fields[fieldID]); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return b.Bytes(), nil
+}
+
+func putU(b *bytes.Buffer, n uint64) {
+	for n >= 128 {
+		b.WriteByte(byte(n) | 128)
+		n >>= 7
+	}
+	b.WriteByte(byte(n))
+}
+
+func putValue(b *bytes.Buffer, value Value) error {
+	b.WriteByte(value.Tag)
+	switch value.Tag {
+	case 0, 1, 2:
+	case 3, 4:
+		putU(b, value.Unsigned)
+	case 5:
+		putU(b, uint64(len(value.Bytes)))
+		b.Write(value.Bytes)
+	case 6:
+		b.Write(value.Reference[:])
+	case 7:
+		putU(b, uint64(len(value.List)))
+		for _, item := range value.List {
+			if err := putValue(b, item); err != nil {
+				return err
+			}
+		}
+	case 8:
+		keys := make([]ID, 0, len(value.Record))
+		for fieldID := range value.Record {
+			keys = append(keys, fieldID)
+		}
+		sort.Slice(keys, func(i, j int) bool { return idLess(keys[i], keys[j]) })
+		putU(b, uint64(len(keys)))
+		for _, fieldID := range keys {
+			b.Write(fieldID[:])
+			if err := putValue(b, value.Record[fieldID]); err != nil {
+				return err
+			}
+		}
+	case 9:
+		b.Write(value.Hole[:])
+	default:
+		return fmt.Errorf("wire.tag:%d", value.Tag)
+	}
+	return nil
+}
 
 type ID [16]byte
 

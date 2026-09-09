@@ -2,6 +2,54 @@ package wire
 
 import "testing"
 
+func testID(last byte) ID {
+	var value ID
+	value[len(value)-1] = last
+	return value
+}
+
+func TestEncodeCanonicalRoundTrip(t *testing.T) {
+	first, second := testID(1), testID(2)
+	envelope := Envelope{
+		Module: first, Revision: second, Parents: []ID{second, first},
+		Entities: map[ID]Entity{
+			second: {ID: second, Schema: first, Version: 1, Fields: map[ID]Value{
+				second: {Tag: 8, Record: map[ID]Value{second: {Tag: 5, Bytes: []byte("value")}}},
+				first:  {Tag: 7, List: []Value{{Tag: 6, Reference: second}, {Tag: 9, Hole: first}}},
+			}},
+			first: {ID: first, Schema: second, Version: 1, Fields: map[ID]Value{}},
+		},
+	}
+	encoded, err := Encode(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reencoded, err := Encode(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(encoded) != string(reencoded) {
+		t.Fatal("canonical wire did not reproduce byte-identically")
+	}
+}
+
+func TestEncodeRejectsInvalidConstruction(t *testing.T) {
+	first, second := testID(1), testID(2)
+	if _, err := Encode(Envelope{Parents: []ID{first, first}}); err == nil {
+		t.Fatal("accepted duplicate parents")
+	}
+	if _, err := Encode(Envelope{Entities: map[ID]Entity{first: {ID: second}}}); err == nil {
+		t.Fatal("accepted entity map key mismatch")
+	}
+	if _, err := Encode(Envelope{Entities: map[ID]Entity{first: {ID: first, Fields: map[ID]Value{first: {Tag: 255}}}}}); err == nil {
+		t.Fatal("accepted unknown value tag")
+	}
+}
+
 func base(entityFields byte) []byte {
 	b := append([]byte("SEMEK1\r\n"), 1)
 	b = append(b, make([]byte, 32)...)

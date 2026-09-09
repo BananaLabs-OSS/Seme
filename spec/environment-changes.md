@@ -282,8 +282,9 @@ configuration was installed or changed.
 ## 2026-09-09 — Useful Project Bridge v1 foundation
 
 UPB-v1 profile, Project Contract v1 generation, typed ProjectSnapshot
-validation, and the semantic-module registry reused the existing Go 1.25.6
-toolchain, Node 22 runtime, Seme bootstrap, and repository-local semantic
+validation, canonical wire encoding, and the semantic-module registry reused
+the existing Go 1.25.6 toolchain, Node 22 runtime, Seme bootstrap, and
+repository-local semantic
 validators. Project-contract gates create an automatically removed
 `mktemp` directory under `${TMPDIR:-/tmp}` and redirect `GOCACHE` into it;
 additional focused verification used a process-local cache under `/tmp`.
