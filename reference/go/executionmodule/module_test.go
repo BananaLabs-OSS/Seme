@@ -414,8 +414,26 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(35); err == nil {
+	if _, err := Declarations(36); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersion35AddsOptionMapLookup(t *testing.T) {
+	previous, err := Declarations(34)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(35)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa044 {
+		t.Fatalf("v35 declarations = %#v", current[len(previous):])
+	}
+	fields := current[len(previous)].Fields
+	if len(fields) != 3 || fields[0].ID != 0xa0440 || fields[1].ID != 0xa0441 || fields[2].ID != 0xa0442 || fields[2].Schema != 0xa050 {
+		t.Fatalf("MapLookupOption fields = %#v", fields)
 	}
 }
 

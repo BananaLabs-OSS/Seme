@@ -118,7 +118,7 @@ func TestEverySupportedExpressionRejectsMissingRequiredFieldWithoutPanic(t *test
 	cases := []struct{ schema, field uint64 }{
 		{0x9013, 0x9130}, {0x9070, 0x9700}, {0x9050, 0x9500}, {0xa064, 0xa0640}, {0x90b0, 0x9b00},
 		{0x9014, 0x9140}, {0x9021, 0x9160}, {0x90b1, 0x9b10}, {0x90c3, 0x9c30}, {0x9032, 0x9320},
-		{0x90f4, 0x9f40}, {0x90f9, 0x9f90}, {0xa042, 0xa0420}, {0xa061, 0xa0610}, {0xa063, 0xa0630},
+		{0x90f4, 0x9f40}, {0x90f9, 0x9f90}, {0xa042, 0xa0420}, {0xa044, 0xa0440}, {0xa061, 0xa0610}, {0xa063, 0xa0630},
 		{0xa062, 0xa0620}, {0xa065, 0xa0650}, {0x90c2, 0x9c20},
 	}
 	for _, tc := range cases {
@@ -141,6 +141,35 @@ func TestEverySupportedExpressionRejectsMissingRequiredFieldWithoutPanic(t *test
 				}
 			})
 		}
+	}
+}
+
+func TestMapLookupOptionDistinguishesMissingFromZero(t *testing.T) {
+	g, types := typeGraph()
+	parameter, read, key, lookup := id(0x7500), id(0x7501), id(0x7502), id(0x7503)
+	g.Entities[parameter] = wire.Entity{ID: parameter, Schema: id(0x9012), Fields: map[wire.ID]wire.Value{id(0x9121): {Tag: 6, Reference: types["map"]}}}
+	g.Entities[read] = wire.Entity{ID: read, Schema: id(0x9013), Fields: map[wire.ID]wire.Value{id(0x9130): {Tag: 6, Reference: parameter}}}
+	g.Entities[key] = wire.Entity{ID: key, Schema: id(0x9070), Fields: map[wire.ID]wire.Value{id(0x9700): {Tag: 3, Unsigned: 5}, id(0x9701): {Tag: 6, Reference: types["i64"]}}}
+	g.Entities[lookup] = wire.Entity{ID: lookup, Schema: id(0xa044), Fields: map[wire.ID]wire.Value{id(0xa0440): {Tag: 6, Reference: read}, id(0xa0441): {Tag: 6, Reference: key}, id(0xa0442): {Tag: 6, Reference: types["option"]}}}
+	env := map[wire.ID]Value{parameter: {
+		Kind: "map", ValueType: "i64",
+		Entries: []Entry{{Key: Value{Kind: "i64", I64: "5"}, Value: Value{Kind: "i64", I64: "0"}}},
+	}}
+	found, err := eval(g, lookup, env, 16)
+	if err != nil || found.Variant != "some" || found.Payload == nil || found.Payload.I64 != "0" {
+		t.Fatalf("found=%#v err=%v", found, err)
+	}
+	env[parameter] = Value{Kind: "map", ValueType: "i64"}
+	missing, err := eval(g, lookup, env, 16)
+	if err != nil || missing.Variant != "none" || missing.Payload != nil {
+		t.Fatalf("missing=%#v err=%v", missing, err)
+	}
+	forged := cloneGraph(g)
+	e := forged.Entities[lookup]
+	e.Fields[id(0xa0442)] = wire.Value{Tag: 6, Reference: types["result"]}
+	forged.Entities[lookup] = e
+	if _, err := eval(forged, lookup, env, 16); err == nil {
+		t.Fatal("forged option type accepted")
 	}
 }
 

@@ -222,6 +222,25 @@ func certifyPureValueLayout(graph wire.Envelope, typeID wire.ID, visiting map[wi
 		base.VariablePayload, base.MaximumPayload = valueLayout.VariablePayload, valueLayout.MaximumPayload
 		base.Encoding = "u8-tag(0=none,1=some)/zeroed-absent-payload"
 		base.Variants = []PureValueVariantLayout{{Tag: 0, Name: "none", Offset: 1}, {Tag: 1, Name: "some", Offset: 1, Payload: &valueLayout}}
+	case identity(0xa004):
+		stateType, stateErr := requiredTypeReference(entity, 0xa0040)
+		resultType, resultErr := requiredTypeReference(entity, 0xa0041)
+		if stateErr != nil || resultErr != nil {
+			return PureValueLayout{}, fmt.Errorf("wasm.pure_transition_type_fields")
+		}
+		stateLayout, err := certifyPureValueLayout(graph, stateType, visiting, budget-1)
+		if err != nil {
+			return PureValueLayout{}, err
+		}
+		resultLayout, err := certifyPureValueLayout(graph, resultType, visiting, budget-1)
+		if err != nil {
+			return PureValueLayout{}, err
+		}
+		base.Type, base.Encoding = "transition<"+stateLayout.Type+","+resultLayout.Type+">", "state-then-result/ordered-inline-fields"
+		base.Fields = []PureValueFieldLayout{{Name: "state", Offset: 0, Value: stateLayout}, {Name: "result", Offset: stateLayout.FixedSize, Value: resultLayout}}
+		base.FixedSize = stateLayout.FixedSize + resultLayout.FixedSize
+		base.VariablePayload = stateLayout.VariablePayload || resultLayout.VariablePayload
+		base.MaximumPayload = stateLayout.MaximumPayload + resultLayout.MaximumPayload
 	case identity(0x9030):
 		members, err := field(entity, 0x9301)
 		if err != nil || members.Tag != 7 || len(members.List) == 0 {

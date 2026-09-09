@@ -1424,6 +1424,33 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			}
 		}
 		return zero(m.ValueType)
+	case id(0xa044):
+		mapID, me := refField(0xa0440)
+		keyID, ke := refField(0xa0441)
+		optionID, oe := refField(0xa0442)
+		mapTypeID, mapTypeKnown := expressionType(g, mapID)
+		mapType, mapTypeExists := g.Entities[mapTypeID]
+		optionType, optionExists := g.Entities[optionID]
+		mapValueType, mve := field(mapType, 0xa0401)
+		optionValueType, ove := field(optionType, 0xa0500)
+		if me != nil || ke != nil || oe != nil || !mapTypeKnown || !mapTypeExists || mapType.Schema != id(0xa040) || !optionExists || optionType.Schema != id(0xa050) || mve != nil || ove != nil || mapValueType.Tag != 6 || optionValueType.Tag != 6 || mapValueType.Reference != optionValueType.Reference {
+			return Value{}, fmt.Errorf("canonicaleval.map_option_type")
+		}
+		m, er := eval(g, mapID, env, budget-1)
+		if er != nil || m.Kind != "map" || len(m.Entries) > 512 {
+			return Value{}, fmt.Errorf("canonicaleval.map_option")
+		}
+		key, er := eval(g, keyID, env, budget-1)
+		if er != nil {
+			return Value{}, er
+		}
+		for _, item := range m.Entries {
+			if equal(item.Key, key) {
+				payload := item.Value
+				return Value{Kind: "option", Variant: "some", Payload: &payload}, nil
+			}
+		}
+		return Value{Kind: "option", Variant: "none"}, nil
 	case id(0xa061):
 		binding, er := refField(0xa0610)
 		if er != nil {
