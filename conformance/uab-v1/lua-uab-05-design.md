@@ -1,4 +1,10 @@
-# Lua UAB-05 semantic design
+# Lua UAB-05 semantic design and evidence
+
+Status: complete. `scripts/check-lua-uab-05.sh` binds the exact five evidence
+classes to the scorecard and executes the native Lua oracle, projected Lua and
+byte-identical re-lift, canonical evaluator with named malformed calls,
+standalone Wasm, pinned Pulp, located source rejection, and forged canonical
+contract rejection from one fixture and vector corpus.
 
 Lua has no native nominal interface or method-set construct. Ordinary tables,
 metatables, `__index`, colon-call receiver insertion, and mutable function

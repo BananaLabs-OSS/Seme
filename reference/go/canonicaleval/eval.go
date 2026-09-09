@@ -27,6 +27,18 @@ type Value struct {
 	Payload       *Value           `json:"payload,omitempty"`
 	interfaceType wire.ID
 	witness       wire.ID
+	closure       *closureValue
+	state         *Value
+	result        *Value
+}
+type closureValue struct {
+	typeID     wire.ID
+	parameters []wire.ID
+	paramTypes []wire.ID
+	resultType wire.ID
+	captures   map[wire.ID]Value
+	body       wire.ID
+	mutable    bool
 }
 type Entry struct {
 	Key   Value `json:"key"`
@@ -558,6 +570,139 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 		return lv, rv, er
 	}
 	switch e.Schema {
+	case id(0xa022), id(0xa031):
+		key := uint64(0xa0220)
+		if e.Schema == id(0xa031) {
+			key = 0xa0310
+		}
+		binding, er := refField(key)
+		value, ok := env[binding]
+		if er != nil || !ok {
+			return Value{}, fmt.Errorf("canonicaleval.capture_read")
+		}
+		return value, nil
+	case id(0xa023), id(0xa034):
+		tf, pf, cf, bf := uint64(0xa0230), uint64(0xa0231), uint64(0xa0232), uint64(0xa0233)
+		cs, initial, mutable := id(0xa021), uint64(0xa0212), false
+		if e.Schema == id(0xa034) {
+			tf, pf, cf, bf, cs, initial, mutable = 0xa0340, 0xa0341, 0xa0342, 0xa0343, id(0xa030), 0xa0302, true
+		}
+		typeID, te := refField(tf)
+		parameters, pe := field(e, pf)
+		captures, ce := field(e, cf)
+		body, be := refField(bf)
+		if te != nil || pe != nil || ce != nil || be != nil || parameters.Tag != 7 || captures.Tag != 7 || g.Entities[typeID].Schema != id(0xa020) {
+			return Value{}, fmt.Errorf("canonicaleval.closure_construct")
+		}
+		closure := &closureValue{typeID: typeID, captures: map[wire.ID]Value{}, body: body, mutable: mutable}
+		functionType := g.Entities[typeID]
+		typeParameters, tpe := field(functionType, 0xa0200)
+		typeResult, tre := field(functionType, 0xa0201)
+		if tpe != nil || tre != nil || typeParameters.Tag != 7 || typeResult.Tag != 6 || len(typeParameters.List) != len(parameters.List) {
+			return Value{}, fmt.Errorf("canonicaleval.closure_type")
+		}
+		closure.resultType = typeResult.Reference
+		for _, item := range parameters.List {
+			if item.Tag != 6 || g.Entities[item.Reference].Schema != id(0x9012) {
+				return Value{}, fmt.Errorf("canonicaleval.closure_parameter")
+			}
+			position := len(closure.parameters)
+			parameterType, err := field(g.Entities[item.Reference], 0x9121)
+			if err != nil || parameterType.Tag != 6 || typeParameters.List[position].Tag != 6 || parameterType.Reference != typeParameters.List[position].Reference {
+				return Value{}, fmt.Errorf("canonicaleval.closure_parameter_type")
+			}
+			closure.parameters = append(closure.parameters, item.Reference)
+			closure.paramTypes = append(closure.paramTypes, parameterType.Reference)
+		}
+		for _, item := range captures.List {
+			if item.Tag != 6 {
+				return Value{}, fmt.Errorf("canonicaleval.closure_capture")
+			}
+			capture, ok := g.Entities[item.Reference]
+			source, err := field(capture, initial)
+			if !ok || capture.Schema != cs || err != nil || source.Tag != 6 {
+				return Value{}, fmt.Errorf("canonicaleval.closure_capture")
+			}
+			value, err := eval(g, source.Reference, env, budget-1)
+			if err != nil {
+				return Value{}, err
+			}
+			captureType, typeErr := field(capture, initial-1)
+			if typeErr != nil || captureType.Tag != 6 || validateValue(g, captureType.Reference, value, 16) != nil {
+				return Value{}, fmt.Errorf("canonicaleval.closure_capture_type")
+			}
+			closure.captures[capture.ID] = value
+		}
+		return Value{Kind: "closure", closure: closure}, nil
+	case id(0xa024), id(0xa035):
+		calleeField, argumentsField, stateful := uint64(0xa0240), uint64(0xa0241), false
+		if e.Schema == id(0xa035) {
+			calleeField, argumentsField, stateful = 0xa0350, 0xa0351, true
+		}
+		calleeID, ce := refField(calleeField)
+		arguments, ae := field(e, argumentsField)
+		callee, err := eval(g, calleeID, env, budget-1)
+		if ce != nil || ae != nil || err != nil || arguments.Tag != 7 || callee.Kind != "closure" || callee.closure == nil || callee.closure.mutable != stateful {
+			return Value{}, fmt.Errorf("canonicaleval.indirect_call")
+		}
+		result, next, err := invokeClosure(g, callee.closure, arguments, env, budget-1)
+		if err != nil {
+			return Value{}, err
+		}
+		if !stateful {
+			return result, nil
+		}
+		state := Value{Kind: "closure", closure: next}
+		return Value{Kind: "transition", state: &state, result: &result}, nil
+	case id(0xa032):
+		capture, ce := refField(0xa0320)
+		valueID, ve := refField(0xa0321)
+		if ce != nil || ve != nil {
+			return Value{}, fmt.Errorf("canonicaleval.capture_update")
+		}
+		if _, ok := env[capture]; !ok {
+			return Value{}, fmt.Errorf("canonicaleval.capture_ownership")
+		}
+		value, err := eval(g, valueID, env, budget-1)
+		if err != nil {
+			return Value{}, err
+		}
+		binding := g.Entities[capture]
+		captureType, typeErr := field(binding, 0xa0301)
+		if binding.Schema != id(0xa030) || typeErr != nil || captureType.Tag != 6 || validateValue(g, captureType.Reference, value, 16) != nil {
+			return Value{}, fmt.Errorf("canonicaleval.capture_update_type")
+		}
+		env[capture] = value
+		return value, nil
+	case id(0xa033):
+		steps, se := field(e, 0xa0330)
+		resultID, re := refField(0xa0331)
+		if se != nil || re != nil || steps.Tag != 7 {
+			return Value{}, fmt.Errorf("canonicaleval.sequence")
+		}
+		for _, step := range steps.List {
+			if step.Tag != 6 {
+				return Value{}, fmt.Errorf("canonicaleval.sequence")
+			}
+			if _, err := eval(g, step.Reference, env, budget-1); err != nil {
+				return Value{}, err
+			}
+		}
+		return eval(g, resultID, env, budget-1)
+	case id(0xa006), id(0xa007):
+		key := uint64(0xa0060)
+		if e.Schema == id(0xa007) {
+			key = 0xa0070
+		}
+		transitionID, er := refField(key)
+		transition, err := eval(g, transitionID, env, budget-1)
+		if er != nil || err != nil || transition.Kind != "transition" || transition.state == nil || transition.result == nil {
+			return Value{}, fmt.Errorf("canonicaleval.transition_projection")
+		}
+		if e.Schema == id(0xa006) {
+			return *transition.state, nil
+		}
+		return *transition.result, nil
 	case id(0xa001):
 		receiver, er := refField(0xa0010)
 		if er != nil {
@@ -1350,6 +1495,47 @@ func evalMethod(g wire.Envelope, methodID, concreteType wire.ID, receiver Value,
 		env[parameters.List[i].Reference] = value
 	}
 	return evalBlock(g, body.Reference, env, budget-1)
+}
+
+func invokeClosure(g wire.Envelope, closure *closureValue, arguments wire.Value, outer map[wire.ID]Value, budget int) (Value, *closureValue, error) {
+	if budget <= 0 || closure == nil || arguments.Tag != 7 || len(arguments.List) != len(closure.parameters) {
+		return Value{}, nil, fmt.Errorf("canonicaleval.closure_call")
+	}
+	next := &closureValue{typeID: closure.typeID, parameters: append([]wire.ID(nil), closure.parameters...), paramTypes: append([]wire.ID(nil), closure.paramTypes...), resultType: closure.resultType, captures: cloneEnv(closure.captures), body: closure.body, mutable: closure.mutable}
+	env := cloneEnv(outer)
+	for id, value := range next.captures {
+		env[id] = value
+	}
+	for i, item := range arguments.List {
+		if item.Tag != 6 {
+			return Value{}, nil, fmt.Errorf("canonicaleval.closure_argument")
+		}
+		value, err := eval(g, item.Reference, outer, budget-1)
+		if err != nil {
+			return Value{}, nil, err
+		}
+		if i >= len(next.paramTypes) || validateValue(g, next.paramTypes[i], value, 16) != nil {
+			return Value{}, nil, fmt.Errorf("canonicaleval.closure_argument_type")
+		}
+		env[next.parameters[i]] = value
+	}
+	var result Value
+	var err error
+	if next.mutable {
+		result, err = eval(g, next.body, env, budget-1)
+	} else {
+		result, err = eval(g, next.body, env, budget-1)
+	}
+	if err != nil {
+		return Value{}, nil, err
+	}
+	if validateValue(g, next.resultType, result, 16) != nil {
+		return Value{}, nil, fmt.Errorf("canonicaleval.closure_result_type")
+	}
+	for id := range next.captures {
+		next.captures[id] = env[id]
+	}
+	return result, next, nil
 }
 
 func validateMethodRequirement(g wire.Envelope, methodID, requirementID, concreteType wire.ID) error {

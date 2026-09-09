@@ -1011,6 +1011,18 @@ function emitExpression(node, owner, path, context, expected) {
     context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009032", [[0x9320, ref(base.id)], [0x9321, ref(field.id)]])));
     return { id, type: expected };
   }
+  if (node.type === "CallExpression" && node.callee.type === "CallExpression" && !node.optional) {
+    const calleeType = inferExpressionType(node.callee, context);
+    if (!calleeType?.startsWith("function:")) fail("javascript.indirect_call_type", node.loc.start);
+    const [parameterText, resultType] = calleeType.slice("function:".length).split("=>");
+    const parameterTypes = parameterText === "" ? [] : parameterText.split(",");
+    if (resultType !== expected || parameterTypes.length !== node.arguments.length) fail("javascript.indirect_call_type", node.loc.start);
+    const callee = emitExpression(node.callee, owner, `${path}.callee`, context, calleeType);
+    const arguments_ = node.arguments.map((argument, index) => emitExpression(argument, owner, `${path}.argument.${index}`, context, parameterTypes[index]));
+    const id = expressionID(owner, path, "indirect-call");
+    context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a024", [[0xa0240, ref(callee.id)], [0xa0241, refs(arguments_.map((item) => item.id))]])));
+    return { id, type: expected };
+  }
   if (node.type === "CallExpression" && node.callee.type === "Identifier" && !node.optional) {
 	const calleeParameterIndex = context.parameterNames.indexOf(node.callee.name);
 	const calleeLocal = context.locals.get(node.callee.name);
