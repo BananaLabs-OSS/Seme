@@ -529,6 +529,7 @@ func projectBlock(id string, c context) (string, error) {
 			if err != nil || !identifier(name) {
 				return "", fmt.Errorf("go_projection.invalid_local_name")
 			}
+			name = availableLocalName(name, c)
 			initializerID, err := ref(binding, "00000000000000000000000000009d02")
 			if err != nil {
 				return "", err
@@ -538,7 +539,11 @@ func projectBlock(id string, c context) (string, error) {
 				return "", err
 			}
 			if initialEntity, ok := c.graph[initializerID]; ok && initialEntity.schema == sStatefulCall {
-				lines = append(lines, "\t"+name+" := "+initializer)
+				if statefulResultIsObserved(bindingID, c.graph) {
+					lines = append(lines, "\t"+name+" := "+initializer)
+				} else {
+					lines = append(lines, "\t"+initializer)
+				}
 				c.transitions[bindingID] = name
 				c.locals[bindingID] = name
 				continue
@@ -1042,6 +1047,49 @@ func cloneNames(source map[string]string) map[string]string {
 		result[key] = value
 	}
 	return result
+}
+
+// availableLocalName preserves the canonical binding name when Go's lexical
+// namespace permits it and deterministically disambiguates it otherwise. Seme
+// binding identities are independent of projection spelling, while ordinary Go
+// cannot redeclare a parameter with := in the same function body.
+func availableLocalName(name string, c context) string {
+	used := map[string]bool{}
+	for _, names := range []map[string]string{c.parameters, c.locals, c.iterations, c.variants, c.receivers, c.captures} {
+		for _, existing := range names {
+			used[existing] = true
+		}
+	}
+	if !used[name] {
+		return name
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s%d", name, suffix)
+		if !used[candidate] {
+			return candidate
+		}
+	}
+}
+
+func statefulResultIsObserved(bindingID string, graph map[string]entity) bool {
+	reads := map[string]bool{}
+	for id, item := range graph {
+		if item.schema != sLocalRead {
+			continue
+		}
+		if binding, err := ref(item, "00000000000000000000000000009d20"); err == nil && binding == bindingID {
+			reads[id] = true
+		}
+	}
+	for _, item := range graph {
+		if item.schema != sTransitionResult {
+			continue
+		}
+		if value, err := ref(item, "000000000000000000000000000a0070"); err == nil && reads[value] {
+			return true
+		}
+	}
+	return false
 }
 
 func expr(id string, c context) (string, error) {

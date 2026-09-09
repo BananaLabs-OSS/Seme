@@ -49,7 +49,10 @@ sed -n '1,$p' "$work/source/identity.lua" "$work/source/run.lua" > "$work/native
 printf '%s\n' 'assert(Run(true) == true)' 'assert(Run(false) == false)' >> "$work/native.lua"
 printf '%s\n' 'assert(Run(true) == true)' 'assert(Run(false) == false)' >> "$work/projected.lua"
 env $lua_env nvim -l "$work/native.lua"
-env $lua_env nvim -l "$work/projected.lua"
+printf '%s\n' \
+  '_G.Seme = dofile(assert(arg[1]))' \
+  'dofile(assert(arg[2]))' > "$work/projected-runner.lua"
+env $lua_env nvim -l "$work/projected-runner.lua" "$repo/reference/lua/seme-values.lua" "$work/projected.lua"
 
 (cd "$repo/reference/go" && go build -buildvcs=false -o "$work/lower" ./cmd/pure-wasm-lower)
 "$work/lower" "$work/lua.seme" "$work/lua-a.wasm" "$work/lua-a.json"
