@@ -102,6 +102,8 @@ const (
 	sSequence            = "0000000000000000000000000000a033"
 	sMutableClosure      = "0000000000000000000000000000a034"
 	sStatefulCall        = "0000000000000000000000000000a035"
+	sTransitionType      = "0000000000000000000000000000a004"
+	sStateTransition     = "0000000000000000000000000000a005"
 )
 
 type entity struct {
@@ -196,6 +198,9 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 	}
 	if graphHasSchema(graph, sResultType) {
 		out.WriteString("type Result[T, E any] struct {\n\tOk bool\n\tValue T\n\tError E\n}\n\n")
+	}
+	if graphHasSchema(graph, sTransitionType) {
+		out.WriteString("type Transition[S, R any] struct {\n\tState S\n\tResult R\n}\n\n")
 	}
 	records, err := collectRecords(graph)
 	if err != nil {
@@ -1104,6 +1109,32 @@ func expr(id string, c context) (string, error) {
 			items[i] = r.fields[i].name + ": " + rendered
 		}
 		return r.name + "{" + strings.Join(items, ", ") + "}", nil
+	case sStateTransition:
+		typeID, err := ref(e, "000000000000000000000000000a0050")
+		if err != nil {
+			return "", err
+		}
+		typ, err := typeName(c.graph, typeID)
+		if err != nil {
+			return "", err
+		}
+		stateID, err := ref(e, "000000000000000000000000000a0051")
+		if err != nil {
+			return "", err
+		}
+		resultID, err := ref(e, "000000000000000000000000000a0052")
+		if err != nil {
+			return "", err
+		}
+		state, err := expr(stateID, c)
+		if err != nil {
+			return "", err
+		}
+		result, err := expr(resultID, c)
+		if err != nil {
+			return "", err
+		}
+		return typ + "{State: " + state + ", Result: " + result + "}", nil
 	case sFieldRead:
 		valueID, err := ref(e, "00000000000000000000000000009320")
 		if err != nil {
@@ -1713,6 +1744,24 @@ func typeName(g map[string]entity, id string) (string, error) {
 			return "", err
 		}
 		return "func(" + strings.Join(rendered, ", ") + ") " + result, nil
+	case sTransitionType:
+		stateID, err := ref(e, "000000000000000000000000000a0040")
+		if err != nil {
+			return "", err
+		}
+		resultID, err := ref(e, "000000000000000000000000000a0041")
+		if err != nil {
+			return "", err
+		}
+		state, err := typeName(g, stateID)
+		if err != nil {
+			return "", err
+		}
+		result, err := typeName(g, resultID)
+		if err != nil {
+			return "", err
+		}
+		return "Transition[" + state + ", " + result + "]", nil
 	case sFixedArrayType:
 		element, err := ref(e, "00000000000000000000000000009f20")
 		if err != nil {
