@@ -62,3 +62,13 @@ destinations before publishing the verified staged tree. This materializer
 does not itself claim that caller bytes came from canonical meaning; the
 language projector and byte-identical semantic re-lift must prove that
 separately.
+
+`reference/go/resolutionfidelity` emits canonical checked evidence for the
+source boundary. Tracked Go is exact only inside the named bounded
+UAB/provider profile. Ignored, generated, and opaque units are host-side
+byte-preserved data; vendored units are an opaque native island. The canonical
+SourceInventory is resolution metadata at the host boundary and makes no Wasm
+claim. Executable Program placement and target parity require their own target
+plan. The validator rejects omitted, reordered, widened, noncanonical,
+unknown, or trailing claims by recomputing the complete record from a trusted
+snapshot and profile.

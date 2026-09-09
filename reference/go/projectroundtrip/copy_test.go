@@ -95,3 +95,20 @@ func TestCopyVerifiedNeverOverwrites(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+
+func TestCopyVerifiedNeverClobbersExistingFile(t *testing.T) {
+	source, snapshot := fixture(t)
+	dest := filepath.Join(t.TempDir(), "projected")
+	const sentinel = "previous accepted output"
+	if err := os.WriteFile(dest, []byte(sentinel), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := CopyVerified(source, dest, snapshot, testPolicy())
+	if err == nil || !strings.Contains(err.Error(), "destination_exists") {
+		t.Fatalf("err=%v", err)
+	}
+	data, readErr := os.ReadFile(dest)
+	if readErr != nil || string(data) != sentinel {
+		t.Fatalf("existing output changed: %q, %v", data, readErr)
+	}
+}
