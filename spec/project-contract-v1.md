@@ -31,6 +31,17 @@ revisions are separate content-derived values; neither uses an editor sequence
 number. Generated Project-instance identities use an explicitly role-scoped
 domain and do not replace provider-owned declaration identities.
 
+Before publication, the reference path applies three independent instance
+boundaries. `executioninstance` checks the reachable program against the sealed
+Execution v35 declarations; `packageinstance` checks Package v1 shapes,
+interface signatures, ownership, dependency DAGs, and dependency-first
+semantic revisions; and `projectinstance` checks canonical bytes, the exact
+three contract pins, module exports, the full artifact revision, and the inner
+ProjectSnapshot revision. The neutral emitter invokes all three. This does not
+yet constitute the atomic Go source-to-project build gate: the frozen G1
+compiler still has to be connected between the Go session and these wire
+instance validators.
+
 ## Snapshot digest and validation
 
 The revision is SHA-256 over the domain bytes `project-snapshot-v1` followed by

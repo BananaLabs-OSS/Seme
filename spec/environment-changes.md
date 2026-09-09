@@ -288,5 +288,8 @@ repository-local semantic
 validators. Project-contract gates create an automatically removed
 `mktemp` directory under `${TMPDIR:-/tmp}` and redirect `GOCACHE` into it;
 additional focused verification used a process-local cache under `/tmp`.
+The composed instance-validator work also ran the existing Go race detector
+with a separate process-local `GOCACHE` under `/tmp`; it installed nothing and
+did not alter Go, repository, shell, SSH, or system configuration.
 No software, dependency, global setting, SSH setting, or persistent
 environment configuration was installed or changed.
