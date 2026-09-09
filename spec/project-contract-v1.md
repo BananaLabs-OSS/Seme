@@ -15,9 +15,19 @@ The module uses Kernel `Import` entities to pin Package Contract v1
 content revision is produced from canonical snapshot content; it is never an
 editor sequence number, timestamp, or source-control label.
 
-This version defines structure only. Providers do not yet emit snapshots, and
-it does not define package discovery, dependency resolution, workspace layout,
-or projection policy.
+This version defines structure only. The reference `projectemitter` can now
+emit a canonical instance from a validated Execution graph and explicit typed
+package metadata. Language providers do not yet produce that metadata
+automatically, and the contract does not define package discovery, dependency
+resolution, workspace layout, or projection policy.
+
+The emitter resolves and pins the immutable Execution v35, Package v1, and
+Project v1 contracts before construction. Package versions commit to canonical
+interface, dependency, and reachable function semantics rather than source
+filenames or comments. Project snapshot revisions and enclosing artifact
+revisions are separate content-derived values; neither uses an editor sequence
+number. Generated Project-instance identities use an explicitly role-scoped
+domain and do not replace provider-owned declaration identities.
 
 ## Snapshot digest and validation
 

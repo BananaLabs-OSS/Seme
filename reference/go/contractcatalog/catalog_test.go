@@ -26,8 +26,13 @@ func TestResolveProjectContractSet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(set.Execution.Exports) != 292 || len(set.Package.Exports) != 25 || len(set.Project.Imports) != 2 {
+	if !set.Validated() || len(set.Execution().Exports()) != 292 || len(set.Package().Exports()) != 25 || len(set.Project().Imports()) != 2 {
 		t.Fatalf("unexpected resolved contracts")
+	}
+	copy := set.Project().Envelope()
+	delete(copy.Entities, copy.Module)
+	if _, exists := set.Project().Envelope().Entities[set.Project().Pin().Module]; !exists {
+		t.Fatal("contract envelope accessor exposed mutable catalog state")
 	}
 }
 
