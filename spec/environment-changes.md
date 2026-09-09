@@ -323,3 +323,7 @@ or changed.
 The detached projected-tree materializer added immediately afterward used the
 same existing Go toolchain with a disposable `/tmp` `GOCACHE`; it installed or
 changed nothing outside repository source and temporary test directories.
+
+Resolution-fidelity and expanded source/inventory/bundle rejection tests used
+the existing Go toolchain and disposable `/tmp` caches. Repeated test runs
+installed no dependency and changed no persistent environment configuration.

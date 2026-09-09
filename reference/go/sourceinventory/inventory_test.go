@@ -134,6 +134,36 @@ func TestInventoryRejectsMutations(t *testing.T) {
 		v.Bytes[0] ^= 1
 		n.Fields[id("e162")] = v
 		e.Entities[x] = n
+	}, "inventory-revision": func(e *wire.Envelope) {
+		x, _ := one(*e, inventorySchema)
+		n := e.Entities[x]
+		v := n.Fields[id("e160")]
+		v.Bytes = append([]byte(nil), v.Bytes...)
+		v.Bytes[0] ^= 1
+		n.Fields[id("e160")] = v
+		e.Entities[x] = n
+	}, "stale-snapshot-binding": func(e *wire.Envelope) {
+		x, _ := one(*e, inventorySchema)
+		n := e.Entities[x]
+		n.Fields[id("e161")] = ref(x)
+		e.Entities[x] = n
+	}, "preservation-enum": func(e *wire.Envelope) {
+		x, _ := one(*e, preservationSchema)
+		n := e.Entities[x]
+		n.Fields[id("e140")] = unsigned(4)
+		e.Entities[x] = n
+	}, "unit-toolchain-membership": func(e *wire.Envelope) {
+		x, _ := one(*e, unitSchema)
+		n := e.Entities[x]
+		n.Fields[id("e155")] = ref(x)
+		e.Entities[x] = n
+	}, "missing-unit-member": func(e *wire.Envelope) {
+		x, _ := one(*e, inventorySchema)
+		n := e.Entities[x]
+		v := n.Fields[id("e164")]
+		v.List = v.List[:len(v.List)-1]
+		n.Fields[id("e164")] = v
+		e.Entities[x] = n
 	}, "orphan-classification": func(e *wire.Envelope) {
 		x := stable("classification", "99")
 		e.Entities[x] = wire.Entity{ID: x, Schema: classificationSchema, Version: 1, Fields: map[wire.ID]wire.Value{id("e130"): unsigned(0)}}

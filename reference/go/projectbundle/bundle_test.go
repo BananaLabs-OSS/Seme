@@ -85,3 +85,30 @@ func TestValidateRejectsUnreferencedAndUnsortedBlobs(t *testing.T) {
 		t.Fatalf("order err=%v", err)
 	}
 }
+
+func TestValidateRejectsEmptyBundleAndLookupIsDefensive(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.go"), []byte("package a\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	policy := projectsource.Policy{TrackedExtensions: []string{".go"}, GeneratedHeader: []byte("// generated"), MaxFiles: 2, MaxFileBytes: 1024, MaxTotalBytes: 1024}
+	snapshot, err := projectsource.Discover(root, "p", projectsource.Toolchain{Language: "go", Toolchain: "go1.25", Profile: "v1", SemanticRevision: "v1"}, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(snapshot, Bundle{}); err == nil || !strings.Contains(err.Error(), "missing") {
+		t.Fatalf("empty bundle error=%v", err)
+	}
+	bundle, err := Capture(root, snapshot, policy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, ok := bundle.Lookup(bundle.Blobs[0].SHA256)
+	if !ok {
+		t.Fatal("lookup failed")
+	}
+	data[0] ^= 1
+	if err := Validate(snapshot, bundle); err != nil {
+		t.Fatalf("lookup exposed mutable bundle storage: %v", err)
+	}
+}
