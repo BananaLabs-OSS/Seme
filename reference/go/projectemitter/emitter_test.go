@@ -39,13 +39,13 @@ func execution() (wire.Envelope, wire.ID, wire.ID) {
 			id("00000000000000000000000000009112"): ref(integer), id("00000000000000000000000000009113"): ref(body),
 		}},
 		parameter: {ID: parameter, Schema: id("00000000000000000000000000009012"), Version: 1, Fields: map[wire.ID]wire.Value{
-			id("00000000000000000000000000009120"): blob([]byte("value")), id("00000000000000000000000000009121"): ref(integer), id("00000000000000000000000000009122"): {Tag: 4, Unsigned: 0},
+			id("00000000000000000000000000009120"): blob([]byte("value")), id("00000000000000000000000000009121"): ref(integer), id("00000000000000000000000000009122"): {Tag: 3, Unsigned: 0},
 		}},
 		integer: {ID: integer, Schema: id("00000000000000000000000000009010"), Version: 1, Fields: map[wire.ID]wire.Value{
-			id("00000000000000000000000000009100"): {Tag: 4, Unsigned: 64}, id("00000000000000000000000000009101"): {Tag: 2}, id("00000000000000000000000000009102"): {Tag: 4, Unsigned: 0},
+			id("00000000000000000000000000009100"): {Tag: 3, Unsigned: 64}, id("00000000000000000000000000009101"): {Tag: 2}, id("00000000000000000000000000009102"): {Tag: 3, Unsigned: 0},
 		}},
 		body: {ID: body, Schema: id("00000000000000000000000000009070"), Version: 1, Fields: map[wire.ID]wire.Value{
-			id("00000000000000000000000000009700"): {Tag: 4, Unsigned: 0}, id("00000000000000000000000000009701"): ref(integer),
+			id("00000000000000000000000000009700"): {Tag: 3, Unsigned: 0}, id("00000000000000000000000000009701"): ref(integer),
 		}},
 	}}, function, integer
 }
@@ -70,6 +70,8 @@ func TestEmitIsCanonicalAndOrderIndependent(t *testing.T) {
 	}
 	b := input()
 	b.Packages[0], b.Packages[1] = b.Packages[1], b.Packages[0]
+	unused := stableID("test", "unused-provider-primitive")
+	b.Execution.Entities[unused] = wire.Entity{ID: unused, Schema: id("00000000000000000000000000009020"), Version: 1, Fields: map[wire.ID]wire.Value{}}
 	second, e := Emit(set, b)
 	if e != nil {
 		t.Fatal(e)

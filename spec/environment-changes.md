@@ -291,5 +291,11 @@ additional focused verification used a process-local cache under `/tmp`.
 The composed instance-validator work also ran the existing Go race detector
 with a separate process-local `GOCACHE` under `/tmp`; it installed nothing and
 did not alter Go, repository, shell, SSH, or system configuration.
+Go Project Build v1 reused the checked-in frozen K0 bootstrap and compiler,
+created automatically removed staging directories under `/tmp`, and published
+only create-new artifacts inside those temporary gate directories. Its native
+fixture used the already installed Go 1.25.6 toolchain with a temporary
+`GOCACHE`. No compiler, dependency, service, shell setting, or system package
+was installed or changed.
 No software, dependency, global setting, SSH setting, or persistent
 environment configuration was installed or changed.

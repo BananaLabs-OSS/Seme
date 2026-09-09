@@ -31,7 +31,7 @@ func valid() wire.Envelope {
 	e.Entities[m] = ent(m, moduleSchema, map[wire.ID]wire.Value{fImports: lv(imp)})
 	e.Entities[imp] = ent(imp, importSchema, map[wire.ID]wire.Value{fImportModule: rv(packageModule), fImportRevision: {Tag: 5, Bytes: packageRevision[:]}})
 	e.Entities[typ] = ent(typ, id("70000000000000000000000000000000"), map[wire.ID]wire.Value{})
-	e.Entities[param] = ent(param, parameterSchema, map[wire.ID]wire.Value{fid(0x9120): bv("value"), fid(0x9121): rv(typ), fid(0x9122): {Tag: 4}})
+	e.Entities[param] = ent(param, parameterSchema, map[wire.ID]wire.Value{fid(0x9120): bv("value"), fid(0x9121): rv(typ), fid(0x9122): {Tag: 3}})
 	e.Entities[fn] = ent(fn, functionSchema, map[wire.ID]wire.Value{fid(0x9110): bv("Apply"), fid(0x9111): lv(param), fid(0x9112): rv(typ), fid(0x9113): rv(typ)})
 	e.Entities[iface] = ent(iface, interfaceSchema, map[wire.ID]wire.Value{fid(0xb110): bv("Apply"), fid(0xb111): rv(fn), fid(0xb112): lv(typ), fid(0xb113): rv(typ)})
 	e.Entities[pkg] = ent(pkg, packageSchema, map[wire.ID]wire.Value{fid(0xb100): bv("example/app"), fid(0xb101): bv("pending"), fid(0xb102): lv(iface), fid(0xb103): lv(), fid(0xb104): lv(), fid(0xb105): lv(), fid(0xb106): lv()})

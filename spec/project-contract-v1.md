@@ -19,9 +19,10 @@ This version defines structure only. The reference `projectemitter` can now
 emit a canonical instance from a validated Execution graph and explicit typed
 package metadata. The bounded Go incremental session now produces the neutral
 reachable-package, local-dependency, and exported-signature view needed for
-that input; the atomic compiler/emitter integration is still pending. The
-contract does not define general package discovery, dependency resolution,
-workspace layout, or projection policy.
+that input. The bounded Go Project Build v1 path now connects those pieces
+through the frozen G1 compiler and publishes one create-only canonical
+artifact. The contract does not define general package discovery, dependency
+resolution, workspace layout, or projection policy.
 
 The emitter resolves and pins the immutable Execution v35, Package v1, and
 Project v1 contracts before construction. Package versions commit to canonical
@@ -38,9 +39,9 @@ interface signatures, ownership, dependency DAGs, and dependency-first
 semantic revisions; and `projectinstance` checks canonical bytes, the exact
 three contract pins, module exports, the full artifact revision, and the inner
 ProjectSnapshot revision. The neutral emitter invokes all three. This does not
-yet constitute the atomic Go source-to-project build gate: the frozen G1
-compiler still has to be connected between the Go session and these wire
-instance validators.
+is exercised by the bounded Go source-to-project build gate. General secure
+project publication and multi-artifact transactions remain outside this
+conformance adapter.
 
 ## Snapshot digest and validation
 
