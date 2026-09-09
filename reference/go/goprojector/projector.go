@@ -45,6 +45,7 @@ const (
 	sMapType             = "0000000000000000000000000000a040"
 	sEmptyMap            = "0000000000000000000000000000a041"
 	sMapLookup           = "0000000000000000000000000000a042"
+	sMapLookupOption     = "0000000000000000000000000000a044"
 	sMapUpdate           = "0000000000000000000000000000a043"
 	sSliceRemove         = "0000000000000000000000000000a066"
 	sMapRemove           = "0000000000000000000000000000a067"
@@ -184,7 +185,7 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 	if graphHasSchema(graph, sCollectionUpdate) || graphHasSchema(graph, sSliceRemove) {
 		imports = append(imports, "slices")
 	}
-	if graphHasSchema(graph, sMapRemove) {
+	if graphHasUnfoldedMapUpdate(graph) || graphHasSchema(graph, sMapRemove) {
 		imports = append(imports, "maps")
 	}
 	if graphHasSchema(graph, sEffectInvoke) {
@@ -214,6 +215,7 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 	}
 	for _, id := range sortedRecordIDs(records) {
 		r := records[id]
+		fmt.Fprintf(&out, "//seme:id %s\n", id)
 		fmt.Fprintf(&out, "type %s struct {\n", r.name)
 		for _, field := range r.fields {
 			fmt.Fprintf(&out, "\t%s %s\n", field.name, field.typ)
@@ -250,6 +252,7 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 		if e != nil || len(requirements) == 0 {
 			return nil, fmt.Errorf("go_projection.invalid_interface")
 		}
+		fmt.Fprintf(&out, "//seme:id %s\n", iid)
 		fmt.Fprintf(&out, "type %s interface {\n", name)
 		for _, rid := range requirements {
 			requirement, ok := graph[rid]
@@ -344,6 +347,8 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 		if e != nil {
 			return nil, e
 		}
+		fmt.Fprintf(&out, "//seme:id %s\n", mid)
+		fmt.Fprintf(&out, "//seme:receiver %s\n", receiverID)
 		fmt.Fprintf(&out, "func (self %s) %s(%s) %s {\n%s\n}\n\n", receiverType, methods[mid], strings.Join(declarations, ", "), result, body)
 	}
 	for _, id := range ids {
@@ -390,6 +395,7 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 		if e != nil {
 			return nil, e
 		}
+		fmt.Fprintf(&out, "//seme:id %s\n", id)
 		fmt.Fprintf(&out, "func %s(%s) %s {\n%s\n}\n\n", names[id], strings.Join(declarations, ", "), result, body)
 	}
 	formatted, err := format.Source([]byte(out.String()))
@@ -397,6 +403,24 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 		return nil, fmt.Errorf("go_projection.format: %w", err)
 	}
 	return formatted, nil
+}
+
+func graphHasUnfoldedMapUpdate(graph map[string]entity) bool {
+	foldBodies := map[string]bool{}
+	for _, item := range graph {
+		if item.schema != sFold {
+			continue
+		}
+		if body, err := ref(item, "00000000000000000000000000009f74"); err == nil {
+			foldBodies[body] = true
+		}
+	}
+	for id, item := range graph {
+		if item.schema == sMapUpdate && !foldBodies[id] {
+			return true
+		}
+	}
+	return false
 }
 
 func projectBlock(id string, c context) (string, error) {
@@ -989,6 +1013,26 @@ func expr(id string, c context) (string, error) {
 			return "", fmt.Errorf("go_projection.variant_scope")
 		}
 		return value, nil
+	case sOptionMatch, sResultMatch:
+		return projectMatchExpression(e, c)
+	case sMapLookupOption:
+		mappingID, err := ref(e, "000000000000000000000000000a0440")
+		if err != nil {
+			return "", err
+		}
+		keyID, err := ref(e, "000000000000000000000000000a0441")
+		if err != nil {
+			return "", err
+		}
+		mapping, err := expr(mappingID, c)
+		if err != nil {
+			return "", err
+		}
+		key, err := expr(keyID, c)
+		if err != nil {
+			return "", err
+		}
+		return "func() Option[int64] { value, found := " + mapping + "[" + key + "]; return Option[int64]{Some: found, Value: value} }()", nil
 	case sCall:
 		fid, err := ref(e, "00000000000000000000000000009600")
 		if err != nil {
@@ -1702,14 +1746,123 @@ func expr(id string, c context) (string, error) {
 		}
 		return "(" + l + " " + op + " " + r + ")", nil
 	default:
-		return "", fmt.Errorf("go_projection.unsupported_expression")
+		return "", fmt.Errorf("go_projection.unsupported_expression:%s", e.schema)
+	}
+}
+
+func projectMatchExpression(match entity, c context) (string, error) {
+	valueField, firstBindingField, firstBlockField, secondBindingField, secondBlockField :=
+		"000000000000000000000000000a0630", "000000000000000000000000000a0632", "000000000000000000000000000a0633", "", "000000000000000000000000000a0631"
+	tag, firstField := ".Some", ".Value"
+	if match.schema == sResultMatch {
+		valueField, firstBindingField, firstBlockField = "000000000000000000000000000a0620", "000000000000000000000000000a0621", "000000000000000000000000000a0622"
+		secondBindingField, secondBlockField = "000000000000000000000000000a0623", "000000000000000000000000000a0624"
+		tag, firstField = ".Ok", ".Value"
+	}
+	valueID, err := ref(match, valueField)
+	if err != nil {
+		return "", err
+	}
+	firstBinding, err := ref(match, firstBindingField)
+	if err != nil {
+		return "", err
+	}
+	firstBlock, err := ref(match, firstBlockField)
+	if err != nil {
+		return "", err
+	}
+	secondBlock, err := ref(match, secondBlockField)
+	if err != nil {
+		return "", err
+	}
+	value, err := expr(valueID, c)
+	if err != nil {
+		return "", err
+	}
+	firstExprID, err := singleReturnExpression(c.graph, firstBlock)
+	if err != nil {
+		return "", err
+	}
+	secondExprID, err := singleReturnExpression(c.graph, secondBlock)
+	if err != nil {
+		return "", err
+	}
+	firstContext := c
+	firstContext.variants = cloneNames(c.variants)
+	firstContext.variants[firstBinding] = "matched" + firstField
+	if secondBindingField != "" {
+		secondBinding, x := ref(match, secondBindingField)
+		if x != nil {
+			return "", x
+		}
+		firstContext.variants[secondBinding] = "matched.Error"
+	}
+	first, err := expr(firstExprID, firstContext)
+	if err != nil {
+		return "", err
+	}
+	second, err := expr(secondExprID, firstContext)
+	if err != nil {
+		return "", err
+	}
+	returnType, err := expressionTypeName(firstExprID, firstBinding, c.graph)
+	if err != nil {
+		return "", err
+	}
+	return "func() " + returnType + " { matched := " + value + "; if matched" + tag + " { return " + first + " }; return " + second + " }()", nil
+}
+
+func singleReturnExpression(graph map[string]entity, blockID string) (string, error) {
+	block, ok := graph[blockID]
+	if !ok || block.schema != sBlock {
+		return "", fmt.Errorf("go_projection.match_block")
+	}
+	statements, err := refs(block, "00000000000000000000000000009800")
+	if err != nil || len(statements) != 1 {
+		return "", fmt.Errorf("go_projection.match_block")
+	}
+	returned, ok := graph[statements[0]]
+	if !ok || returned.schema != sReturn {
+		return "", fmt.Errorf("go_projection.match_return")
+	}
+	values, err := refs(returned, "00000000000000000000000000009810")
+	if err != nil || len(values) != 1 {
+		return "", fmt.Errorf("go_projection.match_return")
+	}
+	return values[0], nil
+}
+
+func expressionTypeName(expressionID, bindingID string, graph map[string]entity) (string, error) {
+	expression, ok := graph[expressionID]
+	if !ok {
+		return "", fmt.Errorf("go_projection.match_expression")
+	}
+	switch expression.schema {
+	case sBoolLiteral:
+		return "bool", nil
+	case sIntegerLiteral:
+		return "int64", nil
+	case sStringLiteral:
+		return "string", nil
+	case sVariantRead:
+		binding, ok := graph[bindingID]
+		if !ok || binding.schema != sVariantBinding {
+			return "", fmt.Errorf("go_projection.match_binding")
+		}
+		typeID, err := ref(binding, "000000000000000000000000000a0601")
+		if err != nil {
+			return "", err
+		}
+		return typeName(graph, typeID)
+	default:
+		return "", fmt.Errorf("go_projection.match_result_type:%s", expression.schema)
 	}
 }
 
 func typeName(g map[string]entity, id string) (string, error) {
 	e, ok := g[id]
 	if !ok {
-		return "", fmt.Errorf("go_projection.missing_type")
+		return "", fmt.Errorf("go_projection.missing_type:%s", id)
 	}
 	switch e.schema {
 	case sInteger:

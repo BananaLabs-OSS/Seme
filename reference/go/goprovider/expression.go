@@ -57,6 +57,7 @@ const (
 	goStatefulIndirectCall
 	goEmptyMap
 	goMapLookup
+	goMapLookupOption
 	goMapUpdate
 	goMapRemove
 	goBytesLiteral
@@ -470,6 +471,19 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			id := expressionNodeID(owner, path, "map-lookup")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a042", []graphField{refField(0xa0420, mapping), refField(0xa0421, key)})}
 			return id, nil
+		case goMapLookupOption:
+			mapping, err := emit(expression.left, path+".map")
+			if err != nil {
+				return "", err
+			}
+			key, err := emit(expression.right, path+".key")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "map-lookup-option")
+			emitted[expression.typeID] = graphEntity{expression.typeID, entity(expression.typeID, "0000000000000000000000000000a050", []graphField{refField(0xa0500, integerID)})}
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a044", []graphField{refField(0xa0440, mapping), refField(0xa0441, key), refField(0xa0442, expression.typeID)})}
+			return id, nil
 		case goMapUpdate:
 			mapping, err := emit(expression.left, path+".map")
 			if err != nil {
@@ -825,16 +839,17 @@ func analyzeGoExpressionWithContext(expression ast.Expr, signature *types.Signat
 }
 
 type goRecordInfo struct {
-	id      string
-	fields  map[*types.Var]string
-	ordered []*types.Var
+	id         string
+	fields     map[*types.Var]string
+	ordered    []*types.Var
+	receiverID string
 }
 
 func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
 	switch expression := ast.Unparen(expression).(type) {
 	case *ast.Ident:
 		if signature.Recv() != nil && info.Uses[expression] == signature.Recv() {
-			return &goExpression{kind: goReceiverRead, receiverID: goReceiverID(signature)}, nil
+			return &goExpression{kind: goReceiverRead, receiverID: goReceiverID(signature, records)}, nil
 		}
 		for index := 0; index < signature.Params().Len(); index++ {
 			if info.Uses[expression] == signature.Params().At(index) {
@@ -911,6 +926,12 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		return &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}, nil
 	case *ast.CallExpr:
 		if function, ok := ast.Unparen(expression.Fun).(*ast.FuncLit); ok {
+			if match, valid := structuralTaggedMatchCall(function, expression, signature, info, locals, functions, records, mutableLocals); valid {
+				return match, nil
+			}
+			if lookup, valid := structuralMapLookupOptionCall(function, expression, signature, info, locals, functions, records, mutableLocals); valid {
+				return lookup, nil
+			}
 			kind, valid := structuralImmutableMapCall(function, expression, info)
 			if !valid {
 				return nil, fmt.Errorf("expression.unsupported_function_literal_call")
@@ -966,6 +987,22 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				}
 				return &goExpression{kind: kind, left: receiver, methodID: methodID, arguments: arguments}, nil
 			}
+			// A selector without a Selection is a package-qualified function,
+			// resolved by go/types to the same object collected from the local
+			// source-module closure.
+			if info.Selections[selector] == nil {
+				if callee, exists := functions[info.Uses[selector.Sel]]; exists && !expression.Ellipsis.IsValid() {
+					arguments := make([]*goExpression, len(expression.Args))
+					for index, argument := range expression.Args {
+						var err error
+						arguments[index], err = analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
+						if err != nil {
+							return nil, err
+						}
+					}
+					return &goExpression{kind: goFunctionCall, callee: callee, arguments: arguments}, nil
+				}
+			}
 		}
 		identifier, ok := ast.Unparen(expression.Fun).(*ast.Ident)
 		if callSignature, signatureOK := goFunctionSignature(info.TypeOf(expression.Fun)); signatureOK && isUnaryI64Function(callSignature) {
@@ -996,7 +1033,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 							return nil, err
 						}
 						interfaceID := stableID("execution", "interface", interfaceNamed.Obj().Pkg().Path(), interfaceNamed.Obj().Name())
+						if record, exists := findGoRecord(records, interfaceNamed); exists {
+							interfaceID = record.id
+						}
 						concreteID := stableID("execution", "record", concreteNamed.Obj().Pkg().Path(), concreteNamed.Obj().Name())
+						if record, exists := findGoRecord(records, concreteNamed); exists {
+							concreteID = record.id
+						}
 						return &goExpression{kind: goInterfaceValue, left: value, typeID: interfaceID, witnessID: stableID("execution", "witness", concreteID, interfaceID)}, nil
 					}
 				}
@@ -1145,7 +1188,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 					if _, interfaceOK := interfaceNamed.Underlying().(*types.Interface); interfaceOK {
 						if concreteNamed, concreteOK := info.TypeOf(argument).(*types.Named); concreteOK {
 							interfaceID := stableID("execution", "interface", interfaceNamed.Obj().Pkg().Path(), interfaceNamed.Obj().Name())
+							if record, exists := findGoRecord(records, interfaceNamed); exists {
+								interfaceID = record.id
+							}
 							concreteID := stableID("execution", "record", concreteNamed.Obj().Pkg().Path(), concreteNamed.Obj().Name())
+							if record, exists := findGoRecord(records, concreteNamed); exists {
+								concreteID = record.id
+							}
 							analyzed = &goExpression{kind: goInterfaceValue, left: analyzed, typeID: interfaceID, witnessID: stableID("execution", "witness", concreteID, interfaceID)}
 						}
 					}
@@ -1173,15 +1222,25 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return nil, fmt.Errorf("expression.unsupported_closure_body")
 		}
 		captureIndex := -1
+		captureName, parameterName := leftID, rightID
 		for index := 0; index < signature.Params().Len(); index++ {
 			if info.Uses[leftID] == signature.Params().At(index) {
 				captureIndex = index
 			}
 		}
 		if captureIndex < 0 || info.Uses[rightID] != closureSignature.Params().At(0) {
+			captureIndex = -1
+			captureName, parameterName = rightID, leftID
+			for index := 0; index < signature.Params().Len(); index++ {
+				if info.Uses[rightID] == signature.Params().At(index) {
+					captureIndex = index
+				}
+			}
+		}
+		if captureIndex < 0 || info.Uses[parameterName] != closureSignature.Params().At(0) {
 			return nil, fmt.Errorf("expression.unsupported_closure_capture")
 		}
-		return &goExpression{kind: goClosureConstruct, left: &goExpression{kind: goParameterRead, parameter: captureIndex}, body: &goExpression{kind: goIntegerAdd, left: &goExpression{kind: goCaptureRead}, right: &goExpression{kind: goClosureParameterRead}}, text: leftID.Name, elementName: rightID.Name, typeID: goFunctionTypeID(closureSignature)}, nil
+		return &goExpression{kind: goClosureConstruct, left: &goExpression{kind: goParameterRead, parameter: captureIndex}, body: &goExpression{kind: goIntegerAdd, left: &goExpression{kind: goCaptureRead}, right: &goExpression{kind: goClosureParameterRead}}, text: captureName.Name, elementName: parameterName.Name, typeID: goFunctionTypeID(closureSignature)}, nil
 	case *ast.CompositeLit:
 		if isBytes(info.TypeOf(expression)) {
 			bytes := make([]byte, len(expression.Elts))
@@ -1222,6 +1281,9 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			typeID := goSemanticTypeIdentity(info.TypeOf(expression))
 			tag, ok := fields["Ok"].(*ast.Ident)
+			if !ok && fields["Ok"] == nil {
+				tag, ok = &ast.Ident{Name: "false"}, true
+			}
 			if !ok {
 				return nil, fmt.Errorf("expression.result_constructor")
 			}
@@ -1232,7 +1294,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				return nil, fmt.Errorf("expression.result_constructor")
 			}
 			valueNode, exists := fields[field]
-			if !exists || len(fields) != 2 {
+			expectedFields := 2
+			if tag.Name == "false" && fields["Ok"] == nil {
+				expectedFields = 1
+			}
+			if !exists || len(fields) != expectedFields {
 				return nil, fmt.Errorf("expression.result_constructor")
 			}
 			value, err := analyzeGoExpressionWithProgram(valueNode, signature, info, locals, functions, records, mutableLocals)
@@ -1385,15 +1451,40 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return nil, fmt.Errorf("expression.unknown_transition_field")
 		}
+		if success, failure, result := goResultTypes(info.TypeOf(expression.X)); result {
+			value, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			match := &goExpression{kind: goResultMatch, left: value, text: "value", typeID: goSemanticTypeIdentity(success), errorName: "failure", errorTypeID: goSemanticTypeIdentity(failure)}
+			switch field.Name() {
+			case "Ok":
+				match.body = &goExpression{kind: goBooleanLiteral, boolean: true}
+				match.alternate = &goExpression{kind: goBooleanLiteral}
+			case "Value":
+				match.body = &goExpression{kind: goVariantRead}
+				match.alternate = &goExpression{kind: goIntegerLiteral}
+			case "Error":
+				match.body = &goExpression{kind: goIntegerLiteral}
+				match.alternate = &goExpression{kind: goVariantRead}
+			default:
+				return nil, fmt.Errorf("expression.unknown_result_field")
+			}
+			return match, nil
+		}
 		var fieldID string
-		for _, record := range records {
-			if id, exists := record.fields[field]; exists {
-				fieldID = id
-				break
+		if receiver, ok := types.Unalias(info.TypeOf(expression.X)).(*types.Named); ok {
+			if record, exists := findGoRecord(records, receiver); exists {
+				for candidate, id := range record.fields {
+					if candidate.Name() == field.Name() {
+						fieldID = id
+						break
+					}
+				}
 			}
 		}
 		if fieldID == "" {
-			return nil, fmt.Errorf("expression.unknown_record_field")
+			return nil, fmt.Errorf("expression.unknown_record_field:%s:%s", types.TypeString(info.TypeOf(expression.X), nil), field.Name())
 		}
 		record, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
 		if err != nil {
@@ -1427,6 +1518,125 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}
+}
+
+func structuralTaggedMatchCall(function *ast.FuncLit, call *ast.CallExpr, outer *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool) (*goExpression, bool) {
+	if len(call.Args) != 0 || call.Ellipsis.IsValid() || len(function.Body.List) != 3 {
+		return nil, false
+	}
+	bind, ok := function.Body.List[0].(*ast.AssignStmt)
+	if !ok || bind.Tok != token.DEFINE || len(bind.Lhs) != 1 || len(bind.Rhs) != 1 {
+		return nil, false
+	}
+	name, ok := bind.Lhs[0].(*ast.Ident)
+	if !ok {
+		return nil, false
+	}
+	branch, ok := function.Body.List[1].(*ast.IfStmt)
+	if !ok || branch.Init != nil || branch.Else != nil || len(branch.Body.List) != 1 {
+		return nil, false
+	}
+	condition, ok := ast.Unparen(branch.Cond).(*ast.SelectorExpr)
+	base, baseOK := condition.X.(*ast.Ident)
+	firstReturn, firstOK := branch.Body.List[0].(*ast.ReturnStmt)
+	secondReturn, secondOK := function.Body.List[2].(*ast.ReturnStmt)
+	if !baseOK || info.Uses[base] != info.Defs[name] || !firstOK || !secondOK || len(firstReturn.Results) != 1 || len(secondReturn.Results) != 1 {
+		return nil, false
+	}
+	value, err := analyzeGoExpressionWithProgram(bind.Rhs[0], outer, info, locals, functions, records, mutable)
+	if err != nil {
+		return nil, false
+	}
+	arm := func(node ast.Expr, field string) (*goExpression, bool) {
+		if selector, ok := ast.Unparen(node).(*ast.SelectorExpr); ok && selector.Sel.Name == field {
+			if identifier, yes := selector.X.(*ast.Ident); yes && info.Uses[identifier] == info.Defs[name] {
+				return &goExpression{kind: goVariantRead}, true
+			}
+		}
+		result, x := analyzeGoExpressionWithProgram(node, outer, info, locals, functions, records, mutable)
+		return result, x == nil
+	}
+	boundType := info.TypeOf(bind.Lhs[0])
+	if item, option := goOptionValueType(boundType); option && condition.Sel.Name == "Some" {
+		some, a := arm(firstReturn.Results[0], "Value")
+		none, b := arm(secondReturn.Results[0], "")
+		if !a || !b {
+			return nil, false
+		}
+		return &goExpression{kind: goOptionMatch, left: value, initial: none, body: some, text: "value", typeID: goSemanticTypeIdentity(item)}, true
+	}
+	if success, failure, result := goResultTypes(boundType); result && condition.Sel.Name == "Ok" {
+		good, a := arm(firstReturn.Results[0], "Value")
+		bad, b := arm(secondReturn.Results[0], "Error")
+		if !a || !b {
+			return nil, false
+		}
+		return &goExpression{kind: goResultMatch, left: value, body: good, alternate: bad, text: "value", typeID: goSemanticTypeIdentity(success), errorName: "failure", errorTypeID: goSemanticTypeIdentity(failure)}, true
+	}
+	return nil, false
+}
+
+func structuralMapLookupOptionCall(function *ast.FuncLit, call *ast.CallExpr, outer *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool) (*goExpression, bool) {
+	if len(call.Args) != 0 || call.Ellipsis.IsValid() || len(function.Body.List) != 2 {
+		return nil, false
+	}
+	signature, ok := info.TypeOf(function.Type).(*types.Signature)
+	if !ok || signature.Params().Len() != 0 || signature.Results().Len() != 1 {
+		return nil, false
+	}
+	item, ok := goOptionValueType(signature.Results().At(0).Type())
+	if !ok || !isInt64(item) {
+		return nil, false
+	}
+	bind, ok := function.Body.List[0].(*ast.AssignStmt)
+	if !ok || bind.Tok != token.DEFINE || len(bind.Lhs) != 2 || len(bind.Rhs) != 1 {
+		return nil, false
+	}
+	valueName, valueOK := bind.Lhs[0].(*ast.Ident)
+	foundName, foundOK := bind.Lhs[1].(*ast.Ident)
+	lookup, lookupOK := ast.Unparen(bind.Rhs[0]).(*ast.IndexExpr)
+	returned, returnOK := function.Body.List[1].(*ast.ReturnStmt)
+	if !valueOK || !foundOK || !lookupOK || !returnOK || len(returned.Results) != 1 {
+		return nil, false
+	}
+	literal, literalOK := ast.Unparen(returned.Results[0]).(*ast.CompositeLit)
+	if !literalOK || !types.Identical(info.TypeOf(literal), signature.Results().At(0).Type()) {
+		return nil, false
+	}
+	fields, err := keyedCompositeFields(literal)
+	if err != nil || len(fields) != 2 {
+		return nil, false
+	}
+	some, someOK := fields["Some"].(*ast.Ident)
+	value, fieldOK := fields["Value"].(*ast.Ident)
+	if !someOK || !fieldOK || info.Uses[some] != info.Defs[foundName] || info.Uses[value] != info.Defs[valueName] {
+		return nil, false
+	}
+	mapping, err := analyzeGoExpressionWithProgram(lookup.X, outer, info, locals, functions, records, mutable)
+	if err != nil {
+		return nil, false
+	}
+	key, err := analyzeGoExpressionWithProgram(lookup.Index, outer, info, locals, functions, records, mutable)
+	if err != nil {
+		return nil, false
+	}
+	return &goExpression{kind: goMapLookupOption, left: mapping, right: key, typeID: goSemanticTypeIdentity(signature.Results().At(0).Type())}, true
+}
+
+func findGoRecord(records map[*types.Named]goRecordInfo, named *types.Named) (goRecordInfo, bool) {
+	if record, ok := records[named]; ok {
+		return record, true
+	}
+	origin := named.Origin()
+	if record, ok := records[origin]; ok {
+		return record, true
+	}
+	for candidate, record := range records {
+		if candidate.Obj() != nil && origin.Obj() != nil && candidate.Obj().Pkg() == origin.Obj().Pkg() && candidate.Obj().Name() == origin.Obj().Name() {
+			return record, true
+		}
+	}
+	return goRecordInfo{}, false
 }
 
 func isSlicesFunction(info *types.Info, selector *ast.SelectorExpr, name string) bool {
