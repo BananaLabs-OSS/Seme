@@ -31,6 +31,7 @@ const schema = {
   integerLiteral: "00000000000000000000000000009070",
   emptyMap: "0000000000000000000000000000a041",
   mapLookup: "0000000000000000000000000000a042",
+  mapLookupOption: "0000000000000000000000000000a044",
   mapUpdate: "0000000000000000000000000000a043",
   variantBinding: "0000000000000000000000000000a060",
   variantRead: "0000000000000000000000000000a061",
@@ -44,6 +45,7 @@ const schema = {
   stringEqual: "000000000000000000000000000090c2",
   boolLiteral: "000000000000000000000000000090b0",
   integerAdd: "00000000000000000000000000009014",
+  integerMultiply: "00000000000000000000000000009090",
   stringConcat: "000000000000000000000000000090c3",
   integerLessEqual: "00000000000000000000000000009021", booleanAnd: "000000000000000000000000000090b1", booleanOr: "000000000000000000000000000090c1",
   mutablePlace: "000000000000000000000000000090e0", declarePlace: "000000000000000000000000000090e1", placeRead: "000000000000000000000000000090e2", assignPlace: "000000000000000000000000000090e3", whileStatement: "000000000000000000000000000090e4", whenStatement: "000000000000000000000000000090f0",
@@ -112,7 +114,8 @@ export function projectLua(canonicalG1) {
 
 function projectMethod(method, context) {
   const receiver = required(context.graph, reference(field(method, 0xa0021)), schema.receiverBinding);
-  const receiverName = text(field(receiver, 0xa0000)) || "self", recordType = required(context.graph, reference(field(receiver, 0xa0001)), schema.recordType), recordName = text(field(recordType, 0x9300));
+  const receiverName = text(field(receiver, 0xa0000)) || "self", receiverTypeID = reference(field(receiver, 0xa0001)), receiverTypeEntity=context.graph.get(receiverTypeID), receiverType = context.types.get(receiverTypeID) ?? (receiverTypeEntity?.schema===schema.recordType?text(field(receiverTypeEntity,0x9300)):null);
+  if (!receiverType) fail("lua_projection.receiver_type");
   const requirementName = text(field(method, 0xa0020)), functionName = `${receiverName}_${requirementName}`;
   const parameters = references(field(method, 0xa0022)).map((id) => { const item = required(context.graph, id, schema.parameter); return { id, name: text(field(item, 0x9120)), type: context.types.get(reference(field(item, 0x9121))) }; });
   const local = { ...context, receiver: { id: receiver.id, name: "receiver" }, parameters: new Map(parameters.map((item) => [item.id, item])), places: new Map() };
@@ -120,7 +123,7 @@ function projectMethod(method, context) {
   if (statements.length !== 1) fail("lua_projection.method_body");
   const values = references(field(required(context.graph, statements[0], schema.returned), 0x9810));
   if (values.length !== 1) fail("lua_projection.method_body");
-  return `---@seme-id ${method.id}\n---@param receiver ${recordName}\n${parameters.map((item) => `---@param ${item.name} ${item.type}`).join("\n")}\n---@return ${context.types.get(reference(field(method, 0xa0023)))}\nlocal function ${functionName}(receiver, ${parameters.map((item) => item.name).join(", ")})\n  return ${projectExpression(values[0], local)}\nend`;
+  return `---@seme-id ${method.id}\n---@param receiver ${receiverType}\n${parameters.map((item) => `---@param ${item.name} ${item.type}`).join("\n")}\n---@return ${context.types.get(reference(field(method, 0xa0023)))}\nlocal function ${functionName}(receiver, ${parameters.map((item) => item.name).join(", ")})\n  return ${projectExpression(values[0], local)}\nend`;
 }
 
 function projectImplementation(witness, context) {
@@ -128,7 +131,9 @@ function projectImplementation(witness, context) {
   const methodIDs = references(field(witness, 0xa0122)); if (methodIDs.length !== interface_.requirements.length) fail("lua_projection.witness_methods");
   const method = required(context.graph, methodIDs[0], schema.method), receiver = required(context.graph, reference(field(method, 0xa0021)), schema.receiverBinding), prefix = text(field(receiver, 0xa0000));
   const binding = `${prefix}${interface_.name}`;
-  return `local ${binding} = Seme.implementation(${interface_.name}, "record", {\n${interface_.requirements.map((requirement, index) => `  ${requirement.name} = ${text(field(required(context.graph, methodIDs[index], schema.method), 0xa0020)) === requirement.name ? `${prefix}_${requirement.name}` : fail("lua_projection.witness_requirement")},`).join("\n")}\n})`;
+  const receiverTypeID=reference(field(receiver,0xa0001)),receiverType=context.types.get(receiverTypeID),concreteKind=receiverType==="seme.i64"?"i64":context.graph.get(receiverTypeID)?.schema===schema.recordType?"record":null;
+  if(!concreteKind)fail("lua_projection.witness_concrete_kind");
+  return `local ${binding} = Seme.implementation(${interface_.name}, ${JSON.stringify(concreteKind)}, {\n${interface_.requirements.map((requirement, index) => `  ${requirement.name} = ${text(field(required(context.graph, methodIDs[index], schema.method), 0xa0020)) === requirement.name ? `${prefix}_${requirement.name}` : fail("lua_projection.witness_requirement")},`).join("\n")}\n})`;
 }
 
 function projectFunction(id, exported, context) {
@@ -176,17 +181,22 @@ function projectControlBlock(id,context,depth){const indent="  ".repeat(depth),l
   fail("lua_projection.control_statement");}return lines.join("\n");}
 
 function projectProtocolDispatch(branch, context) {
-  const unpack = (blockID) => { const statements = references(field(required(context.graph, blockID, schema.block), 0x9800)); if (statements.length !== 1) fail("lua_projection.protocol_branch"); const values = references(field(required(context.graph, statements[0], schema.returned), 0x9810)); const call = required(context.graph, values[0], schema.dynamicMethodCall), boxed = required(context.graph, reference(field(call, 0xa0140)), schema.interfaceValue), construct = required(context.graph, reference(field(boxed, 0xa0131)), schema.recordConstruct), witness = context.witnesses.get(reference(field(boxed, 0xa0132))); if (!witness) fail("lua_projection.protocol_witness"); return { call, boxed, construct, witness }; };
+  const unpack = (blockID) => { const statements = references(field(required(context.graph, blockID, schema.block), 0x9800)); if (statements.length !== 1) fail("lua_projection.protocol_branch"); const values = references(field(required(context.graph, statements[0], schema.returned), 0x9810)); const call = required(context.graph, values[0], schema.dynamicMethodCall), boxed = required(context.graph, reference(field(call, 0xa0140)), schema.interfaceValue), valueID=reference(field(boxed,0xa0131)), value=required(context.graph,valueID), construct=value.schema===schema.recordConstruct?value:null, witness = context.witnesses.get(reference(field(boxed, 0xa0132))); if (!witness) fail("lua_projection.protocol_witness"); return { call, boxed, valueID, construct, witness }; };
   const yes = unpack(reference(field(branch, 0x9c01))), no = unpack(reference(field(branch, 0x9c02)));
   const interface_ = context.interfaces.get(reference(field(yes.boxed, 0xa0130))), requirementID = reference(field(yes.call, 0xa0141));
   if (!interface_ || reference(field(no.boxed, 0xa0130)) !== interface_.id || reference(field(no.call, 0xa0141)) !== requirementID) fail("lua_projection.protocol_branch_contract");
   const requirement = interface_.requirements.find((item) => item.id === requirementID); if (!requirement) fail("lua_projection.protocol_requirement");
+  const args = references(field(yes.call, 0xa0142)), noArgs = references(field(no.call, 0xa0142));
+  const binding = (witness) => { const method = required(context.graph, references(field(witness, 0xa0122))[0], schema.method), receiver = required(context.graph, reference(field(method, 0xa0021)), schema.receiverBinding); return `${text(field(receiver, 0xa0000))}${interface_.name}`; };
+  if (!yes.construct || !no.construct) {
+    if (yes.construct || no.construct || args.length !== 1 || noArgs.length !== 1) fail("lua_projection.protocol_scalar");
+    return `Seme.protocol_dispatch_value(${projectExpression(reference(field(branch,0x9c00)),context)}, ${binding(no.witness)}, ${binding(yes.witness)}, ${JSON.stringify(requirement.name)}, ${projectExpression(yes.valueID,context)}, ${projectExpression(args[0],context)})`;
+  }
   const record = required(context.graph, reference(field(yes.construct, 0x9330)), schema.recordType), recordName = text(field(record, 0x9300));
   if (reference(field(no.construct, 0x9330)) !== record.id) fail("lua_projection.protocol_record");
-  const values = references(field(yes.construct, 0x9331)), noValues = references(field(no.construct, 0x9331)), args = references(field(yes.call, 0xa0142)), noArgs = references(field(no.call, 0xa0142));
+  const values = references(field(yes.construct, 0x9331)), noValues = references(field(no.construct, 0x9331));
   if (values.length !== 1 || noValues.length !== 1 || args.length !== 1 || noArgs.length !== 1) fail("lua_projection.protocol_arity");
   const recordField = required(context.graph, references(field(record, 0x9301))[0], schema.recordField);
-  const binding = (witness) => { const method = required(context.graph, references(field(witness, 0xa0122))[0], schema.method), receiver = required(context.graph, reference(field(method, 0xa0021)), schema.receiverBinding); return `${text(field(receiver, 0xa0000))}${interface_.name}`; };
   return `Seme.protocol_dispatch(${projectExpression(reference(field(branch,0x9c00)),context)}, ${binding(no.witness)}, ${binding(yes.witness)}, ${JSON.stringify(requirement.name)}, ${JSON.stringify(recordName)}, ${JSON.stringify(text(field(recordField,0x9310)))}, ${projectExpression(values[0],context)}, ${projectExpression(args[0],context)})`;
 }
 
@@ -231,6 +241,7 @@ function projectExpression(id, context) {
   }
   if (expression.schema === schema.mapUpdate) return `Seme.map_update(${projectExpression(reference(field(expression, 0xa0430)), context)}, ${projectExpression(reference(field(expression, 0xa0431)), context)}, ${projectExpression(reference(field(expression, 0xa0432)), context)})`;
   if(expression.schema===schema.mapRemove)return `Seme.map_remove(${projectExpression(reference(field(expression,0xa0670)),context)}, ${projectExpression(reference(field(expression,0xa0671)),context)})`;
+  if(expression.schema===schema.mapLookupOption)return `Seme.map_lookup(${projectExpression(reference(field(expression,0xa0440)),context)}, ${projectExpression(reference(field(expression,0xa0441)),context)})`;
   if (expression.schema === schema.variantRead) return bindingName(reference(field(expression, 0xa0610)), context);
   if (expression.schema === schema.bytesLiteral) return `Seme.bytes_literal(${JSON.stringify(text(field(expression, 0xa0640)))})`;
   if (expression.schema === schema.bytesEqual) return `Seme.bytes_equal(${projectExpression(reference(field(expression, 0xa0650)), context)}, ${projectExpression(reference(field(expression, 0xa0651)), context)})`;
@@ -248,6 +259,7 @@ function projectExpression(id, context) {
     return `Seme.match_option(${projectExpression(reference(field(expression, 0xa0630)), context)}, false, function(${bindingName(some, context)}) return ${projectBlockExpression(reference(field(expression, 0xa0633)), context)} end)`;
   }
   if (expression.schema === schema.integerAdd) return `Seme.add(${projectExpression(reference(field(expression, 0x9140)), context)}, ${projectExpression(reference(field(expression, 0x9141)), context)})`;
+  if (expression.schema === schema.integerMultiply) return `Seme.multiply(${projectExpression(reference(field(expression, 0x9900)), context)}, ${projectExpression(reference(field(expression, 0x9901)), context)})`;
   if (expression.schema === schema.integerLiteral) return `Seme.i64_literal(${JSON.stringify(unsigned(field(expression, 0x9700)).toString())})`;
   if (expression.schema === schema.stringConcat) return `Seme.text_concat(${projectExpression(reference(field(expression, 0x9c30)), context)}, ${projectExpression(reference(field(expression, 0x9c31)), context)})`;
   if(expression.schema===schema.integerLessEqual)return `Seme.less_equal(${projectExpression(reference(field(expression,0x9160)),context)}, ${projectExpression(reference(field(expression,0x9161)),context)})`;

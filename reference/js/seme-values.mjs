@@ -35,6 +35,10 @@ export const Seme = Object.freeze({
     if (!(values instanceof Map)) throw new TypeError("seme.invalid_map");
     return values.get(key) ?? 0n;
   },
+  mapLookup(values, key) {
+    if (!(values instanceof Map) || typeof key !== "bigint") throw new TypeError("seme.invalid_map_lookup");
+    return values.has(key) ? freeze({ tag: "some", value: values.get(key) }) : freeze({ tag: "none" });
+  },
   mapInsert(values, key, value) {
     if (!(values instanceof Map) || (!values.has(key) && values.size >= 512)) throw new RangeError("seme.invalid_map_insert");
     return new Map(values).set(key, value);

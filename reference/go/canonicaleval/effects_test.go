@@ -53,6 +53,18 @@ func TestEvaluateObservedAuthorizationOrderAndForgery(t *testing.T) {
 	}
 }
 
+func TestGenericEvaluatorExecutesAuthorizedEffects(t *testing.T) {
+	g := effectGraph()
+	args := []Value{{Kind: "bool", Bool: true}, {Kind: "bool", Bool: false}}
+	result, trace, err := EvaluateAuthorized(g, args, map[string]bool{"observability.log": true})
+	if err != nil || result.Kind != "bool" || result.Bool || len(trace) != 2 || !trace[0].Value || trace[1].Value {
+		t.Fatalf("result=%#v trace=%#v err=%v", result, trace, err)
+	}
+	if _, trace, err := EvaluateAuthorized(g, args, nil); err == nil || len(trace) != 0 {
+		t.Fatalf("denial trace=%#v err=%v", trace, err)
+	}
+}
+
 func effectGraph() wire.Envelope {
 	ref := func(n uint64) wire.Value { return wire.Value{Tag: 6, Reference: id(n)} }
 	list := func(ns ...uint64) wire.Value {

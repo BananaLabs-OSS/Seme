@@ -42,5 +42,8 @@ test("collection adapters are immutable and keep raw JavaScript semantics separa
   assert.equal(Seme.mapLookupZero(empty, 7n), 0n);
   assert.equal(Seme.mapLookupZero(inserted, 7n), 8n);
   assert.equal(Seme.mapLookupZero(removed, 7n), 0n);
+  assert.deepEqual(Seme.mapLookup(inserted, 7n), Seme.some(8n));
+  assert.deepEqual(Seme.mapLookup(removed, 7n), Seme.none());
+  assert.throws(() => Seme.mapLookup(inserted, 7), /seme.invalid_map_lookup/);
   assert.equal(empty.size, 0);
 });

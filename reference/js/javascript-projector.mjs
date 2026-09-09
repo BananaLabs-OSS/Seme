@@ -40,6 +40,7 @@ const schema = {
   when: "000000000000000000000000000090f0",
   effectInvoke: "000000000000000000000000000090f1",
   effect: "00000000000000000000000000000015",
+  capability: "00000000000000000000000000000016",
   fixedArrayType: "000000000000000000000000000090f2",
   fixedArrayConstruct: "000000000000000000000000000090f3",
   indexRead: "000000000000000000000000000090f4",
@@ -78,6 +79,7 @@ const schema = {
   mapType: "0000000000000000000000000000a040",
   emptyMap: "0000000000000000000000000000a041",
   mapLookup: "0000000000000000000000000000a042",
+  mapLookupOption: "0000000000000000000000000000a044",
   mapUpdate: "0000000000000000000000000000a043",
   mapRemove: "0000000000000000000000000000a067",
   sliceRemove: "0000000000000000000000000000a066",
@@ -227,6 +229,8 @@ function projectBlock(id, context, indent) {
     if (statement.schema === schema.effectInvoke) {
       const effect = required(context.graph, reference(field(statement, 0x9f10)), schema.effect);
       if (text(field(effect, 0x150)) !== "observability.log") fail("javascript_projection.unsupported_effect");
+      const capability = required(context.graph, reference(field(effect, 0x151)), schema.capability);
+      if (text(field(capability, 0x160)) !== "observability.log") fail("javascript_projection.effect_authority");
       const arguments_ = references(field(statement, 0x9f11));
       if (arguments_.length !== 1) fail("javascript_projection.effect_arity");
       lines.push(`${indent}console.log(${projectExpression(arguments_[0], localContext)});`);
@@ -354,13 +358,13 @@ function projectExpression(id, context) {
 		const binding = required(context.graph, reference(field(expression, 0xa0632)), schema.variantBinding);
 		const name = text(field(binding, 0xa0600));
 		if (!/^[A-Za-z_$][\w$]*$/.test(name)) fail("javascript_projection.variant_binding_name");
-		return `Seme.matchOption(${projectExpression(reference(field(expression, 0xa0630)), context)}, () => ${projectMatchBlock(reference(field(expression, 0xa0631)), context)}, (${name}) => ${projectMatchBlock(reference(field(expression, 0xa0633)), { ...context, variants: new Map([...(context.variants || []), [binding.id, { name }]]) })})`;
+		return `Seme.matchOption(${projectExpression(reference(field(expression, 0xa0630)), context)}, ${projectMatchCallback(reference(field(expression, 0xa0631)), context, "" )}, ${projectMatchCallback(reference(field(expression, 0xa0633)), { ...context, variants: new Map([...(context.variants || []), [binding.id, { name }]]) }, name)})`;
 	}
 	if (expression.schema === schema.resultMatch) {
 		const ok = required(context.graph, reference(field(expression, 0xa0621)), schema.variantBinding), error = required(context.graph, reference(field(expression, 0xa0623)), schema.variantBinding);
 		const okName = text(field(ok, 0xa0600)), errorName = text(field(error, 0xa0600));
 		if (![okName, errorName].every((name) => /^[A-Za-z_$][\w$]*$/.test(name)) || okName === errorName) fail("javascript_projection.variant_binding_name");
-		return `Seme.matchResult(${projectExpression(reference(field(expression, 0xa0620)), context)}, (${okName}) => ${projectMatchBlock(reference(field(expression, 0xa0622)), { ...context, variants: new Map([...(context.variants || []), [ok.id, { name: okName }]]) })}, (${errorName}) => ${projectMatchBlock(reference(field(expression, 0xa0624)), { ...context, variants: new Map([...(context.variants || []), [error.id, { name: errorName }]]) })})`;
+		return `Seme.matchResult(${projectExpression(reference(field(expression, 0xa0620)), context)}, ${projectMatchCallback(reference(field(expression, 0xa0622)), { ...context, variants: new Map([...(context.variants || []), [ok.id, { name: okName }]]) }, okName)}, ${projectMatchCallback(reference(field(expression, 0xa0624)), { ...context, variants: new Map([...(context.variants || []), [error.id, { name: errorName }]]) }, errorName)})`;
 	}
 	if (expression.schema === schema.fold) {
 		const accumulatorID = reference(field(expression, 0x9f72));
@@ -400,6 +404,11 @@ function projectExpression(id, context) {
 	}
 	if (expression.schema === schema.mapLookup) {
 		return `Seme.mapLookupZero(${projectExpression(reference(field(expression, 0xa0420)), context)}, ${projectExpression(reference(field(expression, 0xa0421)), context)})`;
+	}
+	if (expression.schema === schema.mapLookupOption) {
+		const option = required(context.graph, reference(field(expression, 0xa0442)), schema.optionType);
+		required(context.graph, reference(field(option, 0xa0500)), schema.integerType);
+		return `Seme.mapLookup(${projectExpression(reference(field(expression, 0xa0440)), context)}, ${projectExpression(reference(field(expression, 0xa0441)), context)})`;
 	}
 	if (expression.schema === schema.mapUpdate) {
 		return `Seme.mapInsert(${projectExpression(reference(field(expression, 0xa0430)), context)}, ${projectExpression(reference(field(expression, 0xa0431)), context)}, ${projectExpression(reference(field(expression, 0xa0432)), context)})`;
@@ -455,6 +464,7 @@ function projectExpression(id, context) {
     return `${projectExpression(reference(field(expression, 0xa0240)), context)}(${arguments_.join(", ")})`;
   }
   if (expression.schema === schema.stateTransition) {
+    required(context.graph, reference(field(expression, 0xa0050)), schema.transitionType);
     return `{ state: ${projectExpression(reference(field(expression, 0xa0051)), context)}, result: ${projectExpression(reference(field(expression, 0xa0052)), context)} }`;
   }
   if (expression.schema === schema.transitionState) return `${projectExpression(reference(field(expression, 0xa0060)), context)}.state`;
@@ -540,6 +550,14 @@ function projectMatchBlock(id, context) {
   const values = references(field(returned, 0x9810));
   if (values.length !== 1) fail("javascript_projection.match_block_shape");
   return projectExpression(values[0], context);
+}
+
+function projectMatchCallback(id, context, parameter) {
+  const block = required(context.graph, id, schema.block);
+  const statements = references(field(block, 0x9800));
+  const arguments_ = parameter === "" ? "()" : `(${parameter})`;
+  if (statements.length === 1 && required(context.graph, statements[0]).schema === schema.returned) return `${arguments_} => ${projectMatchBlock(id, context)}`;
+  return `${arguments_} => {\n${projectBlock(id, context, "  ")}\n}`;
 }
 
 function typeName(id, graph) {

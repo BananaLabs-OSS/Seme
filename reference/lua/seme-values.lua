@@ -60,6 +60,11 @@ function Seme.add(left, right)
   local result = native_i64(left_value) + native_i64(right_value)
   return Seme.i64((string.gsub(tostring(result), "LL$", "")))
 end
+function Seme.multiply(left, right)
+  local left_value, right_value = operand(left), operand(right)
+  local result = native_i64(left_value) * native_i64(right_value)
+  return Seme.i64((string.gsub(tostring(result), "LL$", "")))
+end
 function Seme.less_equal(left, right) return native_i64(operand(left)) <= native_i64(operand(right)) end
 function Seme.equal_i64(left, right) return native_i64(operand(left)) == native_i64(operand(right)) end
 function Seme.i64_decimal(value) return unpack_value(value, "i64") end
@@ -198,7 +203,7 @@ function Seme.record(type_name, field_names, values)
   if type(type_name) ~= "string" or type(field_names) ~= "table" or type(values) ~= "table" then error("seme.invalid_record", 2) end
   local fields, seen = {}, {}
   for index, name in ipairs(field_names) do
-    if type(name) ~= "string" or seen[name] or storage[values[name]] == nil then error("seme.invalid_record_field", 2) end
+    if type(name) ~= "string" or seen[name] or (storage[values[name]] == nil and type(values[name]) ~= "boolean") then error("seme.invalid_record_field", 2) end
     seen[name], fields[index] = true, { name = name, value = values[name] }
   end
   for name in pairs(values) do if not seen[name] then error("seme.extra_record_field", 2) end end
@@ -335,6 +340,11 @@ function Seme.protocol_dispatch(condition, when_false, when_true, requirement, r
   local receiver = Seme.record(record_name, { field_name }, { [field_name] = receiver_value })
   return Seme.dynamic_call(Seme.interface_value(implementation, receiver), requirement, argument)
 end
+function Seme.protocol_dispatch_value(condition, when_false, when_true, requirement, receiver_value, argument)
+  if type(condition) ~= "boolean" or type(requirement) ~= "string" then error("seme.invalid_protocol_dispatch", 2) end
+  local implementation = condition and when_true or when_false
+  return Seme.dynamic_call(Seme.interface_value(implementation, receiver_value), requirement, argument)
+end
 
 function Seme.immutable_closure_run(base, value)
   local captured = base
@@ -357,6 +367,10 @@ function Seme.transition_step(counter, delta, field_name)
 end
 function Seme.transition_state(value) return unpack_value(value, "transition").state end
 function Seme.transition_result(value) return unpack_value(value, "transition").result end
+function Seme.transition(state, result)
+  if storage[state] == nil or storage[result] == nil then error("seme.untyped_transition", 2) end
+  return freeze("transition", { state = state, result = result })
+end
 function Seme.check_positive(value)
   if Seme.less_equal(Seme.i64("0"), value) and Seme.i64_decimal(value) ~= "0" then return Seme.ok(value) end
   return Seme.err(Seme.i64("99"))
