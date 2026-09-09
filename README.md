@@ -316,6 +316,13 @@ evaluation, standalone Wasm, and pinned Pulp, with representation-appropriate
 rejection evidence. Run `./scripts/check-uab-v1-go-02.sh`,
 `./scripts/check-javascript-uab-02.sh`, and `./scripts/check-lua-uab-02.sh`.
 
+UAB-03 is complete in all three columns for bounded compositional control flow:
+locals, mutable assignment, modular i64 arithmetic, comparison, observable
+short-circuit logic, conditionals, loops, and early return. Each language uses
+one shared corpus across original and projected native source, canonical
+evaluation, standalone Wasm, and pinned Pulp. Run `./scripts/check-go-uab-03.sh`,
+`./scripts/check-javascript-uab-03.sh`, and `./scripts/check-lua-uab-03.sh`.
+
 [`Core Execution v25`](spec/core-execution-v25.md) adds neutral immutable
 collection append and update with dynamically sized slice results. Native Go
 and JavaScript forms converge canonically; projection remains native, and

@@ -40,26 +40,28 @@ function Seme.i64(decimal)
   if #digits > #limit or (#digits == #limit and digits > limit) then error("seme.invalid_i64", 2) end
   return freeze("i64", decimal)
 end
-function Seme.add(left, right)
+local function operand(value)
+  if type(value) == "number" and value >= 0 and value % 1 == 0 then return tostring(value) end
+  return unpack_value(value, "i64")
+end
+local function native_i64(decimal)
   local ffi = require("ffi")
-  local function operand(value)
-    if type(value) == "number" and value >= 0 and value % 1 == 0 then return tostring(value) end
-    return unpack_value(value, "i64")
+  local negative, start = string.sub(decimal, 1, 1) == "-", 1
+  if negative then start = 2 end
+  local result = ffi.new("int64_t", 0)
+  for index = start, #decimal do
+    local digit = string.byte(decimal, index) - string.byte("0")
+    result = negative and (result * 10 - digit) or (result * 10 + digit)
   end
+  return result
+end
+function Seme.add(left, right)
   local left_value, right_value = operand(left), operand(right)
-  local function native_i64(decimal)
-    local negative, start = string.sub(decimal, 1, 1) == "-", 1
-    if negative then start = 2 end
-    local result = ffi.new("int64_t", 0)
-    for index = start, #decimal do
-      local digit = string.byte(decimal, index) - string.byte("0")
-      result = negative and (result * 10 - digit) or (result * 10 + digit)
-    end
-    return result
-  end
   local result = native_i64(left_value) + native_i64(right_value)
   return Seme.i64((string.gsub(tostring(result), "LL$", "")))
 end
+function Seme.less_equal(left, right) return native_i64(operand(left)) <= native_i64(operand(right)) end
+function Seme.equal_i64(left, right) return native_i64(operand(left)) == native_i64(operand(right)) end
 function Seme.i64_decimal(value) return unpack_value(value, "i64") end
 Seme.i64_literal = Seme.i64
 
@@ -147,6 +149,7 @@ end
 function Seme.collection_get(value, zero_index)
   local item = storage[value]
   if item == nil or (item.kind ~= "array" and item.kind ~= "slice") then error("seme.expected_collection", 2) end
+  if storage[zero_index] and storage[zero_index].kind == "i64" then zero_index = tonumber(unpack_value(zero_index, "i64")) end
   if type(zero_index) ~= "number" or zero_index % 1 ~= 0 or zero_index < 0 or zero_index >= #item.value then error("seme.index_out_of_range", 2) end
   return item.value[zero_index + 1]
 end

@@ -60,6 +60,18 @@ const (
 	sLocalBinding        = "000000000000000000000000000090d0"
 	sBindLocal           = "000000000000000000000000000090d1"
 	sLocalRead           = "000000000000000000000000000090d2"
+	sPlace               = "000000000000000000000000000090e0"
+	sDeclarePlace        = "000000000000000000000000000090e1"
+	sPlaceRead           = "000000000000000000000000000090e2"
+	sAssignPlace         = "000000000000000000000000000090e3"
+	sWhile               = "000000000000000000000000000090e4"
+	sWhen                = "000000000000000000000000000090f0"
+	sIf                  = "000000000000000000000000000090c0"
+	sLessEqual           = "00000000000000000000000000009021"
+	sAnd                 = "000000000000000000000000000090b1"
+	sOr                  = "000000000000000000000000000090c1"
+	sMultiply            = "00000000000000000000000000009090"
+	sSubtract            = "000000000000000000000000000090a0"
 	sIterationBinding    = "000000000000000000000000000090f5"
 	sIterationRead       = "000000000000000000000000000090f6"
 	sFold                = "000000000000000000000000000090f7"
@@ -242,6 +254,105 @@ func projectBlock(id string, c context) (string, error) {
 			}
 			lines = append(lines, "\t"+name+" := "+initializer)
 			c.locals[bindingID] = name
+		case sDeclarePlace:
+			placeID, err := ref(statement, "00000000000000000000000000009e10")
+			if err != nil {
+				return "", err
+			}
+			place, ok := c.graph[placeID]
+			if !ok || place.schema != sPlace {
+				return "", fmt.Errorf("go_projection.invalid_place")
+			}
+			name, err := text(place, "00000000000000000000000000009e00")
+			if err != nil || !identifier(name) {
+				return "", fmt.Errorf("go_projection.invalid_place_name")
+			}
+			initializerID, err := ref(place, "00000000000000000000000000009e02")
+			if err != nil {
+				return "", err
+			}
+			initializer, err := expr(initializerID, c)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\t"+name+" := "+initializer)
+			c.locals[placeID] = name
+		case sAssignPlace:
+			placeID, err := ref(statement, "00000000000000000000000000009e30")
+			if err != nil {
+				return "", err
+			}
+			name, ok := c.locals[placeID]
+			if !ok {
+				return "", fmt.Errorf("go_projection.place_scope")
+			}
+			valueID, err := ref(statement, "00000000000000000000000000009e31")
+			if err != nil {
+				return "", err
+			}
+			value, err := expr(valueID, c)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\t"+name+" = "+value)
+		case sWhile, sWhen:
+			conditionField, bodyField := "00000000000000000000000000009e40", "00000000000000000000000000009e41"
+			keyword := "for "
+			if statement.schema == sWhen {
+				conditionField, bodyField, keyword = "00000000000000000000000000009f00", "00000000000000000000000000009f01", "if "
+			}
+			conditionID, err := ref(statement, conditionField)
+			if err != nil {
+				return "", err
+			}
+			bodyID, err := ref(statement, bodyField)
+			if err != nil {
+				return "", err
+			}
+			condition, err := expr(conditionID, c)
+			if err != nil {
+				return "", err
+			}
+			child := c
+			child.locals = cloneNames(c.locals)
+			body, err := projectBlock(bodyID, child)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\t"+keyword+condition+" {", indentBlock(body), "\t}")
+		case sIf:
+			if index != len(statements)-1 {
+				return "", fmt.Errorf("go_projection.if_not_terminal")
+			}
+			conditionID, err := ref(statement, "00000000000000000000000000009c00")
+			if err != nil {
+				return "", err
+			}
+			thenID, err := ref(statement, "00000000000000000000000000009c01")
+			if err != nil {
+				return "", err
+			}
+			elseID, err := ref(statement, "00000000000000000000000000009c02")
+			if err != nil {
+				return "", err
+			}
+			condition, err := expr(conditionID, c)
+			if err != nil {
+				return "", err
+			}
+			thenContext := c
+			thenContext.locals = cloneNames(c.locals)
+			elseContext := c
+			elseContext.locals = cloneNames(c.locals)
+			thenBody, err := projectBlock(thenID, thenContext)
+			if err != nil {
+				return "", err
+			}
+			elseBody, err := projectBlock(elseID, elseContext)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\tif "+condition+" {", indentBlock(thenBody), "\t} else {", indentBlock(elseBody), "\t}")
 		case sReturn:
 			if index != len(statements)-1 {
 				return "", fmt.Errorf("go_projection.return_not_terminal")
@@ -522,8 +633,12 @@ func expr(id string, c context) (string, error) {
 			return "", fmt.Errorf("go_projection.parameter_scope")
 		}
 		return name, nil
-	case sLocalRead:
-		id, err := ref(e, "00000000000000000000000000009d20")
+	case sLocalRead, sPlaceRead:
+		field := "00000000000000000000000000009d20"
+		if e.schema == sPlaceRead {
+			field = "00000000000000000000000000009e20"
+		}
+		id, err := ref(e, field)
 		if err != nil {
 			return "", err
 		}
@@ -833,10 +948,21 @@ func expr(id string, c context) (string, error) {
 		return "", fmt.Errorf("go_projection.map_update_requires_fold")
 	case sFold:
 		return "", fmt.Errorf("go_projection.fold_requires_statement_context")
-	case sAdd, sConcat:
+	case sAdd, sConcat, sMultiply, sSubtract, sLessEqual, sAnd, sOr:
 		leftField, rightField := "00000000000000000000000000009140", "00000000000000000000000000009141"
+		op := "+"
 		if e.schema == sConcat {
 			leftField, rightField = "00000000000000000000000000009c30", "00000000000000000000000000009c31"
+		} else if e.schema == sMultiply {
+			leftField, rightField, op = "00000000000000000000000000009900", "00000000000000000000000000009901", "*"
+		} else if e.schema == sSubtract {
+			leftField, rightField, op = "00000000000000000000000000009a00", "00000000000000000000000000009a01", "-"
+		} else if e.schema == sLessEqual {
+			leftField, rightField, op = "00000000000000000000000000009160", "00000000000000000000000000009161", "<="
+		} else if e.schema == sAnd {
+			leftField, rightField, op = "00000000000000000000000000009b10", "00000000000000000000000000009b11", "&&"
+		} else if e.schema == sOr {
+			leftField, rightField, op = "00000000000000000000000000009c10", "00000000000000000000000000009c11", "||"
 		}
 		left, err := ref(e, leftField)
 		if err != nil {
@@ -854,7 +980,7 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return "(" + l + " + " + r + ")", nil
+		return "(" + l + " " + op + " " + r + ")", nil
 	default:
 		return "", fmt.Errorf("go_projection.unsupported_expression")
 	}

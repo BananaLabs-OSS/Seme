@@ -159,17 +159,17 @@ export function Pick(values, index) { return Seme.index(values, index); }`;
 
 test("projects and re-lifts deterministic folds", () => {
   const source = `/** @param {bigint[3]} values @returns {bigint} */
-export function Sum(values) { return values.reduce((total, value) => total + value, 0n); }`;
+export function Sum(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }`;
   const first = liftJavaScript({ source, moduleG1: moduleV22G1, packagePath: "example.test/fold", revision: 1 });
   const projected = projectJavaScript(first);
-  assert.match(projected, /values\.reduce\(\(total, value\) => \(total \+ value\), 0n\)/);
+  assert.match(projected, /values\.reduce\(\(total, value\) => BigInt\.asIntN\(64, \(total \+ value\)\), 0n\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV22G1, packagePath: "example.test/fold", revision: 1 });
   assert.equal(second, first);
 });
 
 test("projects and re-lifts runtime-sized slice folds", () => {
   const source = `/** @param {bigint[]} values @returns {bigint} */
-export function Sum(values) { return values.reduce((total, value) => total + value, 0n); }`;
+export function Sum(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }`;
   const first = liftJavaScript({ source, moduleG1: moduleV23G1, packagePath: "example.test/slice", revision: 1 });
   const projected = projectJavaScript(first);
   assert.match(projected, /@param \{bigint\[\]\} values/);
@@ -205,7 +205,7 @@ test("projects and re-lifts native JavaScript method transitions", () => {
 class Counter {
   constructor(value) { this.value = value; }
   /** @param {bigint} delta @returns {Transition<Counter,bigint>} */
-  add(delta) { const state = new Counter(this.value + delta); return { state, result: state.value }; }
+  add(delta) { const state = new Counter(BigInt.asIntN(64, this.value + delta)); return { state, result: state.value }; }
 }
 /** @param {Counter} counter @param {bigint} delta @returns {Transition<Counter,bigint>} */
 export function Step(counter, delta) { return counter.add(delta); }`;
@@ -231,7 +231,7 @@ test("projects and re-lifts native JavaScript structural dispatch", () => {
 class OffsetAdjuster {
   constructor(Offset) { this.Offset = Offset; }
   /** @param {bigint} value @returns {bigint} */
-  Adjust(value) { return value + this.Offset; }
+  Adjust(value) { return BigInt.asIntN(64, value + this.Offset); }
 }
 /** @typedef {Object} ScaleAdjuster
  * @property {bigint} Factor
@@ -239,7 +239,7 @@ class OffsetAdjuster {
 class ScaleAdjuster {
   constructor(Factor) { this.Factor = Factor; }
   /** @param {bigint} value @returns {bigint} */
-  Adjust(value) { return value * this.Factor; }
+  Adjust(value) { return BigInt.asIntN(64, value * this.Factor); }
 }
 /** @param {Adjuster} adjuster @param {bigint} value @returns {bigint} */
 export function Apply(adjuster, value) { return adjuster.Adjust(value); }`;
@@ -265,7 +265,7 @@ test("projects and re-lifts concrete values dispatched through structural interf
 class OffsetAdjuster {
   constructor(Offset) { this.Offset = Offset; }
   /** @param {bigint} value @returns {bigint} */
-  Adjust(value) { return value + this.Offset; }
+  Adjust(value) { return BigInt.asIntN(64, value + this.Offset); }
 }
 /** @param {bigint} offset @param {bigint} value @returns {bigint} */
 export function ApplyOffset(offset, value) { return new OffsetAdjuster(offset).Adjust(value); }`;
@@ -278,14 +278,14 @@ export function ApplyOffset(offset, value) { return new OffsetAdjuster(offset).A
 
 test("projects and re-lifts immutable lexical closures", () => {
   const source = `/** @param {bigint} base @returns {function(bigint): bigint} */
-function MakeAdder(base) { return (value) => base + value; }
+function MakeAdder(base) { return (value) => BigInt.asIntN(64, base + value); }
 /** @param {function(bigint): bigint} fn @param {bigint} value @returns {bigint} */
 function Apply(fn, value) { return fn(value); }
 /** @param {bigint} base @param {bigint} value @returns {bigint} */
 export function Run(base, value) { return Apply(MakeAdder(base), value); }`;
   const first = liftJavaScript({ source, moduleG1: moduleV28G1, packagePath: "example.test/immutable-closure", revision: 1 });
   const projected = projectJavaScript(first);
-  assert.match(projected, /\(value\) => \(base \+ value\)/);
+  assert.match(projected, /\(value\) => BigInt\.asIntN\(64, \(base \+ value\)\)/);
   assert.match(projected, /return fn\(value\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV28G1, packagePath: "example.test/immutable-closure", revision: 1 });
   assert.equal(second, first);
@@ -293,7 +293,7 @@ export function Run(base, value) { return Apply(MakeAdder(base), value); }`;
 
 test("projects and re-lifts idiomatic mutable closures", () => {
   const source = `/** @param {bigint} start @returns {function(bigint): bigint} */
-function MakeCounter(start) { let value = start; return (delta) => { value = value + delta; return value; }; }
+function MakeCounter(start) { let value = start; return (delta) => { value = BigInt.asIntN(64, value + delta); return value; }; }
 /** @param {bigint} start @param {bigint} first @param {bigint} second @returns {bigint} */
 export function Run(start, first, second) { const counter = MakeCounter(start); counter(first); return counter(second); }`;
   const first = liftJavaScript({ source, moduleG1: moduleV29G1, packagePath: "example.test/mutable-closure", revision: 1 });
@@ -307,7 +307,7 @@ export function Run(start, first, second) { const counter = MakeCounter(start); 
 
 test("projects and re-lifts native runtime-keyed Map folds", () => {
   const source = `/** @param {bigint[]} values @param {bigint} key @returns {bigint} */
-export function Tally(values, key) { return values.reduce((counts, value) => new Map(counts).set(value, (counts.get(value) ?? 0n) + 1n), new Map()).get(key) ?? 0n; }`;
+export function Tally(values, key) { return values.reduce((counts, value) => new Map(counts).set(value, BigInt.asIntN(64, (counts.get(value) ?? 0n) + 1n)), new Map()).get(key) ?? 0n; }`;
   const first = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/runtime-map", revision: 1 });
   const projected = projectJavaScript(first);
   assert.match(projected, /new Map\(counts\)\.set/);
@@ -323,10 +323,10 @@ test("projects and re-lifts the cumulative state-flow proof", () => {
 class Accumulator {
   constructor(Value) { this.Value = Value; }
   /** @param {bigint} delta @returns {Transition<Accumulator,bigint>} */
-  Add(delta) { const next = new Accumulator(this.Value + delta); return { state: next, result: next.Value }; }
+  Add(delta) { const next = new Accumulator(BigInt.asIntN(64, this.Value + delta)); return { state: next, result: next.Value }; }
 }
 /** @param {bigint[]} values @returns {bigint} */
-function Sum(values) { return values.reduce((total, value) => total + value, 0n); }
+function Sum(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }
 /** @param {Accumulator} state @param {bigint[]} values @param {boolean} enabled @returns {Transition<Accumulator,bigint>} */
 export function Run(state, values, enabled) { const delta = Sum(values); if (enabled) { return state.Add(delta); } else { return state.Add(0n); } }`;
   const first = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/cumulative-state-flow", revision: 1 });
@@ -340,7 +340,7 @@ export function Run(state, values, enabled) { const delta = Sum(values); if (ena
 
 test("projects and re-lifts the cumulative text-collection proof", () => {
   const source = `/** @param {bigint[]} values @returns {bigint} */
-function Sum(values) { return values.reduce((total, value) => total + value, 0n); }
+function Sum(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }
 /** @param {string} prefix @param {bigint[]} values @returns {string} */
 export function Describe(prefix, values) { const total = Sum(values); if (total <= 0n) { return prefix + ":non-positive"; } return prefix + ":positive"; }`;
   const first = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/cumulative-text-collection", revision: 1 });

@@ -40,7 +40,7 @@ node "$repo/reference/js/pure-function-v2-runner.mjs" "$work/sum.wasm" "$overflo
 node "$repo/reference/js/slice-abi-v2-runner.mjs" "$work/sum.wasm"
 
 printf '%s\n' '/** @param {bigint[]} values @returns {bigint} */' \
-  'export function Sum(values) { return values.reduce((total, value) => total + value, 0n); }' > "$work/program.mjs"
+  'export function Sum(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }' > "$work/program.mjs"
 node "$repo/reference/js/javascript-provider-cli.mjs" --source "$work/program.mjs" \
   --module "$repo/modules/execution/v23/module.g1" --package example.com/seme-slice-proof \
   --entry Sum --revision 1 --out "$work/js.g1"

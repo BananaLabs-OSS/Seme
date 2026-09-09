@@ -174,9 +174,9 @@ selected shapes. A direct bounded Lua provider and projector now cover the
 UAB-01 Boolean function/call slice without using either language as an
 intermediate representation.
 
-The repository currently justifies 6/36 UAB-v1 cells: UAB-01 and UAB-02 pass
-all five evidence classes independently for Go, JavaScript, and Lua. It does
-not yet justify any other cell because:
+The repository currently justifies 9/36 UAB-v1 cells: UAB-01 through UAB-03
+pass all five evidence classes independently for Go, JavaScript, and Lua. It
+does not yet justify any other cell because:
 
 - the Core checkpoint sequence and both cumulative architectural composition
   gates are complete, establishing the prerequisite for this profile;

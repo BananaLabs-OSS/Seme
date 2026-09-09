@@ -1,0 +1,2 @@
+import fs from "node:fs";
+const [vectorsPath,logPath]=process.argv.slice(2),vectors=JSON.parse(fs.readFileSync(vectorsPath)),lines=fs.readFileSync(logPath,"utf8").split("\n").filter(x=>x.startsWith("{"));if(lines.length!==vectors.valid.length)throw new Error("pulp.observation_count");const valid={};lines.forEach((line,i)=>{const hex=JSON.parse(line).response;valid[vectors.valid[i].name]=BigInt.asIntN(64,BigInt("0x"+Buffer.from(hex,"hex").reverse().toString("hex"))).toString()});console.log(JSON.stringify({valid,malformed:vectors.malformed.length}));

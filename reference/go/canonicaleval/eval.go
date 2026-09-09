@@ -299,36 +299,158 @@ func scalarTypeKind(schema wire.ID) (string, bool) {
 }
 
 func evalBlock(g wire.Envelope, block wire.ID, env map[wire.ID]Value, budget int) (Value, error) {
+	v, returned, err := execBlock(g, block, env, budget)
+	if err != nil {
+		return Value{}, err
+	}
+	if !returned {
+		return Value{}, fmt.Errorf("canonicaleval.missing_return")
+	}
+	return v, nil
+}
+
+func execBlock(g wire.Envelope, block wire.ID, env map[wire.ID]Value, budget int) (Value, bool, error) {
 	if budget == 0 {
-		return Value{}, fmt.Errorf("canonicaleval.budget")
+		return Value{}, false, fmt.Errorf("canonicaleval.budget")
 	}
-	b := g.Entities[block]
+	b, exists := g.Entities[block]
 	statements, e := field(b, 0x9800)
-	if b.Schema != id(0x9080) || e != nil || statements.Tag != 7 || len(statements.List) != 1 || statements.List[0].Tag != 6 {
-		return Value{}, fmt.Errorf("canonicaleval.block")
+	if !exists || b.Schema != id(0x9080) || e != nil || statements.Tag != 7 {
+		return Value{}, false, fmt.Errorf("canonicaleval.block")
 	}
-	r := g.Entities[statements.List[0].Reference]
-	if r.Schema == id(0x90c0) {
-		conditionID, a := field(r, 0x9c00)
-		thenID, b := field(r, 0x9c01)
-		elseID, c := field(r, 0x9c02)
-		if a != nil || b != nil || c != nil || conditionID.Tag != 6 || thenID.Tag != 6 || elseID.Tag != 6 {
-			return Value{}, fmt.Errorf("canonicaleval.if")
+	for _, item := range statements.List {
+		if item.Tag != 6 {
+			return Value{}, false, fmt.Errorf("canonicaleval.statement")
 		}
-		condition, err := eval(g, conditionID.Reference, env, budget-1)
-		if err != nil || condition.Kind != "bool" {
-			return Value{}, fmt.Errorf("canonicaleval.if_condition")
+		s, ok := g.Entities[item.Reference]
+		if !ok {
+			return Value{}, false, fmt.Errorf("canonicaleval.statement_missing")
 		}
-		if condition.Bool {
-			return evalBlock(g, thenID.Reference, env, budget-1)
+		ref := func(k uint64) (wire.ID, error) {
+			v, er := field(s, k)
+			if er != nil || v.Tag != 6 {
+				return wire.ID{}, fmt.Errorf("canonicaleval.statement_field")
+			}
+			return v.Reference, nil
 		}
-		return evalBlock(g, elseID.Reference, env, budget-1)
+		switch s.Schema {
+		case id(0x9081):
+			values, er := field(s, 0x9810)
+			if er != nil || values.Tag != 7 || len(values.List) != 1 || values.List[0].Tag != 6 {
+				return Value{}, false, fmt.Errorf("canonicaleval.return")
+			}
+			v, er := eval(g, values.List[0].Reference, env, budget-1)
+			return v, true, er
+		case id(0x90d1), id(0x90e1):
+			key := uint64(0x9d10)
+			definitionSchema := id(0x90d0)
+			initializerField := uint64(0x9d02)
+			if s.Schema == id(0x90e1) {
+				key = 0x9e10
+				definitionSchema = id(0x90e0)
+				initializerField = 0x9e02
+			}
+			definitionID, er := ref(key)
+			definition, ok := g.Entities[definitionID]
+			if er != nil || !ok || definition.Schema != definitionSchema {
+				return Value{}, false, fmt.Errorf("canonicaleval.declaration")
+			}
+			initializer, er := field(definition, initializerField)
+			if er != nil || initializer.Tag != 6 {
+				return Value{}, false, fmt.Errorf("canonicaleval.initializer")
+			}
+			if _, duplicate := env[definitionID]; duplicate {
+				return Value{}, false, fmt.Errorf("canonicaleval.duplicate_declaration")
+			}
+			v, er := eval(g, initializer.Reference, env, budget-1)
+			if er != nil {
+				return Value{}, false, er
+			}
+			env[definitionID] = v
+		case id(0x90e3):
+			place, er := ref(0x9e30)
+			valueID, ve := ref(0x9e31)
+			if er != nil || ve != nil {
+				return Value{}, false, fmt.Errorf("canonicaleval.assign")
+			}
+			if _, declared := env[place]; !declared {
+				return Value{}, false, fmt.Errorf("canonicaleval.assign_scope")
+			}
+			v, er := eval(g, valueID, env, budget-1)
+			if er != nil {
+				return Value{}, false, er
+			}
+			env[place] = v
+		case id(0x90f0), id(0x90c0):
+			conditionField, thenField := uint64(0x9f00), uint64(0x9f01)
+			if s.Schema == id(0x90c0) {
+				conditionField, thenField = 0x9c00, 0x9c01
+			}
+			conditionID, er := ref(conditionField)
+			bodyID, be := ref(thenField)
+			if er != nil || be != nil {
+				return Value{}, false, fmt.Errorf("canonicaleval.condition")
+			}
+			condition, er := eval(g, conditionID, env, budget-1)
+			if er != nil || condition.Kind != "bool" {
+				return Value{}, false, fmt.Errorf("canonicaleval.condition_type")
+			}
+			if condition.Bool {
+				child := cloneEnv(env)
+				v, returned, er := execBlock(g, bodyID, child, budget-1)
+				mergeExisting(env, child)
+				if er != nil || returned {
+					return v, returned, er
+				}
+			} else if s.Schema == id(0x90c0) {
+				elseID, ee := ref(0x9c02)
+				if ee != nil {
+					return Value{}, false, fmt.Errorf("canonicaleval.if_else")
+				}
+				child := cloneEnv(env)
+				v, returned, er := execBlock(g, elseID, child, budget-1)
+				mergeExisting(env, child)
+				if er != nil || returned {
+					return v, returned, er
+				}
+			}
+		case id(0x90e4):
+			conditionID, er := ref(0x9e40)
+			bodyID, be := ref(0x9e41)
+			if er != nil || be != nil {
+				return Value{}, false, fmt.Errorf("canonicaleval.while")
+			}
+			for iteration := 0; iteration < 10000; iteration++ {
+				condition, er := eval(g, conditionID, env, budget-1)
+				if er != nil || condition.Kind != "bool" {
+					return Value{}, false, fmt.Errorf("canonicaleval.while_condition")
+				}
+				if !condition.Bool {
+					break
+				}
+				child := cloneEnv(env)
+				v, returned, er := execBlock(g, bodyID, child, budget-1)
+				mergeExisting(env, child)
+				if er != nil || returned {
+					return v, returned, er
+				}
+				if iteration == 9999 {
+					return Value{}, false, fmt.Errorf("canonicaleval.loop_budget")
+				}
+			}
+		default:
+			return Value{}, false, fmt.Errorf("canonicaleval.unsupported_statement:%s", s.Schema.String())
+		}
 	}
-	values, e := field(r, 0x9810)
-	if r.Schema != id(0x9081) || e != nil || values.Tag != 7 || len(values.List) != 1 || values.List[0].Tag != 6 {
-		return Value{}, fmt.Errorf("canonicaleval.return")
+	return Value{}, false, nil
+}
+
+func mergeExisting(target, source map[wire.ID]Value) {
+	for key := range target {
+		if value, ok := source[key]; ok {
+			target[key] = value
+		}
 	}
-	return eval(g, values.List[0].Reference, env, budget-1)
 }
 
 func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value, error) {
@@ -373,6 +495,23 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.unbound")
 		}
 		return v, nil
+	case id(0x90d2), id(0x90e2):
+		key := uint64(0x9d20)
+		definitionSchema := id(0x90d0)
+		if e.Schema == id(0x90e2) {
+			key = 0x9e20
+			definitionSchema = id(0x90e0)
+		}
+		definition, er := refField(key)
+		if er != nil {
+			return Value{}, er
+		}
+		entity, exists := g.Entities[definition]
+		v, bound := env[definition]
+		if !exists || entity.Schema != definitionSchema || !bound {
+			return Value{}, fmt.Errorf("canonicaleval.lexical_read")
+		}
+		return v, nil
 	case id(0x9070):
 		v, er := field(e, 0x9700)
 		if er != nil || v.Tag != 3 {
@@ -406,6 +545,32 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.add")
 		}
 		return add(l, r)
+	case id(0x9090), id(0x90a0):
+		leftField, rightField := uint64(0x9900), uint64(0x9901)
+		if e.Schema == id(0x90a0) {
+			leftField, rightField = 0x9a00, 0x9a01
+		}
+		l, r, er := bin(leftField, rightField)
+		if er != nil || l.Kind != "i64" || r.Kind != "i64" {
+			return Value{}, fmt.Errorf("canonicaleval.arithmetic")
+		}
+		a, aok := new(big.Int).SetString(l.I64, 10)
+		b, bok := new(big.Int).SetString(r.I64, 10)
+		if !aok || !bok {
+			return Value{}, fmt.Errorf("canonicaleval.i64")
+		}
+		if e.Schema == id(0x9090) {
+			a.Mul(a, b)
+		} else {
+			a.Sub(a, b)
+		}
+		mod := new(big.Int).Lsh(big.NewInt(1), 64)
+		a.Mod(a, mod)
+		sign := new(big.Int).Lsh(big.NewInt(1), 63)
+		if a.Cmp(sign) >= 0 {
+			a.Sub(a, mod)
+		}
+		return Value{Kind: "i64", I64: a.String()}, nil
 	case id(0x9021):
 		l, r, er := bin(0x9160, 0x9161)
 		if er != nil || l.Kind != "i64" || r.Kind != "i64" {
@@ -418,11 +583,53 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 		}
 		return Value{Kind: "bool", Bool: a.Cmp(b) <= 0}, nil
 	case id(0x90b1):
-		l, r, er := bin(0x9b10, 0x9b11)
-		if er != nil || l.Kind != "bool" || r.Kind != "bool" {
+		leftID, er := refField(0x9b10)
+		if er != nil {
+			return Value{}, er
+		}
+		left, er := eval(g, leftID, env, budget-1)
+		if er != nil || left.Kind != "bool" {
 			return Value{}, fmt.Errorf("canonicaleval.and")
 		}
-		return Value{Kind: "bool", Bool: l.Bool && r.Bool}, nil
+		if !left.Bool {
+			return left, nil
+		}
+		rightID, er := refField(0x9b11)
+		if er != nil {
+			return Value{}, er
+		}
+		right, er := eval(g, rightID, env, budget-1)
+		if er != nil {
+			return Value{}, fmt.Errorf("canonicaleval.and:%w", er)
+		}
+		if right.Kind != "bool" {
+			return Value{}, fmt.Errorf("canonicaleval.and")
+		}
+		return right, nil
+	case id(0x90c1):
+		leftID, er := refField(0x9c10)
+		if er != nil {
+			return Value{}, er
+		}
+		left, er := eval(g, leftID, env, budget-1)
+		if er != nil || left.Kind != "bool" {
+			return Value{}, fmt.Errorf("canonicaleval.or")
+		}
+		if left.Bool {
+			return left, nil
+		}
+		rightID, er := refField(0x9c11)
+		if er != nil {
+			return Value{}, er
+		}
+		right, er := eval(g, rightID, env, budget-1)
+		if er != nil {
+			return Value{}, fmt.Errorf("canonicaleval.or:%w", er)
+		}
+		if right.Kind != "bool" {
+			return Value{}, fmt.Errorf("canonicaleval.or")
+		}
+		return right, nil
 	case id(0x90c3):
 		l, r, er := bin(0x9c30, 0x9c31)
 		if er != nil || l.Kind != "text" || r.Kind != "text" {
@@ -472,6 +679,27 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.record")
 		}
 		return v, nil
+	case id(0x90f3):
+		typeValue, typeErr := field(e, 0x9f30)
+		values, valuesErr := field(e, 0x9f31)
+		if typeErr != nil || valuesErr != nil || typeValue.Tag != 6 || values.Tag != 7 {
+			return Value{}, fmt.Errorf("canonicaleval.array_construct")
+		}
+		result := Value{Kind: "array", Items: make([]Value, len(values.List))}
+		for index, item := range values.List {
+			if item.Tag != 6 {
+				return Value{}, fmt.Errorf("canonicaleval.array_construct")
+			}
+			value, err := eval(g, item.Reference, env, budget-1)
+			if err != nil {
+				return Value{}, err
+			}
+			result.Items[index] = value
+		}
+		if err := validateValue(g, typeValue.Reference, result, 32); err != nil {
+			return Value{}, fmt.Errorf("canonicaleval.array_construct:%w", err)
+		}
+		return result, nil
 	case id(0x90f4):
 		baseID, ber := refField(0x9f40)
 		indexID, ier := refField(0x9f41)
@@ -479,12 +707,31 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.index_fields")
 		}
 		base, er := eval(g, baseID, env, budget-1)
-		iv, exists := g.Entities[indexID]
-		raw, re := field(iv, 0x9700)
-		if er != nil || !exists || iv.Schema != id(0x9070) || re != nil || base.Kind != "array" || raw.Tag != 3 || raw.Unsigned >= uint64(len(base.Items)) {
+		index, indexErr := eval(g, indexID, env, budget-1)
+		raw, parsed := new(big.Int).SetString(index.I64, 10)
+		if er != nil || indexErr != nil || index.Kind != "i64" || !parsed || !raw.IsUint64() || base.Kind != "array" || raw.Uint64() >= uint64(len(base.Items)) {
 			return Value{}, fmt.Errorf("canonicaleval.index")
 		}
-		return base.Items[raw.Unsigned], nil
+		return base.Items[raw.Uint64()], nil
+	case id(0x90fa):
+		baseID, ber := refField(0x9fa0)
+		indexID, ier := refField(0x9fa1)
+		if ber != nil || ier != nil {
+			return Value{}, fmt.Errorf("canonicaleval.dynamic_index_fields")
+		}
+		base, er := eval(g, baseID, env, budget-1)
+		index, indexErr := eval(g, indexID, env, budget-1)
+		if er != nil {
+			return Value{}, fmt.Errorf("canonicaleval.dynamic_index:%w", er)
+		}
+		if indexErr != nil {
+			return Value{}, fmt.Errorf("canonicaleval.dynamic_index:%w", indexErr)
+		}
+		raw, parsed := new(big.Int).SetString(index.I64, 10)
+		if index.Kind != "i64" || !parsed || !raw.IsUint64() || base.Kind != "slice" || raw.Uint64() >= uint64(len(base.Items)) {
+			return Value{}, fmt.Errorf("canonicaleval.dynamic_index")
+		}
+		return base.Items[raw.Uint64()], nil
 	case id(0x90f9):
 		baseID, be := refField(0x9f90)
 		if be != nil {

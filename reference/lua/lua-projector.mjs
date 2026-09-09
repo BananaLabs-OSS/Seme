@@ -25,6 +25,7 @@ const schema = {
   fixedArrayConstruct: "000000000000000000000000000090f3",
   collectionLength: "000000000000000000000000000090f9",
   indexRead: "000000000000000000000000000090f4",
+  dynamicIndexRead: "000000000000000000000000000090fa",
   integerLiteral: "00000000000000000000000000009070",
   emptyMap: "0000000000000000000000000000a041",
   mapLookup: "0000000000000000000000000000a042",
@@ -40,6 +41,8 @@ const schema = {
   boolLiteral: "000000000000000000000000000090b0",
   integerAdd: "00000000000000000000000000009014",
   stringConcat: "000000000000000000000000000090c3",
+  integerLessEqual: "00000000000000000000000000009021", booleanAnd: "000000000000000000000000000090b1", booleanOr: "000000000000000000000000000090c1",
+  mutablePlace: "000000000000000000000000000090e0", declarePlace: "000000000000000000000000000090e1", placeRead: "000000000000000000000000000090e2", assignPlace: "000000000000000000000000000090e3", whileStatement: "000000000000000000000000000090e4", whenStatement: "000000000000000000000000000090f0",
 };
 
 export function projectLua(canonicalG1) {
@@ -103,14 +106,24 @@ function projectFunction(id, exported, context) {
   if (!resultType) fail("lua_projection.unsupported_type");
   const block = required(context.graph, reference(field(fn, 0x9113)), schema.block);
   const statements = references(field(block, 0x9800));
-  if (statements.length !== 1) fail("lua_projection.block_profile");
+  const local = { ...context, parameters: new Map(parameters.map((item) => [item.id, item])), places: new Map() };
+  if (statements.length !== 1 || required(context.graph, statements[0]).schema !== schema.returned) {
+    const body=projectControlBlock(reference(field(fn,0x9113)),local,1);
+    return `${parameters.map((item) => `---@param ${item.name} ${item.type}`).join("\n")}${parameters.length ? "\n" : ""}---@return ${resultType}\n${exported ? "" : "local "}function ${context.names.get(id)}(${parameters.map((item) => item.name).join(", ")})\n${body}\nend`;
+  }
   const returned = required(context.graph, statements[0], schema.returned);
-  const local = { ...context, parameters: new Map(parameters.map((item) => [item.id, item])) };
   const returnedValues = references(field(returned, 0x9810));
   if (returnedValues.length !== 1) fail("lua_projection.return_arity");
   const expression = projectExpression(returnedValues[0], local);
   return `${parameters.map((item) => `---@param ${item.name} ${item.type}`).join("\n")}${parameters.length ? "\n" : ""}---@return ${resultType}\n${exported ? "" : "local "}function ${context.names.get(id)}(${parameters.map((item) => item.name).join(", ")})\n  return ${expression}\nend`;
 }
+
+function projectControlBlock(id,context,depth){const indent="  ".repeat(depth),lines=[];for(const statementID of references(field(required(context.graph,id,schema.block),0x9800))){const s=required(context.graph,statementID);
+  if(s.schema===schema.declarePlace){const placeID=reference(field(s,0x9e10)),place=required(context.graph,placeID,schema.mutablePlace),name=text(field(place,0x9e00));if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)||context.places.has(placeID))fail("lua_projection.place");context.places.set(placeID,name);lines.push(`${indent}local ${name} = ${projectExpression(reference(field(place,0x9e02)),context)}`);continue;}
+  if(s.schema===schema.assignPlace){const place=context.places.get(reference(field(s,0x9e30)));if(!place)fail("lua_projection.assign_scope");lines.push(`${indent}${place} = ${projectExpression(reference(field(s,0x9e31)),context)}`);continue;}
+  if(s.schema===schema.returned){const values=references(field(s,0x9810));if(values.length!==1)fail("lua_projection.return_arity");lines.push(`${indent}return ${projectExpression(values[0],context)}`);continue;}
+  if(s.schema===schema.whileStatement||s.schema===schema.whenStatement){const conditionField=s.schema===schema.whileStatement?0x9e40:0x9f00,bodyField=s.schema===schema.whileStatement?0x9e41:0x9f01,keyword=s.schema===schema.whileStatement?"while":"if",suffix=s.schema===schema.whileStatement?"do":"then";const child={...context,places:new Map(context.places)};lines.push(`${indent}${keyword} ${projectExpression(reference(field(s,conditionField)),context)} ${suffix}`);lines.push(projectControlBlock(reference(field(s,bodyField)),child,depth+1));lines.push(`${indent}end`);continue;}
+  fail("lua_projection.control_statement");}return lines.join("\n");}
 
 function projectExpression(id, context) {
   const expression = required(context.graph, id);
@@ -119,6 +132,7 @@ function projectExpression(id, context) {
     if (!parameter) fail("lua_projection.read_scope");
     return parameter.name;
   }
+  if(expression.schema===schema.placeRead){const name=context.places?.get(reference(field(expression,0x9e20)));if(!name)fail("lua_projection.place_read_scope");return name;}
   if (expression.schema === schema.call) {
     const callee = context.names.get(reference(field(expression, 0x9600)));
     if (!callee) fail("lua_projection.call_membership");
@@ -138,6 +152,7 @@ function projectExpression(id, context) {
     const index = required(context.graph, reference(field(expression, 0x9f41)), schema.integerLiteral);
     return `Seme.index_zero(${projectExpression(reference(field(expression, 0x9f40)), context)}, ${unsigned(field(index, 0x9700))})`;
   }
+  if(expression.schema===schema.dynamicIndexRead)return `Seme.index_zero(${projectExpression(reference(field(expression,0x9fa0)),context)}, ${projectExpression(reference(field(expression,0x9fa1)),context)})`;
   if (expression.schema === schema.emptyMap) return `Seme.empty_map("${mapValueDescriptor(reference(field(expression, 0xa0410)), context)}")`;
   if (expression.schema === schema.mapLookup) {
     const mapID = reference(field(expression, 0xa0420));
@@ -163,6 +178,9 @@ function projectExpression(id, context) {
   if (expression.schema === schema.integerAdd) return `Seme.add(${projectExpression(reference(field(expression, 0x9140)), context)}, ${projectExpression(reference(field(expression, 0x9141)), context)})`;
   if (expression.schema === schema.integerLiteral) return `Seme.i64_literal(${JSON.stringify(unsigned(field(expression, 0x9700)).toString())})`;
   if (expression.schema === schema.stringConcat) return `Seme.text_concat(${projectExpression(reference(field(expression, 0x9c30)), context)}, ${projectExpression(reference(field(expression, 0x9c31)), context)})`;
+  if(expression.schema===schema.integerLessEqual)return `Seme.less_equal(${projectExpression(reference(field(expression,0x9160)),context)}, ${projectExpression(reference(field(expression,0x9161)),context)})`;
+  if(expression.schema===schema.booleanAnd){const left=reference(field(expression,0x9b10)),right=reference(field(expression,0x9b11)),l=required(context.graph,left),r=required(context.graph,right);if(l.schema===schema.integerLessEqual&&r.schema===schema.integerLessEqual){const a=reference(field(l,0x9160)),b=reference(field(l,0x9161));if(reference(field(r,0x9160))===b&&reference(field(r,0x9161))===a)return `Seme.equal_i64(${projectExpression(a,context)}, ${projectExpression(b,context)})`;}const projectedLeft=projectExpression(left,context);return `${l.schema===schema.read?`Seme.boolean(${projectedLeft})`:projectedLeft} and ${projectExpression(right,context)}`;}
+  if(expression.schema===schema.booleanOr){const left=reference(field(expression,0x9c10)),l=required(context.graph,left),projectedLeft=projectExpression(left,context);return `${l.schema===schema.read?`Seme.boolean(${projectedLeft})`:projectedLeft} or ${projectExpression(reference(field(expression,0x9c11)),context)}`;}
   fail("lua_projection.unsupported_expression");
 }
 

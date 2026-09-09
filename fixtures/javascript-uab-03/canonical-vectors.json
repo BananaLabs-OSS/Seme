@@ -1,0 +1,13 @@
+{
+  "valid": [
+    {"name":"disabled-above","arguments":[{"kind":"i64","i64":"9"},{"kind":"i64","i64":"4"},{"kind":"bool","bool":false}],"result":{"kind":"i64","i64":"9"}},
+    {"name":"disabled-below","arguments":[{"kind":"i64","i64":"-2"},{"kind":"i64","i64":"4"},{"kind":"bool","bool":false}],"result":{"kind":"i64","i64":"-2"}},
+    {"name":"enabled-step","arguments":[{"kind":"i64","i64":"3"},{"kind":"i64","i64":"4"},{"kind":"bool","bool":true}],"result":{"kind":"i64","i64":"4"}},
+    {"name":"enabled-above","arguments":[{"kind":"i64","i64":"9"},{"kind":"i64","i64":"4"},{"kind":"bool","bool":true}],"result":{"kind":"i64","i64":"9"}},
+    {"name":"wrap","arguments":[{"kind":"i64","i64":"9223372036854775807"},{"kind":"i64","i64":"9223372036854775807"},{"kind":"bool","bool":true}],"result":{"kind":"i64","i64":"-9223372036854775808"}}
+  ],
+  "malformed": [
+    {"name":"number-is-not-i64","arguments":[{"kind":"text","text":"9"},{"kind":"i64","i64":"4"},{"kind":"bool","bool":true}]},
+    {"name":"truthy-is-not-boolean","arguments":[{"kind":"i64","i64":"9"},{"kind":"i64","i64":"4"},{"kind":"i64","i64":"1"}]}
+  ]
+}

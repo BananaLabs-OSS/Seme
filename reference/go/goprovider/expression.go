@@ -944,6 +944,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
 		}
 		if ok && identifier.Name == "int64" && info.Uses[identifier] == types.Universe.Lookup("int64") && len(expression.Args) == 1 {
+			if value := info.Types[expression.Args[0]].Value; value != nil && value.Kind() == constant.Int {
+				if signed, exact := constant.Int64Val(value); exact {
+					return &goExpression{kind: goIntegerLiteral, integer: uint64(signed)}, nil
+				}
+			}
 			if call, yes := ast.Unparen(expression.Args[0]).(*ast.CallExpr); yes {
 				if name, yes := ast.Unparen(call.Fun).(*ast.Ident); yes && name.Name == "len" && info.Uses[name] == types.Universe.Lookup("len") {
 					return analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
