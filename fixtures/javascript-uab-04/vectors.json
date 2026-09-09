@@ -1,0 +1,13 @@
+{
+  "valid": [
+    {"name":"basic","values":["1","2"],"index":"0","replacement":"5","appended":"7","removeIndex":"1","keepKey":"11","removeKey":"12","result":"19"},
+    {"name":"missing-after-remove","values":["-2","4","8"],"index":"1","replacement":"3","appended":"-1","removeIndex":"0","keepKey":"-9","removeKey":"-8","result":"3"},
+    {"name":"wrap","values":["0","0"],"index":"0","replacement":"9223372036854775807","appended":"1","removeIndex":"0","keepKey":"1","removeKey":"2","result":"3"}
+  ],
+  "malformed": [
+    {"name":"negative-index","category":"index","values":["1","2"],"index":"-1","replacement":"0","appended":"0","removeIndex":"0","keepKey":"1","removeKey":"2"},
+    {"name":"upper-index","category":"index","values":["1","2"],"index":"2","replacement":"0","appended":"0","removeIndex":"0","keepKey":"1","removeKey":"2"},
+    {"name":"remove-upper-index","category":"remove-index","values":["1","2"],"index":"0","replacement":"0","appended":"0","removeIndex":"3","keepKey":"1","removeKey":"2"},
+    {"name":"wrong-index-kind","category":"index-kind","values":["1","2"],"index":"0","replacement":"0","appended":"0","removeIndex":"0","keepKey":"1","removeKey":"2"}
+  ]
+}

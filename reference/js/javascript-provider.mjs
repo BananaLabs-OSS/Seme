@@ -562,6 +562,62 @@ function emitExpression(node, owner, path, context, expected) {
 			context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f9", [[0x9f90, ref(collection.id)]])));
 			return { id, type: expected };
 		}
+		if (operation === "slice" && expected === "slice:i64" && node.arguments.length === 1 && node.arguments[0].type === "ArrayExpression") {
+			if (node.arguments[0].elements.length > 512 || node.arguments[0].elements.some((item) => item == null)) fail("javascript.slice_construct_shape", node.loc.start);
+			const values = node.arguments[0].elements.map((item, index) => emitExpression(item, owner, `${path}.element.${index}`, context, "i64"));
+			id = expressionID(owner, path, "slice-construct");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a068", [[0xa0680, ref(typeID(expected, context))], [0xa0681, refs(values.map((item) => item.id))]])));
+			return { id, type: expected };
+		}
+		if (operation === "append" && expected === "slice:i64" && node.arguments.length === 2) {
+			const collection = emitExpression(node.arguments[0], owner, `${path}.collection`, context, expected);
+			const value = emitExpression(node.arguments[1], owner, `${path}.value`, context, "i64");
+			id = expressionID(owner, path, "collection-append");
+			context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090fb", [[0x9fb0, ref(collection.id)], [0x9fb1, ref(value.id)]])));
+			return { id, type: expected };
+		}
+		if (operation === "update" && expected === "slice:i64" && node.arguments.length === 3) {
+			const collection = emitExpression(node.arguments[0], owner, `${path}.collection`, context, expected);
+			const index = dynamicIndexExpression(node.arguments[1], owner, `${path}.index`, context);
+			const value = emitExpression(node.arguments[2], owner, `${path}.value`, context, "i64");
+			id = expressionID(owner, path, "collection-update");
+			context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090fc", [[0x9fc0, ref(collection.id)], [0x9fc1, ref(index.id)], [0x9fc2, ref(value.id)]])));
+			return { id, type: expected };
+		}
+		if (operation === "remove" && expected === "slice:i64" && node.arguments.length === 2) {
+			const collection = emitExpression(node.arguments[0], owner, `${path}.collection`, context, expected);
+			const index = dynamicIndexExpression(node.arguments[1], owner, `${path}.index`, context);
+			id = expressionID(owner, path, "slice-remove");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a066", [[0xa0660, ref(collection.id)], [0xa0661, ref(index.id)]])));
+			return { id, type: expected };
+		}
+		if (operation === "emptyMap" && expected === "map:i64:i64" && node.arguments.length === 0) {
+			id = expressionID(owner, path, "empty-map");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a041", [[0xa0410, ref(typeID(expected, context))]])));
+			return { id, type: expected };
+		}
+		if (operation === "mapLookupZero" && expected === "i64" && node.arguments.length === 2) {
+			const map = emitExpression(node.arguments[0], owner, `${path}.map`, context, "map:i64:i64");
+			const key = emitExpression(node.arguments[1], owner, `${path}.key`, context, "i64");
+			id = expressionID(owner, path, "map-lookup");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a042", [[0xa0420, ref(map.id)], [0xa0421, ref(key.id)]])));
+			return { id, type: expected };
+		}
+		if (operation === "mapInsert" && expected === "map:i64:i64" && node.arguments.length === 3) {
+			const map = emitExpression(node.arguments[0], owner, `${path}.map`, context, expected);
+			const key = emitExpression(node.arguments[1], owner, `${path}.key`, context, "i64");
+			const value = emitExpression(node.arguments[2], owner, `${path}.value`, context, "i64");
+			id = expressionID(owner, path, "map-update");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a043", [[0xa0430, ref(map.id)], [0xa0431, ref(key.id)], [0xa0432, ref(value.id)]])));
+			return { id, type: expected };
+		}
+		if (operation === "mapRemove" && expected === "map:i64:i64" && node.arguments.length === 2) {
+			const map = emitExpression(node.arguments[0], owner, `${path}.map`, context, expected);
+			const key = emitExpression(node.arguments[1], owner, `${path}.key`, context, "i64");
+			id = expressionID(owner, path, "map-remove");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a067", [[0xa0670, ref(map.id)], [0xa0671, ref(key.id)]])));
+			return { id, type: expected };
+		}
 		if (operation === "bytesEqual" && expected === "bool" && node.arguments.length === 2) {
 			const left = emitExpression(node.arguments[0], owner, `${path}.left`, context, "bytes"), right = emitExpression(node.arguments[1], owner, `${path}.right`, context, "bytes");
 			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a065", [[0xa0650, ref(left.id)], [0xa0651, ref(right.id)]])));
@@ -1049,6 +1105,10 @@ function dynamicIndexExpression(node, owner, path, context) {
 
 function inferExpressionType(node, context) {
   if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme" && node.callee.property.name === "array" && node.arguments.length === 1 && node.arguments[0].type === "ArrayExpression" && node.arguments[0].elements.length > 0) return `array:i64:${node.arguments[0].elements.length}`;
+  if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme" && node.callee.property.name === "slice" && node.arguments.length === 1 && node.arguments[0].type === "ArrayExpression") return "slice:i64";
+  if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme" && ["append", "update", "remove"].includes(node.callee.property.name)) return "slice:i64";
+  if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme" && ["emptyMap", "mapInsert", "mapRemove"].includes(node.callee.property.name)) return "map:i64:i64";
+  if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme" && ["mapLookupZero", "length", "index"].includes(node.callee.property.name)) return "i64";
   if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme") fail("javascript.constructor_requires_boundary_type", node.loc.start);
   if (node.type === "NewExpression" && node.callee.type === "Identifier" && node.callee.name === "Map") return "map:i64:i64";
   if (node.type === "LogicalExpression" && node.operator === "??") return inferExpressionType(node.right, context);
@@ -1083,6 +1143,7 @@ function inferExpressionType(node, context) {
 	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "BigInt" && node.callee.property.name === "asIntN" && node.arguments.length === 2 && node.arguments[0].type === "Literal" && node.arguments[0].value === 64) return "i64";
 	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed) {
 		if (node.callee.property.name === "set") return "map:i64:i64";
+		if (node.callee.property.name === "reduce" && node.arguments.length === 2 && inferExpressionType(node.arguments[1], context) === "i64") return "i64";
 		if (node.callee.property.name === "reduce" && node.arguments[0]?.type === "ArrowFunctionExpression" && node.arguments[0].body.type === "CallExpression" && node.arguments[0].body.callee.type === "MemberExpression" && node.arguments[0].body.callee.property.name === "set") return "map:i64:i64";
 		const receiverType = inferExpressionType(node.callee.object, context);
 		if (receiverType.startsWith("interface:")) {

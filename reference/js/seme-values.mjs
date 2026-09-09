@@ -14,6 +14,35 @@ export const Seme = Object.freeze({
     if (!Array.isArray(values)) throw new TypeError("seme.invalid_collection");
     return BigInt(values.length);
   },
+  slice(values) {
+    if (!Array.isArray(values)) throw new TypeError("seme.invalid_slice");
+    return Object.freeze([...values]);
+  },
+  append(values, value) {
+    if (!Array.isArray(values) || values.length >= 512) throw new RangeError("seme.invalid_append");
+    return Object.freeze([...values, value]);
+  },
+  update(values, index, value) {
+    if (!Array.isArray(values) || typeof index !== "bigint" || index < 0n || index >= BigInt(values.length)) throw new RangeError("seme.update_out_of_bounds");
+    const result = [...values]; result[Number(index)] = value; return Object.freeze(result);
+  },
+  remove(values, index) {
+    if (!Array.isArray(values) || typeof index !== "bigint" || index < 0n || index >= BigInt(values.length)) throw new RangeError("seme.remove_out_of_bounds");
+    return Object.freeze([...values.slice(0, Number(index)), ...values.slice(Number(index) + 1)]);
+  },
+  emptyMap() { return new Map(); },
+  mapLookupZero(values, key) {
+    if (!(values instanceof Map)) throw new TypeError("seme.invalid_map");
+    return values.get(key) ?? 0n;
+  },
+  mapInsert(values, key, value) {
+    if (!(values instanceof Map) || (!values.has(key) && values.size >= 512)) throw new RangeError("seme.invalid_map_insert");
+    return new Map(values).set(key, value);
+  },
+  mapRemove(values, key) {
+    if (!(values instanceof Map)) throw new TypeError("seme.invalid_map");
+    const result = new Map(values); result.delete(key); return result;
+  },
   bytes(values) {
     if (!Array.isArray(values) || values.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) throw new TypeError("seme.invalid_bytes");
     return Uint8Array.from(values);
