@@ -47,7 +47,8 @@ func TestBuildWithInjectedFrozenCompiler(t *testing.T) {
 	}
 	snapshot := goprovider.DocumentSnapshot{Revision: 7, ModulePath: "example.test/build", PackagePath: "example.test/build/app", Entry: "Apply", Files: map[string]string{
 		"lib/value.go": `package lib
-func AddOne(v int64) int64 { return v + 1 }`,
+func addOne(v int64) int64 { return v + 1 }
+func AddOne(v int64) int64 { return addOne(v) }`,
 		"app/main.go": `package app
 import "example.test/build/lib"
 func Apply(v int64) int64 { return lib.AddOne(v) }`,
@@ -59,14 +60,35 @@ func Apply(v int64) int64 { return lib.AddOne(v) }`,
 	if len(result.Artifact) == 0 || result.SourceDigest == "" || len(result.Packages) != 2 {
 		t.Fatalf("result=%#v", result)
 	}
+	privateFound := false
+	for _, p := range result.Packages {
+		for _, member := range p.Members {
+			if member.Name == "addOne" {
+				privateFound = !member.Exported && member.Document == "lib/value.go" && member.Line > 0 && member.Column > 0
+			}
+		}
+	}
+	if !privateFound {
+		t.Fatalf("private package member missing: %#v", result.Packages)
+	}
 	result.Artifact[0] ^= 1
 	result.Packages[0].Dependencies = append(result.Packages[0].Dependencies, "mutation")
+	result.Packages[0].Members[0].Parameters[0] = "mutation"
 	again, e := Build(context.Background(), snapshot, testContracts(t), g1, compile)
 	if e != nil {
 		t.Fatal(e)
 	}
 	if len(again.Artifact) == 0 || again.Artifact[0] != 'S' {
 		t.Fatal("result was not copy safe")
+	}
+	for _, p := range again.Packages {
+		for _, member := range p.Members {
+			for _, parameter := range member.Parameters {
+				if parameter == "mutation" {
+					t.Fatal("member metadata was not copy safe")
+				}
+			}
+		}
 	}
 }
 func TestBuildNeverCompilesInvalidCurrentSnapshot(t *testing.T) {

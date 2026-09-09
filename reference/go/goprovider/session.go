@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/importer"
 	"go/parser"
 	"go/scanner"
@@ -53,6 +54,7 @@ type SessionResult struct {
 	ContentDigest     string
 	Disposition       string
 	Packages          []PackageMetadata
+	Resolution        ResolutionManifest
 }
 
 // PackageMetadata is the immutable language-neutral ownership/signature view
@@ -61,24 +63,29 @@ type PackageMetadata struct {
 	Name         string
 	Root         bool
 	Dependencies []string
+	Members      []PackageFunctionMetadata
 	Functions    []PackageFunctionMetadata
 }
 type PackageFunctionMetadata struct {
-	ID, Name   string
-	Parameters []string
-	Result     string
+	ID, Name     string
+	Parameters   []string
+	Result       string
+	Exported     bool
+	Document     string
+	Line, Column int
 }
 
 // IncrementalSession retains only the most recent valid canonical graph while
 // still advancing past accepted but incomplete editor snapshots.
 type IncrementalSession struct {
-	mu                sync.Mutex
-	moduleG1          []byte
-	currentRevision   uint64
-	lastValidRevision uint64
-	lastValidGraph    string
-	lastValidSources  []SourceIdentity
-	lastValidPackages []PackageMetadata
+	mu                  sync.Mutex
+	moduleG1            []byte
+	currentRevision     uint64
+	lastValidRevision   uint64
+	lastValidGraph      string
+	lastValidSources    []SourceIdentity
+	lastValidPackages   []PackageMetadata
+	lastValidResolution ResolutionManifest
 }
 
 func NewIncrementalSession(executionModuleG1 []byte) (*IncrementalSession, error) {
@@ -98,23 +105,30 @@ func (session *IncrementalSession) Apply(snapshot DocumentSnapshot) SessionResul
 			Diagnostics:   []SessionDiagnostic{{Code: "session.stale_revision", Message: "revision must be strictly newer than the last accepted snapshot", Severity: "error"}},
 			Sources:       cloneSources(session.lastValidSources),
 			Packages:      clonePackageMetadata(session.lastValidPackages),
+			Resolution:    cloneResolutionManifest(session.lastValidResolution),
 			ContentDigest: snapshotDigest(snapshot), Disposition: "rejected-stale",
 		}
 	}
 	session.currentRevision = snapshot.Revision
-	graph, sources, packages, diagnostics := liftDocumentSnapshot(snapshot, session.moduleG1)
+	resolution, resolutionDiagnostics := resolveSnapshot(snapshot)
+	graph, sources, packages, diagnostics := "", []SourceIdentity(nil), []PackageMetadata(nil), resolutionDiagnostics
+	if len(diagnostics) == 0 {
+		graph, sources, packages, diagnostics = liftDocumentSnapshot(snapshot, session.moduleG1)
+	}
 	valid := graph != ""
 	if valid {
 		session.lastValidRevision = snapshot.Revision
 		session.lastValidGraph = graph
 		session.lastValidSources = cloneSources(sources)
 		session.lastValidPackages = clonePackageMetadata(packages)
+		session.lastValidResolution = cloneResolutionManifest(resolution)
 	}
 	return SessionResult{
 		Revision: snapshot.Revision, Accepted: true, Valid: valid,
 		CanonicalG1: session.lastValidGraph, LastValidRevision: session.lastValidRevision,
 		Diagnostics: diagnostics, Sources: cloneSources(session.lastValidSources),
 		Packages:      clonePackageMetadata(session.lastValidPackages),
+		Resolution:    cloneResolutionManifest(session.lastValidResolution),
 		ContentDigest: snapshotDigest(snapshot), Disposition: map[bool]string{true: "accepted-valid", false: "accepted-invalid"}[valid],
 	}
 }
@@ -124,11 +138,17 @@ func clonePackageMetadata(in []PackageMetadata) []PackageMetadata {
 	for i, p := range in {
 		out[i] = p
 		out[i].Dependencies = append([]string(nil), p.Dependencies...)
-		out[i].Functions = make([]PackageFunctionMetadata, len(p.Functions))
-		for j, f := range p.Functions {
-			out[i].Functions[j] = f
-			out[i].Functions[j].Parameters = append([]string(nil), f.Parameters...)
-		}
+		out[i].Members = clonePackageFunctions(p.Members)
+		out[i].Functions = clonePackageFunctions(p.Functions)
+	}
+	return out
+}
+
+func clonePackageFunctions(in []PackageFunctionMetadata) []PackageFunctionMetadata {
+	out := make([]PackageFunctionMetadata, len(in))
+	for i, f := range in {
+		out[i] = f
+		out[i].Parameters = append([]string(nil), f.Parameters...)
 	}
 	return out
 }
@@ -173,6 +193,10 @@ func (loader *snapshotSourceImporter) Import(path string) (*types.Package, error
 	}
 	paths, local := loader.groups[path]
 	if !local {
+		pkg, err := build.Default.Import(path, "", build.FindOnly)
+		if err != nil || !pkg.Goroot {
+			return nil, fmt.Errorf("go.external_import_unsupported:%s", path)
+		}
 		return importer.Default().Import(path)
 	}
 	if loader.checking[path] {
@@ -607,15 +631,20 @@ func buildPackageMetadata(root string, units []*checkedSessionPackage, functions
 		}
 		sort.Strings(p.Dependencies)
 		for _, f := range functions {
-			if f.packagePath != u.path || f.method || !ast.IsExported(f.name) || !supported[f.id] {
+			if f.packagePath != u.path || f.method || !supported[f.id] {
 				continue
 			}
-			m := PackageFunctionMetadata{ID: f.id, Name: f.name, Result: goSemanticTypeIdentity(f.sig.Results().At(0).Type())}
+			position := f.fset.Position(f.fn.Pos())
+			m := PackageFunctionMetadata{ID: f.id, Name: f.name, Result: goSemanticTypeIdentity(f.sig.Results().At(0).Type()), Exported: ast.IsExported(f.name), Document: f.file, Line: position.Line, Column: position.Column}
 			for i := 0; i < f.sig.Params().Len(); i++ {
 				m.Parameters = append(m.Parameters, goSemanticTypeIdentity(f.sig.Params().At(i).Type()))
 			}
-			p.Functions = append(p.Functions, m)
+			p.Members = append(p.Members, m)
+			if m.Exported {
+				p.Functions = append(p.Functions, m)
+			}
 		}
+		sort.Slice(p.Members, func(i, j int) bool { return p.Members[i].ID < p.Members[j].ID })
 		sort.Slice(p.Functions, func(i, j int) bool { return p.Functions[i].ID < p.Functions[j].ID })
 		out = append(out, p)
 	}
@@ -1002,7 +1031,11 @@ func parseDiagnostics(err error) []SessionDiagnostic {
 
 func typeDiagnostic(err error) SessionDiagnostic {
 	if typed, ok := err.(types.Error); ok {
-		return SessionDiagnostic{Code: "go.type", Message: typed.Msg, File: filepath.ToSlash(typed.Fset.Position(typed.Pos).Filename), Line: typed.Fset.Position(typed.Pos).Line, Column: typed.Fset.Position(typed.Pos).Column, Severity: "error"}
+		code := "go.type"
+		if strings.Contains(typed.Msg, "go.external_import_unsupported:") {
+			code = "go.external_import_unsupported"
+		}
+		return SessionDiagnostic{Code: code, Message: typed.Msg, File: filepath.ToSlash(typed.Fset.Position(typed.Pos).Filename), Line: typed.Fset.Position(typed.Pos).Line, Column: typed.Fset.Position(typed.Pos).Column, Severity: "error"}
 	}
 	return SessionDiagnostic{Code: "go.type", Message: err.Error(), Severity: "error"}
 }

@@ -87,6 +87,33 @@ func private(v int64) int64 { return v }`},
 	}
 }
 
+func TestIncrementalSessionRejectsCrossPackagePrivateMemberWithLocation(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v35/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/private-access", PackagePath: "example.test/private-access/app", Entry: "Apply", Files: map[string]string{
+		"model/model.go": "package model\nfunc hidden(v int64) int64 { return v }\nfunc Public(v int64) int64 { return hidden(v) }\n",
+		"app/app.go":     "package app\nimport \"example.test/private-access/model\"\nfunc Apply(v int64) int64 { return model.hidden(v) }\n",
+	}})
+	if !result.Accepted || result.Valid || result.CanonicalG1 != "" || result.LastValidRevision != 0 {
+		t.Fatalf("private access result=%#v", result)
+	}
+	var located bool
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Code == "go.type" && diagnostic.File == "app/app.go" && diagnostic.Line == 3 && diagnostic.Column > 0 && strings.Contains(diagnostic.Message, "hidden") {
+			located = true
+		}
+	}
+	if !located {
+		t.Fatalf("private access diagnostic=%#v", result.Diagnostics)
+	}
+}
+
 func TestIncrementalSessionComposesCumulativeTextCollectionFlow(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
 	if err != nil {

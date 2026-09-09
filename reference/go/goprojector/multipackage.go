@@ -19,6 +19,7 @@ func ProjectPackages(g1 []byte, packages []goprovider.PackageMetadata) (map[stri
 		return nil, err
 	}
 	owners := map[string]string{}
+	exported := map[string]bool{}
 	metadata := map[string]goprovider.PackageMetadata{}
 	rootPackage := ""
 	for _, p := range packages {
@@ -45,11 +46,33 @@ func ProjectPackages(g1 []byte, packages []goprovider.PackageMetadata) (map[stri
 			}
 			seenDependencies[dependency] = true
 		}
-		for _, f := range p.Functions {
+		members, explicit := packageMembers(p)
+		memberByID := map[string]goprovider.PackageFunctionMetadata{}
+		for _, f := range members {
 			if _, ok := owners[f.ID]; ok {
 				return nil, fmt.Errorf("go_projection.function_multiple_owners:%s", f.ID)
 			}
+			if f.ID == "" || f.Name == "" {
+				return nil, fmt.Errorf("go_projection.invalid_member:%s", p.Name)
+			}
 			owners[f.ID] = p.Name
+			exported[f.ID] = f.Exported
+			memberByID[f.ID] = f
+		}
+		if explicit {
+			seenPublic := map[string]bool{}
+			for _, f := range p.Functions {
+				member, ok := memberByID[f.ID]
+				if !ok || !member.Exported || seenPublic[f.ID] || !sameFunctionMetadata(member, f) {
+					return nil, fmt.Errorf("go_projection.export_membership:%s", f.ID)
+				}
+				seenPublic[f.ID] = true
+			}
+			for _, member := range members {
+				if member.Exported && !seenPublic[member.ID] {
+					return nil, fmt.Errorf("go_projection.export_missing:%s", member.ID)
+				}
+			}
 		}
 	}
 	if rootPackage == "" {
@@ -78,7 +101,8 @@ func ProjectPackages(g1 []byte, packages []goprovider.PackageMetadata) (map[stri
 		}
 	}
 	for _, p := range packages {
-		for _, f := range p.Functions {
+		members, _ := packageMembers(p)
+		for _, f := range members {
 			if !programSet[f.ID] {
 				return nil, fmt.Errorf("go_projection.function_not_program_member:%s", f.ID)
 			}
@@ -90,8 +114,13 @@ func ProjectPackages(g1 []byte, packages []goprovider.PackageMetadata) (map[stri
 				if !ok {
 					return nil, fmt.Errorf("go_projection.call_owner_missing:%s", callee)
 				}
-				if calleeOwner != p.Name && !containsString(p.Dependencies, calleeOwner) {
-					return nil, fmt.Errorf("go_projection.undeclared_dependency:%s:%s", p.Name, calleeOwner)
+				if calleeOwner != p.Name {
+					if !exported[callee] {
+						return nil, fmt.Errorf("go_projection.inaccessible_member:%s:%s", p.Name, callee)
+					}
+					if !containsString(p.Dependencies, calleeOwner) {
+						return nil, fmt.Errorf("go_projection.undeclared_dependency:%s:%s", p.Name, calleeOwner)
+					}
 				}
 			}
 		}
@@ -111,6 +140,33 @@ func ProjectPackages(g1 []byte, packages []goprovider.PackageMetadata) (map[stri
 		out[p.Name] = source
 	}
 	return out, nil
+}
+
+func packageMembers(p goprovider.PackageMetadata) ([]goprovider.PackageFunctionMetadata, bool) {
+	if p.Members != nil {
+		return p.Members, true
+	}
+	// Legacy canonical Package metadata exposes interfaces only. Until member
+	// ownership is represented in that contract, those interfaces are the
+	// complete known member set and are necessarily public.
+	out := make([]goprovider.PackageFunctionMetadata, len(p.Functions))
+	copy(out, p.Functions)
+	for i := range out {
+		out[i].Exported = true
+	}
+	return out, false
+}
+
+func sameFunctionMetadata(a, b goprovider.PackageFunctionMetadata) bool {
+	if a.ID != b.ID || a.Name != b.Name || a.Result != b.Result || len(a.Parameters) != len(b.Parameters) {
+		return false
+	}
+	for i := range a.Parameters {
+		if a.Parameters[i] != b.Parameters[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func validateFunctionMetadata(graph map[string]entity, metadata goprovider.PackageFunctionMetadata) error {
