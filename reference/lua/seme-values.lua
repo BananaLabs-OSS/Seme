@@ -65,6 +65,11 @@ function Seme.multiply(left, right)
   local result = native_i64(left_value) * native_i64(right_value)
   return Seme.i64((string.gsub(tostring(result), "LL$", "")))
 end
+function Seme.subtract(left, right)
+  local left_value, right_value = operand(left), operand(right)
+  local result = native_i64(left_value) - native_i64(right_value)
+  return Seme.i64((string.gsub(tostring(result), "LL$", "")))
+end
 function Seme.less_equal(left, right) return native_i64(operand(left)) <= native_i64(operand(right)) end
 function Seme.equal_i64(left, right) return native_i64(operand(left)) == native_i64(operand(right)) end
 function Seme.i64_decimal(value) return unpack_value(value, "i64") end
@@ -334,6 +339,8 @@ function Seme.dynamic_call(interface, requirement, ...)
   if not declared then error("seme.unknown_protocol_method", 2) end
   return witness.methods[requirement](boxed.value, ...)
 end
+Seme.box_protocol = Seme.interface_value
+Seme.protocol_call = Seme.dynamic_call
 function Seme.protocol_dispatch(condition, when_false, when_true, requirement, record_name, field_name, receiver_value, argument)
   if type(condition) ~= "boolean" then error("seme.expected_boolean", 2) end
   if type(record_name) ~= "string" or type(field_name) ~= "string" then error("seme.invalid_dispatch_record", 2) end
@@ -351,6 +358,15 @@ function Seme.immutable_closure_run(base, value)
   local captured = base
   local closure = function(argument) return Seme.add(captured, argument) end
   return closure(value)
+end
+function Seme.closure(initial, body)
+  if type(body) ~= "function" then error("seme.expected_closure_body", 2) end
+  return function(value) return body(initial, value) end
+end
+function Seme.mutable_closure(initial, body)
+  if type(body) ~= "function" then error("seme.expected_closure_body", 2) end
+  local captured = initial
+  return function(value) captured = body(captured, value); return captured end
 end
 
 function Seme.mutable_closure_run(start, first, second)

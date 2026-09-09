@@ -13,7 +13,7 @@ export function parseProtocolDeclarations(source, file = "input.lua") {
     if (protocols.has(match[1]) || [...protocols.values()].some(item => item.name === match[2])) fail("lua.duplicate_protocol", file, source, match.index);
     protocols.set(match[1], { binding: match[1], name: match[2], requirements });
   }
-  const implementationPattern = /^local\s+([A-Za-z_]\w*)\s*=\s*Seme\.implementation\(([A-Za-z_]\w*),\s*"([A-Za-z_]\w*)",\s*\{([\s\S]*?)^\}\)\s*$/gm;
+  const implementationPattern = /^local\s+([A-Za-z_]\w*)\s*=\s*Seme\.implementation\(([A-Za-z_]\w*),\s*"([A-Za-z_]\w*)",\s*\{([\s\S]*?)^\}(?:,\s*"(80[0-9a-f]{30})",\s*"(80[0-9a-f]{30})",\s*"([A-Za-z_]\w*)")?\)\s*$/gm;
   for (const match of source.matchAll(implementationPattern)) {
     const protocol = protocols.get(match[2]);
     if (!protocol) fail("lua.implementation_protocol_scope", file, source, match.index);
@@ -27,7 +27,7 @@ export function parseProtocolDeclarations(source, file = "input.lua") {
     }
     if (methods.size !== protocol.requirements.length || protocol.requirements.some(name => !methods.has(name))) fail("lua.implementation_method_set", file, source, match.index);
     if (implementations.has(match[1])) fail("lua.duplicate_implementation", file, source, match.index);
-    implementations.set(match[1], { binding: match[1], protocol: match[2], concreteKind: match[3], methods });
+    implementations.set(match[1], { binding: match[1], protocol: match[2], concreteKind: match[3], methods, witnessID:match[5], receiverID:match[6], receiverName:match[7] });
   }
   const declared = new Set([...protocols.keys(), ...implementations.keys()]);
   for (const name of declared) {
@@ -41,7 +41,7 @@ export function stripProtocolDeclarations(source) {
   return source
     .replace(/^local\s+Seme\s*=\s*assert\(_G\.Seme,[^\n]*\)\s*$/gm, "")
     .replace(/^local\s+[A-Za-z_]\w*\s*=\s*Seme\.protocol\("[A-Za-z_]\w*",\s*\{[^}]*\}\)\s*$/gm, "")
-    .replace(/^local\s+[A-Za-z_]\w*\s*=\s*Seme\.implementation\([A-Za-z_]\w*,\s*"[A-Za-z_]\w*",\s*\{[\s\S]*?^\}\)\s*$/gm, "");
+    .replace(/^local\s+[A-Za-z_]\w*\s*=\s*Seme\.implementation\([A-Za-z_]\w*,\s*"[A-Za-z_]\w*",\s*\{[\s\S]*?^\}(?:,\s*"80[0-9a-f]{30}",\s*"80[0-9a-f]{30}",\s*"[A-Za-z_]\w*")?\)\s*$/gm, "");
 }
 
 function fail(code, file, source, index) {

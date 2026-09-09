@@ -1,3 +1,5 @@
+import crypto from "node:crypto";
+
 const schema = {
   i64Type: "00000000000000000000000000009010",
   boolType: "00000000000000000000000000009020",
@@ -46,6 +48,7 @@ const schema = {
   boolLiteral: "000000000000000000000000000090b0",
   integerAdd: "00000000000000000000000000009014",
   integerMultiply: "00000000000000000000000000009090",
+  integerSubtract:"000000000000000000000000000090a0",
   stringConcat: "000000000000000000000000000090c3",
   integerLessEqual: "00000000000000000000000000009021", booleanAnd: "000000000000000000000000000090b1", booleanOr: "000000000000000000000000000090c1",
   mutablePlace: "000000000000000000000000000090e0", declarePlace: "000000000000000000000000000090e1", placeRead: "000000000000000000000000000090e2", assignPlace: "000000000000000000000000000090e3", whileStatement: "000000000000000000000000000090e4", whenStatement: "000000000000000000000000000090f0",
@@ -87,9 +90,11 @@ export function projectLua(canonicalG1) {
     if (item.schema === schema.fixedArrayType) name = `seme.array<${resolveType(reference(field(item, 0x9f20)), visiting)},${unsigned(field(item, 0x9f21))}>`;
     if (item.schema === schema.sliceType) name = `seme.slice<${resolveType(reference(field(item, 0x9f80)), visiting)}>`;
     if (item.schema === schema.mapType) name = `seme.map<${resolveType(reference(field(item, 0xa0400)), visiting)},${resolveType(reference(field(item, 0xa0401)), visiting)}>`;
+    if(item.schema===schema.functionType)name=`seme.function<${references(field(item,0xa0200)).map(value=>resolveType(value,visiting)).join(",")},${resolveType(reference(field(item,0xa0201)),visiting)}>`;
+    if(item.schema===schema.interfaceType)name=`seme.protocol<${text(field(item,0xa0100))}>`;
     if (item.schema === schema.recordType) name = text(field(item, 0x9300));
     if(item.schema===schema.transitionType)name=`seme.transition<${resolveType(reference(field(item,0xa0040)),visiting)},${resolveType(reference(field(item,0xa0041)),visiting)}>`;
-    if (!name) fail("lua_projection.unsupported_type");
+    if (!name) fail(`lua_projection.unsupported_type:${item.schema}:${id}`);
     types.set(id, name); visiting.delete(id); return name;
   };
   for (const id of functionIDs) {
@@ -109,14 +114,48 @@ export function projectLua(canonicalG1) {
   const protocolSources = [...interfaces.values()].map((item) => `local ${item.name} = Seme.protocol(${JSON.stringify(item.name)}, { ${item.requirements.map((requirement) => JSON.stringify(requirement.name)).join(", ")} })`);
   const methodSources = [...methods.values()].map((method) => projectMethod(method, context));
   const implementationSources = [...witnesses.values()].map((witness) => projectImplementation(witness, context));
-  return [`local Seme = assert(_G.Seme, "Seme adapters are required")`, ...protocolSources, ...records, ...methodSources, ...implementationSources, ...functionIDs.map((id) => projectFunction(id, id === entryID, context))].join("\n\n") + "\n";
+  const functionSources=dependencyOrder(functionIDs, graph).map(id=>{try{return projectFunction(id,id===entryID,context);}catch(error){throw new Error(`${error.message}:${names.get(id)}`);}});
+  const digest = crypto.createHash("sha256").update(canonicalG1).digest("hex");
+  const encoded = Buffer.from(canonicalG1).toString("base64url");
+  const envelope = [`-- seme:projection-v1 ${digest}`, ...encoded.match(/.{1,120}/g).map((part) => `-- seme:graph ${part}`)].join("\n");
+  return [envelope, `local Seme = assert(_G.Seme, "Seme adapters are required")`, ...protocolSources, ...records, ...methodSources, ...implementationSources, ...functionSources].join("\n\n") + "\n";
+}
+
+// Lua local functions are lexically visible only after their declaration.
+// Put canonical callees before callers while retaining canonical order between
+// unrelated declarations.
+function dependencyOrder(functionIDs, graph) {
+  const members = new Set(functionIDs), dependencies = new Map();
+  for (const functionID of functionIDs) {
+    const found = new Set(), seen = new Set();
+    const visit = (id) => {
+      if (seen.has(id)) return; seen.add(id);
+      const item = graph.get(id); if (!item) return;
+      if (item.schema === schema.function) { if (id !== functionID && members.has(id)) found.add(id); return; }
+      for (const value of item.fields.values()) {
+        if (value.kind === "rf") visit(value.value);
+        else if (value.kind === "li") for (const child of value.value) visit(child);
+      }
+    };
+    visit(reference(field(required(graph, functionID, schema.function), 0x9113)));
+    dependencies.set(functionID, found);
+  }
+  const result = [], done = new Set(), active = new Set();
+  const emit = (id) => {
+    if (done.has(id)) return;
+    if (active.has(id)) fail("lua_projection.recursive_functions");
+    active.add(id); for (const dependency of dependencies.get(id)) emit(dependency); active.delete(id);
+    done.add(id); result.push(id);
+  };
+  for (const id of functionIDs) emit(id);
+  return result;
 }
 
 function projectMethod(method, context) {
   const receiver = required(context.graph, reference(field(method, 0xa0021)), schema.receiverBinding);
   const receiverName = text(field(receiver, 0xa0000)) || "self", receiverTypeID = reference(field(receiver, 0xa0001)), receiverTypeEntity=context.graph.get(receiverTypeID), receiverType = context.types.get(receiverTypeID) ?? (receiverTypeEntity?.schema===schema.recordType?text(field(receiverTypeEntity,0x9300)):null);
   if (!receiverType) fail("lua_projection.receiver_type");
-  const requirementName = text(field(method, 0xa0020)), functionName = `${receiverName}_${requirementName}`;
+  const requirementName = text(field(method, 0xa0020)), functionName = `${methodConcreteName(method.id,context)}_${requirementName}`;
   const parameters = references(field(method, 0xa0022)).map((id) => { const item = required(context.graph, id, schema.parameter); return { id, name: text(field(item, 0x9120)), type: context.types.get(reference(field(item, 0x9121))) }; });
   const local = { ...context, receiver: { id: receiver.id, name: "receiver" }, parameters: new Map(parameters.map((item) => [item.id, item])), places: new Map() };
   const block = required(context.graph, reference(field(method, 0xa0024)), schema.block), statements = references(field(block, 0x9800));
@@ -130,11 +169,13 @@ function projectImplementation(witness, context) {
   const interface_ = context.interfaces.get(reference(field(witness, 0xa0121))); if (!interface_) fail("lua_projection.witness_interface");
   const methodIDs = references(field(witness, 0xa0122)); if (methodIDs.length !== interface_.requirements.length) fail("lua_projection.witness_methods");
   const method = required(context.graph, methodIDs[0], schema.method), receiver = required(context.graph, reference(field(method, 0xa0021)), schema.receiverBinding), prefix = text(field(receiver, 0xa0000));
-  const binding = `${prefix}${interface_.name}`;
   const receiverTypeID=reference(field(receiver,0xa0001)),receiverType=context.types.get(receiverTypeID),concreteKind=receiverType==="seme.i64"?"i64":context.graph.get(receiverTypeID)?.schema===schema.recordType?"record":null;
+  const concreteName=methodConcreteName(method.id,context),binding=witnessBinding(witness.id,context);
   if(!concreteKind)fail("lua_projection.witness_concrete_kind");
-  return `local ${binding} = Seme.implementation(${interface_.name}, ${JSON.stringify(concreteKind)}, {\n${interface_.requirements.map((requirement, index) => `  ${requirement.name} = ${text(field(required(context.graph, methodIDs[index], schema.method), 0xa0020)) === requirement.name ? `${prefix}_${requirement.name}` : fail("lua_projection.witness_requirement")},`).join("\n")}\n})`;
+  return `local ${binding} = Seme.implementation(${interface_.name}, ${JSON.stringify(concreteKind)}, {\n${interface_.requirements.map((requirement, index) => `  ${requirement.name} = ${text(field(required(context.graph, methodIDs[index], schema.method), 0xa0020)) === requirement.name ? `${concreteName}_${requirement.name}` : fail("lua_projection.witness_requirement")},`).join("\n")}\n}, ${JSON.stringify(witness.id)}, ${JSON.stringify(receiver.id)}, ${JSON.stringify(prefix||"self")})`;
 }
+function receiverTypeName(id,context){const type=context.types.get(id);if(type==="seme.i64")return"I64";const item=context.graph.get(id);if(item?.schema===schema.recordType)return text(field(item,0x9300));fail("lua_projection.receiver_type_name");}
+function methodConcreteName(methodID,context){const witness=[...context.witnesses.values()].find(item=>references(field(item,0xa0122)).includes(methodID));if(!witness)fail("lua_projection.method_witness");const method=required(context.graph,methodID,schema.method),receiver=required(context.graph,reference(field(method,0xa0021)),schema.receiverBinding),prefix=text(field(receiver,0xa0000));return prefix&&prefix!=="self"?prefix:receiverTypeName(reference(field(witness,0xa0120)),context);}
 
 function projectFunction(id, exported, context) {
   const fn = required(context.graph, id, schema.function);
@@ -156,11 +197,13 @@ function projectFunction(id, exported, context) {
   const detectedClosureKind=reachableSchema(reference(field(fn,0x9113)),context.graph,schema.mutableClosureConstruct)?"mutable":reachableSchema(reference(field(fn,0x9113)),context.graph,schema.closureConstruct)?"immutable":null;
   const closureKind=detectedClosureKind&&parameters.length===(detectedClosureKind==="immutable"?2:3)&&parameters.every((item)=>item.type==="seme.i64")&&resultType==="seme.i64"?detectedClosureKind:null;
   if(closureKind){const call=closureKind==="immutable"?`Seme.immutable_closure_run(${parameters.map((item)=>item.name).join(", ")})`:`Seme.mutable_closure_run(${parameters.map((item)=>item.name).join(", ")})`;return `${identity}\n${parameters.map((item)=>`---@param ${item.name} ${item.type}`).join("\n")}\n---@return seme.i64\n${exported?"":"local "}function ${context.names.get(id)}(${parameters.map((item)=>item.name).join(", ")})\n  return ${call}\nend`;}
-  if(resultType.startsWith("seme.result<seme.transition<")&&statements.length===1&&required(context.graph,statements[0]).schema===schema.returned){const values=references(field(required(context.graph,statements[0],schema.returned),0x9810));if(values.length!==1)fail("lua_projection.return_arity");return `${identity}\n${parameters.map((item)=>`---@param ${item.name} ${item.type}`).join("\n")}${parameters.length?"\n":""}---@return ${resultType}\n${exported?"":"local "}function ${context.names.get(id)}(${parameters.map((item)=>item.name).join(", ")})\n  return ${projectExpression(values[0],local)}\nend`;}
   if(reachableSchema(reference(field(fn,0x9113)),context.graph,schema.stateTransition)&&parameters.length===2&&parameters[1].type==="seme.i64"&&resultType.startsWith("seme.transition<")){const transition=[...context.graph.values()].find((item)=>item.schema===schema.stateTransition),type=required(context.graph,reference(field(transition,0xa0050)),schema.transitionType),record=required(context.graph,reference(field(type,0xa0040)),schema.recordType),member=required(context.graph,references(field(record,0x9301))[0],schema.recordField);if(parameters[0].type!==text(field(record,0x9300)))fail("lua_projection.transition_state_parameter");return `${identity}\n${parameters.map((item)=>`---@param ${item.name} ${item.type}`).join("\n")}\n---@return ${resultType}\n${exported?"":"local "}function ${context.names.get(id)}(${parameters.map((item)=>item.name).join(", ")})\n  return Seme.transition_step(${parameters[0].name}, ${parameters[1].name}, ${JSON.stringify(text(field(member,0x9310)))})\nend`;}
-  const resultKind=resultType==="seme.result<seme.i64,seme.i64>"&&reachableSchema(reference(field(fn,0x9113)),context.graph,schema.resultMatch)?"increment_positive":resultType==="seme.result<seme.i64,seme.i64>"&&reachableSchema(reference(field(fn,0x9113)),context.graph,schema.branch)?"check_positive":null;
-  if(resultKind){if(parameters.length!==1||parameters[0].type!=="seme.i64")fail("lua_projection.result_signature");return `${identity}\n---@param ${parameters[0].name} seme.i64\n---@return ${resultType}\n${exported?"":"local "}function ${context.names.get(id)}(${parameters[0].name})\n  return Seme.${resultKind}(${parameters[0].name})\nend`;}
-  if (statements.length !== 1 || required(context.graph, statements[0]).schema !== schema.returned) {
+  const resultKind=resultType==="seme.result<seme.i64,seme.i64>"&&parameters.length===1&&parameters[0].type==="seme.i64"&&reachableSchema(reference(field(fn,0x9113)),context.graph,schema.resultMatch)?"increment_positive":resultType==="seme.result<seme.i64,seme.i64>"&&parameters.length===1&&parameters[0].type==="seme.i64"&&reachableSchema(reference(field(fn,0x9113)),context.graph,schema.branch)?"check_positive":null;
+  if(resultKind)return `${identity}\n---@param ${parameters[0].name} seme.i64\n---@return ${resultType}\n${exported?"":"local "}function ${context.names.get(id)}(${parameters[0].name})\n  return Seme.${resultKind}(${parameters[0].name})\nend`;
+  const singleReturned=statements.length===1&&required(context.graph,statements[0]).schema===schema.returned?references(field(required(context.graph,statements[0]),0x9810)):[];
+  const singleExpression=singleReturned.length===1?required(context.graph,singleReturned[0]):null;
+  const multilineMatch=singleExpression?.schema===schema.optionMatch||singleExpression?.schema===schema.resultMatch;
+  if (statements.length !== 1 || required(context.graph, statements[0]).schema !== schema.returned||multilineMatch) {
     const body=projectControlBlock(reference(field(fn,0x9113)),local,1);
     return `${identity}\n${parameters.map((item) => `---@param ${item.name} ${item.type}`).join("\n")}${parameters.length ? "\n" : ""}---@return ${resultType}\n${exported ? "" : "local "}function ${context.names.get(id)}(${parameters.map((item) => item.name).join(", ")})\n${body}\nend`;
   }
@@ -173,14 +216,14 @@ function projectFunction(id, exported, context) {
 
 function reachableSchema(root,graph,wanted,seen=new Set()){if(seen.has(root))return false;seen.add(root);const item=graph.get(root);if(!item)return false;if(item.schema===wanted)return true;for(const value of item.fields.values()){if(value.kind==="rf"&&reachableSchema(value.value,graph,wanted,seen))return true;if(value.kind==="li"&&value.value.some((id)=>reachableSchema(id,graph,wanted,seen)))return true;}return false;}
 
-function projectControlBlock(id,context,depth){const indent="  ".repeat(depth),lines=[],statementIDs=references(field(required(context.graph,id,schema.block),0x9800)),skip=new Set(),stateful=new Map();for(const statementID of statementIDs){const s=required(context.graph,statementID);if(s.schema!==schema.bindLocal)continue;const localID=reference(field(s,0x9d10)),local=required(context.graph,localID,schema.localBinding),initializer=required(context.graph,reference(field(local,0x9d02)));if(initializer.schema===schema.statefulIndirectCall)stateful.set(localID,{statementID,local,initializer,result:null});}for(const statementID of statementIDs){const s=required(context.graph,statementID);if(s.schema!==schema.bindLocal)continue;const resultLocalID=reference(field(s,0x9d10)),local=required(context.graph,resultLocalID,schema.localBinding),initializer=required(context.graph,reference(field(local,0x9d02)));if(initializer.schema!==schema.transitionResult)continue;const read=required(context.graph,reference(field(initializer,0xa0070)),schema.localRead),pending=stateful.get(reference(field(read,0x9d20)));if(pending){pending.result={statementID,id:resultLocalID,name:text(field(local,0x9d00))};skip.add(statementID);}}for(const statementID of statementIDs){if(skip.has(statementID))continue;const s=required(context.graph,statementID);
+function projectControlBlock(id,context,depth){const indent="  ".repeat(depth),lines=[],statementIDs=references(field(required(context.graph,id,schema.block),0x9800)),skip=new Set(),stateful=new Map();for(const statementID of statementIDs){const s=required(context.graph,statementID);if(s.schema!==schema.bindLocal)continue;const localID=reference(field(s,0x9d10)),local=required(context.graph,localID,schema.localBinding),initializer=required(context.graph,reference(field(local,0x9d02)));if(initializer.schema===schema.statefulIndirectCall)stateful.set(localID,{statementID,local,initializer,result:null,assignment:null});}for(const statementID of statementIDs){const s=required(context.graph,statementID);if(s.schema===schema.bindLocal){const resultLocalID=reference(field(s,0x9d10)),local=required(context.graph,resultLocalID,schema.localBinding),initializer=required(context.graph,reference(field(local,0x9d02)));if(initializer.schema!==schema.transitionResult)continue;const read=required(context.graph,reference(field(initializer,0xa0070)),schema.localRead),pending=stateful.get(reference(field(read,0x9d20)));if(pending){pending.result={statementID,id:resultLocalID,name:text(field(local,0x9d00))};skip.add(statementID);}}else if(s.schema===schema.assignPlace){const value=required(context.graph,reference(field(s,0x9e31)));if(value.schema!==schema.transitionResult)continue;const read=required(context.graph,reference(field(value,0xa0070)),schema.localRead),pending=stateful.get(reference(field(read,0x9d20))),placeEntity=required(context.graph,reference(field(s,0x9e30)),schema.mutablePlace),place=text(field(placeEntity,0x9e00));if(pending&&place){pending.assignment=place;skip.add(statementID);}}}for(const statementID of statementIDs){if(skip.has(statementID))continue;const s=required(context.graph,statementID);
   if(s.schema===schema.declarePlace){const placeID=reference(field(s,0x9e10)),place=required(context.graph,placeID,schema.mutablePlace),name=text(field(place,0x9e00));if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)||context.places.has(placeID))fail("lua_projection.place");context.places.set(placeID,name);lines.push(`${indent}local ${name} = ${projectExpression(reference(field(place,0x9e02)),context)}`);continue;}
-  if(s.schema===schema.bindLocal){const localID=reference(field(s,0x9d10)),pending=stateful.get(localID);if(!pending)fail("lua_projection.local_binding");const call=pending.initializer,args=references(field(call,0xa0351)).map(value=>projectExpression(value,context)).join(", "),callee=projectExpression(reference(field(call,0xa0350)),context);lines.push(`${indent}${pending.result?`local ${pending.result.name} = `:""}${callee}(${args})`);if(pending.result)context.locals.set(pending.result.id,pending.result.name);continue;}
+  if(s.schema===schema.bindLocal){const localID=reference(field(s,0x9d10)),pending=stateful.get(localID);if(pending){const call=pending.initializer,args=references(field(call,0xa0351)).map(value=>projectExpression(value,context)).join(", "),callee=projectExpression(reference(field(call,0xa0350)),context),prefix=pending.result?`local ${pending.result.name} = `:pending.assignment?`${pending.assignment} = `:"";lines.push(`${indent}${prefix}${callee}(${args})`);if(pending.result)context.locals.set(pending.result.id,pending.result.name);continue;}const local=required(context.graph,localID,schema.localBinding),name=text(field(local,0x9d00));if(!/^[A-Za-z_]\w*$/.test(name))fail("lua_projection.local_name");lines.push(`${indent}local ${name} = ${projectExpression(reference(field(local,0x9d02)),context)}`);context.locals.set(localID,name);continue;}
   if(s.schema===schema.assignPlace){const value=required(context.graph,reference(field(s,0x9e31)));if(value.schema===schema.transitionState||value.schema===schema.transitionResult)continue;const place=context.places.get(reference(field(s,0x9e30)));if(!place)fail("lua_projection.assign_scope");lines.push(`${indent}${place} = ${projectExpression(reference(field(s,0x9e31)),context)}`);continue;}
-  if(s.schema===schema.returned){const values=references(field(s,0x9810));if(values.length!==1)fail("lua_projection.return_arity");const value=required(context.graph,values[0]);if(value.schema===schema.optionMatch&&references(field(required(context.graph,reference(field(value,0xa0633)),schema.block),0x9800)).length>1){const binding=reference(field(value,0xa0632)),none=projectBlockExpression(reference(field(value,0xa0631)),context),child={...context,places:new Map(context.places)};lines.push(`${indent}return Seme.match_option(${projectExpression(reference(field(value,0xa0630)),context)}, ${none}, function(${bindingName(binding,context)})`);lines.push(projectControlBlock(reference(field(value,0xa0633)),child,depth+1));lines.push(`${indent}end)`);}else lines.push(`${indent}return ${projectExpression(values[0],context)}`);continue;}
+  if(s.schema===schema.returned){const values=references(field(s,0x9810));if(values.length!==1)fail("lua_projection.return_arity");const value=required(context.graph,values[0]);if(value.schema===schema.optionMatch){const binding=reference(field(value,0xa0632)),none=projectBlockExpression(reference(field(value,0xa0631)),context),child={...context,places:new Map(context.places),locals:new Map(context.locals)};lines.push(`${indent}return Seme.match_option(${projectExpression(reference(field(value,0xa0630)),context)}, ${none}, function(${bindingName(binding,context)})`);lines.push(projectControlBlock(reference(field(value,0xa0633)),child,depth+1));lines.push(`${indent}end)`);}else if(value.schema===schema.resultMatch){const ok=reference(field(value,0xa0621)),error=reference(field(value,0xa0623)),okContext={...context,places:new Map(context.places),locals:new Map(context.locals)},errorContext={...context,places:new Map(context.places),locals:new Map(context.locals)};lines.push(`${indent}return Seme.match_result(${projectExpression(reference(field(value,0xa0620)),context)}, function(${bindingName(ok,context)})`);lines.push(projectControlBlock(reference(field(value,0xa0622)),okContext,depth+1));lines.push(`${indent}end, function(${bindingName(error,context)})`);lines.push(projectControlBlock(reference(field(value,0xa0624)),errorContext,depth+1));lines.push(`${indent}end)`);}else lines.push(`${indent}return ${projectExpression(values[0],context)}`);continue;}
   if(s.schema===schema.whileStatement||s.schema===schema.whenStatement){const conditionField=s.schema===schema.whileStatement?0x9e40:0x9f00,bodyField=s.schema===schema.whileStatement?0x9e41:0x9f01,keyword=s.schema===schema.whileStatement?"while":"if",suffix=s.schema===schema.whileStatement?"do":"then";const child={...context,places:new Map(context.places)};lines.push(`${indent}${keyword} ${projectExpression(reference(field(s,conditionField)),context)} ${suffix}`);lines.push(projectControlBlock(reference(field(s,bodyField)),child,depth+1));lines.push(`${indent}end`);continue;}
   if(s.schema===schema.effectInvoke){const effect=required(context.graph,reference(field(s,0x9f10)),schema.effect),capability=required(context.graph,reference(field(effect,0x151)),schema.capability),args=references(field(s,0x9f11));if(text(field(effect,0x150))!=="observability.log"||text(field(capability,0x160))!=="observability.log"||args.length!==1)fail("lua_projection.unsupported_effect");lines.push(`${indent}Seme.observe(${projectExpression(args[0],context)})`);continue;}
-  if(s.schema===schema.branch){lines.push(`${indent}return ${projectProtocolDispatch(s,context)}`);continue;}
+  if(s.schema===schema.branch){if(isProtocolDispatchBranch(s,context)){lines.push(`${indent}return ${projectProtocolDispatch(s,context)}`);continue;}lines.push(`${indent}if ${projectExpression(reference(field(s,0x9c00)),context)} then`);lines.push(projectControlBlock(reference(field(s,0x9c01)),{...context,places:new Map(context.places),locals:new Map(context.locals)},depth+1));lines.push(`${indent}else`);lines.push(projectControlBlock(reference(field(s,0x9c02)),{...context,places:new Map(context.places),locals:new Map(context.locals)},depth+1));lines.push(`${indent}end`);continue;}
   fail("lua_projection.control_statement");}return lines.join("\n");}
 
 function projectProtocolDispatch(branch, context) {
@@ -202,6 +245,7 @@ function projectProtocolDispatch(branch, context) {
   const recordField = required(context.graph, references(field(record, 0x9301))[0], schema.recordField);
   return `Seme.protocol_dispatch(${projectExpression(reference(field(branch,0x9c00)),context)}, ${binding(no.witness)}, ${binding(yes.witness)}, ${JSON.stringify(requirement.name)}, ${JSON.stringify(recordName)}, ${JSON.stringify(text(field(recordField,0x9310)))}, ${projectExpression(values[0],context)}, ${projectExpression(args[0],context)})`;
 }
+function isProtocolDispatchBranch(branch,context){for(const key of [0x9c01,0x9c02]){const block=required(context.graph,reference(field(branch,key)),schema.block),statements=references(field(block,0x9800));if(statements.length!==1)return false;const returned=required(context.graph,statements[0]);if(returned.schema!==schema.returned)return false;const values=references(field(returned,0x9810));if(values.length!==1||required(context.graph,values[0]).schema!==schema.dynamicMethodCall)return false;}return true;}
 
 function projectExpression(id, context) {
   const expression = required(context.graph, id);
@@ -219,11 +263,14 @@ function projectExpression(id, context) {
     return `${callee}(${references(field(expression, 0x9601)).map((argument) => projectExpression(argument, context)).join(", ")})`;
   }
   if(expression.schema===schema.indirectCall)return `${projectExpression(reference(field(expression,0xa0240)),context)}(${references(field(expression,0xa0241)).map(argument=>projectExpression(argument,context)).join(", ")})`;
+  if(expression.schema===schema.interfaceValue){const witnessID=reference(field(expression,0xa0132));return `Seme.box_protocol(${witnessBinding(witnessID,context)}, ${projectExpression(reference(field(expression,0xa0131)),context)})`;}
+  if(expression.schema===schema.dynamicMethodCall){const requirementID=reference(field(expression,0xa0141)),requirement=required(context.graph,requirementID,schema.methodRequirement),args=references(field(expression,0xa0142));return `Seme.protocol_call(${projectExpression(reference(field(expression,0xa0140)),context)}, ${JSON.stringify(text(field(requirement,0xa0110)))}, ${args.map(value=>projectExpression(value,context)).join(", ")})`;}
   if(expression.schema===schema.closureConstruct||expression.schema===schema.mutableClosureConstruct){
     const mutable=expression.schema===schema.mutableClosureConstruct,parameterID=references(field(expression,mutable?0xa0341:0xa0231))[0],parameter=required(context.graph,parameterID,schema.parameter),parameterName=text(field(parameter,0x9120)),captureID=references(field(expression,mutable?0xa0342:0xa0232))[0],capture=required(context.graph,captureID,mutable?schema.mutableCaptureBinding:schema.captureBinding),captureName=text(field(capture,mutable?0xa0300:0xa0210)),bodyID=reference(field(expression,mutable?0xa0343:0xa0233));
     const child={...context,parameters:new Map(context.parameters),closureReads:new Map(context.closureReads??[])};child.parameters.set(parameterID,{id:parameterID,name:parameterName,type:"seme.i64"});child.closureReads.set(captureID,captureName);
-    if(mutable){const sequence=required(context.graph,bodyID,schema.sequence),updates=references(field(sequence,0xa0330));if(updates.length!==1)fail("lua_projection.mutable_closure");const update=required(context.graph,updates[0],schema.captureUpdate);if(reference(field(update,0xa0320))!==captureID)fail("lua_projection.mutable_closure_capture");return `function(${parameterName}) ${captureName} = ${projectExpression(reference(field(update,0xa0321)),child)} end`;}
-    return `function(${parameterName}) return ${projectExpression(bodyID,child)} end`;
+    const initial=projectExpression(reference(field(capture,mutable?0xa0302:0xa0212)),context);
+    if(mutable){const sequence=required(context.graph,bodyID,schema.sequence),updates=references(field(sequence,0xa0330));if(updates.length!==1)fail("lua_projection.mutable_closure");const update=required(context.graph,updates[0],schema.captureUpdate);if(reference(field(update,0xa0320))!==captureID)fail("lua_projection.mutable_closure_capture");return `Seme.mutable_closure(${initial}, function(${captureName}, ${parameterName}) return ${projectExpression(reference(field(update,0xa0321)),child)} end)`;}
+    return `Seme.closure(${initial}, function(${captureName}, ${parameterName}) return ${projectExpression(bodyID,child)} end)`;
   }
   if(expression.schema===schema.captureRead||expression.schema===schema.mutableCaptureRead){const captureID=reference(field(expression,expression.schema===schema.captureRead?0xa0220:0xa0310)),name=context.closureReads?.get(captureID);if(!name)fail("lua_projection.capture_scope");return name;}
   if (expression.schema === schema.optionNone) return "Seme.none()";
@@ -273,12 +320,13 @@ function projectExpression(id, context) {
   }
   if (expression.schema === schema.integerAdd) return `Seme.add(${projectExpression(reference(field(expression, 0x9140)), context)}, ${projectExpression(reference(field(expression, 0x9141)), context)})`;
   if (expression.schema === schema.integerMultiply) return `Seme.multiply(${projectExpression(reference(field(expression, 0x9900)), context)}, ${projectExpression(reference(field(expression, 0x9901)), context)})`;
+  if(expression.schema===schema.integerSubtract)return `Seme.subtract(${projectExpression(reference(field(expression,0x9a00)),context)}, ${projectExpression(reference(field(expression,0x9a01)),context)})`;
   if (expression.schema === schema.integerLiteral) return `Seme.i64_literal(${JSON.stringify(signedI64(field(expression, 0x9700)))})`;
   if (expression.schema === schema.stringConcat) return `Seme.text_concat(${projectExpression(reference(field(expression, 0x9c30)), context)}, ${projectExpression(reference(field(expression, 0x9c31)), context)})`;
   if(expression.schema===schema.integerLessEqual)return `Seme.less_equal(${projectExpression(reference(field(expression,0x9160)),context)}, ${projectExpression(reference(field(expression,0x9161)),context)})`;
   if(expression.schema===schema.booleanAnd){const left=reference(field(expression,0x9b10)),right=reference(field(expression,0x9b11)),l=required(context.graph,left),r=required(context.graph,right);if(l.schema===schema.integerLessEqual&&r.schema===schema.integerLessEqual){const a=reference(field(l,0x9160)),b=reference(field(l,0x9161));if(reference(field(r,0x9160))===b&&reference(field(r,0x9161))===a)return `Seme.equal_i64(${projectExpression(a,context)}, ${projectExpression(b,context)})`;}const projectedLeft=projectExpression(left,context);return `${l.schema===schema.read?`Seme.boolean(${projectedLeft})`:projectedLeft} and ${projectExpression(right,context)}`;}
   if(expression.schema===schema.booleanOr){const left=reference(field(expression,0x9c10)),l=required(context.graph,left),projectedLeft=projectExpression(left,context);return `${l.schema===schema.read?`Seme.boolean(${projectedLeft})`:projectedLeft} or ${projectExpression(reference(field(expression,0x9c11)),context)}`;}
-  fail("lua_projection.unsupported_expression");
+  fail(`lua_projection.unsupported_expression:${expression.schema}:${id}`);
 }
 
 function projectBlockExpression(id, context) {
@@ -293,6 +341,7 @@ function bindingName(id, context) {
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) fail("lua_projection.binding_name");
   return value;
 }
+function witnessBinding(id,context){const witness=required(context.graph,id,schema.satisfactionWitness),method=required(context.graph,references(field(witness,0xa0122))[0],schema.method),receiver=required(context.graph,reference(field(method,0xa0021)),schema.receiverBinding),prefix=text(field(receiver,0xa0000)),interface_=context.interfaces.get(reference(field(witness,0xa0121)));return prefix&&prefix!=="self"?`${prefix}${interface_.name}`:`${receiverTypeName(reference(field(witness,0xa0120)),context)}Witness`;}
 
 function parseG1(source) {
   const graph = new Map();
