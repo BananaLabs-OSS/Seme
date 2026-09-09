@@ -56,6 +56,14 @@ const (
 	goEmptyMap
 	goMapLookup
 	goMapUpdate
+	goBytesLiteral
+	goOptionNone
+	goOptionSome
+	goResultOk
+	goResultError
+	goVariantRead
+	goOptionMatch
+	goResultMatch
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -87,6 +95,9 @@ type goExpression struct {
 	methodID    string
 	typeID      string
 	witnessID   string
+	alternate   *goExpression
+	errorName   string
+	errorTypeID string
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -446,6 +457,91 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			id := expressionNodeID(owner, path, "map-update")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a043", []graphField{refField(0xa0430, mapping), refField(0xa0431, key), refField(0xa0432, value)})}
 			return id, nil
+		case goBytesLiteral:
+			id := expressionNodeID(owner, path, "bytes-literal")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a064", []graphField{bytesHexField(0xa0640, expression.text)})}
+			return id, nil
+		case goOptionNone:
+			id := expressionNodeID(owner, path, "option-none")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a051", []graphField{refField(0xa0510, expression.typeID)})}
+			return id, nil
+		case goOptionSome, goResultOk, goResultError:
+			value, err := emit(expression.left, path+".value")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, map[goExpressionKind]string{goOptionSome: "option-some", goResultOk: "result-ok", goResultError: "result-error"}[expression.kind])
+			schema, typeField, valueField := "0000000000000000000000000000a052", uint64(0xa0520), uint64(0xa0521)
+			if expression.kind == goResultOk {
+				schema, typeField, valueField = "00000000000000000000000000009043", 0x9410, 0x9411
+			} else if expression.kind == goResultError {
+				schema, typeField, valueField = "00000000000000000000000000009044", 0x9420, 0x9421
+			}
+			emitted[id] = graphEntity{id, entity(id, schema, []graphField{refField(typeField, expression.typeID), refField(valueField, value)})}
+			return id, nil
+		case goVariantRead:
+			id := expressionNodeID(owner, path, "variant-read")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a061", []graphField{refField(0xa0610, expression.bindingID)})}
+			return id, nil
+		case goOptionMatch:
+			if expression.bindingID == "" {
+				expression.bindingID = stableID("execution", owner, path, "some-binding")
+			}
+			bindVariantReads(expression.body, expression.bindingID)
+			value, err := emit(expression.left, path+".value")
+			if err != nil {
+				return "", err
+			}
+			noneValue, err := emit(expression.initial, path+".none.value")
+			if err != nil {
+				return "", err
+			}
+			someValue, err := emit(expression.body, path+".some.value")
+			if err != nil {
+				return "", err
+			}
+			noneReturn, noneBlock := expressionNodeID(owner, path, "option-none-return"), expressionNodeID(owner, path, "option-none-block")
+			someReturn, someBlock := expressionNodeID(owner, path, "option-some-return"), expressionNodeID(owner, path, "option-some-block")
+			emitted[expression.bindingID] = graphEntity{expression.bindingID, entity(expression.bindingID, "0000000000000000000000000000a060", []graphField{bytesField(0xa0600, expression.text), refField(0xa0601, expression.typeID)})}
+			emitted[noneReturn] = graphEntity{noneReturn, entity(noneReturn, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{noneValue})})}
+			emitted[noneBlock] = graphEntity{noneBlock, entity(noneBlock, "00000000000000000000000000009080", []graphField{refsField(0x9800, []string{noneReturn})})}
+			emitted[someReturn] = graphEntity{someReturn, entity(someReturn, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{someValue})})}
+			emitted[someBlock] = graphEntity{someBlock, entity(someBlock, "00000000000000000000000000009080", []graphField{refsField(0x9800, []string{someReturn})})}
+			id := expressionNodeID(owner, path, "option-match")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a063", []graphField{refField(0xa0630, value), refField(0xa0631, noneBlock), refField(0xa0632, expression.bindingID), refField(0xa0633, someBlock)})}
+			return id, nil
+		case goResultMatch:
+			if expression.bindingID == "" {
+				expression.bindingID = stableID("execution", owner, path, "ok-binding")
+			}
+			if expression.witnessID == "" {
+				expression.witnessID = stableID("execution", owner, path, "error-binding")
+			}
+			bindVariantReads(expression.body, expression.bindingID)
+			bindVariantReads(expression.alternate, expression.witnessID)
+			value, err := emit(expression.left, path+".value")
+			if err != nil {
+				return "", err
+			}
+			okValue, err := emit(expression.body, path+".ok.value")
+			if err != nil {
+				return "", err
+			}
+			errorValue, err := emit(expression.alternate, path+".error.value")
+			if err != nil {
+				return "", err
+			}
+			okReturn, okBlock := expressionNodeID(owner, path, "result-ok-return"), expressionNodeID(owner, path, "result-ok-block")
+			errorReturn, errorBlock := expressionNodeID(owner, path, "result-error-return"), expressionNodeID(owner, path, "result-error-block")
+			emitted[expression.bindingID] = graphEntity{expression.bindingID, entity(expression.bindingID, "0000000000000000000000000000a060", []graphField{bytesField(0xa0600, expression.text), refField(0xa0601, expression.typeID)})}
+			emitted[expression.witnessID] = graphEntity{expression.witnessID, entity(expression.witnessID, "0000000000000000000000000000a060", []graphField{bytesField(0xa0600, expression.errorName), refField(0xa0601, expression.errorTypeID)})}
+			emitted[okReturn] = graphEntity{okReturn, entity(okReturn, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{okValue})})}
+			emitted[okBlock] = graphEntity{okBlock, entity(okBlock, "00000000000000000000000000009080", []graphField{refsField(0x9800, []string{okReturn})})}
+			emitted[errorReturn] = graphEntity{errorReturn, entity(errorReturn, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{errorValue})})}
+			emitted[errorBlock] = graphEntity{errorBlock, entity(errorBlock, "00000000000000000000000000009080", []graphField{refsField(0x9800, []string{errorReturn})})}
+			id := expressionNodeID(owner, path, "result-match")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a062", []graphField{refField(0xa0620, value), refField(0xa0621, expression.bindingID), refField(0xa0622, okBlock), refField(0xa0623, expression.witnessID), refField(0xa0624, errorBlock)})}
+			return id, nil
 		case goStateTransition:
 			state, err := emit(expression.left, path+".state")
 			if err != nil {
@@ -557,6 +653,40 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 		entities = append(entities, item)
 	}
 	return entities, root, nil
+}
+
+func keyedCompositeFields(expression *ast.CompositeLit) (map[string]ast.Expr, error) {
+	fields := make(map[string]ast.Expr, len(expression.Elts))
+	for _, raw := range expression.Elts {
+		keyed, ok := raw.(*ast.KeyValueExpr)
+		if !ok {
+			return nil, fmt.Errorf("expression.tagged_constructor_requires_keys")
+		}
+		name, ok := keyed.Key.(*ast.Ident)
+		if !ok || fields[name.Name] != nil {
+			return nil, fmt.Errorf("expression.tagged_constructor_field")
+		}
+		fields[name.Name] = keyed.Value
+	}
+	return fields, nil
+}
+func bindVariantReads(expression *goExpression, binding string) {
+	if expression == nil {
+		return
+	}
+	if expression.kind == goVariantRead {
+		expression.bindingID = binding
+	}
+	bindVariantReads(expression.left, binding)
+	bindVariantReads(expression.right, binding)
+	bindVariantReads(expression.initial, binding)
+	bindVariantReads(expression.body, binding)
+	for _, item := range expression.arguments {
+		bindVariantReads(item, binding)
+	}
+	for _, item := range expression.values {
+		bindVariantReads(item, binding)
+	}
 }
 
 func goUnaryI64FunctionTypeID() string {
@@ -901,6 +1031,64 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		return &goExpression{kind: goClosureConstruct, left: &goExpression{kind: goParameterRead, parameter: captureIndex}, body: &goExpression{kind: goIntegerAdd, left: &goExpression{kind: goCaptureRead}, right: &goExpression{kind: goClosureParameterRead}}, text: leftID.Name, elementName: rightID.Name, typeID: goFunctionTypeID(closureSignature)}, nil
 	case *ast.CompositeLit:
+		if isBytes(info.TypeOf(expression)) {
+			bytes := make([]byte, len(expression.Elts))
+			for index, element := range expression.Elts {
+				value := info.Types[element].Value
+				number, ok := constant.Uint64Val(value)
+				if !ok || number > 255 {
+					return nil, fmt.Errorf("expression.bytes_literal_element")
+				}
+				bytes[index] = byte(number)
+			}
+			return &goExpression{kind: goBytesLiteral, text: fmt.Sprintf("%x", bytes)}, nil
+		}
+		if _, ok := goOptionValueType(info.TypeOf(expression)); ok {
+			fields, err := keyedCompositeFields(expression)
+			if err != nil {
+				return nil, err
+			}
+			typeID := goSemanticTypeIdentity(info.TypeOf(expression))
+			if len(fields) == 0 {
+				return &goExpression{kind: goOptionNone, typeID: typeID}, nil
+			}
+			present, ok := fields["Some"].(*ast.Ident)
+			valueNode, hasValue := fields["Value"]
+			if !ok || present.Name != "true" || !hasValue || len(fields) != 2 {
+				return nil, fmt.Errorf("expression.option_constructor")
+			}
+			value, err := analyzeGoExpressionWithProgram(valueNode, signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			return &goExpression{kind: goOptionSome, typeID: typeID, left: value}, nil
+		}
+		if _, _, ok := goResultTypes(info.TypeOf(expression)); ok {
+			fields, err := keyedCompositeFields(expression)
+			if err != nil {
+				return nil, err
+			}
+			typeID := goSemanticTypeIdentity(info.TypeOf(expression))
+			tag, ok := fields["Ok"].(*ast.Ident)
+			if !ok {
+				return nil, fmt.Errorf("expression.result_constructor")
+			}
+			field, kind := "Error", goResultError
+			if tag.Name == "true" {
+				field, kind = "Value", goResultOk
+			} else if tag.Name != "false" {
+				return nil, fmt.Errorf("expression.result_constructor")
+			}
+			valueNode, exists := fields[field]
+			if !exists || len(fields) != 2 {
+				return nil, fmt.Errorf("expression.result_constructor")
+			}
+			value, err := analyzeGoExpressionWithProgram(valueNode, signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			return &goExpression{kind: kind, typeID: typeID, left: value}, nil
+		}
 		if stateType, resultType, ok := goTransitionTypes(info.TypeOf(expression)); ok {
 			if len(expression.Elts) != 2 {
 				return nil, fmt.Errorf("expression.transition_arity")
