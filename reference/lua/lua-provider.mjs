@@ -205,13 +205,21 @@ function emitControlBlock(statements, context, path, requireReturn = false) {
     if (terminal) fail("lua.unreachable_statement", statement.location);
     if (statement.kind === "declare") {
       if (context.symbols.has(statement.name)) fail("lua.duplicate_local", statement.location);
+      if(statement.expression.kind==="raw_call"){
+        const callee=context.symbols.get(statement.expression.name);
+        if(callee?.closureKind==="mutable"){
+          const expanded=emitMutableClosureCall(statement.expression,callee,context,statementPath,statement.name);
+          context.symbols.set(statement.name,{kind:"local",type:"i64",id:expanded.resultLocal});
+          emitted.push(...expanded.statements);continue;
+        }
+      }
       const type = controlExpressionType(statement.expression, context);
       const initializer = emitControlExpression(statement.expression, type, context, `${statementPath}.initializer`);
       const place = stableID("execution", context.description.id, statementPath, "place");
       const declaration = stableID("execution", context.description.id, statementPath, "declare");
       context.additions.push(graphEntity(place, entity(place, schema.mutablePlace, [[0x9e00, bytes(statement.name)], [0x9e01, ref(typeID(type))], [0x9e02, ref(initializer)]])));
       context.additions.push(graphEntity(declaration, entity(declaration, schema.declarePlace, [[0x9e10, ref(place)]])));
-      context.symbols.set(statement.name, { kind: "place", type, id: place }); emitted.push(declaration); continue;
+      context.symbols.set(statement.name, { kind: "place", type, id: place, closureKind:statement.expression.kind==="mutable_closure"?"mutable":statement.expression.kind==="immutable_closure"?"immutable":undefined, closureCapturePlace:statement.expression.kind==="mutable_closure"?context.symbols.get(statement.expression.capture)?.id:undefined }); emitted.push(declaration); continue;
     }
     if (statement.kind === "assign") {
       const symbol = context.symbols.get(statement.name); if (!symbol || symbol.kind !== "place") fail("lua.assignment_scope", statement.location);
@@ -222,7 +230,31 @@ function emitControlBlock(statements, context, path, requireReturn = false) {
       const value = emitControlExpression(statement.expression, context.description.resultType, context, `${statementPath}.value`);
       const id = stableID("execution", context.description.id, statementPath, "return"); context.additions.push(graphEntity(id, entity(id, schema.returned, [[0x9810, refs([value])]]))); emitted.push(id); terminal = true; continue;
     }
-    if(statement.kind==="effect"){const symbol=context.symbols.get(statement.name);if(!symbol||symbol.type!=="bool")fail("lua.effect_argument_type",statement.location);const argument=emitControlExpression({kind:"identifier",name:statement.name,location:statement.location},"bool",context,`${statementPath}.argument`),capability=stableID("capability","observability.log"),effect=stableID("effect","observability.log"),id=stableID("execution",context.description.id,statementPath,"effect-invoke");if(!context.additions.some((item)=>item.id===capability))context.additions.push(graphEntity(capability,entity(capability,schema.capability,[[0x160,bytes("observability.log")]])),graphEntity(effect,entity(effect,schema.effect,[[0x150,bytes("observability.log")],[0x151,ref(capability)]])));context.additions.push(graphEntity(id,entity(id,schema.effectInvoke,[[0x9f10,ref(effect)],[0x9f11,refs([argument])]])));emitted.push(id);continue;}
+    if (statement.kind === "return_option_match_block") {
+      const optionType = controlExpressionType(statement.value, context);
+      if (!optionType.startsWith("option:")) fail("lua.option_match_value_type", statement.location);
+      const payloadType = optionType.slice(7);
+      const value = emitControlExpression(statement.value, optionType, context, `${statementPath}.value`);
+      const noneValue = emitControlExpression(statement.none, context.description.resultType, context, `${statementPath}.none.value`);
+      const noneBlock = returnedExpressionBlock(noneValue, context, `${statementPath}.none`);
+      const binding = stableID("execution", context.description.id, statementPath, "some-binding");
+      context.additions.push(graphEntity(binding, entity(binding, schema.variantBinding, [[0xa0600, bytes(statement.binding)], [0xa0601, ref(typeID(payloadType))]])));
+      const childContext = { ...context, symbols: new Map(context.symbols) };
+      childContext.symbols.set(statement.binding, { kind: "variant", type: payloadType, id: binding });
+      const someBlock = emitControlBlock(statement.body, childContext, `${statementPath}.some`, true);
+      const match = stableID("execution", context.description.id, statementPath, "option-match");
+      context.additions.push(graphEntity(match, entity(match, schema.optionMatch, [[0xa0630, ref(value)], [0xa0631, ref(noneBlock)], [0xa0632, ref(binding)], [0xa0633, ref(someBlock)]])));
+      const returned = stableID("execution", context.description.id, statementPath, "return");
+      context.additions.push(graphEntity(returned, entity(returned, schema.returned, [[0x9810, refs([match])]])));
+      emitted.push(returned); terminal = true; continue;
+    }
+    if(statement.kind==="effect"){const argument=emitControlExpression(statement.expression,"bool",context,`${statementPath}.argument`),capability=stableID("capability","observability.log"),effect=stableID("effect","observability.log"),id=stableID("execution",context.description.id,statementPath,"effect-invoke");if(!context.additions.some((item)=>item.id===capability))context.additions.push(graphEntity(capability,entity(capability,schema.capability,[[0x160,bytes("observability.log")]])),graphEntity(effect,entity(effect,schema.effect,[[0x150,bytes("observability.log")],[0x151,ref(capability)]])));context.additions.push(graphEntity(id,entity(id,schema.effectInvoke,[[0x9f10,ref(effect)],[0x9f11,refs([argument])]])));emitted.push(id);continue;}
+    if(statement.kind==="call_statement"){
+      const callee=context.symbols.get(statement.expression.name);
+      if(!callee||callee.closureKind!=="mutable")fail("lua.call_statement_profile",statement.location);
+      const expanded=emitMutableClosureCall(statement.expression,callee,context,statementPath,null);
+      emitted.push(...expanded.statements);continue;
+    }
     if (statement.kind === "while" || statement.kind === "when") {
       const condition = emitControlExpression(statement.condition, "bool", context, `${statementPath}.condition`);
       const childContext = { ...context, symbols: new Map(context.symbols) };
@@ -287,19 +319,67 @@ function emitCheckPositive(expression,context,path){if(context.description.resul
 function emitIncrementPositive(expression,context,path){if(context.description.resultType!=="result:i64:i64")fail("lua.result_profile",expression.location);const callee=context.descriptionsByName.get("CheckPositive");if(!callee)fail("lua.result_check_scope",expression.location);const argument=parameterRead(expression.value,"i64",context,`${path}.call.argument`,expression.location),call=stableID("execution",context.description.id,path,"call"),okBinding=stableID("execution",context.description.id,path,"ok-binding"),errorBinding=stableID("execution",context.description.id,path,"error-binding"),okRead=stableID("execution",context.description.id,path,"ok-read"),one=resultLiteral("1",context,`${path}.one`),add=stableID("execution",context.description.id,path,"add"),okValue=stableID("execution",context.description.id,path,"ok"),errorRead=stableID("execution",context.description.id,path,"error-read"),errorValue=stableID("execution",context.description.id,path,"error"),match=stableID("execution",context.description.id,path,"match"),returned=stableID("execution",context.description.id,path,"return"),block=stableID("execution",context.description.id,path,"block"),resultType=typeID("result:i64:i64");context.additions.push(graphEntity(call,entity(call,schema.call,[[0x9600,ref(callee.id)],[0x9601,refs([argument])]])),graphEntity(okBinding,entity(okBinding,schema.variantBinding,[[0xa0600,bytes("accepted")],[0xa0601,ref(ids.i64)]])),graphEntity(errorBinding,entity(errorBinding,schema.variantBinding,[[0xa0600,bytes("error")],[0xa0601,ref(ids.i64)]])),graphEntity(okRead,entity(okRead,schema.variantRead,[[0xa0610,ref(okBinding)]])),graphEntity(add,entity(add,schema.integerAdd,[[0x9140,ref(okRead)],[0x9141,ref(one)],[0x9142,ref(ids.i64)]])),graphEntity(okValue,entity(okValue,schema.resultOk,[[0x9410,ref(resultType)],[0x9411,ref(add)]])),graphEntity(errorRead,entity(errorRead,schema.variantRead,[[0xa0610,ref(errorBinding)]])),graphEntity(errorValue,entity(errorValue,schema.resultError,[[0x9420,ref(resultType)],[0x9421,ref(errorRead)]])));const okBlock=resultBlock(okValue,context,`${path}.ok-arm`),errorBlock=resultBlock(errorValue,context,`${path}.error-arm`);context.additions.push(graphEntity(match,entity(match,schema.resultMatch,[[0xa0620,ref(call)],[0xa0621,ref(okBinding)],[0xa0622,ref(okBlock)],[0xa0623,ref(errorBinding)],[0xa0624,ref(errorBlock)]])),graphEntity(returned,entity(returned,schema.returned,[[0x9810,refs([match])]])),graphEntity(block,entity(block,schema.block,[[0x9800,refs([returned])]])));return block;}
 
 function controlExpressionType(expression, context) {
+  if(expression.kind==="ok"||expression.kind==="err")return context.description.resultType;
+  if(expression.kind==="record_construct"){const record=context.records.get(expression.name);if(!record)fail("lua.record_construct_type",expression.location);return `record:${record.id}:${record.name}`;}
+  if(expression.kind==="transition_construct"){const state=controlExpressionType(expression.arguments[0],context),result=controlExpressionType(expression.arguments[1],context);if(!state.startsWith("record:"))fail("lua.transition_construct_type",expression.location);const parts=state.split(":");return `transition:${parts[1]}:${parts.slice(2).join(":")}:${result}`;}
   if (expression.kind === "integer_literal" || expression.kind === "add" || expression.kind === "multiply") return "i64";
+  if(expression.kind==="bool_literal")return "bool";
+  if(expression.kind==="mutable_closure"||expression.kind==="immutable_closure")return "function:i64:i64";
+  if(expression.kind==="raw_call"){
+    const local=context.symbols.get(expression.name);
+    if(local?.type==="function:i64:i64")return "i64";
+    const declared=context.descriptionsByName.get(expression.name);if(!declared)fail("lua.unknown_call",expression.location);return declared.resultType;
+  }
+  if(expression.kind==="map_lookup")return inferComposableExpression(expression,context);
+  if(expression.kind==="length"||expression.kind==="index")return "i64";
+  if(expression.kind==="collection_append"||expression.kind==="collection_update"||expression.kind==="slice_remove"){const base=context.symbols.get(expression.base);if(!base||base.type!=="slice:i64")fail("lua.collection_argument_type",expression.location);return base.type;}
+  if(expression.kind==="map_update"||expression.kind==="map_remove"){const base=context.symbols.get(expression.base);if(!base||!base.type.startsWith("map:"))fail("lua.map_argument_type",expression.location);return base.type;}
+  if(expression.kind.startsWith("nested_")){
+    const kind=expression.kind.slice(7);if(["collection_append","collection_update","slice_remove","slice"].includes(kind))return "slice:i64";if(["length","index_zero","fold","lookup_zero"].includes(kind))return "i64";if(kind==="map_update"||kind==="map_remove")return controlExpressionType(expression.arguments[0],context);
+  }
   if (expression.kind === "index") { const symbol=context.symbols.get(expression.base); if(!symbol||symbol.type!=="slice:i64")fail("lua.dynamic_index_collection_type",expression.location); const index=context.symbols.get(expression.index); if(!index||index.type!=="i64")fail("lua.dynamic_index_type",expression.location); return "i64"; }
   if (["less_equal", "equal_i64", "boolean_and", "boolean_or"].includes(expression.kind)) return "bool";
   if (expression.kind === "boolean_boundary") { const symbol=context.symbols.get(expression.name); if(!symbol||symbol.type!=="bool")fail("lua.boolean_boundary_type",expression.location); return "bool"; }
   if (expression.kind === "identifier") { const symbol = context.symbols.get(expression.name); if (!symbol) fail("lua.unknown_identifier", expression.location); return symbol.type; }
+  if(expression.kind==="field") { const symbol=context.symbols.get(expression.base);if(!symbol||!symbol.type.startsWith("record:"))fail("lua.field_receiver_type",expression.location);const record=context.records.get(symbol.type.split(":").slice(2).join(":")),member=record?.fields.find(item=>item.name===expression.field);if(!member)fail("lua.unknown_field",expression.location);return member.type; }
   fail("lua.control_expression_profile", expression.location);
 }
 function emitControlExpression(expression, expected, context, path) {
+  if(expression.kind==="mutable_closure"||expression.kind==="immutable_closure")return emitRawClosure(expression,expected,context,path);
+  if(expression.kind==="map_lookup")return emitComposableExpression(expression,context,path).id;
+  if(expression.kind.startsWith("nested_"))return emitNestedControlExpression(expression,expected,context,path);
+  if(expression.kind==="ok"||expression.kind==="err"){
+    if(!expected.startsWith("result:")||expression.arguments.length!==1)fail("lua.result_constructor_type",expression.location);const[okType,errorType]=splitResult(expected),payloadType=expression.kind==="ok"?okType:errorType,payload=emitControlExpression(expression.arguments[0],payloadType,context,`${path}.payload`),id=stableID("execution",context.description.id,path,expression.kind),shape=expression.kind==="ok"?[schema.resultOk,0x9410,0x9411]:[schema.resultError,0x9420,0x9421];ensureType(expected,context.additions,context.records);context.additions.push(graphEntity(id,entity(id,shape[0],[[shape[1],ref(typeID(expected))],[shape[2],ref(payload)]])));return id;
+  }
+  if(expression.kind==="record_construct"){
+    if(!expected.startsWith("record:"))fail("lua.record_construct_type",expression.location);const record=context.records.get(expected.split(":").slice(2).join(":"));if(!record||record.name!==expression.name||expression.fields.length!==record.fields.length||expression.fields.some((item,index)=>item.name!==record.fields[index].name))fail("lua.record_construct_fields",expression.location);const values=expression.fields.map((item,index)=>emitControlExpression(item.value,record.fields[index].type,context,`${path}.field.${index}`)),id=stableID("execution",context.description.id,path,"record-construct");context.additions.push(graphEntity(id,entity(id,schema.recordConstruct,[[0x9330,ref(record.id)],[0x9331,refs(values)]])));return id;
+  }
+  if(expression.kind==="transition_construct"){
+    if(!expected.startsWith("transition:")||expression.arguments.length!==2)fail("lua.transition_construct_type",expression.location);const parts=expected.split(":"),stateType=`record:${parts[1]}:${parts[2]}`,resultType=parts[3],state=emitControlExpression(expression.arguments[0],stateType,context,`${path}.state`),result=emitControlExpression(expression.arguments[1],resultType,context,`${path}.result`),id=stableID("execution",context.description.id,path,"transition");ensureType(expected,context.additions,context.records);context.additions.push(graphEntity(id,entity(id,schema.stateTransition,[[0xa0050,ref(typeID(expected))],[0xa0051,ref(state)],[0xa0052,ref(result)]])));return id;
+  }
   const actual = controlExpressionType(expression, context); if (actual !== expected) fail("lua.control_expression_type", expression.location);
-  if (expression.kind === "identifier") { const symbol = context.symbols.get(expression.name); const id = stableID("execution", context.description.id, path, "read"); const schemaID = symbol.kind === "parameter" ? schema.read : schema.placeRead, fieldID = symbol.kind === "parameter" ? 0x9130 : 0x9e20; context.additions.push(graphEntity(id, entity(id, schemaID, [[fieldID, ref(symbol.id)]]))); return id; }
+  if (expression.kind === "identifier") { const symbol = context.symbols.get(expression.name); const id = stableID("execution", context.description.id, path, "read"); const shape = symbol.kind === "parameter" ? [schema.read, 0x9130] : symbol.kind === "variant" ? [schema.variantRead, 0xa0610] : symbol.kind === "local" ? [schema.localRead,0x9d20] : [schema.placeRead, 0x9e20]; context.additions.push(graphEntity(id, entity(id, shape[0], [[shape[1], ref(symbol.id)]]))); return id; }
+  if(expression.kind==="field"){const symbol=context.symbols.get(expression.base),base=emitControlExpression({kind:"identifier",name:expression.base,location:expression.location},symbol.type,context,`${path}.base`),record=context.records.get(symbol.type.split(":").slice(2).join(":")),index=record.fields.findIndex(item=>item.name===expression.field),id=stableID("execution",context.description.id,path,"field-read");context.additions.push(graphEntity(id,entity(id,schema.fieldRead,[[0x9320,ref(base)],[0x9321,ref(stableID("execution",record.id,"field",String(index)))]])));return id;}
+  if(expression.kind==="length"){const base=emitControlExpression({kind:"identifier",name:expression.base,location:expression.location},"slice:i64",context,`${path}.collection`),id=stableID("execution",context.description.id,path,"length");context.additions.push(graphEntity(id,entity(id,schema.collectionLength,[[0x9f90,ref(base)]])));return id;}
   if (expression.kind === "boolean_boundary") return emitControlExpression({kind:"identifier",name:expression.name,location:expression.location}, expected, context, path);
-  if (expression.kind === "integer_literal") { const id = stableID("execution", context.description.id, path, "literal"); context.additions.push(graphEntity(id, entity(id, schema.integerLiteral, [[0x9700, `uu ${expression.value}`], [0x9701, ref(ids.i64)]]))); return id; }
+  if(expression.kind==="bool_literal"){const id=stableID("execution",context.description.id,path,"bool-literal");context.additions.push(graphEntity(id,entity(id,schema.boolLiteral,[[0x9b00,expression.value?"tr":"fa"]])));return id;}
+  if (expression.kind === "integer_literal") { const id = stableID("execution", context.description.id, path, "literal"); context.additions.push(graphEntity(id, entity(id, schema.integerLiteral, [[0x9700, `uu ${i64Word(expression.value,expression.location)}`], [0x9701, ref(ids.i64)]]))); return id; }
   if(expression.kind==="index"){const base=emitControlExpression({kind:"identifier",name:expression.base,location:expression.location},"slice:i64",context,`${path}.collection`),index=emitControlExpression({kind:"identifier",name:expression.index,location:expression.location},"i64",context,`${path}.index`),id=stableID("execution",context.description.id,path,"dynamic-index");context.additions.push(graphEntity(id,entity(id,schema.dynamicIndexRead,[[0x9fa0,ref(base)],[0x9fa1,ref(index)]])));return id;}
+  if(expression.kind==="collection_append"||expression.kind==="collection_update"){
+    const base=emitControlExpression({kind:"identifier",name:expression.base,location:expression.location},expected,context,`${path}.collection`),value=emitControlExpression({kind:"identifier",name:expression.value,location:expression.location},"i64",context,`${path}.value`),id=stableID("execution",context.description.id,path,expression.kind);if(expression.kind==="collection_append")context.additions.push(graphEntity(id,entity(id,schema.collectionAppend,[[0x9fb0,ref(base)],[0x9fb1,ref(value)]])));else{const index=emitControlExpression({kind:"identifier",name:expression.index,location:expression.location},"i64",context,`${path}.index`);context.additions.push(graphEntity(id,entity(id,schema.collectionUpdate,[[0x9fc0,ref(base)],[0x9fc1,ref(index)],[0x9fc2,ref(value)]])));}return id;
+  }
+  if(expression.kind==="map_update"){
+    const parts=expected.split(":"),base=emitControlExpression({kind:"identifier",name:expression.base,location:expression.location},expected,context,`${path}.map`),key=emitControlExpression({kind:"identifier",name:expression.key,location:expression.location},parts[1],context,`${path}.key`),value=emitControlExpression({kind:"identifier",name:expression.value,location:expression.location},parts[2],context,`${path}.value`),id=stableID("execution",context.description.id,path,"map-update");context.additions.push(graphEntity(id,entity(id,schema.mapUpdate,[[0xa0430,ref(base)],[0xa0431,ref(key)],[0xa0432,ref(value)]])));return id;
+  }
+  if(expression.kind==="raw_call"){
+    const local=context.symbols.get(expression.name);
+    if(local?.closureKind==="immutable"){
+      if(expression.arguments.length!==1||expected!=="i64")fail("lua.indirect_call_type",expression.location);
+      const callee=emitControlExpression({kind:"identifier",name:expression.name,location:expression.location},local.type,context,`${path}.callee`),argument=emitControlExpression(expression.arguments[0],"i64",context,`${path}.argument`),id=stableID("execution",context.description.id,path,"indirect-call");context.additions.push(graphEntity(id,entity(id,schema.indirectCall,[[0xa0240,ref(callee)],[0xa0241,refs([argument])]])));return id;
+    }
+    const declared=context.descriptionsByName.get(expression.name);if(!declared||declared.resultType!==expected||declared.parameters.length!==expression.arguments.length)fail("lua.call_type",expression.location);
+    const arguments_=expression.arguments.map((item,index)=>emitControlExpression(item,declared.parameters[index].type,context,`${path}.argument.${index}`)),id=stableID("execution",context.description.id,path,"call");context.additions.push(graphEntity(id,entity(id,schema.call,[[0x9600,ref(declared.id)],[0x9601,refs(arguments_)]])));return id;
+  }
   const leftType = expression.kind === "boolean_and" || expression.kind === "boolean_or" ? "bool" : "i64";
   const left = emitControlExpression(expression.left, leftType, context, `${path}.left`), right = emitControlExpression(expression.right, leftType, context, `${path}.right`), id = stableID("execution", context.description.id, path, expression.kind);
   if (expression.kind === "equal_i64") {
@@ -308,6 +388,48 @@ function emitControlExpression(expression, expected, context, path) {
   }
   const shape = expression.kind === "add" ? [schema.integerAdd,0x9140,0x9141,[[0x9142,ref(ids.i64)]]] : expression.kind === "multiply" ? [schema.integerMultiply,0x9900,0x9901,[[0x9902,ref(ids.i64)]]] : expression.kind === "boolean_and" ? [schema.booleanAnd,0x9b10,0x9b11,[]] : expression.kind === "boolean_or" ? [schema.booleanOr,0x9c10,0x9c11,[]] : [schema.integerLessEqual,0x9160,0x9161,[[0x9162,ref(ids.i64)]]];
   context.additions.push(graphEntity(id, entity(id, shape[0], [[shape[1],ref(left)],[shape[2],ref(right)],...shape[3]]))); return id;
+}
+
+function emitRawClosure(expression,expected,context,path){
+  if(expected!=="function:i64:i64")fail("lua.closure_type",expression.location);
+  ensureType(expected,context.additions,context.records);
+  const captureSymbol=context.symbols.get(expression.capture??findClosureCapture(expression.body,expression.parameter,context));
+  if(!captureSymbol||captureSymbol.type!=="i64")fail("lua.closure_capture_scope",expression.location);
+  const captureName=expression.capture??findClosureCapture(expression.body,expression.parameter,context),parameter=stableID("execution",context.description.id,path,"parameter"),capture=stableID("execution",context.description.id,path,"capture"),initial=emitControlExpression({kind:"identifier",name:captureName,location:expression.location},"i64",context,`${path}.capture.initial`);
+  context.additions.push(graphEntity(parameter,entity(parameter,schema.parameter,[[0x9120,bytes(expression.parameter)],[0x9121,ref(ids.i64)],[0x9122,"uu 0"]])));
+  if(expression.kind==="mutable_closure"){
+    const old=stableID("execution",context.description.id,path,"capture-read"),argument=stableID("execution",context.description.id,path,"parameter-read"),body=stableID("execution",context.description.id,path,"body"),update=stableID("execution",context.description.id,path,"update"),result=stableID("execution",context.description.id,path,"result"),sequence=stableID("execution",context.description.id,path,"sequence"),id=stableID("execution",context.description.id,path,"mutable-closure");
+    context.additions.push(graphEntity(capture,entity(capture,schema.mutableCaptureBinding,[[0xa0300,bytes(captureName)],[0xa0301,ref(ids.i64)],[0xa0302,ref(initial)]])),graphEntity(old,entity(old,schema.mutableCaptureRead,[[0xa0310,ref(capture)]])),graphEntity(argument,entity(argument,schema.read,[[0x9130,ref(parameter)]])));
+    emitClosureI64Body(expression.body,captureName,expression.parameter,old,argument,body,context);
+    context.additions.push(graphEntity(update,entity(update,schema.captureUpdate,[[0xa0320,ref(capture)],[0xa0321,ref(body)]])),graphEntity(result,entity(result,schema.mutableCaptureRead,[[0xa0310,ref(capture)]])),graphEntity(sequence,entity(sequence,schema.sequence,[[0xa0330,refs([update])],[0xa0331,ref(result)]])),graphEntity(id,entity(id,schema.mutableClosureConstruct,[[0xa0340,ref(typeID(expected))],[0xa0341,refs([parameter])],[0xa0342,refs([capture])],[0xa0343,ref(sequence)]])));return id;
+  }
+  const captureRead=stableID("execution",context.description.id,path,"capture-read"),argumentRead=stableID("execution",context.description.id,path,"parameter-read"),body=stableID("execution",context.description.id,path,"body"),id=stableID("execution",context.description.id,path,"closure");
+  context.additions.push(graphEntity(capture,entity(capture,schema.captureBinding,[[0xa0210,bytes(captureName)],[0xa0211,ref(ids.i64)],[0xa0212,ref(initial)]])),graphEntity(captureRead,entity(captureRead,schema.captureRead,[[0xa0220,ref(capture)]])),graphEntity(argumentRead,entity(argumentRead,schema.read,[[0x9130,ref(parameter)]])));
+  emitClosureI64Body(expression.body,captureName,expression.parameter,captureRead,argumentRead,body,context);
+  context.additions.push(graphEntity(id,entity(id,schema.closureConstruct,[[0xa0230,ref(typeID(expected))],[0xa0231,refs([parameter])],[0xa0232,refs([capture])],[0xa0233,ref(body)]])));return id;
+}
+function emitNestedControlExpression(expression,expected,context,path){
+  const kind=expression.kind.slice(7),args=expression.arguments,id=stableID("execution",context.description.id,path,kind),emit=(value,type,suffix)=>emitControlExpression(value,type,context,`${path}.${suffix}`);
+  if(kind==="map_update"){
+    if(!expected.startsWith("map:")||args.length!==3)fail("lua.map_mutation_type",expression.location);const parts=expected.split(":"),base=emit(args[0],expected,"map"),key=emit(args[1],parts[1],"key"),value=emit(args[2],parts[2],"value");context.additions.push(graphEntity(id,entity(id,schema.mapUpdate,[[0xa0430,ref(base)],[0xa0431,ref(key)],[0xa0432,ref(value)]])));return id;
+  }
+  if(kind==="collection_update"||kind==="collection_append"){
+    if(expected!=="slice:i64")fail("lua.collection_argument_type",expression.location);const base=emit(args[0],expected,"collection"),value=emit(args.at(-1),"i64","value");if(kind==="collection_append")context.additions.push(graphEntity(id,entity(id,schema.collectionAppend,[[0x9fb0,ref(base)],[0x9fb1,ref(value)]])));else{const index=emit(args[1],"i64","index");context.additions.push(graphEntity(id,entity(id,schema.collectionUpdate,[[0x9fc0,ref(base)],[0x9fc1,ref(index)],[0x9fc2,ref(value)]])));}return id;
+  }
+  if(kind==="length"||kind==="index_zero"){
+    if(expected!=="i64")fail("lua.collection_query_type",expression.location);const base=emit(args[0],"slice:i64","collection");if(kind==="length")context.additions.push(graphEntity(id,entity(id,schema.collectionLength,[[0x9f90,ref(base)]])));else{const index=emit(args[1],"i64","index");context.additions.push(graphEntity(id,entity(id,schema.dynamicIndexRead,[[0x9fa0,ref(base)],[0x9fa1,ref(index)]])));}return id;
+  }
+  fail("lua.nested_expression_profile",expression.location);
+}
+function findClosureCapture(expression,parameter,context){const names=[];const walk=value=>{if(!value||typeof value!=="object")return;if(value.kind==="identifier"&&value.name!==parameter)names.push(value.name);for(const child of Object.values(value))walk(child);};walk(expression);const unique=[...new Set(names.filter(name=>context.symbols.has(name)))];if(unique.length!==1)fail("lua.closure_capture_profile",expression.location);return unique[0];}
+function emitClosureI64Body(expression,captureName,parameterName,captureRead,parameterReadID,id,context){if(expression.kind!=="add"&&expression.kind!=="multiply")fail("lua.closure_body_profile",expression.location);const read=value=>{if(value.kind!=="identifier")fail("lua.closure_operand",value.location);if(value.name===captureName)return captureRead;if(value.name===parameterName)return parameterReadID;fail("lua.closure_operand",value.location);};const shape=expression.kind==="add"?[schema.integerAdd,0x9140,0x9141,0x9142]:[schema.integerMultiply,0x9900,0x9901,0x9902];context.additions.push(graphEntity(id,entity(id,shape[0],[[shape[1],ref(read(expression.left))],[shape[2],ref(read(expression.right))],[shape[3],ref(ids.i64)]])));}
+function emitMutableClosureCall(expression,callee,context,path,resultName){
+  if(expression.arguments.length!==1)fail("lua.stateful_call_arity",expression.location);const calleeRead=emitControlExpression({kind:"identifier",name:expression.name,location:expression.location},callee.type,context,`${path}.callee`),argument=emitControlExpression(expression.arguments[0],"i64",context,`${path}.argument`),call=stableID("execution",context.description.id,path,"stateful-call"),transitionTypeID=stableID("execution","type","state-transition",typeID(callee.type),ids.i64);if(!context.additions.some(item=>item.id===transitionTypeID))context.additions.push(graphEntity(transitionTypeID,entity(transitionTypeID,schema.transitionType,[[0xa0040,ref(typeID(callee.type))],[0xa0041,ref(ids.i64)]])));context.additions.push(graphEntity(call,entity(call,schema.statefulIndirectCall,[[0xa0350,ref(calleeRead)],[0xa0351,refs([argument])]])));
+  const transitionLocal=stableID("execution",context.description.id,path,"transition-local"),bindTransition=stableID("execution",context.description.id,path,"bind-transition"),transitionRead1=stableID("execution",context.description.id,path,"transition-read-state"),state=stableID("execution",context.description.id,path,"state"),assign=stableID("execution",context.description.id,path,"assign");context.additions.push(graphEntity(transitionLocal,entity(transitionLocal,schema.localBinding,[[0x9d00,bytes(`${expression.name}_transition`)],[0x9d01,ref(transitionTypeID)],[0x9d02,ref(call)]])),graphEntity(bindTransition,entity(bindTransition,schema.bindLocal,[[0x9d10,ref(transitionLocal)]])),graphEntity(transitionRead1,entity(transitionRead1,schema.localRead,[[0x9d20,ref(transitionLocal)]])),graphEntity(state,entity(state,schema.transitionState,[[0xa0060,ref(transitionRead1)]])),graphEntity(assign,entity(assign,schema.assignPlace,[[0x9e30,ref(callee.id)],[0x9e31,ref(state)]])));
+  const statements=[bindTransition,assign];
+  const makeResult=(suffix)=>{const read=stableID("execution",context.description.id,path,`transition-read-${suffix}`),result=stableID("execution",context.description.id,path,`result-${suffix}`);context.additions.push(graphEntity(read,entity(read,schema.localRead,[[0x9d20,ref(transitionLocal)]])),graphEntity(result,entity(result,schema.transitionResult,[[0xa0070,ref(read)]])));return result;};
+  if(callee.closureCapturePlace){const captureResult=makeResult("capture"),captureAssign=stableID("execution",context.description.id,path,"assign-capture");context.additions.push(graphEntity(captureAssign,entity(captureAssign,schema.assignPlace,[[0x9e30,ref(callee.closureCapturePlace)],[0x9e31,ref(captureResult)]])));statements.push(captureAssign);}
+  let resultLocal=null;if(resultName){const result=makeResult("value"),local=stableID("execution",context.description.id,path,"result-local"),bind=stableID("execution",context.description.id,path,"bind-result");context.additions.push(graphEntity(local,entity(local,schema.localBinding,[[0x9d00,bytes(resultName)],[0x9d01,ref(ids.i64)],[0x9d02,ref(result)]])),graphEntity(bind,entity(bind,schema.bindLocal,[[0x9d10,ref(local)]])));statements.push(bind);resultLocal=local;}return{statements,resultLocal};
 }
 
 function parseSource(source, file, records) {
@@ -331,8 +453,8 @@ function parseSource(source, file, records) {
     const body = []; let depth = 1;
     while (index < lines.length && depth > 0) {
       const item = lines[index].trim();
-      if (/^(?:while\s+.+\s+do|if\s+.+\s+then)$/.test(item)) depth += 1;
-      if (item === "end") depth -= 1;
+      if (/^(?:while\s+.+\s+do|if\s+.+\s+then|for\s+.+\s+do)$/.test(item) || /function\([A-Za-z_]\w*\)\s*$/.test(item)) depth += 1;
+      if (item === "end" || item === "end)") depth -= 1;
       if (depth > 0) body.push({ text: lines[index], line: index + 1 });
       index += 1;
     }
@@ -352,7 +474,26 @@ function parseControlBlock(lines, file, start = 0, nested = false) {
   const statements = []; let index = start;
   while (index < lines.length) {
     const text = lines[index].text.trim(), location = { file, line: lines[index].line, column: 1 };
-    if (text === "end") return { statements, next: index + 1 };
+    if (text === "end" || text === "end)") return { statements, next: index + 1, terminator: text };
+    let optionCallback = /^return\s+Seme\.match_option\((.*),\s*function\(([A-Za-z_]\w*)\)\s*$/.exec(text);
+    if (optionCallback) {
+      const arms = splitCallArguments(optionCallback[1], file, lines[index].line);
+      if (arms.length !== 2) fail("lua.option_match_arity", location);
+      const child = parseControlBlock(lines, file, index + 1, true);
+      if (child.terminator !== "end)") fail("lua.option_match_callback_end", location);
+      statements.push({ kind: "return_option_match_block", value: parseExpression(arms[0], file, lines[index].line), none: parseExpression(arms[1], file, lines[index].line), binding: optionCallback[2], body: child.statements, location });
+      index = child.next;
+      continue;
+    }
+    let closure = /^local\s+([A-Za-z_]\w*)\s*=\s*function\(([A-Za-z_]\w*)\)\s*(?:(return)\s+)?(.+)\s+end$/.exec(text);
+    if (closure) {
+      if (!closure[3]) {
+        const assignment = /^([A-Za-z_]\w*)\s*=\s*(.+)$/.exec(closure[4]);
+        if (!assignment) fail("lua.closure_body", location);
+        statements.push({ kind:"declare", name:closure[1], expression:{kind:"mutable_closure",parameter:closure[2],capture:assignment[1],body:parseExpression(assignment[2],file,lines[index].line),location}, location });
+      } else statements.push({ kind:"declare", name:closure[1], expression:{kind:"immutable_closure",parameter:closure[2],body:parseExpression(closure[4],file,lines[index].line),location}, location });
+      index += 1; continue;
+    }
     let match = /^local\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/.exec(text);
     if (match) { statements.push({ kind: "declare", name: match[1], expression: parseExpression(match[2], file, lines[index].line), location }); index += 1; continue; }
     match = /^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+)$/.exec(text);
@@ -363,7 +504,8 @@ function parseControlBlock(lines, file, start = 0, nested = false) {
     if (match) { const child = parseControlBlock(lines, file, index + 1, true); statements.push({ kind: "when", condition: parseExpression(match[1], file, lines[index].line), body: child.statements, location }); index = child.next; continue; }
     match = /^return\s+(.+)$/.exec(text);
     if (match) { statements.push({ kind: "return", expression: parseExpression(match[1], file, lines[index].line), location }); index += 1; continue; }
-    match=/^Seme\.observe\(\s*([A-Za-z_]\w*)\s*\)$/.exec(text);if(match){statements.push({kind:"effect",name:match[1],location});index+=1;continue;}
+    match=/^Seme\.observe\((.*)\)$/.exec(text);if(match){const argument=match[1].trim(),expression=argument==="true"||argument==="false"?{kind:"bool_literal",value:argument==="true",location}:parseExpression(argument,file,lines[index].line);statements.push({kind:"effect",expression,location});index+=1;continue;}
+    match=/^([A-Za-z_]\w*)\((.*)\)$/.exec(text);if(match){const arguments_=splitCallArguments(match[2],file,lines[index].line);statements.push({kind:"call_statement",expression:{kind:"raw_call",name:match[1],arguments:arguments_.map(value=>parseExpression(value,file,lines[index].line)),location},location});index+=1;continue;}
     fail("lua.unsupported_statement", location);
   }
   if (nested) fail("lua.unclosed_block", { file, line: lines.at(-1)?.line ?? 1, column: 1 });
@@ -412,6 +554,7 @@ function splitGenericArguments(value, location) {
 }
 
 function parseExpression(text, file, line) {
+  text=text.trim();
   const resultHelper=/^Seme\.(check_positive|increment_positive)\(\s*([A-Za-z_]\w*)\s*\)$/.exec(text);if(resultHelper)return{kind:resultHelper[1],value:resultHelper[2],location:{file,line,column:1}};
   const transition=/^Seme\.transition_step\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*,\s*"([A-Za-z_]\w*)"\s*\)$/.exec(text);if(transition)return{kind:"transition_step",value:transition[1],delta:transition[2],field:transition[3],location:{file,line,column:1}};
   const immutableClosure=/^Seme\.immutable_closure_run\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)$/.exec(text);if(immutableClosure)return{kind:"immutable_closure_run",base:immutableClosure[1],value:immutableClosure[2],location:{file,line,column:1}};
@@ -430,7 +573,7 @@ function parseExpression(text, file, line) {
     const match = new RegExp(`^Seme\\.${name}\\((.*)\\)$`).exec(text);
     if (match) { const values = splitCallArguments(match[1], file, line); if (values.length !== 2) fail(`lua.${name}_arity`, { file, line, column: 1 }); return { kind, left: parseExpression(values[0], file, line), right: parseExpression(values[1], file, line), location: { file, line, column: 1 } }; }
   }
-  const integer = /^Seme\.i64_literal\("([0-9]+)"\)$/.exec(text);
+  const integer = /^Seme\.i64_literal\("(-?[0-9]+)"\)$/.exec(text);
   if (integer) return { kind: "integer_literal", value: integer[1], location: { file, line, column: 1 } };
   const concat = /^Seme\.text_concat\((.*)\)$/.exec(text);
   if (concat) {
@@ -460,13 +603,23 @@ function parseExpression(text, file, line) {
   if(nested&&nested[2].includes("Seme.")){const arguments_=splitCallArguments(nested[2],file,line).map(value=>parseExpression(value,file,line));return{kind:`nested_${nested[1]}`,arguments:arguments_,location:{file,line,column:1}};}
   const composite = /^Seme\.match_option\(([A-Za-z_][A-Za-z0-9_]*), false, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.match_result\(\2, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.bytes_equal\(\3, Seme\.bytes_literal\("([^"]*)"\)\) end, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.text_equal\(\5, "([^"]*)"\) end\) end\)$/.exec(text);
   if (composite) return { kind: "composite_match", value: composite[1], some: composite[2], ok: composite[3], bytes: composite[4], error: composite[5], text: composite[6], location: { file, line, column: 1 } };
+  const optionMatch=/^Seme\.match_option\((.*),\s*([^,]+),\s*function\(([A-Za-z_]\w*)\)\s*return\s*(.*)\s*end\)$/.exec(text);
+  if(optionMatch)return{kind:"option_match",value:parseExpression(optionMatch[1].trim(),file,line),none:parseExpression(optionMatch[2].trim(),file,line),binding:optionMatch[3],some:parseExpression(optionMatch[4].trim(),file,line),location:{file,line,column:1}};
+  const resultMatch=/^Seme\.match_result\((.*),\s*function\(([A-Za-z_]\w*)\)\s*return\s*(.*)\s*end,\s*function\(([A-Za-z_]\w*)\)\s*return\s*(.*)\s*end\)$/.exec(text);
+  if(resultMatch)return{kind:"result_match",value:parseExpression(resultMatch[1].trim(),file,line),okBinding:resultMatch[2],ok:parseExpression(resultMatch[3].trim(),file,line),errorBinding:resultMatch[4],error:parseExpression(resultMatch[5].trim(),file,line),location:{file,line,column:1}};
+  const recordConstruct=/^Seme\.record\("([A-Za-z_]\w*)",\s*\{([^}]*)\},\s*\{([^}]*)\}\)$/.exec(text);
+  if(recordConstruct){const names=recordConstruct[2].trim()?recordConstruct[2].split(",").map(item=>{const match=/^\s*"([A-Za-z_]\w*)"\s*$/.exec(item);if(!match)fail("lua.record_construct_fields",{file,line,column:1});return match[1]}):[],values=splitCallArguments(recordConstruct[3],file,line).map(item=>{const match=/^([A-Za-z_]\w*)\s*=\s*(.*)$/.exec(item);if(!match)fail("lua.record_construct_fields",{file,line,column:1});return{name:match[1],value:parseExpression(match[2],file,line)}});if(names.length!==values.length||names.some((name,index)=>name!==values[index].name))fail("lua.record_construct_fields",{file,line,column:1});return{kind:"record_construct",name:recordConstruct[1],fields:values,location:{file,line,column:1}};}
+  const transitionConstruct=/^Seme\.transition\((.*)\)$/.exec(text);
+  if(transitionConstruct){const arguments_=splitCallArguments(transitionConstruct[1],file,line).map(item=>parseExpression(item,file,line));return{kind:"transition_construct",arguments:arguments_,location:{file,line,column:1}};}
+  const rawCall=/^([A-Za-z_]\w*)\((.*)\)$/.exec(text);
+  if(rawCall)return{kind:"raw_call",name:rawCall[1],arguments:rawCall[2].trim()?splitCallArguments(rawCall[2],file,line).map(item=>parseExpression(item,file,line)):[],location:{file,line,column:1}};
   const field = /^Seme\.field\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\)$/.exec(text);
   if (field) return { kind: "field", base: field[1], field: field[2], location: { file, line, column: 1 } };
   const array = /^Seme\.array\s*\((.*)\)$/.exec(text);
   if (array) return { kind: "array", arguments: array[1].trim() ? array[1].split(",").map((name) => name.trim()) : [], location: { file, line, column: 1 } };
   const sliceConstruct=/^Seme\.slice\s*\((.*)\)$/.exec(text);
   if(sliceConstruct)return{kind:"slice",arguments:sliceConstruct[1].trim()?splitCallArguments(sliceConstruct[1],file,line):[],location:{file,line,column:1}};
-  const length = /^Seme\.length\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/.exec(text);
+  const length = /^Seme\.(?:length|length_i64)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/.exec(text);
   if (length) return { kind: "length", base: length[1], location: { file, line, column: 1 } };
   const index = /^Seme\.index_zero\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*|[0-9]+)\s*\)$/.exec(text);
   if (index) return { kind: "index", base: index[1], index: index[2], location: { file, line, column: 1 } };
@@ -474,8 +627,8 @@ function parseExpression(text, file, line) {
   if (emptyMap) return { kind: "empty_map", descriptor: emptyMap[1], location: { file, line, column: 1 } };
   const lookup = /^Seme\.lookup_zero\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*"(i64|text|bytes)"\s*\)$/.exec(text);
   if (lookup) return { kind: "lookup_zero", base: lookup[1], key: lookup[2], descriptor: lookup[3], location: { file, line, column: 1 } };
-  const mapLookup = /^Seme\.map_lookup\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/.exec(text);
-  if (mapLookup) return { kind: "map_lookup", base: mapLookup[1], key: mapLookup[2], location: { file, line, column: 1 } };
+  const mapLookup = /^Seme\.map_lookup\s*\((.*)\)$/.exec(text);
+  if (mapLookup) { const arguments_=splitCallArguments(mapLookup[1],file,line);if(arguments_.length!==2)fail("lua.map_lookup_arity",{file,line,column:1});return { kind: "map_lookup", baseExpression:parseExpression(arguments_[0],file,line), keyExpression:parseExpression(arguments_[1],file,line), location: { file, line, column: 1 } }; }
   const mapOperation = /^Seme\.(map_update)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/.exec(text);
   if (mapOperation) return { kind: mapOperation[1], base: mapOperation[2], key: mapOperation[3], value: mapOperation[4], location: { file, line, column: 1 } };
   const collectionOperation=/^Seme\.(collection_append|collection_update|slice_remove)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*,\s*([A-Za-z_][A-Za-z0-9_]*))?\s*\)$/.exec(text);
@@ -501,7 +654,29 @@ function parseExpression(text, file, line) {
 
 function findTopLevelOperator(value, operator) { let depth = 0, quoted = false; for (let index = 0; index <= value.length - operator.length; index += 1) { const c = value[index]; if (c === '"' && value[index - 1] !== "\\") quoted = !quoted; else if (!quoted && c === "(") depth += 1; else if (!quoted && c === ")") depth -= 1; if (!quoted && depth === 0 && value.slice(index, index + operator.length) === operator) return index; } return -1; }
 
+function composableSymbol(name,context,location){const local=context.symbols?.get(name);if(local)return local;const index=context.description.parameters.findIndex(item=>item.name===name);if(index<0)fail("lua.unknown_identifier",location);return{kind:"parameter",type:context.description.parameters[index].type,id:context.parameterIDs[index]};}
+function inferComposableExpression(expression,context){
+  if(expression.kind==="identifier")return composableSymbol(expression.name,context,expression.location).type;
+  if(expression.kind==="field"){
+    const base=inferComposableExpression({kind:"identifier",name:expression.base,location:expression.location},context);if(!base.startsWith("record:"))fail("lua.field_receiver_type",expression.location);
+    const record=context.records.get(base.split(":").slice(2).join(":")),member=record?.fields.find(item=>item.name===expression.field);if(!member)fail("lua.unknown_field",expression.location);return member.type;
+  }
+  if(expression.kind==="map_lookup"){
+    const map=inferComposableExpression(expression.baseExpression,context),key=inferComposableExpression(expression.keyExpression,context);if(!map.startsWith("map:"))fail("lua.map_receiver_type",expression.location);const[,keyType,valueType]=map.split(":");if(key!==keyType)fail("lua.map_key_type",expression.location);return`option:${valueType}`;
+  }
+  fail("lua.composable_expression_profile",expression.location);
+}
+function emitComposableExpression(expression,context,path){
+  const type=inferComposableExpression(expression,context);
+  if(expression.kind==="identifier"){const symbol=composableSymbol(expression.name,context,expression.location),id=stableID("execution",context.description.id,path,"symbol-read"),shape=symbol.kind==="parameter"?[schema.read,0x9130]:symbol.kind==="variant"?[schema.variantRead,0xa0610]:symbol.kind==="local"?[schema.localRead,0x9d20]:[schema.placeRead,0x9e20];context.additions.push(graphEntity(id,entity(id,shape[0],[[shape[1],ref(symbol.id)]])));return{id,type};}
+  if(expression.kind==="field"){
+    const base=emitComposableExpression({kind:"identifier",name:expression.base,location:expression.location},context,`${path}.base`),record=context.records.get(base.type.split(":").slice(2).join(":")),index=record.fields.findIndex(item=>item.name===expression.field),id=stableID("execution",context.description.id,path,"field-read");context.additions.push(graphEntity(id,entity(id,schema.fieldRead,[[0x9320,ref(base.id)],[0x9321,ref(stableID("execution",record.id,"field",String(index)))]])));return{id,type};
+  }
+  const map=emitComposableExpression(expression.baseExpression,context,`${path}.map`),key=emitComposableExpression(expression.keyExpression,context,`${path}.key`),id=stableID("execution",context.description.id,path,"map-lookup-option");ensureType(type,context.additions,context.records);context.additions.push(graphEntity(id,entity(id,schema.mapLookupOption,[[0xa0440,ref(map.id)],[0xa0441,ref(key.id)],[0xa0442,ref(typeID(type))]])));return{id,type};
+}
+
 function emitExpression(expression, context, path) {
+  if(expression.kind==="record_construct"||expression.kind==="transition_construct"||((expression.kind==="ok"||expression.kind==="err")&&expression.arguments[0]?.kind!=="identifier"))return emitControlExpression(expression,context.description.resultType,{...context,symbols:new Map(context.description.parameters.map((item,index)=>[item.name,{kind:"parameter",type:item.type,id:context.parameterIDs[index]}]))},path);
   if(expression.kind.startsWith("nested_"))return emitNestedExpression(expression,context.description.resultType,context,path);
   if (expression.kind === "identifier") {
     if (context.receiver?.name === expression.name) {
@@ -543,8 +718,15 @@ function emitExpression(expression, context, path) {
     context.additions.push(graphEntity(id, entity(id, schema.fieldRead, [[0x9320, ref(readID)], [0x9321, ref(fieldID)]])));
     return id;
   }
-  if (["array", "slice", "length", "index", "fold", "empty_map", "lookup_zero", "map_lookup", "map_update", "collection_append", "collection_update", "slice_remove", "map_remove"].includes(expression.kind)) return emitCollectionExpression(expression, context, path);
+  if(expression.kind==="map_lookup"){
+    const inferred=inferComposableExpression(expression,context);
+    if(inferred!==context.description.resultType)fail("lua.map_lookup_option_type",expression.location);
+    return emitComposableExpression(expression,context,path).id;
+  }
+  if (["array", "slice", "length", "index", "fold", "empty_map", "lookup_zero", "map_update", "collection_append", "collection_update", "slice_remove", "map_remove"].includes(expression.kind)) return emitCollectionExpression(expression, context, path);
   if (expression.kind === "composite_match") return emitCompositeMatch(expression, context, path);
+  if(expression.kind==="option_match")return emitOptionMatch(expression,context,path);
+  if(expression.kind==="result_match")return emitResultMatch(expression,context,path);
   if (expression.kind === "add") {
     if (context.description.resultType !== "i64") fail("lua.add_result_type", expression.location);
     const left = emitExpression(expression.left, context, `${path}.left`);
@@ -564,7 +746,7 @@ function emitExpression(expression, context, path) {
   if (expression.kind === "integer_literal") {
     if (context.description.resultType !== "i64") fail("lua.integer_literal_result_type", expression.location);
     const id = stableID("execution", context.description.id, "expression", path, "integer-literal");
-    context.additions.push(graphEntity(id, entity(id, schema.integerLiteral, [[0x9700, `uu ${expression.value}`], [0x9701, ref(ids.i64)]])));
+    context.additions.push(graphEntity(id, entity(id, schema.integerLiteral, [[0x9700, `uu ${i64Word(expression.value,expression.location)}`], [0x9701, ref(ids.i64)]])));
     return id;
   }
   if (expression.kind === "text_literal") {
@@ -626,6 +808,28 @@ function splitCallArguments(value, file, line) {
   }
   if (quoted || depth !== 0) fail("lua.call_parentheses", { file, line, column: 1 });
   result.push(value.slice(start).trim()); return result;
+}
+
+function emitArmValue(expression, expected, context, path) {
+  if (expression.kind === "identifier") {
+    const variant=context.variants?.get(expression.name);
+    if(variant){if(variant.type!==expected)fail("lua.match_arm_type",expression.location);const id=stableID("execution",context.description.id,path,"variant-read");context.additions.push(graphEntity(id,entity(id,schema.variantRead,[[0xa0610,ref(variant.id)]])));return id;}
+    return parameterRead(expression.name,expected,context,path,expression.location);
+  }
+  if(expression.kind==="integer_literal"){
+    if(expected!=="i64")fail("lua.match_arm_type",expression.location);const id=stableID("execution",context.description.id,path,"integer-literal");context.additions.push(graphEntity(id,entity(id,schema.integerLiteral,[[0x9700,`uu ${i64Word(expression.value,expression.location)}`],[0x9701,ref(ids.i64)]])));return id;
+  }
+  if(expression.kind==="add"||expression.kind==="multiply"){
+    if(expected!=="i64")fail("lua.match_arm_type",expression.location);const left=emitArmValue(expression.left,"i64",context,`${path}.left`),right=emitArmValue(expression.right,"i64",context,`${path}.right`),id=stableID("execution",context.description.id,path,expression.kind),shape=expression.kind==="add"?[schema.integerAdd,0x9140,0x9141,0x9142]:[schema.integerMultiply,0x9900,0x9901,0x9902];context.additions.push(graphEntity(id,entity(id,shape[0],[[shape[1],ref(left)],[shape[2],ref(right)],[shape[3],ref(ids.i64)]])));return id;
+  }
+  fail("lua.match_arm_expression",expression.location);
+}
+function returnedExpressionBlock(value, context, path){const returned=stableID("execution",context.description.id,path,"return"),block=stableID("execution",context.description.id,path,"block");context.additions.push(graphEntity(returned,entity(returned,schema.returned,[[0x9810,refs([value])]])),graphEntity(block,entity(block,schema.block,[[0x9800,refs([returned])]])));return block;}
+function emitOptionMatch(expression,context,path){
+  const optionType=inferComposableExpression(expression.value,context);if(!optionType.startsWith("option:"))fail("lua.option_match_value_type",expression.location);const payloadType=optionType.slice(7),expected=context.description.resultType,value=emitComposableExpression(expression.value,context,`${path}.value`).id,noneValue=emitArmValue(expression.none,expected,context,`${path}.none.value`),noneBlock=returnedExpressionBlock(noneValue,context,`${path}.none`),binding=stableID("execution",context.description.id,path,"some-binding");context.additions.push(graphEntity(binding,entity(binding,schema.variantBinding,[[0xa0600,bytes(expression.binding)],[0xa0601,ref(typeID(payloadType))]])));const someContext={...context,variants:new Map([...(context.variants??[]),[expression.binding,{id:binding,type:payloadType}]])},someValue=emitArmValue(expression.some,expected,someContext,`${path}.some.value`),someBlock=returnedExpressionBlock(someValue,context,`${path}.some`),id=stableID("execution",context.description.id,path,"option-match");context.additions.push(graphEntity(id,entity(id,schema.optionMatch,[[0xa0630,ref(value)],[0xa0631,ref(noneBlock)],[0xa0632,ref(binding)],[0xa0633,ref(someBlock)]])));return id;
+}
+function emitResultMatch(expression,context,path){
+  const resultType=inferComposableExpression(expression.value,context);if(!resultType.startsWith("result:"))fail("lua.result_match_value_type",expression.location);const[okType,errorType]=splitResult(resultType),expected=context.description.resultType,value=emitComposableExpression(expression.value,context,`${path}.value`).id,okBinding=stableID("execution",context.description.id,path,"ok-binding"),errorBinding=stableID("execution",context.description.id,path,"error-binding");context.additions.push(graphEntity(okBinding,entity(okBinding,schema.variantBinding,[[0xa0600,bytes(expression.okBinding)],[0xa0601,ref(typeID(okType))]])),graphEntity(errorBinding,entity(errorBinding,schema.variantBinding,[[0xa0600,bytes(expression.errorBinding)],[0xa0601,ref(typeID(errorType))]])));const okContext={...context,variants:new Map([...(context.variants??[]),[expression.okBinding,{id:okBinding,type:okType}]])},errorContext={...context,variants:new Map([...(context.variants??[]),[expression.errorBinding,{id:errorBinding,type:errorType}]])},okValue=emitArmValue(expression.ok,expected,okContext,`${path}.ok.value`),errorValue=emitArmValue(expression.error,expected,errorContext,`${path}.error.value`),okBlock=returnedExpressionBlock(okValue,context,`${path}.ok`),errorBlock=returnedExpressionBlock(errorValue,context,`${path}.error`),id=stableID("execution",context.description.id,path,"result-match");context.additions.push(graphEntity(id,entity(id,schema.resultMatch,[[0xa0620,ref(value)],[0xa0621,ref(okBinding)],[0xa0622,ref(okBlock)],[0xa0623,ref(errorBinding)],[0xa0624,ref(errorBlock)]])));return id;
 }
 
 function emitCompositeMatch(expression, context, path) {
@@ -782,11 +986,13 @@ function emitConstructor(expression, context, path) {
 
 function splitResult(type) {
   const parts = type.slice("result:".length).split(":");
+  if(parts[0]==="transition"&&parts.length===5)return[parts.slice(0,4).join(":"),parts[4]];
   if (parts.length !== 2) fail("lua.nested_result_profile");
   return parts;
 }
 function typeID(type) {
   if (ids[type]) return ids[type];
+  if(type==="function:i64:i64")return stableID("execution","type","function","i64","i64");
   if (type.startsWith("option:")) return stableID("execution", "type", "option", typeID(type.slice(7)));
   if (type.startsWith("result:")) { const [ok, error] = splitResult(type); return stableID("execution", "type", "result", typeID(ok), typeID(error)); }
   if (type.startsWith("array:")) { const [, element, length] = type.split(":"); return stableID("execution", "type", "fixed-array", element, length); }
@@ -802,6 +1008,7 @@ function ensureType(type, additions, records) {
   if (type === "bool") return add(ids.bool, schema.boolType, []);
   if (type === "text") return add(ids.text, schema.stringType, []);
   if (type === "bytes") return add(ids.bytes, schema.bytesType, []);
+  if(type==="function:i64:i64"){ensureType("i64",additions,records);return add(typeID(type),schema.functionType,[[0xa0200,refs([ids.i64])],[0xa0201,ref(ids.i64)]]);}
   if (type.startsWith("option:")) { const value = type.slice(7); ensureType(value, additions, records); return add(typeID(type), schema.optionType, [[0xa0500, ref(typeID(value))]]); }
   if (type.startsWith("result:")) { const [ok, error] = splitResult(type); ensureType(ok, additions, records); ensureType(error, additions, records); return add(typeID(type), schema.resultType, [[0x9400, ref(typeID(ok))], [0x9401, ref(typeID(error))]]); }
   if (type.startsWith("array:")) { const [, element, length] = type.split(":"); ensureType(element, additions, records); return add(typeID(type), schema.fixedArrayType, [[0x9f20, ref(typeID(element))], [0x9f21, `uu ${length}`]]); }
@@ -845,6 +1052,7 @@ const ids = {
   bytes: stableID("execution", "type", "bytes"),
 };
 function stableID(...parts) { const hash = crypto.createHash("sha256").update("seme.provider.identity.v1\0"); for (const part of parts) hash.update(part).update("\0"); return `80${hash.digest().subarray(0, 15).toString("hex")}`; }
+function i64Word(value,location){let number;try{number=BigInt(value)}catch{fail("lua.invalid_i64_literal",location)}if(number<-(1n<<63n)||number>(1n<<63n)-1n)fail("lua.invalid_i64_literal",location);return BigInt.asUintN(64,number).toString();}
 function graphEntity(id, text) { return { id, text }; }
 function bytes(value) { return `by ${Buffer.from(value, "utf8").toString("hex") || "-"}`; }
 function ref(value) { return `rf ${value}`; }

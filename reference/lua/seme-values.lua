@@ -163,6 +163,7 @@ function Seme.collection_get(value, zero_index)
   return item.value[zero_index + 1]
 end
 Seme.length = Seme.collection_length
+function Seme.length_i64(value) return Seme.i64(tostring(Seme.collection_length(value))) end
 Seme.index_zero = Seme.collection_get
 function Seme.collection_append(value, element)
   local item = storage[value]
