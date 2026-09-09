@@ -27,8 +27,8 @@ func contract(t *testing.T) contractcatalog.Contract {
 func valid() wire.Envelope {
 	typ, param, body, function, program := id(0x8001), id(0x8002), id(0x8003), id(0x8004), id(0x8005)
 	return wire.Envelope{Module: executionModule, Revision: id(0x8123), Entities: map[wire.ID]wire.Entity{
-		typ:      {ID: typ, Schema: id(0x9010), Version: 1, Fields: map[wire.ID]wire.Value{id(0x9100): {Tag: 4, Unsigned: 64}, id(0x9101): {Tag: 2}, id(0x9102): {Tag: 4}}},
-		param:    {ID: param, Schema: id(0x9012), Version: 1, Fields: map[wire.ID]wire.Value{id(0x9120): {Tag: 5, Bytes: []byte("value")}, id(0x9121): {Tag: 6, Reference: typ}, id(0x9122): {Tag: 4}}},
+		typ:      {ID: typ, Schema: id(0x9010), Version: 1, Fields: map[wire.ID]wire.Value{id(0x9100): {Tag: 3, Unsigned: 64}, id(0x9101): {Tag: 2}, id(0x9102): {Tag: 3}}},
+		param:    {ID: param, Schema: id(0x9012), Version: 1, Fields: map[wire.ID]wire.Value{id(0x9120): {Tag: 5, Bytes: []byte("value")}, id(0x9121): {Tag: 6, Reference: typ}, id(0x9122): {Tag: 3}}},
 		body:     {ID: body, Schema: id(0x9013), Version: 1, Fields: map[wire.ID]wire.Value{id(0x9130): {Tag: 6, Reference: param}}},
 		function: {ID: function, Schema: id(0x9011), Version: 1, Fields: map[wire.ID]wire.Value{id(0x9110): {Tag: 5, Bytes: []byte("Apply")}, id(0x9111): {Tag: 7, List: []wire.Value{{Tag: 6, Reference: param}}}, id(0x9112): {Tag: 6, Reference: typ}, id(0x9113): {Tag: 6, Reference: body}}},
 		program:  {ID: program, Schema: id(0x9015), Version: 1, Fields: map[wire.ID]wire.Value{id(0x9150): {Tag: 7, List: []wire.Value{{Tag: 6, Reference: function}}}, id(0x9151): {Tag: 6, Reference: function}}},
@@ -53,8 +53,13 @@ func TestRejectsMalformedExecutionClosure(t *testing.T) {
 		},
 		"parameter-index": func(e wire.Envelope) {
 			p := e.Entities[id(0x8002)]
-			p.Fields[id(0x9122)] = wire.Value{Tag: 4, Unsigned: 1}
+			p.Fields[id(0x9122)] = wire.Value{Tag: 3, Unsigned: 1}
 			e.Entities[p.ID] = p
+		},
+		"signed-for-unsigned-field": func(e wire.Envelope) {
+			typ := e.Entities[id(0x8001)]
+			typ.Fields[id(0x9100)] = wire.Value{Tag: 4, Unsigned: 64}
+			e.Entities[typ.ID] = typ
 		},
 		"missing-body": func(e wire.Envelope) { f := e.Entities[id(0x8004)]; delete(f.Fields, id(0x9113)); e.Entities[f.ID] = f },
 		"unknown-field": func(e wire.Envelope) {

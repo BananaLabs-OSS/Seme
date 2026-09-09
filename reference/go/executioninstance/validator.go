@@ -128,7 +128,7 @@ func validateValue(v wire.Value, f executionmodule.Field, all map[wire.ID]wire.E
 			return fmt.Errorf("truth_kind")
 		}
 	case 2:
-		if v.Tag != 4 {
+		if v.Tag != 3 {
 			return fmt.Errorf("unsigned_kind")
 		}
 	case 4:
@@ -180,7 +180,7 @@ func validateProgram(program wire.Entity, all map[wire.ID]wire.Entity) error {
 		for i, p := range params {
 			parameter := all[p.Reference]
 			index := parameter.Fields[id(0x9122)]
-			if index.Tag != 4 || index.Unsigned != uint64(i) {
+			if index.Tag != 3 || index.Unsigned != uint64(i) {
 				return fmt.Errorf("execution_instance.parameter_index:%s", p.Reference)
 			}
 		}

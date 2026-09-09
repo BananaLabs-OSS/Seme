@@ -217,13 +217,13 @@ func validArtifact(t *testing.T) []byte {
 			tid("00000000000000000000000000009112"): {Tag: 6, Reference: integer}, tid("00000000000000000000000000009113"): {Tag: 6, Reference: body},
 		}},
 		parameter: {ID: parameter, Schema: tid("00000000000000000000000000009012"), Version: 1, Fields: map[wire.ID]wire.Value{
-			tid("00000000000000000000000000009120"): {Tag: 5, Bytes: []byte("value")}, tid("00000000000000000000000000009121"): {Tag: 6, Reference: integer}, tid("00000000000000000000000000009122"): {Tag: 4},
+			tid("00000000000000000000000000009120"): {Tag: 5, Bytes: []byte("value")}, tid("00000000000000000000000000009121"): {Tag: 6, Reference: integer}, tid("00000000000000000000000000009122"): {Tag: 3},
 		}},
 		integer: {ID: integer, Schema: tid("00000000000000000000000000009010"), Version: 1, Fields: map[wire.ID]wire.Value{
-			tid("00000000000000000000000000009100"): {Tag: 4, Unsigned: 64}, tid("00000000000000000000000000009101"): {Tag: 2}, tid("00000000000000000000000000009102"): {Tag: 4},
+			tid("00000000000000000000000000009100"): {Tag: 3, Unsigned: 64}, tid("00000000000000000000000000009101"): {Tag: 2}, tid("00000000000000000000000000009102"): {Tag: 3},
 		}},
 		body: {ID: body, Schema: tid("00000000000000000000000000009070"), Version: 1, Fields: map[wire.ID]wire.Value{
-			tid("00000000000000000000000000009700"): {Tag: 4}, tid("00000000000000000000000000009701"): {Tag: 6, Reference: integer},
+			tid("00000000000000000000000000009700"): {Tag: 3}, tid("00000000000000000000000000009701"): {Tag: 6, Reference: integer},
 		}},
 	}}
 	out, err := projectemitter.Emit(contracts, projectemitter.Input{Identity: "example.test/project-instance", RootPackage: "example.test/project-instance", Execution: execution, Packages: []projectemitter.Package{{Name: "example.test/project-instance", Interfaces: []projectemitter.Interface{{Name: "Apply", Function: function, Parameters: []wire.ID{integer}, Result: integer}}}}})

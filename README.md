@@ -311,6 +311,14 @@ seven evidence classes. Its shape-only baseline is reported by
 authoritative project gates. Downstream products, including Workbench, remain
 external consumers and cannot add product-specific behavior to Seme.
 
+The first bounded foundation is now executable: [`Go Project Build v1`](spec/go-project-build-v1.md)
+lifts a native three-package Go fixture, compiles its canonical G1 with the
+frozen Seme compiler, validates Execution/Package/Project instances, and emits
+one content-derived `.seme` Project artifact. Client revision changes and
+comment/filename-only edits reproduce byte-identical artifacts; a dependency
+behavior edit changes them. Run `./scripts/check-go-project-build-v1.sh`. This
+is supporting evidence, not a completed seven-class UPB cell.
+
 UAB-01 is complete in all three language columns: native multi-source packages,
 typed named functions, parameters, and calls lift directly to canonical Seme,
 project back to their own ecosystem, re-lift identically, and agree with the

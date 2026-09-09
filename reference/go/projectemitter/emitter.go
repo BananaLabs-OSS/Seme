@@ -60,9 +60,6 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 	if in.Identity == "" || in.RootPackage == "" || len(in.Packages) == 0 {
 		return nil, fmt.Errorf("project_emitter.input")
 	}
-	if err := executioninstance.Validate(contracts.Execution(), in.Execution); err != nil {
-		return nil, fmt.Errorf("project_emitter.execution:%w", err)
-	}
 	program, err := soleProgram(in.Execution)
 	if err != nil {
 		return nil, err
@@ -70,6 +67,10 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 	entities, err := closure(in.Execution.Entities, program)
 	if err != nil {
 		return nil, err
+	}
+	closedExecution := wire.Envelope{Module: in.Execution.Module, Revision: in.Execution.Revision, Entities: entities}
+	if err := executioninstance.Validate(contracts.Execution(), closedExecution); err != nil {
+		return nil, fmt.Errorf("project_emitter.execution:%w", err)
 	}
 
 	packages := append([]Package(nil), in.Packages...)
@@ -142,6 +143,7 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 				return nil, err
 			}
 		}
+		sortValues(interfaceRefs)
 		deps := append([]Dependency(nil), p.Dependencies...)
 		sort.Slice(deps, func(i, j int) bool {
 			if deps[i].Name != deps[j].Name {
@@ -166,6 +168,7 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 				return nil, err
 			}
 		}
+		sortValues(dependencyRefs)
 		if err := put(entities, wire.Entity{ID: pid, Schema: packageSchema, Version: 1, Fields: map[wire.ID]wire.Value{
 			id("0000000000000000000000000000b100"): blob([]byte(p.Name)), id("0000000000000000000000000000b101"): blob(nil),
 			id("0000000000000000000000000000b102"): list(interfaceRefs), id("0000000000000000000000000000b103"): list(dependencyRefs),

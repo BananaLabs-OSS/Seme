@@ -191,7 +191,7 @@ func validateInterface(e wire.Envelope, x wire.Entity) (wire.ID, error) {
 		if !yes || q.Schema != parameterSchema || q.Version != 1 {
 			return wire.ID{}, fmt.Errorf("interface.parameter_schema")
 		}
-		if err := shape(q, parameterSchema, []uint64{0x9120, 0x9121, 0x9122}, []byte{5, 6, 4}); err != nil {
+		if err := shape(q, parameterSchema, []uint64{0x9120, 0x9121, 0x9122}, []byte{5, 6, 3}); err != nil {
 			return wire.ID{}, fmt.Errorf("interface.parameter_shape:%w", err)
 		}
 		actual[i], err = ref(q, fid(0x9121))
