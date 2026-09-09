@@ -1,0 +1,6 @@
+{"valid":[
+  {"name":"offset","scale":false,"amount":"3","value":"7","result":"10"},
+  {"name":"scale","scale":true,"amount":"3","value":"7","result":"21"},
+  {"name":"offset-wrap","scale":false,"amount":"1","value":"9223372036854775807","result":"-9223372036854775808"},
+  {"name":"scale-wrap","scale":true,"amount":"2","value":"9223372036854775807","result":"-2"}
+]}
