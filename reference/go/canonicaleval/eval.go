@@ -315,6 +315,22 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 		t, err := field(p, 0x9121)
 		return t.Reference, err == nil && t.Tag == 6
 	}
+	if e.Schema == id(0x90d2) || e.Schema == id(0x90e2) {
+		fieldID, bindingSchema, typeField := uint64(0x9d20), id(0x90d0), uint64(0x9d01)
+		if e.Schema == id(0x90e2) {
+			fieldID, bindingSchema, typeField = 0x9e20, id(0x90e0), 0x9e01
+		}
+		binding, err := field(e, fieldID)
+		if err != nil || binding.Tag != 6 {
+			return wire.ID{}, false
+		}
+		b, ok := g.Entities[binding.Reference]
+		if !ok || b.Schema != bindingSchema {
+			return wire.ID{}, false
+		}
+		t, err := field(b, typeField)
+		return t.Reference, err == nil && t.Tag == 6
+	}
 	fields := map[wire.ID]uint64{id(0x90fb): 0x9fb0, id(0x90fc): 0x9fc0, id(0xa066): 0xa0660, id(0xa043): 0xa0430, id(0xa067): 0xa0670}
 	if key, yes := fields[e.Schema]; yes {
 		base, err := field(e, key)
@@ -520,6 +536,30 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 		return lv, rv, er
 	}
 	switch e.Schema {
+	case id(0x9060):
+		callee, ce := refField(0x9600)
+		arguments, ae := field(e, 0x9601)
+		fn, exists := g.Entities[callee]
+		if ce != nil || ae != nil || !exists || fn.Schema != id(0x9011) || arguments.Tag != 7 {
+			return Value{}, fmt.Errorf("canonicaleval.call")
+		}
+		parameters, pe := field(fn, 0x9111)
+		body, be := field(fn, 0x9113)
+		if pe != nil || be != nil || parameters.Tag != 7 || body.Tag != 6 || len(parameters.List) != len(arguments.List) {
+			return Value{}, fmt.Errorf("canonicaleval.call")
+		}
+		callEnv := cloneEnv(env)
+		for index := range arguments.List {
+			if arguments.List[index].Tag != 6 || parameters.List[index].Tag != 6 {
+				return Value{}, fmt.Errorf("canonicaleval.call")
+			}
+			value, err := eval(g, arguments.List[index].Reference, env, budget-1)
+			if err != nil {
+				return Value{}, err
+			}
+			callEnv[parameters.List[index].Reference] = value
+		}
+		return evalBlock(g, body.Reference, callEnv, budget-1)
 	case id(0x9013):
 		p, er := refField(0x9130)
 		if er != nil {

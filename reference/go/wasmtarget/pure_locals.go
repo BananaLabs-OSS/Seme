@@ -224,6 +224,34 @@ func expressionChildren(entity wire.Entity) []wire.ID {
 		fields = []wire.ID{identity(0x9e40)}
 	case identity(0x90f0):
 		fields = []wire.ID{identity(0x9f00)}
+	case identity(0x90f4):
+		fields = []wire.ID{identity(0x9f40), identity(0x9f41)}
+	case identity(0x90f7):
+		fields = []wire.ID{identity(0x9f70), identity(0x9f71), identity(0x9f74)}
+	case identity(0x90f9):
+		fields = []wire.ID{identity(0x9f90)}
+	case identity(0x90fa):
+		fields = []wire.ID{identity(0x9fa0), identity(0x9fa1)}
+	case identity(0x90fb):
+		fields = []wire.ID{identity(0x9fb0), identity(0x9fb1)}
+	case identity(0x90fc):
+		fields = []wire.ID{identity(0x9fc0), identity(0x9fc1), identity(0x9fc2)}
+	case identity(0xa066):
+		fields = []wire.ID{identity(0xa0660), identity(0xa0661)}
+	case identity(0xa068):
+		if elements, ok := entity.Fields[identity(0xa0681)]; ok && elements.Tag == 7 {
+			for _, element := range elements.List {
+				if element.Tag == 6 {
+					children = append(children, element.Reference)
+				}
+			}
+		}
+	case identity(0xa042):
+		fields = []wire.ID{identity(0xa0420), identity(0xa0421)}
+	case identity(0xa043):
+		fields = []wire.ID{identity(0xa0430), identity(0xa0431), identity(0xa0432)}
+	case identity(0xa067):
+		fields = []wire.ID{identity(0xa0670), identity(0xa0671)}
 	case identity(0x9060):
 		if arguments, ok := entity.Fields[identity(0x9601)]; ok && arguments.Tag == 7 {
 			for _, argument := range arguments.List {
