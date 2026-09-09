@@ -94,16 +94,16 @@ func dynamicIndexBooleanGraph(booleanSchema uint64, left bool, index string) (wi
 	collectionParam, leftLiteral := id(0xd102), id(0xd103)
 	collectionRead, indexType, indexLiteral := id(0xd104), id(0xd105), id(0xd106)
 	dynamicRead, zero, comparison, root := id(0xd107), id(0xd108), id(0xd109), id(0xd10a)
-	leftTag := uint64(0)
+	leftTag := byte(1)
 	if left {
-		leftTag = 1
+		leftTag = 2
 	}
 	indexValue, _ := parseI64(index)
 	g := wire.Envelope{Entities: map[wire.ID]wire.Entity{
 		i64:             {ID: i64, Schema: id(0x9010)},
 		sliceType:       {ID: sliceType, Schema: id(0x90f8), Fields: map[wire.ID]wire.Value{id(0x9f80): {Tag: 6, Reference: i64}}},
 		collectionParam: {ID: collectionParam, Schema: id(0x9012), Fields: map[wire.ID]wire.Value{id(0x9121): {Tag: 6, Reference: sliceType}}},
-		leftLiteral:     {ID: leftLiteral, Schema: id(0x90b0), Fields: map[wire.ID]wire.Value{id(0x9b00): {Tag: 1, Unsigned: leftTag}}},
+		leftLiteral:     {ID: leftLiteral, Schema: id(0x90b0), Fields: map[wire.ID]wire.Value{id(0x9b00): {Tag: leftTag}}},
 		collectionRead:  {ID: collectionRead, Schema: id(0x9013), Fields: map[wire.ID]wire.Value{id(0x9130): {Tag: 6, Reference: collectionParam}}},
 		indexType:       {ID: indexType, Schema: id(0x9010)},
 		indexLiteral:    {ID: indexLiteral, Schema: id(0x9070), Fields: map[wire.ID]wire.Value{id(0x9700): indexValue, id(0x9701): {Tag: 6, Reference: indexType}}},
