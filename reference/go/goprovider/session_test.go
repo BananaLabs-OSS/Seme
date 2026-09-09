@@ -6,6 +6,139 @@ import (
 	"testing"
 )
 
+func TestIncrementalSessionComposesCumulativeTextCollectionFlow(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package text
+func Sum(values []int64) int64 {
+ total := int64(0)
+ for _, value := range values { total += value }
+ return total
+}
+func Describe(prefix string, values []int64) string {
+ total := Sum(values)
+ if total <= 0 { return prefix + ":non-positive" }
+ return prefix + ":positive"
+}`
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/cumulative-text-collection", Entry: "Describe", Files: map[string]string{"program.go": source}})
+	if !result.Valid {
+		t.Fatalf("result = %#v", result)
+	}
+	for _, schema := range []string{"00000000000000000000000000009040", "000000000000000000000000000090c3", "000000000000000000000000000090f7", "00000000000000000000000000009060", "000000000000000000000000000090d0", "000000000000000000000000000090c0"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("canonical graph lacks composed schema %s", schema)
+		}
+	}
+	for schema, want := range map[string]int{
+		"000000000000000000000000000090c3": 2,
+		"000000000000000000000000000090f7": 1,
+		"00000000000000000000000000009060": 1,
+		"000000000000000000000000000090d0": 1,
+		"000000000000000000000000000090c0": 1,
+	} {
+		if got := strings.Count(result.CanonicalG1, " "+schema+" 1 "); got != want {
+			t.Fatalf("schema %s instance count = %d, want %d", schema, got, want)
+		}
+	}
+}
+
+func TestIncrementalSessionComposesCumulativeStatefulCollectionFlow(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package cumulative
+type Transition[S, R any] struct { State S; Result R }
+type Accumulator struct { Value int64 }
+func (state Accumulator) Add(delta int64) Transition[Accumulator, int64] {
+ next := Accumulator{Value: state.Value + delta}
+ return Transition[Accumulator, int64]{State: next, Result: next.Value}
+}
+func Sum(values []int64) int64 {
+ total := int64(0)
+ for _, value := range values { total += value }
+ return total
+}
+func Run(state Accumulator, values []int64, enabled bool) Transition[Accumulator, int64] {
+ delta := Sum(values)
+ if enabled { return state.Add(delta) }
+ return state.Add(0)
+}`
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/cumulative-state-flow", Entry: "Run", Files: map[string]string{"program.go": source}})
+	if !result.Valid {
+		t.Fatalf("result = %#v", result)
+	}
+	for _, schema := range []string{"000000000000000000000000000090d0", "000000000000000000000000000090c0", "000000000000000000000000000090f7", "00000000000000000000000000009060", "0000000000000000000000000000a003", "0000000000000000000000000000a005"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("canonical graph lacks composed schema %s", schema)
+		}
+	}
+	wantCounts := map[string]int{
+		"000000000000000000000000000090d0": 2,
+		"000000000000000000000000000090c0": 1,
+		"000000000000000000000000000090f7": 1,
+		"00000000000000000000000000009060": 1,
+		"0000000000000000000000000000a003": 2,
+		"0000000000000000000000000000a005": 1,
+	}
+	for schema, want := range wantCounts {
+		if got := strings.Count(result.CanonicalG1, " "+schema+" 1 "); got != want {
+			t.Fatalf("schema %s instance count = %d, want %d", schema, got, want)
+		}
+	}
+	invalidSource := strings.Replace(source, "total += value", "total = -value", 1)
+	invalid := session.Apply(DocumentSnapshot{Revision: 2, PackagePath: "example.test/cumulative-state-flow", Entry: "Run", Files: map[string]string{"program.go": invalidSource}})
+	if !invalid.Accepted || invalid.Valid || invalid.LastValidRevision != 1 || invalid.CanonicalG1 != result.CanonicalG1 {
+		t.Fatalf("invalid dependent revision did not retain baseline: %#v", invalid)
+	}
+	foundIntegrity := false
+	for _, diagnostic := range invalid.Diagnostics {
+		if diagnostic.Code == "session.call_target_unsupported" {
+			foundIntegrity = true
+		}
+	}
+	if !foundIntegrity {
+		t.Fatalf("invalid revision diagnostics = %#v", invalid.Diagnostics)
+	}
+}
+
+func TestIncrementalSessionRejectsCallToOmittedDeclaration(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/call-integrity", Entry: "Run", Files: map[string]string{"program.go": `package integrity
+func Helper(value int64) int64 { return -value }
+func Run(value int64) int64 { return Helper(value) }
+`}})
+	if result.Valid {
+		t.Fatal("graph retained a call to an omitted declaration")
+	}
+	found := false
+	for _, diagnostic := range result.Diagnostics {
+		if diagnostic.Code == "session.call_target_unsupported" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("diagnostics = %#v", result.Diagnostics)
+	}
+}
+
 func TestIncrementalSessionLiftsRuntimeKeyedMapFold(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
 	if err != nil {

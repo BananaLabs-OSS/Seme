@@ -166,10 +166,10 @@ closure environments; and runtime-keyed maps composed through collection
 folds. Go and JavaScript have native parity and projection evidence for
 selected shapes.
 
-The repository does **not** yet justify a UAB-v1 percentage because:
+The repository does **not** yet justify a nonzero UAB-v1 cell score because:
 
-- the Core checkpoint sequence is delivered, but its cumulative composition
-  gates are not yet complete;
+- the Core checkpoint sequence and both cumulative architectural composition
+  gates are complete, establishing the prerequisite for this profile;
 - current proofs remain primarily isolated bounded shapes rather than UAB-11's
   cumulative application;
 - some Go and JavaScript provider recognition remains deliberately
@@ -177,9 +177,9 @@ The repository does **not** yet justify a UAB-v1 percentage because:
 - JavaScript projection does not cover its general runtime semantics; and
 - no Lua provider, projector, native oracle suite, or conformance column exists.
 
-Until the 36 cells have machine-readable results, the dashboard may retain its
-clearly labeled historical estimate, but it must not call that estimate a
-profile score.
+Until the 36 cells have machine-readable results, the dashboard reports 0/36
+profile cells alongside any clearly labeled historical estimate; it must not
+convert that estimate into a profile score.
 
 ## Delivery sequence after Core v30
 

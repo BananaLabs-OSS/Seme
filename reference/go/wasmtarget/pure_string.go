@@ -25,11 +25,12 @@ type stringLowering struct {
 	literalBase int
 	placeTypes  map[wire.ID]string
 	extraLocals []byte
+	baseLocals  byte
 	loopCounter byte
 }
 
 func certifyPureStringFunction(graph wire.Envelope, body wire.ID, parameters []pureValueType, result pureValueType, parameterTypes map[wire.ID]string, locals map[wire.ID]byte, abi PureABI) ([]byte, PureABI, error) {
-	context := &stringLowering{graph: graph, locals: locals, used: map[byte]bool{}, data: utf8TransitionTable(), placeTypes: map[wire.ID]string{}}
+	context := &stringLowering{graph: graph, locals: locals, baseLocals: byte(len(parameters)), used: map[byte]bool{}, data: utf8TransitionTable(), placeTypes: map[wire.ID]string{}}
 	context.literalBase = stringTableOffset + len(context.data)
 	budget := 4096
 	var instructions []byte
@@ -293,7 +294,7 @@ func (context *stringLowering) lowerBlock(id wire.ID, result string, parameterTy
 }
 
 func (context *stringLowering) newLocal(valueType byte) byte {
-	local := byte(len(context.locals) + len(context.extraLocals))
+	local := context.baseLocals + byte(len(context.extraLocals))
 	context.extraLocals = append(context.extraLocals, valueType)
 	return local
 }
@@ -419,10 +420,8 @@ func (context *stringLowering) lowerInteger(id wire.ID, budget *int) ([]byte, er
 	if err != nil {
 		return nil, err
 	}
-	accumulatorLocal := byte(len(context.locals) + len(context.extraLocals))
-	context.extraLocals = append(context.extraLocals, 0x7e)
-	indexLocal := byte(len(context.locals) + len(context.extraLocals))
-	context.extraLocals = append(context.extraLocals, 0x7f)
+	accumulatorLocal := context.newLocal(0x7e)
+	indexLocal := context.newLocal(0x7f)
 	context.used[local] = true
 	code := append(initialCode, 0x21, accumulatorLocal, 0x41, 0x00, 0x21, indexLocal)
 	code = append(code, 0x02, 0x40, 0x03, 0x40) // block; loop
@@ -550,6 +549,23 @@ func (context *stringLowering) lowerBoolean(id wire.ID, visiting map[wire.ID]boo
 		}
 		return append(code, 0x0b), nil
 	}
+	if expression.Schema == identity(0x9021) {
+		*budget--
+		left, a := field(expression, 0x9160)
+		right, b := field(expression, 0x9161)
+		if a != nil || b != nil || validateIntegerTypeReference(context.graph, expression, 0x9162) != nil {
+			return nil, fmt.Errorf("wasm.helper_integer_comparison")
+		}
+		leftCode, err := context.lowerInteger(left.Reference, budget)
+		if err != nil {
+			return nil, err
+		}
+		rightCode, err := context.lowerInteger(right.Reference, budget)
+		if err != nil {
+			return nil, err
+		}
+		return append(append(leftCode, rightCode...), 0x57), nil
+	}
 	return lowerHelperBoolean(context.graph, id, context.locals, context.used, visiting, budget)
 }
 
@@ -636,7 +652,11 @@ func pureStringModule(parameters []pureValueType, result pureValueType, helper [
 	for index, parameter := range parameters {
 		parameterWasm[index] = parameter.wasm
 	}
-	functionType(&types, parameterWasm, []byte{result.wasm})
+	helperResults := []byte{result.wasm}
+	if result.name == "transition:i64,i64" {
+		helperResults = []byte{0x7e, 0x7e}
+	}
+	functionType(&types, parameterWasm, helperResults)
 	functionType(&types, []byte{0x7f, 0x7f}, nil)
 	functionType(&types, []byte{0x7e, 0x7e}, []byte{0x7f})
 	functionType(&types, []byte{0x7e, 0x7e}, []byte{0x7e})
@@ -758,7 +778,11 @@ func stringConcatBody() []byte {
 func stringProviderBody(parameters []pureValueType, result pureValueType, abi PureABI) []byte {
 	var body bytes.Buffer
 	// cursor plus result temporary.
-	body.Write([]byte{2, 1, 0x7f, 1, result.wasm})
+	if result.name == "transition:i64,i64" {
+		body.Write([]byte{2, 1, 0x7f, 2, 0x7e})
+	} else {
+		body.Write([]byte{2, 1, 0x7f, 1, result.wasm})
+	}
 	// Bounds for the complete request and initialize canonical payload cursor.
 	body.Write([]byte{0x20, 3})
 	constI32(&body, abi.FixedHeaderSize)
@@ -815,7 +839,7 @@ func stringProviderBody(parameters []pureValueType, result pureValueType, abi Pu
 	for _, parameter := range parameters {
 		body.Write([]byte{0x20, 2})
 		switch parameter.name {
-		case "i64":
+		case "i64", "record:i64":
 			body.Write([]byte{0x29, 3})
 			uleb(&body, offset)
 		case "bool":
@@ -838,7 +862,12 @@ func stringProviderBody(parameters []pureValueType, result pureValueType, abi Pu
 		}
 		offset += parameter.size
 	}
-	body.Write([]byte{0x10, 5, 0x21, 7})
+	body.Write([]byte{0x10, 5})
+	if result.name == "transition:i64,i64" {
+		body.Write([]byte{0x21, 8, 0x21, 7})
+	} else {
+		body.Write([]byte{0x21, 7})
+	}
 	if result.name == "slice:i64" {
 		// Validate packed pointer/count before copying into a stable canonical response.
 		body.Write([]byte{0x20, 7, 0x42, 0x20, 0x88, 0xa7})
@@ -883,6 +912,16 @@ func stringProviderBody(parameters []pureValueType, result pureValueType, abi Pu
 		constI32(&body, stringScratch)
 		body.Write([]byte{0x36, 2, 0})
 		body.Write([]byte{0x20, 5, 0x20, 7, 0x42, 32, 0x88, 0xa7, 0x36, 2, 0, 0x41, 0, 0x0b})
+		return body.Bytes()
+	}
+	if result.name == "transition:i64,i64" {
+		constI32(&body, stringScratch)
+		body.Write([]byte{0x20, 7, 0x37, 3, 0})
+		constI32(&body, stringScratch+8)
+		body.Write([]byte{0x20, 8, 0x37, 3, 0})
+		body.Write([]byte{0x20, 4})
+		constI32(&body, stringScratch)
+		body.Write([]byte{0x36, 2, 0, 0x20, 5, 0x41, 16, 0x36, 2, 0, 0x41, 0, 0x0b})
 		return body.Bytes()
 	}
 	constI32(&body, stringScratch)

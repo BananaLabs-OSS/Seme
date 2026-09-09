@@ -306,3 +306,29 @@ export function Tally(values, key) { return values.reduce((counts, value) => new
   for (const suffix of ["a040", "a041", "a042", "a043"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
   assert.match(canonical, /000000000000000000000000000090f7/);
 });
+
+test("compositionally lifts the cumulative state-flow proof", () => {
+  const source = `/** @typedef {Object} Accumulator
+ * @property {bigint} Value
+ */
+class Accumulator {
+  constructor(Value) { this.Value = Value; }
+  /** @param {bigint} delta @returns {Transition<Accumulator,bigint>} */
+  Add(delta) { const next = new Accumulator(this.Value + delta); return { state: next, result: next.Value }; }
+}
+/** @param {bigint[]} values @returns {bigint} */
+function Sum(values) { return values.reduce((total, value) => total + value, 0n); }
+/** @param {Accumulator} state @param {bigint[]} values @param {boolean} enabled @returns {Transition<Accumulator,bigint>} */
+export function Run(state, values, enabled) { const delta = Sum(values); if (enabled) { return state.Add(delta); } else { return state.Add(0n); } }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/cumulative-state-flow", revision: 1 });
+  for (const suffix of ["9015", "90d0", "90d2", "90c0", "90f7", "a003", "a005"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
+});
+
+test("compositionally lifts the cumulative text-collection proof", () => {
+  const source = `/** @param {bigint[]} values @returns {bigint} */
+function Sum(values) { return values.reduce((total, value) => total + value, 0n); }
+/** @param {string} prefix @param {bigint[]} values @returns {string} */
+export function Describe(prefix, values) { const total = Sum(values); if (total <= 0n) { return prefix + ":non-positive"; } return prefix + ":positive"; }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/cumulative-text-collection", revision: 1 });
+  for (const suffix of ["9060", "90d0", "90d2", "90c0", "90c3", "90f7"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
+});

@@ -342,6 +342,14 @@ slice fold; repeated, negative, missing, reordered, empty, and bounded inputs
 agree through deterministic Wasm and pinned Pulp. Run
 `./scripts/check-execution-v30.sh`.
 
+The [`Core v30 cumulative composition proofs`](spec/core-cumulative-proof-a.md)
+close the separate architectural gate: one ordinary program combines runtime
+collection traversal, calls, locals, conditional method dispatch, and explicit
+state transition; a second combines runtime text with collection behavior.
+Go and projected JavaScript re-lift to identical canonical Seme, and generic
+lowering agrees through deterministic Wasm and pinned Pulp. Run
+`./scripts/check-core-cumulative-v30.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and
