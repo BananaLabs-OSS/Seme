@@ -24,6 +24,16 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
   } catch (error) {
     fail("javascript.parse", error.loc);
   }
+  // This provider describes a closed semantic snapshot.  Silently ignoring
+  // executable module-level statements would make the lifted graph disagree
+  // with JavaScript (notably prototype mutation and accessor installation).
+  // Imports are handled by the bounded module adapter below; declarations are
+  // handled explicitly.  Every other top-level form must be rejected.
+  for (const item of program.body) {
+    const declaration = item.type === "ExportNamedDeclaration" ? item.declaration : item;
+    if (item.type === "ImportDeclaration" || declaration?.type === "FunctionDeclaration" || declaration?.type === "ClassDeclaration") continue;
+    fail("javascript.unsupported_module_statement", item.loc?.start);
+  }
   const exported = new Set(program.body.filter((item) => item.type === "ExportNamedDeclaration" && item.declaration?.type === "FunctionDeclaration").map((item) => item.declaration.id?.name));
   const declarations = program.body.map((item) => item.type === "ExportNamedDeclaration" ? item.declaration : item);
   const functions = declarations.filter((item) => item?.type === "FunctionDeclaration");

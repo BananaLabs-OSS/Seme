@@ -14,17 +14,19 @@ import (
 )
 
 type Value struct {
-	Kind      string           `json:"kind"`
-	I64       string           `json:"i64,omitempty"`
-	Bool      bool             `json:"bool,omitempty"`
-	Text      string           `json:"text,omitempty"`
-	Bytes     string           `json:"bytes_hex,omitempty"`
-	Items     []Value          `json:"items,omitempty"`
-	Fields    map[string]Value `json:"fields,omitempty"`
-	Entries   []Entry          `json:"entries,omitempty"`
-	ValueType string           `json:"value_type,omitempty"`
-	Variant   string           `json:"variant,omitempty"`
-	Payload   *Value           `json:"payload,omitempty"`
+	Kind          string           `json:"kind"`
+	I64           string           `json:"i64,omitempty"`
+	Bool          bool             `json:"bool,omitempty"`
+	Text          string           `json:"text,omitempty"`
+	Bytes         string           `json:"bytes_hex,omitempty"`
+	Items         []Value          `json:"items,omitempty"`
+	Fields        map[string]Value `json:"fields,omitempty"`
+	Entries       []Entry          `json:"entries,omitempty"`
+	ValueType     string           `json:"value_type,omitempty"`
+	Variant       string           `json:"variant,omitempty"`
+	Payload       *Value           `json:"payload,omitempty"`
+	interfaceType wire.ID
+	witness       wire.ID
 }
 type Entry struct {
 	Key   Value `json:"key"`
@@ -331,6 +333,26 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 		t, err := field(b, typeField)
 		return t.Reference, err == nil && t.Tag == 6
 	}
+	if e.Schema == id(0x9033) {
+		t, err := field(e, 0x9330)
+		return t.Reference, err == nil && t.Tag == 6
+	}
+	if e.Schema == id(0xa013) {
+		t, err := field(e, 0xa0130)
+		return t.Reference, err == nil && t.Tag == 6
+	}
+	if e.Schema == id(0xa001) {
+		binding, err := field(e, 0xa0010)
+		if err != nil || binding.Tag != 6 {
+			return wire.ID{}, false
+		}
+		b, ok := g.Entities[binding.Reference]
+		if !ok || b.Schema != id(0xa000) {
+			return wire.ID{}, false
+		}
+		t, err := field(b, 0xa0001)
+		return t.Reference, err == nil && t.Tag == 6
+	}
 	fields := map[wire.ID]uint64{id(0x90fb): 0x9fb0, id(0x90fc): 0x9fc0, id(0xa066): 0xa0660, id(0xa043): 0xa0430, id(0xa067): 0xa0670}
 	if key, yes := fields[e.Schema]; yes {
 		base, err := field(e, key)
@@ -536,6 +558,91 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 		return lv, rv, er
 	}
 	switch e.Schema {
+	case id(0xa001):
+		receiver, er := refField(0xa0010)
+		if er != nil {
+			return Value{}, fmt.Errorf("canonicaleval.receiver_read")
+		}
+		value, ok := env[receiver]
+		if !ok {
+			return Value{}, fmt.Errorf("canonicaleval.receiver_read")
+		}
+		return value, nil
+	case id(0xa003):
+		receiver, re := refField(0xa0030)
+		method, me := refField(0xa0031)
+		arguments, ae := field(e, 0xa0032)
+		if re != nil || me != nil || ae != nil || arguments.Tag != 7 {
+			return Value{}, fmt.Errorf("canonicaleval.method_call")
+		}
+		rv, err := eval(g, receiver, env, budget-1)
+		if err != nil {
+			return Value{}, err
+		}
+		concreteType, ok := expressionType(g, receiver)
+		if !ok {
+			return Value{}, fmt.Errorf("canonicaleval.method_receiver")
+		}
+		return evalMethod(g, method, concreteType, rv, arguments, env, budget-1)
+	case id(0xa013):
+		contract, ce := refField(0xa0130)
+		concrete, ve := refField(0xa0131)
+		witness, we := refField(0xa0132)
+		w, exists := g.Entities[witness]
+		if ce != nil || ve != nil || we != nil || !exists || w.Schema != id(0xa012) {
+			return Value{}, fmt.Errorf("canonicaleval.interface_value")
+		}
+		wContract, err := field(w, 0xa0121)
+		if err != nil || wContract.Tag != 6 || wContract.Reference != contract {
+			return Value{}, fmt.Errorf("canonicaleval.interface_value")
+		}
+		wConcrete, err := field(w, 0xa0120)
+		concreteType, typed := expressionType(g, concrete)
+		if err != nil || wConcrete.Tag != 6 || !typed || wConcrete.Reference != concreteType {
+			return Value{}, fmt.Errorf("canonicaleval.interface_value")
+		}
+		value, err := eval(g, concrete, env, budget-1)
+		if err != nil {
+			return Value{}, err
+		}
+		value.interfaceType, value.witness = contract, witness
+		return value, nil
+	case id(0xa014):
+		receiver, re := refField(0xa0140)
+		requirement, qe := refField(0xa0141)
+		arguments, ae := field(e, 0xa0142)
+		if re != nil || qe != nil || ae != nil || arguments.Tag != 7 {
+			return Value{}, fmt.Errorf("canonicaleval.dynamic_call")
+		}
+		rv, err := eval(g, receiver, env, budget-1)
+		if err != nil || rv.interfaceType == (wire.ID{}) || rv.witness == (wire.ID{}) {
+			return Value{}, fmt.Errorf("canonicaleval.dynamic_call")
+		}
+		contract := g.Entities[rv.interfaceType]
+		requirements, err := field(contract, 0xa0101)
+		witness := g.Entities[rv.witness]
+		methods, me := field(witness, 0xa0122)
+		witnessContract, wce := field(witness, 0xa0121)
+		witnessConcrete, wte := field(witness, 0xa0120)
+		if err != nil || me != nil || contract.Schema != id(0xa010) || witness.Schema != id(0xa012) || requirements.Tag != 7 || methods.Tag != 7 || len(requirements.List) != len(methods.List) {
+			return Value{}, fmt.Errorf("canonicaleval.dynamic_call")
+		}
+		if wce != nil || wte != nil || witnessContract.Tag != 6 || witnessContract.Reference != rv.interfaceType || witnessConcrete.Tag != 6 {
+			return Value{}, fmt.Errorf("canonicaleval.dynamic_witness")
+		}
+		method, found := wire.ID{}, false
+		for i, item := range requirements.List {
+			if item.Tag == 6 && item.Reference == requirement && methods.List[i].Tag == 6 {
+				method, found = methods.List[i].Reference, true
+			}
+		}
+		if !found {
+			return Value{}, fmt.Errorf("canonicaleval.dynamic_requirement")
+		}
+		if err := validateMethodRequirement(g, method, requirement, witnessConcrete.Reference); err != nil {
+			return Value{}, err
+		}
+		return evalMethod(g, method, witnessConcrete.Reference, rv, arguments, env, budget-1)
 	case id(0x9060):
 		callee, ce := refField(0x9600)
 		arguments, ae := field(e, 0x9601)
@@ -560,6 +667,60 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			callEnv[parameters.List[index].Reference] = value
 		}
 		return evalBlock(g, body.Reference, callEnv, budget-1)
+	case id(0x9033):
+		typeID, te := refField(0x9330)
+		values, ve := field(e, 0x9331)
+		record, exists := g.Entities[typeID]
+		fields, fe := field(record, 0x9301)
+		if te != nil || ve != nil || fe != nil || !exists || record.Schema != id(0x9030) || values.Tag != 7 || fields.Tag != 7 || len(values.List) != len(fields.List) {
+			return Value{}, fmt.Errorf("canonicaleval.record_construct")
+		}
+		result := Value{Kind: "record", Fields: map[string]Value{}}
+		for i := range values.List {
+			if values.List[i].Tag != 6 || fields.List[i].Tag != 6 {
+				return Value{}, fmt.Errorf("canonicaleval.record_construct")
+			}
+			fieldEntity, ok := g.Entities[fields.List[i].Reference]
+			name, ne := field(fieldEntity, 0x9310)
+			if !ok || fieldEntity.Schema != id(0x9031) || ne != nil || name.Tag != 5 {
+				return Value{}, fmt.Errorf("canonicaleval.record_construct")
+			}
+			value, err := eval(g, values.List[i].Reference, env, budget-1)
+			if err != nil {
+				return Value{}, err
+			}
+			result.Fields[string(name.Bytes)] = value
+		}
+		return result, nil
+	case id(0x9032):
+		valueID, ve := refField(0x9320)
+		fieldID, fe := refField(0x9321)
+		if ve != nil || fe != nil {
+			return Value{}, fmt.Errorf("canonicaleval.field_read")
+		}
+		record, err := eval(g, valueID, env, budget-1)
+		if err != nil || record.Kind != "record" {
+			return Value{}, fmt.Errorf("canonicaleval.field_read")
+		}
+		typeID, typed := expressionType(g, valueID)
+		recordType, exists := g.Entities[typeID]
+		members, me := field(recordType, 0x9301)
+		member := false
+		if typed && exists && recordType.Schema == id(0x9030) && me == nil && members.Tag == 7 {
+			for _, item := range members.List {
+				member = member || item.Tag == 6 && item.Reference == fieldID
+			}
+		}
+		fieldEntity, exists := g.Entities[fieldID]
+		name, ne := field(fieldEntity, 0x9310)
+		if !member || !exists || fieldEntity.Schema != id(0x9031) || ne != nil || name.Tag != 5 {
+			return Value{}, fmt.Errorf("canonicaleval.record_member")
+		}
+		value, ok := record.Fields[string(name.Bytes)]
+		if !ok {
+			return Value{}, fmt.Errorf("canonicaleval.field_read")
+		}
+		return value, nil
 	case id(0x9013):
 		p, er := refField(0x9130)
 		if er != nil {
@@ -1155,6 +1316,74 @@ func canonicalBytesEqual(left, right string) (bool, error) {
 		return false, fmt.Errorf("canonicaleval.bytes")
 	}
 	return bytes.Equal(a, b), nil
+}
+
+func evalMethod(g wire.Envelope, methodID, concreteType wire.ID, receiver Value, arguments wire.Value, outer map[wire.ID]Value, budget int) (Value, error) {
+	if budget <= 0 {
+		return Value{}, fmt.Errorf("canonicaleval.budget")
+	}
+	method, ok := g.Entities[methodID]
+	if !ok || method.Schema != id(0xa002) || arguments.Tag != 7 {
+		return Value{}, fmt.Errorf("canonicaleval.method")
+	}
+	receiverBinding, re := field(method, 0xa0021)
+	parameters, pe := field(method, 0xa0022)
+	body, be := field(method, 0xa0024)
+	if re != nil || pe != nil || be != nil || receiverBinding.Tag != 6 || parameters.Tag != 7 || body.Tag != 6 || len(parameters.List) != len(arguments.List) {
+		return Value{}, fmt.Errorf("canonicaleval.method")
+	}
+	binding, exists := g.Entities[receiverBinding.Reference]
+	bindingType, te := field(binding, 0xa0001)
+	if !exists || binding.Schema != id(0xa000) || te != nil || bindingType.Tag != 6 || bindingType.Reference != concreteType {
+		return Value{}, fmt.Errorf("canonicaleval.method_receiver")
+	}
+	env := cloneEnv(outer)
+	env[receiverBinding.Reference] = receiver
+	for i := range parameters.List {
+		if parameters.List[i].Tag != 6 || arguments.List[i].Tag != 6 {
+			return Value{}, fmt.Errorf("canonicaleval.method")
+		}
+		value, err := eval(g, arguments.List[i].Reference, outer, budget-1)
+		if err != nil {
+			return Value{}, err
+		}
+		env[parameters.List[i].Reference] = value
+	}
+	return evalBlock(g, body.Reference, env, budget-1)
+}
+
+func validateMethodRequirement(g wire.Envelope, methodID, requirementID, concreteType wire.ID) error {
+	method, mok := g.Entities[methodID]
+	requirement, rok := g.Entities[requirementID]
+	if !mok || !rok || method.Schema != id(0xa002) || requirement.Schema != id(0xa011) {
+		return fmt.Errorf("canonicaleval.dynamic_method")
+	}
+	mName, mn := field(method, 0xa0020)
+	rName, rn := field(requirement, 0xa0110)
+	mParams, mp := field(method, 0xa0022)
+	rTypes, rp := field(requirement, 0xa0111)
+	mResult, mr := field(method, 0xa0023)
+	rResult, rr := field(requirement, 0xa0112)
+	receiver, re := field(method, 0xa0021)
+	if mn != nil || rn != nil || mp != nil || rp != nil || mr != nil || rr != nil || re != nil || mName.Tag != 5 || rName.Tag != 5 || string(mName.Bytes) != string(rName.Bytes) || mParams.Tag != 7 || rTypes.Tag != 7 || len(mParams.List) != len(rTypes.List) || mResult.Tag != 6 || rResult.Tag != 6 || mResult.Reference != rResult.Reference || receiver.Tag != 6 {
+		return fmt.Errorf("canonicaleval.dynamic_signature")
+	}
+	binding, ok := g.Entities[receiver.Reference]
+	bt, be := field(binding, 0xa0001)
+	if !ok || binding.Schema != id(0xa000) || be != nil || bt.Tag != 6 || bt.Reference != concreteType {
+		return fmt.Errorf("canonicaleval.dynamic_receiver")
+	}
+	for i := range mParams.List {
+		if mParams.List[i].Tag != 6 || rTypes.List[i].Tag != 6 {
+			return fmt.Errorf("canonicaleval.dynamic_signature")
+		}
+		parameter, ok := g.Entities[mParams.List[i].Reference]
+		pt, pe := field(parameter, 0x9121)
+		if !ok || parameter.Schema != id(0x9012) || pe != nil || pt.Tag != 6 || pt.Reference != rTypes.List[i].Reference {
+			return fmt.Errorf("canonicaleval.dynamic_signature")
+		}
+	}
+	return nil
 }
 
 func add(a, b Value) (Value, error) {

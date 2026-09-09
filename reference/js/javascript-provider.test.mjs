@@ -371,3 +371,16 @@ test("lifts total nested Option and Result matches with scoped payloads", () => 
   const canonical = liftJavaScript({ source, moduleG1: moduleV32G1, packagePath: "example.test/composite-match", revision: 1 });
   for (const suffix of ["a060", "a061", "a062", "a063", "a064", "a065"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
 });
+
+test("rejects executable module statements instead of silently losing JavaScript behavior", () => {
+  const source = `/** @typedef {Object} Counter
+ * @property {bigint} Value
+ */
+class Counter { constructor(Value) { this.Value = Value; } }
+Counter.prototype.Value = 3n;
+/** @returns {bigint} */ export function Read() { return 3n; }`;
+  assert.throws(
+    () => liftJavaScript({ source, moduleG1: moduleV27G1, packagePath: "example.test/module-effect", revision: 1 }),
+    /javascript\.unsupported_module_statement:5:1/,
+  );
+});
