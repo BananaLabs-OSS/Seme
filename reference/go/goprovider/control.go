@@ -546,7 +546,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			}
 			named, isRecord := object.Type().(*types.Named)
 			_, recordSupported := records[named]
-			if !isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type()) && !(isRecord && recordSupported) {
+			if !isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type()) && !isI64Slice(object.Type()) && !isI64Map(object.Type()) && !(isRecord && recordSupported) {
 				return nil, fmt.Errorf("control.local_binding_type")
 			}
 			initializer, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
@@ -572,6 +572,12 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			}
 			if isRecord && recordSupported {
 				localType = records[named].id
+			}
+			if isI64Slice(object.Type()) {
+				localType = stableID("execution", "type", "slice", "i64")
+			}
+			if isI64Map(object.Type()) {
+				localType = stableID("execution", "type", "map", "i64", "i64")
 			}
 			block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer, mutable: mutable[object]})
 			locals[object] = local

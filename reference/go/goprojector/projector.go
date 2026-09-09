@@ -40,10 +40,15 @@ const (
 	sSliceType           = "000000000000000000000000000090f8"
 	sCollectionLength    = "000000000000000000000000000090f9"
 	sDynamicIndexRead    = "000000000000000000000000000090fa"
+	sCollectionAppend    = "000000000000000000000000000090fb"
+	sCollectionUpdate    = "000000000000000000000000000090fc"
 	sMapType             = "0000000000000000000000000000a040"
 	sEmptyMap            = "0000000000000000000000000000a041"
 	sMapLookup           = "0000000000000000000000000000a042"
 	sMapUpdate           = "0000000000000000000000000000a043"
+	sSliceRemove         = "0000000000000000000000000000a066"
+	sMapRemove           = "0000000000000000000000000000a067"
+	sSliceConstruct      = "0000000000000000000000000000a068"
 	sBytes               = "00000000000000000000000000009041"
 	sResultType          = "00000000000000000000000000009042"
 	sResultOk            = "00000000000000000000000000009043"
@@ -141,8 +146,24 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "package %s\n\n", packageName)
+	imports := []string{}
 	if graphHasSchema(graph, sBytesEqual) {
-		out.WriteString("import \"bytes\"\n\n")
+		imports = append(imports, "bytes")
+	}
+	if graphHasSchema(graph, sCollectionUpdate) || graphHasSchema(graph, sSliceRemove) {
+		imports = append(imports, "slices")
+	}
+	if graphHasSchema(graph, sMapRemove) {
+		imports = append(imports, "maps")
+	}
+	if len(imports) == 1 {
+		fmt.Fprintf(&out, "import %q\n\n", imports[0])
+	} else if len(imports) > 1 {
+		out.WriteString("import (\n")
+		for _, name := range imports {
+			fmt.Fprintf(&out, "\t%q\n", name)
+		}
+		out.WriteString(")\n\n")
 	}
 	if graphHasSchema(graph, sOptionType) {
 		out.WriteString("type Option[T any] struct {\n\tSome bool\n\tValue T\n}\n\n")
@@ -916,6 +937,89 @@ func expr(id string, c context) (string, error) {
 			return "", err
 		}
 		return a + "[" + b + "]", nil
+	case sSliceConstruct:
+		typeID, err := ref(e, "000000000000000000000000000a0680")
+		if err != nil {
+			return "", err
+		}
+		typ, err := typeName(c.graph, typeID)
+		if err != nil {
+			return "", err
+		}
+		values, err := refs(e, "000000000000000000000000000a0681")
+		if err != nil {
+			return "", err
+		}
+		rendered := make([]string, len(values))
+		for i, value := range values {
+			rendered[i], err = expr(value, c)
+			if err != nil {
+				return "", err
+			}
+		}
+		return typ + "{" + strings.Join(rendered, ", ") + "}", nil
+	case sCollectionAppend:
+		collection, err := ref(e, "00000000000000000000000000009fb0")
+		if err != nil {
+			return "", err
+		}
+		value, err := ref(e, "00000000000000000000000000009fb1")
+		if err != nil {
+			return "", err
+		}
+		a, err := expr(collection, c)
+		if err != nil {
+			return "", err
+		}
+		b, err := expr(value, c)
+		if err != nil {
+			return "", err
+		}
+		return "append(" + a + ", " + b + ")", nil
+	case sCollectionUpdate:
+		collection, err := ref(e, "00000000000000000000000000009fc0")
+		if err != nil {
+			return "", err
+		}
+		index, err := ref(e, "00000000000000000000000000009fc1")
+		if err != nil {
+			return "", err
+		}
+		value, err := ref(e, "00000000000000000000000000009fc2")
+		if err != nil {
+			return "", err
+		}
+		a, err := expr(collection, c)
+		if err != nil {
+			return "", err
+		}
+		b, err := expr(index, c)
+		if err != nil {
+			return "", err
+		}
+		v, err := expr(value, c)
+		if err != nil {
+			return "", err
+		}
+		return "slices.Replace(slices.Clone(" + a + "), int(" + b + "), int(" + b + ")+1, " + v + ")", nil
+	case sSliceRemove:
+		collection, err := ref(e, "000000000000000000000000000a0660")
+		if err != nil {
+			return "", err
+		}
+		index, err := ref(e, "000000000000000000000000000a0661")
+		if err != nil {
+			return "", err
+		}
+		a, err := expr(collection, c)
+		if err != nil {
+			return "", err
+		}
+		b, err := expr(index, c)
+		if err != nil {
+			return "", err
+		}
+		return "slices.Delete(slices.Clone(" + a + "), int(" + b + "), int(" + b + ")+1)", nil
 	case sEmptyMap:
 		typeID, err := ref(e, "000000000000000000000000000a0410")
 		if err != nil {
@@ -945,7 +1049,49 @@ func expr(id string, c context) (string, error) {
 		}
 		return a + "[" + b + "]", nil
 	case sMapUpdate:
-		return "", fmt.Errorf("go_projection.map_update_requires_fold")
+		mapping, err := ref(e, "000000000000000000000000000a0430")
+		if err != nil {
+			return "", err
+		}
+		key, err := ref(e, "000000000000000000000000000a0431")
+		if err != nil {
+			return "", err
+		}
+		value, err := ref(e, "000000000000000000000000000a0432")
+		if err != nil {
+			return "", err
+		}
+		m, err := expr(mapping, c)
+		if err != nil {
+			return "", err
+		}
+		k, err := expr(key, c)
+		if err != nil {
+			return "", err
+		}
+		v, err := expr(value, c)
+		if err != nil {
+			return "", err
+		}
+		return "func(m map[int64]int64, k, v int64) map[int64]int64 { out := maps.Clone(m); out[k] = v; return out }(" + m + ", " + k + ", " + v + ")", nil
+	case sMapRemove:
+		mapping, err := ref(e, "000000000000000000000000000a0670")
+		if err != nil {
+			return "", err
+		}
+		key, err := ref(e, "000000000000000000000000000a0671")
+		if err != nil {
+			return "", err
+		}
+		m, err := expr(mapping, c)
+		if err != nil {
+			return "", err
+		}
+		k, err := expr(key, c)
+		if err != nil {
+			return "", err
+		}
+		return "func(m map[int64]int64, k int64) map[int64]int64 { out := maps.Clone(m); delete(out, k); return out }(" + m + ", " + k + ")", nil
 	case sFold:
 		return "", fmt.Errorf("go_projection.fold_requires_statement_context")
 	case sAdd, sConcat, sMultiply, sSubtract, sLessEqual, sAnd, sOr:
@@ -1205,7 +1351,7 @@ func parse(source []byte) (map[string]entity, error) {
 func scalar(e entity, field string) (string, error) {
 	v, ok := e.fields[field]
 	if !ok || len(v) != 1 {
-		return "", fmt.Errorf("go_projection.missing_field")
+		return "", fmt.Errorf("go_projection.missing_field:%s:%s", e.schema, field)
 	}
 	return v[0], nil
 }
@@ -1223,7 +1369,7 @@ func ref(e entity, field string) (string, error) {
 func refs(e entity, field string) ([]string, error) {
 	v, ok := e.fields[field]
 	if !ok || len(v) < 1 {
-		return nil, fmt.Errorf("go_projection.missing_field")
+		return nil, fmt.Errorf("go_projection.missing_field:%s:%s", e.schema, field)
 	}
 	p := strings.Fields(v[0])
 	if len(p) != 2 || p[0] != "li" {

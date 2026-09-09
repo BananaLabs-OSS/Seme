@@ -37,6 +37,8 @@ const (
 	goDynamicIndexRead
 	goCollectionAppend
 	goCollectionUpdate
+	goSliceConstruct
+	goSliceRemove
 	goReceiverRead
 	goMethodCall
 	goStateTransition
@@ -56,6 +58,7 @@ const (
 	goEmptyMap
 	goMapLookup
 	goMapUpdate
+	goMapRemove
 	goBytesLiteral
 	goOptionNone
 	goOptionSome
@@ -277,6 +280,31 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			id := expressionNodeID(owner, path, "collection-update")
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090fc", []graphField{refField(0x9fc0, collection), refField(0x9fc1, index), refField(0x9fc2, value)})}
 			return id, nil
+		case goSliceConstruct:
+			emitted[expression.typeID] = graphEntity{expression.typeID, entity(expression.typeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})}
+			values := make([]string, len(expression.values))
+			for index, value := range expression.values {
+				var err error
+				values[index], err = emit(value, path+".value."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+			}
+			id := expressionNodeID(owner, path, "slice-construct")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a068", []graphField{refField(0xa0680, expression.typeID), refsField(0xa0681, values)})}
+			return id, nil
+		case goSliceRemove:
+			collection, err := emit(expression.left, path+".collection")
+			if err != nil {
+				return "", err
+			}
+			index, err := emit(expression.right, path+".index")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "slice-remove")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a066", []graphField{refField(0xa0660, collection), refField(0xa0661, index)})}
+			return id, nil
 		case goReceiverRead:
 			if expression.receiverID == "" {
 				return "", fmt.Errorf("expression.receiver_missing")
@@ -457,6 +485,18 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := expressionNodeID(owner, path, "map-update")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a043", []graphField{refField(0xa0430, mapping), refField(0xa0431, key), refField(0xa0432, value)})}
+			return id, nil
+		case goMapRemove:
+			mapping, err := emit(expression.left, path+".map")
+			if err != nil {
+				return "", err
+			}
+			key, err := emit(expression.right, path+".key")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "map-remove")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a067", []graphField{refField(0xa0670, mapping), refField(0xa0671, key)})}
 			return id, nil
 		case goBytesLiteral:
 			id := expressionNodeID(owner, path, "bytes-literal")
@@ -870,6 +910,28 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		return &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}, nil
 	case *ast.CallExpr:
+		if function, ok := ast.Unparen(expression.Fun).(*ast.FuncLit); ok {
+			kind, valid := structuralImmutableMapCall(function, expression, info)
+			if !valid {
+				return nil, fmt.Errorf("expression.unsupported_function_literal_call")
+			}
+			mapping, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			key, err := analyzeGoExpressionWithProgram(expression.Args[1], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			if kind == goMapRemove {
+				return &goExpression{kind: kind, left: mapping, right: key}, nil
+			}
+			value, err := analyzeGoExpressionWithProgram(expression.Args[2], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			return &goExpression{kind: kind, left: mapping, initial: key, right: value}, nil
+		}
 		if selector, ok := ast.Unparen(expression.Fun).(*ast.SelectorExpr); ok && isBytesFunction(info, selector, "Equal") && len(expression.Args) == 2 && !expression.Ellipsis.IsValid() {
 			left, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
@@ -983,6 +1045,17 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
 		}
 		if selector, selectorOK := ast.Unparen(expression.Fun).(*ast.SelectorExpr); selectorOK && isSlicesFunction(info, selector, "Replace") && len(expression.Args) == 4 && !expression.Ellipsis.IsValid() && isI64Slice(info.TypeOf(expression.Args[0])) && isInt64(info.TypeOf(expression.Args[3])) {
+			clone, cloneOK := ast.Unparen(expression.Args[0]).(*ast.CallExpr)
+			cloneSelector, cloneSelectorOK := func() (*ast.SelectorExpr, bool) {
+				if !cloneOK {
+					return nil, false
+				}
+				value, ok := ast.Unparen(clone.Fun).(*ast.SelectorExpr)
+				return value, ok
+			}()
+			if !cloneSelectorOK || !isSlicesFunction(info, cloneSelector, "Clone") || len(clone.Args) != 1 || clone.Ellipsis.IsValid() {
+				return nil, fmt.Errorf("expression.collection_update_alias")
+			}
 			indexName, indexOK := goI64IndexIdentifier(expression.Args[1], info)
 			end, endOK := ast.Unparen(expression.Args[2]).(*ast.BinaryExpr)
 			endIndex, endIndexOK := func() (*ast.Ident, bool) {
@@ -1001,7 +1074,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			if !indexOK || !endIndexOK || !oneOK || end.Op != token.ADD || one.Kind != token.INT || one.Value != "1" || info.Uses[indexName] != info.Uses[endIndex] {
 				return nil, fmt.Errorf("expression.collection_update_range")
 			}
-			collection, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+			collection, err := analyzeGoExpressionWithProgram(clone.Args[0], signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
 				return nil, err
 			}
@@ -1014,6 +1087,46 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				return nil, err
 			}
 			return &goExpression{kind: goCollectionUpdate, left: collection, initial: index, right: value}, nil
+		}
+		if selector, selectorOK := ast.Unparen(expression.Fun).(*ast.SelectorExpr); selectorOK && isSlicesFunction(info, selector, "Delete") && len(expression.Args) == 3 && !expression.Ellipsis.IsValid() && isI64Slice(info.TypeOf(expression.Args[0])) {
+			clone, cloneOK := ast.Unparen(expression.Args[0]).(*ast.CallExpr)
+			cloneSelector, cloneSelectorOK := func() (*ast.SelectorExpr, bool) {
+				if !cloneOK {
+					return nil, false
+				}
+				value, ok := ast.Unparen(clone.Fun).(*ast.SelectorExpr)
+				return value, ok
+			}()
+			if !cloneSelectorOK || !isSlicesFunction(info, cloneSelector, "Clone") || len(clone.Args) != 1 || clone.Ellipsis.IsValid() {
+				return nil, fmt.Errorf("expression.slice_remove_alias")
+			}
+			indexName, indexOK := goI64IndexIdentifier(expression.Args[1], info)
+			end, endOK := ast.Unparen(expression.Args[2]).(*ast.BinaryExpr)
+			endIndex, endIndexOK := func() (*ast.Ident, bool) {
+				if !endOK {
+					return nil, false
+				}
+				return goI64IndexIdentifier(end.X, info)
+			}()
+			one, oneOK := func() (*ast.BasicLit, bool) {
+				if !endOK {
+					return nil, false
+				}
+				value, ok := ast.Unparen(end.Y).(*ast.BasicLit)
+				return value, ok
+			}()
+			if !indexOK || !endIndexOK || !oneOK || end.Op != token.ADD || one.Kind != token.INT || one.Value != "1" || info.Uses[indexName] != info.Uses[endIndex] {
+				return nil, fmt.Errorf("expression.slice_remove_range")
+			}
+			collection, err := analyzeGoExpressionWithProgram(clone.Args[0], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			index, err := analyzeGoExpressionWithProgram(expression.Args[1], signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			return &goExpression{kind: goSliceRemove, left: collection, right: index}, nil
 		}
 		callee, exists := functions[info.Uses[identifier]]
 		if !ok || !exists || expression.Ellipsis.IsValid() {
@@ -1186,6 +1299,29 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			length := uint64(array.Len())
 			return &goExpression{kind: goFixedArrayConstruct, arrayType: stableID("execution", "type", "fixed-array", "i64", strconv.FormatUint(length, 10)), arrayLen: length, values: values}, nil
 		}
+		if slice, ok := info.TypeOf(expression).Underlying().(*types.Slice); ok && isInt64(slice.Elem()) {
+			if len(expression.Elts) > 512 {
+				return nil, fmt.Errorf("expression.slice_construct_bounds")
+			}
+			values := make([]*goExpression, len(expression.Elts))
+			for index, element := range expression.Elts {
+				if _, keyed := element.(*ast.KeyValueExpr); keyed {
+					return nil, fmt.Errorf("expression.keyed_slice_unsupported")
+				}
+				value, err := analyzeGoExpressionWithProgram(element, signature, info, locals, functions, records, mutableLocals)
+				if err != nil {
+					return nil, err
+				}
+				values[index] = value
+			}
+			return &goExpression{kind: goSliceConstruct, typeID: stableID("execution", "type", "slice", "i64"), values: values}, nil
+		}
+		if isI64Map(info.TypeOf(expression)) {
+			if len(expression.Elts) != 0 {
+				return nil, fmt.Errorf("expression.map_literal_nonempty")
+			}
+			return &goExpression{kind: goEmptyMap, typeID: stableID("execution", "type", "map", "i64", "i64")}, nil
+		}
 		named, ok := info.TypeOf(expression).(*types.Named)
 		record, exists := records[named]
 		if !ok || !exists || len(expression.Elts) != len(record.ordered) {
@@ -1296,6 +1432,84 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 func isSlicesFunction(info *types.Info, selector *ast.SelectorExpr, name string) bool {
 	function, ok := info.Uses[selector.Sel].(*types.Func)
 	return ok && function.Name() == name && function.Pkg() != nil && function.Pkg().Path() == "slices"
+}
+
+func structuralImmutableMapCall(function *ast.FuncLit, call *ast.CallExpr, info *types.Info) (goExpressionKind, bool) {
+	signature, ok := info.TypeOf(function).(*types.Signature)
+	if !ok || signature.Results().Len() != 1 || !isI64Map(signature.Results().At(0).Type()) || signature.Params().Len() < 2 || signature.Params().Len() > 3 || len(call.Args) != signature.Params().Len() || call.Ellipsis.IsValid() {
+		return 0, false
+	}
+	if !isI64Map(signature.Params().At(0).Type()) || !isInt64(signature.Params().At(1).Type()) || (signature.Params().Len() == 3 && !isInt64(signature.Params().At(2).Type())) || len(function.Body.List) != 3 {
+		return 0, false
+	}
+	clone, ok := function.Body.List[0].(*ast.AssignStmt)
+	if !ok || clone.Tok != token.DEFINE || len(clone.Lhs) != 1 || len(clone.Rhs) != 1 {
+		return 0, false
+	}
+	out, ok := clone.Lhs[0].(*ast.Ident)
+	if !ok {
+		return 0, false
+	}
+	cloneCall, ok := ast.Unparen(clone.Rhs[0]).(*ast.CallExpr)
+	if !ok || len(cloneCall.Args) != 1 {
+		return 0, false
+	}
+	cloneSelector, ok := ast.Unparen(cloneCall.Fun).(*ast.SelectorExpr)
+	if !ok || !isMapsFunction(info, cloneSelector, "Clone") {
+		return 0, false
+	}
+	m, ok := ast.Unparen(cloneCall.Args[0]).(*ast.Ident)
+	if !ok || info.Uses[m] != signature.Params().At(0) {
+		return 0, false
+	}
+	ret, ok := function.Body.List[2].(*ast.ReturnStmt)
+	if !ok || len(ret.Results) != 1 {
+		return 0, false
+	}
+	retOut, ok := ast.Unparen(ret.Results[0]).(*ast.Ident)
+	if !ok || info.Uses[retOut] != info.Defs[out] {
+		return 0, false
+	}
+	if signature.Params().Len() == 3 {
+		assign, ok := function.Body.List[1].(*ast.AssignStmt)
+		if !ok || assign.Tok != token.ASSIGN || len(assign.Lhs) != 1 || len(assign.Rhs) != 1 {
+			return 0, false
+		}
+		index, ok := ast.Unparen(assign.Lhs[0]).(*ast.IndexExpr)
+		if !ok {
+			return 0, false
+		}
+		x, xok := ast.Unparen(index.X).(*ast.Ident)
+		k, kok := ast.Unparen(index.Index).(*ast.Ident)
+		v, vok := ast.Unparen(assign.Rhs[0]).(*ast.Ident)
+		if !xok || !kok || !vok || info.Uses[x] != info.Defs[out] || info.Uses[k] != signature.Params().At(1) || info.Uses[v] != signature.Params().At(2) {
+			return 0, false
+		}
+		return goMapUpdate, true
+	}
+	statement, ok := function.Body.List[1].(*ast.ExprStmt)
+	if !ok {
+		return 0, false
+	}
+	remove, ok := ast.Unparen(statement.X).(*ast.CallExpr)
+	if !ok || len(remove.Args) != 2 {
+		return 0, false
+	}
+	deleteID, ok := ast.Unparen(remove.Fun).(*ast.Ident)
+	if !ok || info.Uses[deleteID] != types.Universe.Lookup("delete") {
+		return 0, false
+	}
+	x, xok := ast.Unparen(remove.Args[0]).(*ast.Ident)
+	k, kok := ast.Unparen(remove.Args[1]).(*ast.Ident)
+	if !xok || !kok || info.Uses[x] != info.Defs[out] || info.Uses[k] != signature.Params().At(1) {
+		return 0, false
+	}
+	return goMapRemove, true
+}
+
+func isMapsFunction(info *types.Info, selector *ast.SelectorExpr, name string) bool {
+	function, ok := info.Uses[selector.Sel].(*types.Func)
+	return ok && function.Name() == name && function.Pkg() != nil && function.Pkg().Path() == "maps"
 }
 
 func isBytesFunction(info *types.Info, selector *ast.SelectorExpr, name string) bool {
