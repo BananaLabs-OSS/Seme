@@ -7,25 +7,60 @@ import (
 	"encoding/hex"
 	"fmt"
 	"go/format"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 )
 
 const (
-	sFunction      = "00000000000000000000000000009011"
-	sParameter     = "00000000000000000000000000009012"
-	sRead          = "00000000000000000000000000009013"
-	sAdd           = "00000000000000000000000000009014"
-	sProgram       = "00000000000000000000000000009015"
-	sInteger       = "00000000000000000000000000009010"
-	sBoolean       = "00000000000000000000000000009020"
-	sString        = "00000000000000000000000000009040"
-	sStringLiteral = "00000000000000000000000000009050"
-	sConcat        = "000000000000000000000000000090c3"
-	sBlock         = "00000000000000000000000000009080"
-	sReturn        = "00000000000000000000000000009081"
-	sCall          = "00000000000000000000000000009060"
+	sFunction            = "00000000000000000000000000009011"
+	sParameter           = "00000000000000000000000000009012"
+	sRead                = "00000000000000000000000000009013"
+	sAdd                 = "00000000000000000000000000009014"
+	sProgram             = "00000000000000000000000000009015"
+	sInteger             = "00000000000000000000000000009010"
+	sBoolean             = "00000000000000000000000000009020"
+	sString              = "00000000000000000000000000009040"
+	sStringLiteral       = "00000000000000000000000000009050"
+	sConcat              = "000000000000000000000000000090c3"
+	sBlock               = "00000000000000000000000000009080"
+	sReturn              = "00000000000000000000000000009081"
+	sCall                = "00000000000000000000000000009060"
+	sRecordType          = "00000000000000000000000000009030"
+	sRecordField         = "00000000000000000000000000009031"
+	sFieldRead           = "00000000000000000000000000009032"
+	sRecordConstruct     = "00000000000000000000000000009033"
+	sBoolLiteral         = "000000000000000000000000000090b0"
+	sIntegerLiteral      = "00000000000000000000000000009070"
+	sFixedArrayType      = "000000000000000000000000000090f2"
+	sFixedArrayConstruct = "000000000000000000000000000090f3"
+	sIndexRead           = "000000000000000000000000000090f4"
+	sSliceType           = "000000000000000000000000000090f8"
+	sCollectionLength    = "000000000000000000000000000090f9"
+	sDynamicIndexRead    = "000000000000000000000000000090fa"
+	sMapType             = "0000000000000000000000000000a040"
+	sEmptyMap            = "0000000000000000000000000000a041"
+	sMapLookup           = "0000000000000000000000000000a042"
+	sMapUpdate           = "0000000000000000000000000000a043"
+	sBytes               = "00000000000000000000000000009041"
+	sResultType          = "00000000000000000000000000009042"
+	sResultOk            = "00000000000000000000000000009043"
+	sResultError         = "00000000000000000000000000009044"
+	sOptionType          = "0000000000000000000000000000a050"
+	sOptionNone          = "0000000000000000000000000000a051"
+	sOptionSome          = "0000000000000000000000000000a052"
+	sBytesLiteral        = "0000000000000000000000000000a064"
+	sVariantBinding      = "0000000000000000000000000000a060"
+	sVariantRead         = "0000000000000000000000000000a061"
+	sResultMatch         = "0000000000000000000000000000a062"
+	sOptionMatch         = "0000000000000000000000000000a063"
+	sLocalBinding        = "000000000000000000000000000090d0"
+	sBindLocal           = "000000000000000000000000000090d1"
+	sLocalRead           = "000000000000000000000000000090d2"
+	sIterationBinding    = "000000000000000000000000000090f5"
+	sIterationRead       = "000000000000000000000000000090f6"
+	sFold                = "000000000000000000000000000090f7"
 )
 
 type entity struct {
@@ -36,7 +71,16 @@ type context struct {
 	graph      map[string]entity
 	functions  map[string]string
 	parameters map[string]string
+	records    map[string]record
+	locals     map[string]string
+	iterations map[string]string
+	variants   map[string]string
 }
+type record struct {
+	name   string
+	fields []recordField
+}
+type recordField struct{ id, name, typ string }
 
 // Project emits one gofmt-formatted file. packageName is projection metadata,
 // not canonical meaning, and must be a valid Go identifier.
@@ -83,6 +127,24 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 	}
 	var out strings.Builder
 	fmt.Fprintf(&out, "package %s\n\n", packageName)
+	if graphHasSchema(graph, sOptionType) {
+		out.WriteString("type Option[T any] struct {\n\tSome bool\n\tValue T\n}\n\n")
+	}
+	if graphHasSchema(graph, sResultType) {
+		out.WriteString("type Result[T, E any] struct {\n\tOk bool\n\tValue T\n\tError E\n}\n\n")
+	}
+	records, err := collectRecords(graph)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range sortedRecordIDs(records) {
+		r := records[id]
+		fmt.Fprintf(&out, "type %s struct {\n", r.name)
+		for _, field := range r.fields {
+			fmt.Fprintf(&out, "\t%s %s\n", field.name, field.typ)
+		}
+		out.WriteString("}\n\n")
+	}
 	for _, id := range ids {
 		fn := graph[id]
 		paramIDs, err := refs(fn, "00000000000000000000000000009111")
@@ -123,7 +185,7 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 		if e != nil {
 			return nil, e
 		}
-		body, e := projectBlock(bodyID, context{graph, names, params})
+		body, e := projectBlock(bodyID, context{graph: graph, functions: names, parameters: params, records: records, locals: map[string]string{}, iterations: map[string]string{}, variants: map[string]string{}})
 		if e != nil {
 			return nil, e
 		}
@@ -142,22 +204,301 @@ func projectBlock(id string, c context) (string, error) {
 		return "", fmt.Errorf("go_projection.invalid_block")
 	}
 	statements, err := refs(b, "00000000000000000000000000009800")
-	if err != nil || len(statements) != 1 {
+	if err != nil || len(statements) == 0 {
 		return "", fmt.Errorf("go_projection.unsupported_block")
 	}
-	r, ok := c.graph[statements[0]]
-	if !ok || r.schema != sReturn {
-		return "", fmt.Errorf("go_projection.unsupported_statement")
+	lines := []string{}
+	for index, statementID := range statements {
+		statement, ok := c.graph[statementID]
+		if !ok {
+			return "", fmt.Errorf("go_projection.unsupported_statement")
+		}
+		switch statement.schema {
+		case sBindLocal:
+			bindingID, err := ref(statement, "00000000000000000000000000009d10")
+			if err != nil {
+				return "", err
+			}
+			binding, ok := c.graph[bindingID]
+			if !ok || binding.schema != sLocalBinding {
+				return "", fmt.Errorf("go_projection.invalid_local")
+			}
+			name, err := text(binding, "00000000000000000000000000009d00")
+			if err != nil || !identifier(name) {
+				return "", fmt.Errorf("go_projection.invalid_local_name")
+			}
+			initializerID, err := ref(binding, "00000000000000000000000000009d02")
+			if err != nil {
+				return "", err
+			}
+			initializer, err := expr(initializerID, c)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\t"+name+" := "+initializer)
+			c.locals[bindingID] = name
+		case sReturn:
+			if index != len(statements)-1 {
+				return "", fmt.Errorf("go_projection.return_not_terminal")
+			}
+			values, err := refs(statement, "00000000000000000000000000009810")
+			if err != nil || len(values) != 1 {
+				return "", fmt.Errorf("go_projection.return_arity")
+			}
+			if folded, ok, err := projectFoldReturn(values[0], c); err != nil {
+				return "", err
+			} else if ok {
+				lines = append(lines, folded...)
+				continue
+			}
+			if matched, ok, err := projectTaggedReturn(values[0], c); err != nil {
+				return "", err
+			} else if ok {
+				lines = append(lines, matched...)
+				continue
+			}
+			expression, err := expr(values[0], c)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\treturn "+expression)
+		default:
+			return "", fmt.Errorf("go_projection.unsupported_statement")
+		}
 	}
-	values, err := refs(r, "00000000000000000000000000009810")
-	if err != nil || len(values) != 1 {
-		return "", fmt.Errorf("go_projection.return_arity")
+	return strings.Join(lines, "\n"), nil
+}
+
+func projectTaggedReturn(id string, c context) ([]string, bool, error) {
+	match, ok := c.graph[id]
+	if !ok || (match.schema != sOptionMatch && match.schema != sResultMatch) {
+		return nil, false, nil
 	}
-	expression, err := expr(values[0], c)
+	valueField := "000000000000000000000000000a0630"
+	if match.schema == sResultMatch {
+		valueField = "000000000000000000000000000a0620"
+	}
+	valueID, err := ref(match, valueField)
 	if err != nil {
-		return "", err
+		return nil, false, err
 	}
-	return "\treturn " + expression, nil
+	value, err := expr(valueID, c)
+	if err != nil {
+		return nil, false, err
+	}
+	if match.schema == sOptionMatch {
+		noneID, err := ref(match, "000000000000000000000000000a0631")
+		if err != nil {
+			return nil, false, err
+		}
+		bindingID, err := ref(match, "000000000000000000000000000a0632")
+		if err != nil {
+			return nil, false, err
+		}
+		someID, err := ref(match, "000000000000000000000000000a0633")
+		if err != nil {
+			return nil, false, err
+		}
+		someContext := c
+		someContext.variants = cloneNames(c.variants)
+		someContext.variants[bindingID] = value + ".Value"
+		some, err := projectBlock(someID, someContext)
+		if err != nil {
+			return nil, false, err
+		}
+		none, err := projectBlock(noneID, c)
+		if err != nil {
+			return nil, false, err
+		}
+		return []string{"\tif " + value + ".Some {", indentBlock(some), "\t}", none}, true, nil
+	}
+	okBinding, err := ref(match, "000000000000000000000000000a0621")
+	if err != nil {
+		return nil, false, err
+	}
+	okBody, err := ref(match, "000000000000000000000000000a0622")
+	if err != nil {
+		return nil, false, err
+	}
+	errorBinding, err := ref(match, "000000000000000000000000000a0623")
+	if err != nil {
+		return nil, false, err
+	}
+	errorBody, err := ref(match, "000000000000000000000000000a0624")
+	if err != nil {
+		return nil, false, err
+	}
+	okContext, errorContext := c, c
+	okContext.variants = cloneNames(c.variants)
+	errorContext.variants = cloneNames(c.variants)
+	okContext.variants[okBinding] = value + ".Value"
+	errorContext.variants[errorBinding] = value + ".Error"
+	okText, err := projectBlock(okBody, okContext)
+	if err != nil {
+		return nil, false, err
+	}
+	errorText, err := projectBlock(errorBody, errorContext)
+	if err != nil {
+		return nil, false, err
+	}
+	return []string{"\tif " + value + ".Ok {", indentBlock(okText), "\t}", errorText}, true, nil
+}
+func indentBlock(value string) string { return "\t" + strings.ReplaceAll(value, "\n", "\n\t") }
+
+func projectFoldReturn(resultID string, c context) ([]string, bool, error) {
+	foldID := resultID
+	lookupKey := ""
+	result := c.graph[resultID]
+	if result.schema == sMapLookup {
+		var err error
+		foldID, err = ref(result, "000000000000000000000000000a0420")
+		if err != nil {
+			return nil, false, err
+		}
+		lookupKey, err = ref(result, "000000000000000000000000000a0421")
+		if err != nil {
+			return nil, false, err
+		}
+	}
+	fold, ok := c.graph[foldID]
+	if !ok || fold.schema != sFold {
+		return nil, false, nil
+	}
+	collectionID, err := ref(fold, "00000000000000000000000000009f70")
+	if err != nil {
+		return nil, false, err
+	}
+	initialID, err := ref(fold, "00000000000000000000000000009f71")
+	if err != nil {
+		return nil, false, err
+	}
+	accID, err := ref(fold, "00000000000000000000000000009f72")
+	if err != nil {
+		return nil, false, err
+	}
+	elementID, err := ref(fold, "00000000000000000000000000009f73")
+	if err != nil {
+		return nil, false, err
+	}
+	bodyID, err := ref(fold, "00000000000000000000000000009f74")
+	if err != nil {
+		return nil, false, err
+	}
+	accEntity, aok := c.graph[accID]
+	elementEntity, eok := c.graph[elementID]
+	if !aok || !eok || accEntity.schema != sIterationBinding || elementEntity.schema != sIterationBinding {
+		return nil, false, fmt.Errorf("go_projection.invalid_fold_binding")
+	}
+	acc, err := text(accEntity, "00000000000000000000000000009f50")
+	if err != nil || !identifier(acc) {
+		return nil, false, fmt.Errorf("go_projection.invalid_fold_binding")
+	}
+	element, err := text(elementEntity, "00000000000000000000000000009f50")
+	if err != nil || !identifier(element) || element == acc {
+		return nil, false, fmt.Errorf("go_projection.invalid_fold_binding")
+	}
+	collection, err := expr(collectionID, c)
+	if err != nil {
+		return nil, false, err
+	}
+	initial, err := expr(initialID, c)
+	if err != nil {
+		return nil, false, err
+	}
+	if initialEntity, ok := c.graph[initialID]; ok && initialEntity.schema == sIntegerLiteral {
+		initial = "int64(" + initial + ")"
+	}
+	c.iterations = cloneNames(c.iterations)
+	c.iterations[accID], c.iterations[elementID] = acc, element
+	lines := []string{"\t" + acc + " := " + initial, "\tfor _, " + element + " := range " + collection + " {"}
+	body := c.graph[bodyID]
+	if body.schema == sMapUpdate {
+		mapID, err := ref(body, "000000000000000000000000000a0430")
+		if err != nil {
+			return nil, false, err
+		}
+		keyID, err := ref(body, "000000000000000000000000000a0431")
+		if err != nil {
+			return nil, false, err
+		}
+		valueID, err := ref(body, "000000000000000000000000000a0432")
+		if err != nil {
+			return nil, false, err
+		}
+		mapValue, err := expr(mapID, c)
+		if err != nil {
+			return nil, false, err
+		}
+		if mapValue != acc {
+			return nil, false, fmt.Errorf("go_projection.fold_accumulator_mismatch")
+		}
+		key, err := expr(keyID, c)
+		if err != nil {
+			return nil, false, err
+		}
+		value, err := expr(valueID, c)
+		if err != nil {
+			return nil, false, err
+		}
+		// A map-fold update is already delimited by assignment. Avoid an outer
+		// parenthesized binary expression so the Go provider observes the native
+		// assignment shape without losing operator structure.
+		if strings.HasPrefix(value, "(") && strings.HasSuffix(value, ")") {
+			value = strings.TrimSuffix(strings.TrimPrefix(value, "("), ")")
+		}
+		lines = append(lines, "\t\t"+acc+"["+key+"] = "+value)
+	} else {
+		if isFoldAddition(body, accID, elementID, c.graph) {
+			lines = append(lines, "\t\t"+acc+" += "+element)
+		} else {
+			value, err := expr(bodyID, c)
+			if err != nil {
+				return nil, false, err
+			}
+			lines = append(lines, "\t\t"+acc+" = "+value)
+		}
+	}
+	lines = append(lines, "\t}")
+	if lookupKey != "" {
+		key, err := expr(lookupKey, c)
+		if err != nil {
+			return nil, false, err
+		}
+		lines = append(lines, "\treturn "+acc+"["+key+"]")
+	} else {
+		lines = append(lines, "\treturn "+acc)
+	}
+	return lines, true, nil
+}
+
+func isFoldAddition(body entity, accumulatorID, elementID string, graph map[string]entity) bool {
+	if body.schema != sAdd {
+		return false
+	}
+	left, err := ref(body, "00000000000000000000000000009140")
+	if err != nil {
+		return false
+	}
+	right, err := ref(body, "00000000000000000000000000009141")
+	if err != nil {
+		return false
+	}
+	l, lok := graph[left]
+	r, rok := graph[right]
+	if !lok || !rok || l.schema != sIterationRead || r.schema != sIterationRead {
+		return false
+	}
+	lid, le := ref(l, "00000000000000000000000000009f60")
+	rid, re := ref(r, "00000000000000000000000000009f60")
+	return le == nil && re == nil && lid == accumulatorID && rid == elementID
+}
+
+func cloneNames(source map[string]string) map[string]string {
+	result := make(map[string]string, len(source))
+	for key, value := range source {
+		result[key] = value
+	}
+	return result
 }
 
 func expr(id string, c context) (string, error) {
@@ -176,6 +517,36 @@ func expr(id string, c context) (string, error) {
 			return "", fmt.Errorf("go_projection.parameter_scope")
 		}
 		return name, nil
+	case sLocalRead:
+		id, err := ref(e, "00000000000000000000000000009d20")
+		if err != nil {
+			return "", err
+		}
+		name, ok := c.locals[id]
+		if !ok {
+			return "", fmt.Errorf("go_projection.local_scope")
+		}
+		return name, nil
+	case sIterationRead:
+		id, err := ref(e, "00000000000000000000000000009f60")
+		if err != nil {
+			return "", err
+		}
+		name, ok := c.iterations[id]
+		if !ok {
+			return "", fmt.Errorf("go_projection.iteration_scope")
+		}
+		return name, nil
+	case sVariantRead:
+		id, err := ref(e, "000000000000000000000000000a0610")
+		if err != nil {
+			return "", err
+		}
+		value, ok := c.variants[id]
+		if !ok {
+			return "", fmt.Errorf("go_projection.variant_scope")
+		}
+		return value, nil
 	case sCall:
 		fid, err := ref(e, "00000000000000000000000000009600")
 		if err != nil {
@@ -203,6 +574,224 @@ func expr(id string, c context) (string, error) {
 			return "", err
 		}
 		return strconv.Quote(value), nil
+	case sBytesLiteral:
+		value, err := rawBytes(e, "000000000000000000000000000a0640")
+		if err != nil {
+			return "", err
+		}
+		items := make([]string, len(value))
+		for i, item := range value {
+			items[i] = strconv.FormatUint(uint64(item), 10)
+		}
+		return "[]byte{" + strings.Join(items, ", ") + "}", nil
+	case sOptionNone:
+		typeID, err := ref(e, "000000000000000000000000000a0510")
+		if err != nil {
+			return "", err
+		}
+		typ, err := typeName(c.graph, typeID)
+		if err != nil {
+			return "", err
+		}
+		return typ + "{}", nil
+	case sOptionSome:
+		typeID, err := ref(e, "000000000000000000000000000a0520")
+		if err != nil {
+			return "", err
+		}
+		valueID, err := ref(e, "000000000000000000000000000a0521")
+		if err != nil {
+			return "", err
+		}
+		typ, err := typeName(c.graph, typeID)
+		if err != nil {
+			return "", err
+		}
+		value, err := expr(valueID, c)
+		if err != nil {
+			return "", err
+		}
+		return typ + "{Some: true, Value: " + value + "}", nil
+	case sResultOk, sResultError:
+		typeField, valueField, tag, name := "00000000000000000000000000009410", "00000000000000000000000000009411", "true", "Value"
+		if e.schema == sResultError {
+			typeField, valueField, tag, name = "00000000000000000000000000009420", "00000000000000000000000000009421", "false", "Error"
+		}
+		typeID, err := ref(e, typeField)
+		if err != nil {
+			return "", err
+		}
+		valueID, err := ref(e, valueField)
+		if err != nil {
+			return "", err
+		}
+		typ, err := typeName(c.graph, typeID)
+		if err != nil {
+			return "", err
+		}
+		value, err := expr(valueID, c)
+		if err != nil {
+			return "", err
+		}
+		return typ + "{Ok: " + tag + ", " + name + ": " + value + "}", nil
+	case sIntegerLiteral:
+		value, err := unsigned(e, "00000000000000000000000000009700")
+		if err != nil {
+			return "", err
+		}
+		return strconv.FormatInt(int64(value), 10), nil
+	case sBoolLiteral:
+		value, err := scalar(e, "00000000000000000000000000009b00")
+		if err != nil || (value != "tr" && value != "fl") {
+			return "", fmt.Errorf("go_projection.invalid_boolean")
+		}
+		return strconv.FormatBool(value == "tr"), nil
+	case sRecordConstruct:
+		typeID, err := ref(e, "00000000000000000000000000009330")
+		if err != nil {
+			return "", err
+		}
+		r, ok := c.records[typeID]
+		if !ok {
+			return "", fmt.Errorf("go_projection.record_type")
+		}
+		values, err := refs(e, "00000000000000000000000000009331")
+		if err != nil || len(values) != len(r.fields) {
+			return "", fmt.Errorf("go_projection.record_arity")
+		}
+		items := make([]string, len(values))
+		for i, value := range values {
+			rendered, x := expr(value, c)
+			if x != nil {
+				return "", x
+			}
+			items[i] = r.fields[i].name + ": " + rendered
+		}
+		return r.name + "{" + strings.Join(items, ", ") + "}", nil
+	case sFieldRead:
+		valueID, err := ref(e, "00000000000000000000000000009320")
+		if err != nil {
+			return "", err
+		}
+		fieldID, err := ref(e, "00000000000000000000000000009321")
+		if err != nil {
+			return "", err
+		}
+		fieldName := ""
+		for _, r := range c.records {
+			for _, field := range r.fields {
+				if field.id == fieldID {
+					fieldName = field.name
+				}
+			}
+		}
+		if fieldName == "" {
+			return "", fmt.Errorf("go_projection.record_field")
+		}
+		value, err := expr(valueID, c)
+		if err != nil {
+			return "", err
+		}
+		return value + "." + fieldName, nil
+	case sFixedArrayConstruct:
+		typeID, err := ref(e, "00000000000000000000000000009f30")
+		if err != nil {
+			return "", err
+		}
+		typ, err := typeName(c.graph, typeID)
+		if err != nil {
+			return "", err
+		}
+		values, err := refs(e, "00000000000000000000000000009f31")
+		if err != nil {
+			return "", err
+		}
+		rendered := make([]string, len(values))
+		for i, value := range values {
+			rendered[i], err = expr(value, c)
+			if err != nil {
+				return "", err
+			}
+		}
+		return typ + "{" + strings.Join(rendered, ", ") + "}", nil
+	case sIndexRead:
+		collection, err := ref(e, "00000000000000000000000000009f40")
+		if err != nil {
+			return "", err
+		}
+		index, err := ref(e, "00000000000000000000000000009f41")
+		if err != nil {
+			return "", err
+		}
+		a, err := expr(collection, c)
+		if err != nil {
+			return "", err
+		}
+		b, err := expr(index, c)
+		if err != nil {
+			return "", err
+		}
+		return a + "[" + b + "]", nil
+	case sCollectionLength:
+		collection, err := ref(e, "00000000000000000000000000009f90")
+		if err != nil {
+			return "", err
+		}
+		value, err := expr(collection, c)
+		if err != nil {
+			return "", err
+		}
+		return "int64(len(" + value + "))", nil
+	case sDynamicIndexRead:
+		collection, err := ref(e, "00000000000000000000000000009fa0")
+		if err != nil {
+			return "", err
+		}
+		index, err := ref(e, "00000000000000000000000000009fa1")
+		if err != nil {
+			return "", err
+		}
+		a, err := expr(collection, c)
+		if err != nil {
+			return "", err
+		}
+		b, err := expr(index, c)
+		if err != nil {
+			return "", err
+		}
+		return a + "[" + b + "]", nil
+	case sEmptyMap:
+		typeID, err := ref(e, "000000000000000000000000000a0410")
+		if err != nil {
+			return "", fmt.Errorf("go_projection.empty_map_type: %w", err)
+		}
+		typ, err := typeName(c.graph, typeID)
+		if err != nil {
+			return "", fmt.Errorf("go_projection.empty_map_type: %w", err)
+		}
+		return typ + "{}", nil
+	case sMapLookup:
+		collection, err := ref(e, "000000000000000000000000000a0420")
+		if err != nil {
+			return "", err
+		}
+		key, err := ref(e, "000000000000000000000000000a0421")
+		if err != nil {
+			return "", err
+		}
+		a, err := expr(collection, c)
+		if err != nil {
+			return "", err
+		}
+		b, err := expr(key, c)
+		if err != nil {
+			return "", err
+		}
+		return a + "[" + b + "]", nil
+	case sMapUpdate:
+		return "", fmt.Errorf("go_projection.map_update_requires_fold")
+	case sFold:
+		return "", fmt.Errorf("go_projection.fold_requires_statement_context")
 	case sAdd, sConcat:
 		leftField, rightField := "00000000000000000000000000009140", "00000000000000000000000000009141"
 		if e.schema == sConcat {
@@ -242,8 +831,140 @@ func typeName(g map[string]entity, id string) (string, error) {
 		return "bool", nil
 	case sString:
 		return "string", nil
+	case sBytes:
+		return "[]byte", nil
+	case sOptionType:
+		value, err := ref(e, "000000000000000000000000000a0500")
+		if err != nil {
+			return "", err
+		}
+		typ, err := typeName(g, value)
+		if err != nil {
+			return "", err
+		}
+		return "Option[" + typ + "]", nil
+	case sResultType:
+		success, err := ref(e, "00000000000000000000000000009400")
+		if err != nil {
+			return "", err
+		}
+		failure, err := ref(e, "00000000000000000000000000009401")
+		if err != nil {
+			return "", err
+		}
+		st, err := typeName(g, success)
+		if err != nil {
+			return "", err
+		}
+		ft, err := typeName(g, failure)
+		if err != nil {
+			return "", err
+		}
+		return "Result[" + st + ", " + ft + "]", nil
+	case sRecordType:
+		name, err := text(e, "00000000000000000000000000009300")
+		if err != nil || !identifier(name) {
+			return "", fmt.Errorf("go_projection.invalid_record_name")
+		}
+		return name, nil
+	case sFixedArrayType:
+		element, err := ref(e, "00000000000000000000000000009f20")
+		if err != nil {
+			return "", err
+		}
+		if typ, err := typeName(g, element); err != nil || typ != "int64" {
+			return "", fmt.Errorf("go_projection.unsupported_array_element")
+		}
+		length, err := unsigned(e, "00000000000000000000000000009f21")
+		if err != nil || length > 32 {
+			return "", fmt.Errorf("go_projection.invalid_array_length")
+		}
+		return fmt.Sprintf("[%d]int64", length), nil
+	case sSliceType:
+		element, err := ref(e, "00000000000000000000000000009f80")
+		if err != nil {
+			return "", err
+		}
+		if typ, err := typeName(g, element); err != nil || typ != "int64" {
+			return "", fmt.Errorf("go_projection.unsupported_slice_element")
+		}
+		return "[]int64", nil
+	case sMapType:
+		key, err := ref(e, "000000000000000000000000000a0400")
+		if err != nil {
+			return "", err
+		}
+		value, err := ref(e, "000000000000000000000000000a0401")
+		if err != nil {
+			return "", err
+		}
+		kt, ke := typeName(g, key)
+		vt, ve := typeName(g, value)
+		if ke != nil || ve != nil || kt != "int64" || vt != "int64" {
+			return "", fmt.Errorf("go_projection.unsupported_map_type")
+		}
+		return "map[int64]int64", nil
 	}
 	return "", fmt.Errorf("go_projection.unsupported_type")
+}
+
+func collectRecords(graph map[string]entity) (map[string]record, error) {
+	result := map[string]record{}
+	for id, e := range graph {
+		if e.schema != sRecordType {
+			continue
+		}
+		name, err := text(e, "00000000000000000000000000009300")
+		if err != nil || !identifier(name) {
+			return nil, fmt.Errorf("go_projection.invalid_record_name")
+		}
+		fieldIDs, err := refs(e, "00000000000000000000000000009301")
+		if err != nil {
+			return nil, err
+		}
+		r := record{name: name}
+		for position, fid := range fieldIDs {
+			field, ok := graph[fid]
+			if !ok || field.schema != sRecordField {
+				return nil, fmt.Errorf("go_projection.invalid_record_field")
+			}
+			fieldName, err := text(field, "00000000000000000000000000009310")
+			if err != nil || !identifier(fieldName) {
+				return nil, fmt.Errorf("go_projection.invalid_record_field_name")
+			}
+			typeID, err := ref(field, "00000000000000000000000000009311")
+			if err != nil {
+				return nil, err
+			}
+			typ, err := typeName(graph, typeID)
+			if err != nil {
+				return nil, err
+			}
+			actual, err := unsigned(field, "00000000000000000000000000009312")
+			if err != nil || actual != uint64(position) {
+				return nil, fmt.Errorf("go_projection.record_field_order")
+			}
+			r.fields = append(r.fields, recordField{fid, fieldName, typ})
+		}
+		result[id] = r
+	}
+	return result, nil
+}
+func sortedRecordIDs(records map[string]record) []string {
+	ids := make([]string, 0, len(records))
+	for id := range records {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+func graphHasSchema(graph map[string]entity, schema string) bool {
+	for _, item := range graph {
+		if item.schema == schema {
+			return true
+		}
+	}
+	return false
 }
 func identifier(s string) bool {
 	if s == "" {
@@ -355,6 +1076,21 @@ func refs(e entity, field string) ([]string, error) {
 	}
 	return out, nil
 }
+func unsigned(e entity, field string) (uint64, error) {
+	v, err := scalar(e, field)
+	if err != nil {
+		return 0, err
+	}
+	p := strings.Fields(v)
+	if len(p) != 2 || p[0] != "uu" {
+		return 0, fmt.Errorf("go_projection.invalid_unsigned")
+	}
+	value, err := strconv.ParseUint(p[1], 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("go_projection.invalid_unsigned")
+	}
+	return value, nil
+}
 func text(e entity, field string) (string, error) {
 	v, err := scalar(e, field)
 	if err != nil {
@@ -372,4 +1108,22 @@ func text(e entity, field string) (string, error) {
 		return "", fmt.Errorf("go_projection.invalid_utf8")
 	}
 	return string(b), nil
+}
+func rawBytes(e entity, field string) ([]byte, error) {
+	v, err := scalar(e, field)
+	if err != nil {
+		return nil, err
+	}
+	p := strings.Fields(v)
+	if len(p) != 2 || p[0] != "by" {
+		return nil, fmt.Errorf("go_projection.invalid_bytes")
+	}
+	if p[1] == "-" {
+		return []byte{}, nil
+	}
+	value, err := hex.DecodeString(p[1])
+	if err != nil {
+		return nil, fmt.Errorf("go_projection.invalid_bytes")
+	}
+	return value, nil
 }

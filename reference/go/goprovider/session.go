@@ -190,10 +190,12 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	integerID := stableID("execution", "type", "i64")
 	booleanID := stableID("execution", "type", "bool")
 	stringID := stableID("execution", "type", "string")
+	bytesID := stableID("execution", "type", "bytes")
 	instances := []graphEntity{
 		{integerID, entity(integerID, "00000000000000000000000000009010", []graphField{unsignedField(0x9100, 64), {0x9101, "tr"}, unsignedField(0x9102, 0)})},
 		{booleanID, entity(booleanID, "00000000000000000000000000009020", nil)},
 		{stringID, entity(stringID, "00000000000000000000000000009040", nil)},
+		{bytesID, entity(bytesID, "00000000000000000000000000009041", nil)},
 	}
 	records := make(map[*types.Named]goRecordInfo)
 	for identifier, object := range info.Defs {
@@ -403,6 +405,12 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		resultTypeID = stringID
 	} else if isI64Slice(function.sig.Results().At(0).Type()) {
 		resultTypeID = stableID("execution", "type", "slice", "i64")
+	} else if isBytes(resultType) {
+		resultTypeID = stableID("execution", "type", "bytes")
+	} else if _, ok := goOptionValueType(resultType); ok {
+		resultTypeID = goSemanticTypeIdentity(resultType)
+	} else if _, _, ok := goResultTypes(resultType); ok {
+		resultTypeID = goSemanticTypeIdentity(resultType)
 	} else if functionSignature, ok := goFunctionSignature(resultType); ok {
 		if !isUnaryI64Function(functionSignature) {
 			return diagnostic("session.unsupported_result_type", "only unary i64 function values are supported")
@@ -431,6 +439,7 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		}
 		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a004", []graphField{refField(0xa0040, stateTypeID), refField(0xa0041, valueTypeID)})})
 	}
+	instances = append(instances, goBridgeTypeEntities(resultType, integerID, booleanID, stringID)...)
 	if isI64Slice(function.sig.Results().At(0).Type()) {
 		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
 	}
@@ -453,6 +462,9 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 			if !hasGraphEntity(instances, parameterTypeID) {
 				instances = append(instances, graphEntity{parameterTypeID, entity(parameterTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
 			}
+		} else if supported, ok := goSupportedTypeID(function.sig.Params().At(index).Type(), integerID, booleanID, stringID, records); ok {
+			parameterTypeID = supported
+			instances = append(instances, goBridgeTypeEntities(function.sig.Params().At(index).Type(), integerID, booleanID, stringID)...)
 		} else if functionSignature, ok := goFunctionSignature(function.sig.Params().At(index).Type()); ok {
 			if !isUnaryI64Function(functionSignature) {
 				return diagnostic("session.unsupported_parameter_type", "only unary i64 function values are supported")
@@ -549,6 +561,15 @@ func goSemanticTypeIdentity(value types.Type) string {
 	if isPureString(value) {
 		return stableID("execution", "type", "string")
 	}
+	if isBytes(value) {
+		return stableID("execution", "type", "bytes")
+	}
+	if item, ok := goOptionValueType(value); ok {
+		return stableID("execution", "type", "option", goSemanticTypeIdentity(item))
+	}
+	if success, failure, ok := goResultTypes(value); ok {
+		return stableID("execution", "type", "result", goSemanticTypeIdentity(success), goSemanticTypeIdentity(failure))
+	}
 	if named, ok := value.(*types.Named); ok && named.Obj() != nil && named.Obj().Pkg() != nil {
 		return stableID("execution", "record", named.Obj().Pkg().Path(), named.Obj().Name())
 	}
@@ -568,6 +589,15 @@ func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, 
 	if isI64Slice(value) {
 		return stableID("execution", "type", "slice", "i64"), true
 	}
+	if isBytes(value) {
+		return stableID("execution", "type", "bytes"), true
+	}
+	if _, ok := goOptionValueType(value); ok {
+		return goSemanticTypeIdentity(value), true
+	}
+	if _, _, ok := goResultTypes(value); ok {
+		return goSemanticTypeIdentity(value), true
+	}
 	if state, result, ok := goTransitionTypes(value); ok {
 		return goTransitionTypeID(state, result), true
 	}
@@ -580,6 +610,47 @@ func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, 
 		}
 	}
 	return "", false
+}
+
+func goOptionValueType(value types.Type) (types.Type, bool) {
+	named, ok := value.(*types.Named)
+	if !ok || named.Obj() == nil || named.Obj().Name() != "Option" || named.TypeArgs().Len() != 1 {
+		return nil, false
+	}
+	structure, ok := named.Underlying().(*types.Struct)
+	if !ok || structure.NumFields() != 2 || structure.Field(0).Name() != "Some" || !isBool(structure.Field(0).Type()) || structure.Field(1).Name() != "Value" {
+		return nil, false
+	}
+	item := named.TypeArgs().At(0)
+	return item, types.Identical(structure.Field(1).Type(), item)
+}
+func goResultTypes(value types.Type) (types.Type, types.Type, bool) {
+	named, ok := value.(*types.Named)
+	if !ok || named.Obj() == nil || named.Obj().Name() != "Result" || named.TypeArgs().Len() != 2 {
+		return nil, nil, false
+	}
+	structure, ok := named.Underlying().(*types.Struct)
+	if !ok || structure.NumFields() != 3 || structure.Field(0).Name() != "Ok" || !isBool(structure.Field(0).Type()) || structure.Field(1).Name() != "Value" || structure.Field(2).Name() != "Error" {
+		return nil, nil, false
+	}
+	success, failure := named.TypeArgs().At(0), named.TypeArgs().At(1)
+	return success, failure, types.Identical(structure.Field(1).Type(), success) && types.Identical(structure.Field(2).Type(), failure)
+}
+func goBridgeTypeEntities(value types.Type, integerID, booleanID, stringID string) []graphEntity {
+	if isBytes(value) {
+		id := stableID("execution", "type", "bytes")
+		return []graphEntity{{id, entity(id, "00000000000000000000000000009041", nil)}}
+	}
+	if item, ok := goOptionValueType(value); ok {
+		id, itemID := goSemanticTypeIdentity(value), goSemanticTypeIdentity(item)
+		return append(goBridgeTypeEntities(item, integerID, booleanID, stringID), graphEntity{id, entity(id, "0000000000000000000000000000a050", []graphField{refField(0xa0500, itemID)})})
+	}
+	if success, failure, ok := goResultTypes(value); ok {
+		id, successID, failureID := goSemanticTypeIdentity(value), goSemanticTypeIdentity(success), goSemanticTypeIdentity(failure)
+		entities := append(goBridgeTypeEntities(success, integerID, booleanID, stringID), goBridgeTypeEntities(failure, integerID, booleanID, stringID)...)
+		return append(entities, graphEntity{id, entity(id, "00000000000000000000000000009042", []graphField{refField(0x9400, successID), refField(0x9401, failureID)})})
+	}
+	return nil
 }
 
 func goFunctionSignature(value types.Type) (*types.Signature, bool) {

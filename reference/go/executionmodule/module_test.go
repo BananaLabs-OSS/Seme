@@ -2,6 +2,74 @@ package executionmodule
 
 import "testing"
 
+func TestVersion32AddsNeutralVariantMatchingAndBytesObservation(t *testing.T) {
+	previous, err := Declarations(31)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(32)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []uint64{0xa060, 0xa061, 0xa062, 0xa063, 0xa064, 0xa065}
+	if len(current) != len(previous)+len(want) {
+		t.Fatalf("schema count = %d, want %d", len(current), len(previous)+len(want))
+	}
+	for index := range previous {
+		if current[index].ID != previous[index].ID || current[index].Name != previous[index].Name {
+			t.Fatalf("v31 schema %d changed", index)
+		}
+	}
+	for index, id := range want {
+		if current[len(previous)+index].ID != id {
+			t.Fatalf("schema %d = %x, want %x", index, current[len(previous)+index].ID, id)
+		}
+	}
+	resultMatch := current[len(previous)+2]
+	if len(resultMatch.Fields) != 5 || resultMatch.Fields[1].Schema != 0xa060 || resultMatch.Fields[2].Schema != 0x9080 || resultMatch.Fields[3].Schema != 0xa060 || resultMatch.Fields[4].Schema != 0x9080 {
+		t.Fatalf("ResultMatch fields = %#v", resultMatch.Fields)
+	}
+	optionMatch := current[len(previous)+3]
+	if len(optionMatch.Fields) != 4 || optionMatch.Fields[1].Schema != 0x9080 || optionMatch.Fields[2].Schema != 0xa060 || optionMatch.Fields[3].Schema != 0x9080 {
+		t.Fatalf("OptionMatch fields = %#v", optionMatch.Fields)
+	}
+}
+
+func TestVersion31AddsNeutralOptionValues(t *testing.T) {
+	previous, err := Declarations(30)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(31)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Schema{
+		{0xa050, "OptionType", []Field{{0xa0500, "option.value_type", 5, 0, 0}}},
+		{0xa051, "OptionNone", []Field{{0xa0510, "option_none.type", 5, 0xa050, 0}}},
+		{0xa052, "OptionSome", []Field{{0xa0520, "option_some.type", 5, 0xa050, 0}, {0xa0521, "option_some.value", 5, 0, 0}}},
+	}
+	if len(current) != len(previous)+len(want) {
+		t.Fatalf("schema count = %d, want %d", len(current), len(previous)+len(want))
+	}
+	for index := range previous {
+		if current[index].ID != previous[index].ID || current[index].Name != previous[index].Name {
+			t.Fatalf("v30 schema %d changed in v31", index)
+		}
+	}
+	for index := range want {
+		got := current[len(previous)+index]
+		if got.ID != want[index].ID || got.Name != want[index].Name || len(got.Fields) != len(want[index].Fields) {
+			t.Fatalf("v31 schema %d = %#v, want %#v", index, got, want[index])
+		}
+		for fieldIndex := range want[index].Fields {
+			if got.Fields[fieldIndex] != want[index].Fields[fieldIndex] {
+				t.Fatalf("v31 schema %d field %d = %#v, want %#v", index, fieldIndex, got.Fields[fieldIndex], want[index].Fields[fieldIndex])
+			}
+		}
+	}
+}
+
 func TestVersionThreeExtendsVersionTwo(t *testing.T) {
 	v2, err := Declarations(2)
 	if err != nil {
@@ -346,7 +414,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(31); err == nil {
+	if _, err := Declarations(33); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }

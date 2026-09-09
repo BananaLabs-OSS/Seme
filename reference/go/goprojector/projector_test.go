@@ -56,9 +56,16 @@ func TestProjectsTypedMultiFileCallGraphAndRelifts(t *testing.T) {
 }
 
 func runNative(t *testing.T, files map[string]string) {
+	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
+}
+
+func runNativeWithTest(t *testing.T, files map[string]string, body string) {
 	t.Helper()
 	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.test/go-uab-call\n\ngo 1.26\n"), 0o644); err != nil {
+	// The generated projection uses no edition-specific syntax. Keeping this
+	// disposable native-oracle module at Go 1.25 lets both the repository's
+	// declared 1.26 toolchain and the local fallback toolchain execute it.
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.test/go-uab-call\n\ngo 1.25\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	for name, source := range files {
@@ -66,7 +73,7 @@ func runNative(t *testing.T, files map[string]string) {
 			t.Fatal(err)
 		}
 	}
-	testSource := "package nativeproof\nimport \"testing\"\nfunc TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }\n"
+	testSource := "package nativeproof\nimport \"testing\"\n" + body + "\n"
 	if err := os.WriteFile(filepath.Join(dir, "projected_test.go"), []byte(testSource), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -76,6 +83,147 @@ func runNative(t *testing.T, files map[string]string) {
 		t.Fatalf("native projected Go failed: %v\n%s", err, output)
 	}
 }
+
+func TestProjectsExistingCompositeCollectionsAndRecords(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ name, fixture, entry, nativeTest string }{
+		{"record", "../../../fixtures/go-execution-v17/function.go", "Label", `func TestNative(t *testing.T) { if Label("item") != "item" { t.Fatal("record") } }`},
+		{"array", "../../../fixtures/go-execution-v21/function.go", "Pick", `func TestNative(t *testing.T) { if Pick(3, 5, 8, 1) != 5 { t.Fatal("array") } }`},
+		{"slice", "../../../fixtures/go-execution-v23/function.go", "Sum", `func TestNative(t *testing.T) { if Sum([]int64{3, -2, 5}) != 6 { t.Fatal("slice") } }`},
+		{"map", "../../../fixtures/go-execution-v30/tally.go", "Tally", `func TestNative(t *testing.T) { if Tally([]int64{3, 3, -1}, 3) != 2 { t.Fatal("map") } }`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source, err := os.ReadFile(test.fixture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := goprovider.NewIncrementalSession(module)
+			if err != nil {
+				t.Fatal(err)
+			}
+			first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/go-uab02/" + test.name, Entry: test.entry, Files: map[string]string{"original.go": string(source)}})
+			if !first.Valid {
+				t.Fatalf("initial lift: %#v", first.Diagnostics)
+			}
+			projected, err := goprojector.Project([]byte(first.CanonicalG1), "nativeproof")
+			if err != nil {
+				t.Fatal(err)
+			}
+			secondSession, err := goprovider.NewIncrementalSession(module)
+			if err != nil {
+				t.Fatal(err)
+			}
+			second := secondSession.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/go-uab02/" + test.name, Entry: test.entry, Files: map[string]string{"projected.go": string(projected)}})
+			if !second.Valid {
+				t.Fatalf("projected re-lift: %#v\n%s", second.Diagnostics, projected)
+			}
+			if second.CanonicalG1 != first.CanonicalG1 {
+				t.Fatalf("%s projection changed canonical meaning", test.name)
+			}
+			runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, test.nativeTest)
+		})
+	}
+}
+
+func TestRejectsMalformedCompositeSemantics(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ name, fixture, entry, old, replacement, diagnostic string }{
+		{"record field order", "../../../fixtures/go-execution-v17/function.go", "Label", "fi 00000000000000000000000000009312 uu 0", "fi 00000000000000000000000000009312 uu 1", "go_projection.record_field_order"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			source, err := os.ReadFile(test.fixture)
+			if err != nil {
+				t.Fatal(err)
+			}
+			session, err := goprovider.NewIncrementalSession(module)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/go-uab02/reject/" + test.name, Entry: test.entry, Files: map[string]string{"original.go": string(source)}})
+			if !result.Valid {
+				t.Fatal(result.Diagnostics)
+			}
+			mutated := strings.Replace(result.CanonicalG1, test.old, test.replacement, 1)
+			if mutated == result.CanonicalG1 {
+				t.Fatal("mutation did not apply")
+			}
+			if _, err := goprojector.Project([]byte(mutated), "nativeproof"); err == nil || !strings.Contains(err.Error(), test.diagnostic) {
+				t.Fatalf("malformed composite accepted: %v", err)
+			}
+		})
+	}
+}
+
+func TestProjectsBytesOptionAndResultConstructors(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v32/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package tagged
+type Option[T any] struct { Some bool; Value T }
+type Result[T, E any] struct { Ok bool; Value T; Error E }
+func Some(value int64) Option[int64] { return Option[int64]{Some: true, Value: value} }
+func None() Option[int64] { return Option[int64]{} }
+func Accepted(value int64) Result[int64, string] { return Result[int64, string]{Ok: true, Value: value} }
+func Rejected(message string) Result[int64, string] { return Result[int64, string]{Ok: false, Error: message} }
+func Evidence() []byte { return []byte{0, 127, 255} }
+func OptionValue(option Option[int64], fallback int64) int64 { if option.Some { return option.Value }; return fallback }
+func ResultMessage(result Result[int64, string]) string { if result.Ok { return "ok" }; return result.Error }
+`
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/go-uab02/tagged", Entry: "Evidence", Files: map[string]string{"tagged.go": source}})
+	if !first.Valid {
+		t.Fatalf("initial lift: %#v", first.Diagnostics)
+	}
+	for _, schema := range []string{sBytesLiteralForTest, sOptionNoneForTest, sOptionSomeForTest, sResultOkForTest, sResultErrorForTest, sOptionMatchForTest, sResultMatchForTest} {
+		if !strings.Contains(first.CanonicalG1, schema) {
+			t.Fatalf("canonical graph lacks %s", schema)
+		}
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondSession, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := secondSession.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/go-uab02/tagged", Entry: "Evidence", Files: map[string]string{"projected.go": string(projected)}})
+	if !second.Valid {
+		t.Fatalf("projected re-lift: %#v\n%s", second.Diagnostics, projected)
+	}
+	if second.CanonicalG1 != first.CanonicalG1 {
+		t.Fatal("tagged projection changed canonical meaning")
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) {
+ if got := Some(7); !got.Some || got.Value != 7 { t.Fatal(got) }
+ if None().Some { t.Fatal("none") }
+ if got := Accepted(9); !got.Ok || got.Value != 9 { t.Fatal(got) }
+ if got := Rejected("no"); got.Ok || got.Error != "no" { t.Fatal(got) }
+ if got := Evidence(); len(got) != 3 || got[0] != 0 || got[2] != 255 { t.Fatal(got) }
+ if OptionValue(Some(7), 3) != 7 || OptionValue(None(), 3) != 3 { t.Fatal("option match") }
+ if ResultMessage(Accepted(9)) != "ok" || ResultMessage(Rejected("no")) != "no" { t.Fatal("result match") }
+}`)
+}
+
+const (
+	sBytesLiteralForTest = "0000000000000000000000000000a064"
+	sOptionNoneForTest   = "0000000000000000000000000000a051"
+	sOptionSomeForTest   = "0000000000000000000000000000a052"
+	sResultOkForTest     = "00000000000000000000000000009043"
+	sResultErrorForTest  = "00000000000000000000000000009044"
+	sOptionMatchForTest  = "0000000000000000000000000000a063"
+	sResultMatchForTest  = "0000000000000000000000000000a062"
+)
 
 func TestRejectsUnsupportedCanonicalExpression(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v16/module.g1")

@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 30 {
+	if version < 2 || version > 32 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -200,6 +200,23 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0xa041, "EmptyMap", []Field{field(0xa0410, "empty_map.type", 5, 0xa040, 0)}},
 			Schema{0xa042, "MapLookup", []Field{field(0xa0420, "map_lookup.map", 5, 0, 0), field(0xa0421, "map_lookup.key", 5, 0, 0)}},
 			Schema{0xa043, "MapUpdate", []Field{field(0xa0430, "map_update.map", 5, 0, 0), field(0xa0431, "map_update.key", 5, 0, 0), field(0xa0432, "map_update.value", 5, 0, 0)}},
+		)
+	}
+	if version >= 31 {
+		schemas = append(schemas,
+			Schema{0xa050, "OptionType", []Field{field(0xa0500, "option.value_type", 5, 0, 0)}},
+			Schema{0xa051, "OptionNone", []Field{field(0xa0510, "option_none.type", 5, 0xa050, 0)}},
+			Schema{0xa052, "OptionSome", []Field{field(0xa0520, "option_some.type", 5, 0xa050, 0), field(0xa0521, "option_some.value", 5, 0, 0)}},
+		)
+	}
+	if version >= 32 {
+		schemas = append(schemas,
+			Schema{0xa060, "VariantBinding", []Field{field(0xa0600, "variant_binding.name", 4, 0, 0), field(0xa0601, "variant_binding.type", 5, 0, 0)}},
+			Schema{0xa061, "VariantBindingRead", []Field{field(0xa0610, "variant_binding_read.binding", 5, 0xa060, 0)}},
+			Schema{0xa062, "ResultMatch", []Field{field(0xa0620, "result_match.value", 5, 0, 0), field(0xa0621, "result_match.ok_binding", 5, 0xa060, 0), field(0xa0622, "result_match.ok_body", 5, 0x9080, 0), field(0xa0623, "result_match.error_binding", 5, 0xa060, 0), field(0xa0624, "result_match.error_body", 5, 0x9080, 0)}},
+			Schema{0xa063, "OptionMatch", []Field{field(0xa0630, "option_match.value", 5, 0, 0), field(0xa0631, "option_match.none_body", 5, 0x9080, 0), field(0xa0632, "option_match.some_binding", 5, 0xa060, 0), field(0xa0633, "option_match.some_body", 5, 0x9080, 0)}},
+			Schema{0xa064, "BytesLiteral", []Field{field(0xa0640, "bytes_literal.value", 4, 0, 0)}},
+			Schema{0xa065, "BytesEqual", []Field{field(0xa0650, "bytes_equal.left", 5, 0, 0), field(0xa0651, "bytes_equal.right", 5, 0, 0)}},
 		)
 	}
 	return schemas, nil

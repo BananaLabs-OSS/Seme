@@ -139,6 +139,33 @@ func Run(value int64) int64 { return Helper(value) }
 	}
 }
 
+func TestIncrementalSessionRejectsAmbiguousOptionTupleShape(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, entry, source, code string
+	}{
+		{"option tuple", "Find", "package boundary\nfunc Find(value int64) (int64, bool) { return value, true }\n", "session.unsupported_function_shape"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			session, err := NewIncrementalSession(module)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/uab02/" + test.name, Entry: test.entry, Files: map[string]string{"boundary.go": test.source}})
+			if result.Valid || len(result.Diagnostics) != 1 {
+				t.Fatalf("unsupported boundary accepted: %#v", result)
+			}
+			diagnostic := result.Diagnostics[0]
+			if diagnostic.Code != test.code || diagnostic.File != "boundary.go" || diagnostic.Line != 2 || diagnostic.Column != 1 {
+				t.Fatalf("diagnostic = %#v", diagnostic)
+			}
+		})
+	}
+}
+
 func TestIncrementalSessionLiftsRuntimeKeyedMapFold(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
 	if err != nil {

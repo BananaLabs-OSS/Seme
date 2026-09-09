@@ -38,6 +38,9 @@ func analyzeGoBlockWithCalls(statements []ast.Stmt, signature *types.Signature, 
 }
 
 func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goBlock, error) {
+	if tagged, ok := matchGoTotalTaggedValue(statements, signature, info, functions, records); ok {
+		return &goBlock{statements: []*goStatement{{returned: tagged}}}, nil
+	}
 	if tally, ok := matchGoRuntimeMapTally(statements, signature, info); ok {
 		return &goBlock{statements: []*goStatement{{returned: tally}}}, nil
 	}
@@ -67,6 +70,84 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 		})
 	}
 	return analyzeGoBlockScoped(statements, signature, info, map[types.Object]int{}, functions, records, mutable, &next, true)
+}
+
+func matchGoTotalTaggedValue(statements []ast.Stmt, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goExpression, bool) {
+	if len(statements) != 2 {
+		return nil, false
+	}
+	branch, ok := statements[0].(*ast.IfStmt)
+	if !ok || branch.Init != nil || branch.Else != nil || len(branch.Body.List) != 1 {
+		return nil, false
+	}
+	condition, ok := branch.Cond.(*ast.SelectorExpr)
+	if !ok {
+		return nil, false
+	}
+	source, ok := condition.X.(*ast.Ident)
+	if !ok {
+		return nil, false
+	}
+	parameter := -1
+	for index := 0; index < signature.Params().Len(); index++ {
+		if info.Uses[source] == signature.Params().At(index) {
+			parameter = index
+			break
+		}
+	}
+	if parameter < 0 {
+		return nil, false
+	}
+	presentReturn, ok := branch.Body.List[0].(*ast.ReturnStmt)
+	if !ok || len(presentReturn.Results) != 1 {
+		return nil, false
+	}
+	absentReturn, ok := statements[1].(*ast.ReturnStmt)
+	if !ok || len(absentReturn.Results) != 1 {
+		return nil, false
+	}
+	read := &goExpression{kind: goParameterRead, parameter: parameter}
+	sourceType := signature.Params().At(parameter).Type()
+	if item, option := goOptionValueType(sourceType); option && condition.Sel.Name == "Some" {
+		bindingName := "value"
+		some, ok := analyzeTaggedArm(presentReturn.Results[0], source, "Value", bindingName, signature, info, functions, records)
+		if !ok {
+			return nil, false
+		}
+		none, err := analyzeGoExpressionWithProgram(absentReturn.Results[0], signature, info, nil, functions, records, nil)
+		if err != nil {
+			return nil, false
+		}
+		return &goExpression{kind: goOptionMatch, left: read, initial: none, body: some, text: bindingName, typeID: goSemanticTypeIdentity(item)}, true
+	}
+	if success, failure, result := goResultTypes(sourceType); result && condition.Sel.Name == "Ok" {
+		okName, errorName := "value", "failure"
+		okArm, ok := analyzeTaggedArm(presentReturn.Results[0], source, "Value", okName, signature, info, functions, records)
+		if !ok {
+			return nil, false
+		}
+		errorArm, ok := analyzeTaggedArm(absentReturn.Results[0], source, "Error", errorName, signature, info, functions, records)
+		if !ok {
+			var err error
+			errorArm, err = analyzeGoExpressionWithProgram(absentReturn.Results[0], signature, info, nil, functions, records, nil)
+			if err != nil {
+				return nil, false
+			}
+		}
+		return &goExpression{kind: goResultMatch, left: read, body: okArm, alternate: errorArm, text: okName, typeID: goSemanticTypeIdentity(success), errorName: errorName, errorTypeID: goSemanticTypeIdentity(failure)}, true
+	}
+	return nil, false
+}
+
+func analyzeTaggedArm(node ast.Expr, source *ast.Ident, field, binding string, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goExpression, bool) {
+	if selector, ok := node.(*ast.SelectorExpr); ok {
+		base, baseOK := selector.X.(*ast.Ident)
+		if baseOK && info.Uses[base] == info.Uses[source] && selector.Sel.Name == field {
+			return &goExpression{kind: goVariantRead, text: binding}, true
+		}
+	}
+	value, err := analyzeGoExpressionWithProgram(node, signature, info, nil, functions, records, nil)
+	return value, err == nil
 }
 
 func matchGoRuntimeMapTally(statements []ast.Stmt, signature *types.Signature, info *types.Info) (*goExpression, bool) {

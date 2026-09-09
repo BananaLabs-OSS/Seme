@@ -350,6 +350,20 @@ slice fold; repeated, negative, missing, reordered, empty, and bounded inputs
 agree through deterministic Wasm and pinned Pulp. Run
 `./scripts/check-execution-v30.sh`.
 
+[`Core Execution v31`](spec/core-execution-v31.md) adds neutral explicit
+`OptionType`, `OptionNone`, and `OptionSome` values. [`Core Execution
+v32`](spec/core-execution-v32.md) adds typed variant bindings, total
+Result/Option matching, and exact byte literals/equality. Both are additive;
+neither imports a source language's null, tuple, exception, or object model.
+Run `./scripts/check-execution-v31.sh` and `./scripts/check-execution-v32.sh`.
+
+The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
+Bytes, Result, and Option layouts from canonical types. Its first executable
+reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
+matches, UTF-8 validation, deterministic Wasm, malformed-request rejection,
+and pinned Pulp execution. It is deliberately not described as general
+composite lowering. Run `./scripts/check-composite-runtime-v32.sh`.
+
 The [`Core v30 cumulative composition proofs`](spec/core-cumulative-proof-a.md)
 close the separate architectural gate: one ordinary program combines runtime
 collection traversal, calls, locals, conditional method dispatch, and explicit
