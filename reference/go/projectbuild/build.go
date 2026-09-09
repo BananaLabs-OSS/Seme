@@ -102,11 +102,17 @@ func clonePackages(in []goprovider.PackageMetadata) []goprovider.PackageMetadata
 	for i, p := range in {
 		out[i] = p
 		out[i].Dependencies = append([]string(nil), p.Dependencies...)
-		out[i].Functions = make([]goprovider.PackageFunctionMetadata, len(p.Functions))
-		for j, function := range p.Functions {
-			out[i].Functions[j] = function
-			out[i].Functions[j].Parameters = append([]string(nil), function.Parameters...)
-		}
+		out[i].Members = cloneFunctions(p.Members)
+		out[i].Functions = cloneFunctions(p.Functions)
+	}
+	return out
+}
+
+func cloneFunctions(in []goprovider.PackageFunctionMetadata) []goprovider.PackageFunctionMetadata {
+	out := make([]goprovider.PackageFunctionMetadata, len(in))
+	for i, function := range in {
+		out[i] = function
+		out[i].Parameters = append([]string(nil), function.Parameters...)
 	}
 	return out
 }

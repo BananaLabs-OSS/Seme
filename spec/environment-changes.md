@@ -339,3 +339,12 @@ atomic-rejection evidence ran only in automatically removed directories under
 `/tmp`; focused Go tests also used disposable `GOCACHE` directories there. No
 software or dependency was installed, and no shell, SSH, editor, toolchain,
 global, workstation, or persistent environment setting was changed.
+
+## 2026-09-09 — Go UPB-02 package-graph foundation
+
+Provider resolution-manifest, member-aware projection, private-visibility, and
+canonical Package v1 graph-inspection work reused the existing Go 1.26.0
+reference toolchain and Go 1.25.6 fixture toolchain. Test caches were redirected
+to disposable directories under `/tmp`. No software or dependency was
+installed, and no shell, SSH, editor, toolchain, global, workstation, or
+persistent environment setting was changed.

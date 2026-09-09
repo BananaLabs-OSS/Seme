@@ -189,3 +189,14 @@ Seme. In particular, Workbench is a possible later consumer, not the profile's
 fixture or success criterion. The empty baseline is validated by
 `../scripts/check-upb-v1-scorecard.sh`; mapped claimed gates execute through
 `../scripts/check-upb-v1-claimed.sh`.
+
+Go UPB-02 is underway without a score claim. The provider now retains a typed,
+deterministic resolution manifest for file ownership, top-level declaration
+membership and visibility, import aliases and locality, and honest project
+locations. Projection distinguishes private package members from exported
+interfaces and rejects cross-package access to private members. A validated
+Package v1 graph inspector reports the currently canonical package identities,
+dependencies, exports, revisions, and signatures. Package v1 does not commit
+full private membership, import bindings, or source provenance, so UPB-02
+remains unclaimed until a neutral compatible contract evolution carries those
+facts and the seven-evidence gate proves them end to end.

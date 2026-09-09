@@ -46,6 +46,27 @@ func TestProjectPackagesPreservesOwnershipCallsAndRelift(t *testing.T) {
 	if _, e := ProjectPackages([]byte(first.CanonicalG1), undeclared); e == nil || !strings.Contains(e.Error(), "undeclared_dependency") {
 		t.Fatalf("accepted undeclared cross-package call: %v", e)
 	}
+	inaccessible := clonePackageMetadata(first.Packages)
+	for i := range inaccessible {
+		if inaccessible[i].Name != "example.test/go-project-build-v1/model" {
+			continue
+		}
+		for j := range inaccessible[i].Members {
+			if inaccessible[i].Members[j].Name == "Normalize" {
+				inaccessible[i].Members[j].Exported = false
+			}
+		}
+		public := inaccessible[i].Functions[:0]
+		for _, function := range inaccessible[i].Functions {
+			if function.Name != "Normalize" {
+				public = append(public, function)
+			}
+		}
+		inaccessible[i].Functions = public
+	}
+	if _, e := ProjectPackages([]byte(first.CanonicalG1), inaccessible); e == nil || !strings.Contains(e.Error(), "inaccessible_member") {
+		t.Fatalf("accepted cross-package call to private member: %v", e)
+	}
 	if len(projected) != 3 {
 		t.Fatalf("files=%d", len(projected))
 	}
@@ -81,6 +102,18 @@ func TestProjectPackagesPreservesOwnershipCallsAndRelift(t *testing.T) {
 	if err = os.WriteFile(filepath.Join(dir, "application/application_test.go"), testSource, 0644); err != nil {
 		t.Fatal(err)
 	}
+	if err = os.MkdirAll(filepath.Join(dir, "vectors"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"requests.jsonl", "expected.jsonl"} {
+		data, readErr := os.ReadFile(filepath.Join(root, "vectors", name))
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if err = os.WriteFile(filepath.Join(dir, "vectors", name), data, 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	command := exec.Command("go", "test", "./...")
 	command.Dir = dir
 	command.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "go-cache"))
@@ -97,6 +130,62 @@ func TestProjectPackagesPreservesOwnershipCallsAndRelift(t *testing.T) {
 	}
 	if second.CanonicalG1 != first.CanonicalG1 {
 		t.Fatal("multi-package projection did not relift byte-identically")
+	}
+}
+
+func TestProjectPackagesOwnsAndEmitsPrivateHelpers(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v35/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{
+		"model/model.go":     "package model\nfunc normalize(v int64) int64 { return v + 1 }\nfunc Normalize(v int64) int64 { return normalize(v) }\n",
+		"application/app.go": "package application\nimport \"example.test/private/model\"\nfunc Apply(v int64) int64 { return model.Normalize(v) }\n",
+	}
+	snapshot := goprovider.DocumentSnapshot{Revision: 1, ModulePath: "example.test/private", PackagePath: "example.test/private/application", Entry: "Apply", Files: files}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(snapshot)
+	if !first.Valid {
+		t.Fatal(first.Diagnostics)
+	}
+	var foundPrivate bool
+	for _, p := range first.Packages {
+		for _, member := range p.Members {
+			if member.Name == "normalize" {
+				foundPrivate = !member.Exported && member.Document == "model/model.go" && member.Line == 2 && member.Column > 0
+			}
+		}
+		for _, public := range p.Functions {
+			if public.Name == "normalize" {
+				t.Fatal("private helper leaked into exported interfaces")
+			}
+		}
+	}
+	if !foundPrivate {
+		t.Fatalf("private membership missing: %#v", first.Packages)
+	}
+	projected, err := ProjectPackages([]byte(first.CanonicalG1), first.Packages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected["example.test/private/model"]), "func normalize(") || !strings.Contains(string(projected["example.test/private/model"]), "return normalize(v)") {
+		t.Fatal("private helper was not projected as a local declaration")
+	}
+	relift := map[string]string{}
+	for packagePath, source := range projected {
+		relative := strings.TrimPrefix(packagePath, snapshot.ModulePath+"/")
+		relift[filepath.ToSlash(filepath.Join(relative, "projected.go"))] = string(source)
+	}
+	secondSession, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := secondSession.Apply(goprovider.DocumentSnapshot{Revision: 1, ModulePath: snapshot.ModulePath, PackagePath: snapshot.PackagePath, Entry: snapshot.Entry, Files: relift})
+	if !second.Valid || second.CanonicalG1 != first.CanonicalG1 {
+		t.Fatalf("private-helper relift failed: %#v", second.Diagnostics)
 	}
 }
 
@@ -128,11 +217,17 @@ func clonePackageMetadata(input []goprovider.PackageMetadata) []goprovider.Packa
 	for i, p := range input {
 		out[i] = p
 		out[i].Dependencies = append([]string(nil), p.Dependencies...)
-		out[i].Functions = make([]goprovider.PackageFunctionMetadata, len(p.Functions))
-		for j, f := range p.Functions {
-			out[i].Functions[j] = f
-			out[i].Functions[j].Parameters = append([]string(nil), f.Parameters...)
-		}
+		out[i].Members = clonePackageFunctions(p.Members)
+		out[i].Functions = clonePackageFunctions(p.Functions)
+	}
+	return out
+}
+
+func clonePackageFunctions(input []goprovider.PackageFunctionMetadata) []goprovider.PackageFunctionMetadata {
+	out := make([]goprovider.PackageFunctionMetadata, len(input))
+	for i, f := range input {
+		out[i] = f
+		out[i].Parameters = append([]string(nil), f.Parameters...)
 	}
 	return out
 }
