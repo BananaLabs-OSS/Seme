@@ -322,6 +322,16 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 		}
 		sources = append(sources, source)
 	}
+	supportedFunctions := make(map[string]bool, len(functionIDs))
+	for _, id := range functionIDs {
+		supportedFunctions[id] = true
+	}
+	for _, instance := range instances {
+		if callee, ok := graphFunctionCallCallee(instance.text); ok && !supportedFunctions[callee] {
+			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.call_target_unsupported", Message: "supported function calls an omitted declaration", Severity: "error"})
+			return "", nil, sortedDiagnostics(diagnostics)
+		}
+	}
 	if len(functionIDs) == 0 {
 		if len(diagnostics) == 0 {
 			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.no_supported_declarations", Message: "snapshot contains no supported package functions", Severity: "error"})
@@ -350,6 +360,24 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	})})
 	revision := stableID("session-revision", snapshot.PackagePath, strconv.FormatUint(snapshot.Revision, 10))
 	return composeExecutionG1(moduleG1, revision, instances), sources, sortedDiagnostics(diagnostics)
+}
+
+func graphFunctionCallCallee(text string) (string, bool) {
+	lines := strings.Split(text, "\n")
+	if len(lines) == 0 {
+		return "", false
+	}
+	header := strings.Fields(lines[0])
+	if len(header) < 3 || header[2] != "00000000000000000000000000009060" {
+		return "", false
+	}
+	for _, line := range lines[1:] {
+		fields := strings.Fields(line)
+		if len(fields) == 4 && fields[0] == "fi" && fields[1] == "00000000000000000000000000009600" && fields[2] == "rf" {
+			return fields[3], true
+		}
+	}
+	return "", false
 }
 
 func liftSessionFunction(function sessionFunction, integerID, booleanID, stringID string, functions map[types.Object]string, records map[*types.Named]goRecordInfo) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {

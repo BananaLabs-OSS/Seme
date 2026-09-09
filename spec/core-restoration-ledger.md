@@ -100,6 +100,27 @@ and a second must compose runtime strings with collection or map behavior.
 Adding a schema while retaining syntax-shaped execution shortcuts leaves that
 milestone `in progress`.
 
+### Cumulative result
+
+The architectural completion condition passes at Core v30. Proof A composes a
+record parameter, runtime slice, Boolean parameter, fold, direct call,
+immutable local, total conditional, method call, explicit state transition,
+and returned result. Proof B independently composes runtime UTF-8 text with a
+runtime slice fold, call, local, comparison, conditional, and text
+concatenation.
+
+Both ordinary Go programs lift through the generic provider, project to native
+JavaScript, and re-lift to byte-identical canonical Seme. The target lowers
+their validated graphs without inspecting package, fixture, function, or local
+names; independent lowerings are byte-identical and execute equivalently in
+standalone WebAssembly and pinned Pulp. Malformed ABI descriptors, malformed
+UTF-8, and a call removed from declared Program membership reject. Run
+`./scripts/check-core-cumulative-v30.sh`.
+
+This closes the finite Core architectural composition gate. It does not change
+the milestone rows' broader corpus and feature-expansion qualifications, and
+it does not claim complete Go or JavaScript support.
+
 ## Current baseline
 
 Core v7 remains the compatibility anchor. It already supplies typed functions,

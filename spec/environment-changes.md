@@ -199,3 +199,12 @@ repository-local Acorn dependency, Seme bootstrap, and pinned Pulp source. Its
 complete acceptance gate builds and executes only in an automatically removed
 temporary directory. No software, dependency, global setting, SSH setting, or
 persistent environment configuration was installed or changed.
+
+## 2026-09-09 — Core v30 cumulative composition verification
+
+The cumulative Core gate used the existing workstation Go 1.26 toolchain,
+Node 22, repository-local Acorn dependency, Seme bootstrap, and pinned Pulp
+source. Verification ran in an automatically removed temporary copy; the
+repository, Pulp checkout, and workstation configuration were not modified.
+No software, dependency, global setting, SSH setting, or persistent environment
+configuration was installed or changed.

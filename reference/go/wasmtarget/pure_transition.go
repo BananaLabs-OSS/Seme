@@ -12,6 +12,9 @@ import (
 // receiver is never exposed as writable storage.
 func certifyPureTransitionFunction(graph wire.Envelope, program, function wire.Entity) ([]byte, PureABI, error) {
 	parameters, err := field(function, 0x9111)
+	if err == nil && parameters.Tag == 7 && len(parameters.List) != 2 {
+		return certifyComposedPureFunction(graph, program, function)
+	}
 	if err != nil || parameters.Tag != 7 || len(parameters.List) != 2 {
 		return nil, PureABI{}, fmt.Errorf("wasm.transition_parameters")
 	}

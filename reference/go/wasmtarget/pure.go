@@ -93,6 +93,24 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 		}
 		return certifyPureMapFunction(graph, programs[0], function)
 	}
+	if entry, entryErr := field(programs[0], 0x9151); entryErr == nil && entry.Tag == 6 {
+		if function, ok := graph.Entities[entry.Reference]; ok && function.Schema == identity(0x9011) {
+			result, _ := field(function, 0x9112)
+			parameters, _ := field(function, 0x9111)
+			variableTransition := false
+			if graph.Entities[result.Reference].Schema == identity(0xa004) && parameters.Tag == 7 {
+				for _, item := range parameters.List {
+					parameter := graph.Entities[item.Reference]
+					typeValue, _ := field(parameter, 0x9121)
+					schema := graph.Entities[typeValue.Reference].Schema
+					variableTransition = variableTransition || schema == identity(0x90f8) || schema == identity(0x9020)
+				}
+			}
+			if variableTransition {
+				return certifyComposedPureFunction(graph, programs[0], function)
+			}
+		}
+	}
 	if len(bySchema(graph, 0xa034))+len(bySchema(graph, 0xa035)) > 0 {
 		entry, entryErr := field(programs[0], 0x9151)
 		if entryErr != nil || entry.Tag != 6 {
