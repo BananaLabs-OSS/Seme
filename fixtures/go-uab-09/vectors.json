@@ -1,0 +1,6 @@
+{"valid":[
+  {"name":"true-true","first":true,"second":true,"result":true,"trace":[true,true]},
+  {"name":"true-false","first":true,"second":false,"result":false,"trace":[true,false]},
+  {"name":"false-true","first":false,"second":true,"result":true,"trace":[false,true]},
+  {"name":"false-false","first":false,"second":false,"result":false,"trace":[false,false]}
+]}

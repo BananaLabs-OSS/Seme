@@ -47,6 +47,7 @@ const schema = {
   stringConcat: "000000000000000000000000000090c3",
   integerLessEqual: "00000000000000000000000000009021", booleanAnd: "000000000000000000000000000090b1", booleanOr: "000000000000000000000000000090c1",
   mutablePlace: "000000000000000000000000000090e0", declarePlace: "000000000000000000000000000090e1", placeRead: "000000000000000000000000000090e2", assignPlace: "000000000000000000000000000090e3", whileStatement: "000000000000000000000000000090e4", whenStatement: "000000000000000000000000000090f0",
+  effectInvoke:"000000000000000000000000000090f1",effect:"00000000000000000000000000000015",capability:"00000000000000000000000000000016",
   branch: "000000000000000000000000000090c0", recordConstruct: "00000000000000000000000000009033",
   receiverBinding: "0000000000000000000000000000a000", receiverRead: "0000000000000000000000000000a001", method: "0000000000000000000000000000a002",
   interfaceType: "0000000000000000000000000000a010", methodRequirement: "0000000000000000000000000000a011", satisfactionWitness: "0000000000000000000000000000a012", interfaceValue: "0000000000000000000000000000a013", dynamicMethodCall: "0000000000000000000000000000a014",
@@ -169,6 +170,7 @@ function projectControlBlock(id,context,depth){const indent="  ".repeat(depth),l
   if(s.schema===schema.assignPlace){const place=context.places.get(reference(field(s,0x9e30)));if(!place)fail("lua_projection.assign_scope");lines.push(`${indent}${place} = ${projectExpression(reference(field(s,0x9e31)),context)}`);continue;}
   if(s.schema===schema.returned){const values=references(field(s,0x9810));if(values.length!==1)fail("lua_projection.return_arity");lines.push(`${indent}return ${projectExpression(values[0],context)}`);continue;}
   if(s.schema===schema.whileStatement||s.schema===schema.whenStatement){const conditionField=s.schema===schema.whileStatement?0x9e40:0x9f00,bodyField=s.schema===schema.whileStatement?0x9e41:0x9f01,keyword=s.schema===schema.whileStatement?"while":"if",suffix=s.schema===schema.whileStatement?"do":"then";const child={...context,places:new Map(context.places)};lines.push(`${indent}${keyword} ${projectExpression(reference(field(s,conditionField)),context)} ${suffix}`);lines.push(projectControlBlock(reference(field(s,bodyField)),child,depth+1));lines.push(`${indent}end`);continue;}
+  if(s.schema===schema.effectInvoke){const effect=required(context.graph,reference(field(s,0x9f10)),schema.effect),capability=required(context.graph,reference(field(effect,0x151)),schema.capability),args=references(field(s,0x9f11));if(text(field(effect,0x150))!=="observability.log"||text(field(capability,0x160))!=="observability.log"||args.length!==1)fail("lua_projection.unsupported_effect");lines.push(`${indent}Seme.observe(${projectExpression(args[0],context)})`);continue;}
   if(s.schema===schema.branch){lines.push(`${indent}return ${projectProtocolDispatch(s,context)}`);continue;}
   fail("lua_projection.control_statement");}return lines.join("\n");}
 
@@ -274,23 +276,23 @@ function parseG1(source) {
     const header = lines[index].split(/\s+/);
     if (header.length !== 5) fail("lua_projection.invalid_entity");
     const item = { id: header[1], schema: header[2], fields: new Map() };
+    const schemaDeclaration = item.id.startsWith("00");
     const count = Number(header[4]); index += 1;
     for (let seen = 0; seen < count; seen += 1, index += 1) {
-      const match = /^fi\s+([0-9a-f]{32})\s+(by|rf|li|uu|tr|fa)(?:\s+(.+))?$/.exec(lines[index]);
+      const match = /^fi\s+([0-9a-f]{32})\s+(by|rf|li|uu|tr|fa|rc)(?:\s+(.+))?$/.exec(lines[index]);
       if (!match) fail("lua_projection.invalid_field");
       if (match[2] === "li") {
         const length = Number(match[3]); const values = [];
         for (let offset = 0; offset < length; offset += 1) {
           index += 1;
           const member = /^rf\s+([0-9a-f]{32})$/.exec(lines[index]);
-          if (!member) fail("lua_projection.invalid_list");
-          values.push(member[1]);
+          if (!member && !schemaDeclaration) fail("lua_projection.invalid_list");
+          if(member) values.push(member[1]);
         }
         item.fields.set(BigInt(`0x${match[1]}`), { kind: "li", value: values });
       } else item.fields.set(BigInt(`0x${match[1]}`), { kind: match[2], value: match[3] ?? "" });
     }
-    if (graph.has(item.id)) fail("lua_projection.duplicate_entity");
-    graph.set(item.id, item);
+    if (!schemaDeclaration) { if (graph.has(item.id)) fail("lua_projection.duplicate_entity"); graph.set(item.id, item); }
   }
   return graph;
 }

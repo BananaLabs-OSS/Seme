@@ -104,6 +104,9 @@ const (
 	sStatefulCall        = "0000000000000000000000000000a035"
 	sTransitionType      = "0000000000000000000000000000a004"
 	sStateTransition     = "0000000000000000000000000000a005"
+	sEffectInvoke        = "000000000000000000000000000090f1"
+	sEffect              = "00000000000000000000000000000015"
+	sCapability          = "00000000000000000000000000000016"
 )
 
 type entity struct {
@@ -183,6 +186,9 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 	}
 	if graphHasSchema(graph, sMapRemove) {
 		imports = append(imports, "maps")
+	}
+	if graphHasSchema(graph, sEffectInvoke) {
+		imports = append(imports, "log")
 	}
 	if len(imports) == 1 {
 		fmt.Fprintf(&out, "import %q\n\n", imports[0])
@@ -575,6 +581,37 @@ func projectBlock(id string, c context) (string, error) {
 				return "", err
 			}
 			lines = append(lines, "\treturn "+expression)
+		case sEffectInvoke:
+			effectID, err := ref(statement, "00000000000000000000000000009f10")
+			if err != nil {
+				return "", err
+			}
+			effect, ok := c.graph[effectID]
+			if !ok || effect.schema != sEffect {
+				return "", fmt.Errorf("go_projection.effect")
+			}
+			name, err := text(effect, "00000000000000000000000000000150")
+			if err != nil || name != "observability.log" {
+				return "", fmt.Errorf("go_projection.unsupported_effect")
+			}
+			capabilityID, err := ref(effect, "00000000000000000000000000000151")
+			if err != nil {
+				return "", err
+			}
+			capability, ok := c.graph[capabilityID]
+			capabilityName, capabilityErr := text(capability, "00000000000000000000000000000160")
+			if !ok || capability.schema != sCapability || capabilityErr != nil || capabilityName != name {
+				return "", fmt.Errorf("go_projection.effect_capability")
+			}
+			arguments, err := refs(statement, "00000000000000000000000000009f11")
+			if err != nil || len(arguments) != 1 {
+				return "", fmt.Errorf("go_projection.effect_arity")
+			}
+			argument, err := expr(arguments[0], c)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\tlog.Print("+argument+")")
 		default:
 			return "", fmt.Errorf("go_projection.unsupported_statement")
 		}
