@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { parseProtocolDeclarations, stripProtocolDeclarations } from "./lua-protocol-parser.mjs";
 
 const schema = {
   i64Type: "00000000000000000000000000009010",
@@ -69,11 +70,20 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
   if (!Array.isArray(sources) || sources.length === 0) fail("lua.requires_sources");
   if (!packagePath || !Number.isSafeInteger(revision) || revision < 1) fail("lua.invalid_snapshot");
   const records = parseRecords(sources, packagePath);
-  const declarations = sources.flatMap(({ name, source }) => parseSource(source, name, records));
+  const protocolUnits = sources.map(({ name, source }) => parseProtocolDeclarations(source, name));
+  const protocolBindings = new Map(), implementationBindings = new Map();
+  for (const unit of protocolUnits) {
+    for (const [name, value] of unit.protocols) { if (protocolBindings.has(name)) fail("lua.duplicate_protocol_binding"); protocolBindings.set(name, value); }
+    for (const [name, value] of unit.implementations) { if (implementationBindings.has(name)) fail("lua.duplicate_implementation_binding"); implementationBindings.set(name, value); }
+  }
+  const declarations = sources.flatMap(({ name, source }) => parseSource(stripProtocolDeclarations(source), name, records));
   const byName = new Map();
   for (const declaration of declarations) {
     if (byName.has(declaration.name)) fail("lua.duplicate_function", declaration.location);
     byName.set(declaration.name, declaration);
+  }
+  for (const implementation of implementationBindings.values()) for (const method of implementation.methods.values()) {
+    if (!byName.has(method)) fail("lua.implementation_method_scope");
   }
   const entry = entryName ? byName.get(entryName) : declarations.find((item) => item.exported);
   if (!entry) fail("lua.entry_not_found");
@@ -275,6 +285,8 @@ function splitGenericArguments(value, location) {
 }
 
 function parseExpression(text, file, line) {
+  const dispatch = /^Seme\.protocol_dispatch\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*,\s*"([A-Za-z_]\w*)"\s*,\s*"([A-Za-z_]\w*)"\s*,\s*"([A-Za-z_]\w*)"\s*,\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)$/.exec(text);
+  if (dispatch) return { kind: "protocol_dispatch", condition: dispatch[1], whenFalse: dispatch[2], whenTrue: dispatch[3], requirement: dispatch[4], record: dispatch[5], field: dispatch[6], receiver: dispatch[7], argument: dispatch[8], location: { file, line, column: 1 } };
   const booleanBoundary = /^Seme\.boolean\(([A-Za-z_][A-Za-z0-9_]*)\)$/.exec(text);
   if (booleanBoundary) return { kind:"boolean_boundary", name:booleanBoundary[1], location:{file,line,column:1} };
   const andAt = findTopLevelOperator(text, " and ");

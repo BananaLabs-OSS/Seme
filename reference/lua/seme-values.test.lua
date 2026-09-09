@@ -66,4 +66,18 @@ assert(check(Seme.some(Seme.ok(Seme.bytes("ok")))) == true)
 assert(check(Seme.some(Seme.ok(Seme.bytes("no")))) == false)
 assert(check(Seme.some(Seme.err(Seme.text("bad")))) == true)
 assert(check(Seme.some(Seme.err(Seme.text("other")))) == false)
+local requirement_source = { "adjust" }
+local method_source = {
+  adjust = function(receiver, value) return Seme.add(receiver, value) end,
+}
+local adjuster = Seme.protocol("Adjuster", requirement_source)
+local offset = Seme.implementation(adjuster, "i64", method_source)
+local boxed = Seme.interface_value(offset, Seme.i64("4"))
+assert(Seme.i64_decimal(Seme.dynamic_call(boxed, "adjust", Seme.i64("3"))) == "7")
+requirement_source[1], method_source.adjust = "changed", function() error("mutated source") end
+assert(Seme.i64_decimal(Seme.dynamic_call(boxed, "adjust", Seme.i64("3"))) == "7")
+assert(not pcall(Seme.implementation, adjuster, "i64", {}))
+assert(not pcall(Seme.implementation, adjuster, "i64", { adjust = function() end, extra = function() end }))
+assert(not pcall(Seme.interface_value, offset, Seme.text("4")))
+assert(not pcall(Seme.dynamic_call, boxed, "missing", Seme.i64("3")))
 print("Lua compound adapter foundation: ok")

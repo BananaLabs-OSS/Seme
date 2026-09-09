@@ -287,4 +287,53 @@ function Seme.match_result(result, ok, error_)
   return callback(item.value)
 end
 
+-- Protocol values are explicit Seme adapters. They deliberately do not infer
+-- contracts from ordinary Lua tables, metatables, `__index`, or method names.
+function Seme.protocol(name, requirements)
+  if type(name) ~= "string" or name == "" or type(requirements) ~= "table" then error("seme.invalid_protocol", 2) end
+  local copy, seen = {}, {}
+  for index, requirement in ipairs(requirements) do
+    if index > 32 or type(requirement) ~= "string" or requirement == "" or seen[requirement] then error("seme.invalid_protocol_requirement", 2) end
+    seen[requirement], copy[index] = true, requirement
+  end
+  if #copy == 0 then error("seme.empty_protocol", 2) end
+  return freeze("protocol", { name = name, requirements = copy })
+end
+function Seme.implementation(protocol, concrete_kind, methods)
+  local contract = unpack_value(protocol, "protocol")
+  if type(concrete_kind) ~= "string" or concrete_kind == "" or type(methods) ~= "table" then error("seme.invalid_implementation", 2) end
+  local copy, count = {}, 0
+  for _, requirement in ipairs(contract.requirements) do
+    if type(methods[requirement]) ~= "function" then error("seme.missing_protocol_method", 2) end
+    copy[requirement], count = methods[requirement], count + 1
+  end
+  for name in pairs(methods) do
+    if copy[name] == nil then error("seme.extra_protocol_method", 2) end
+  end
+  if count > 32 then error("seme.implementation_too_large", 2) end
+  return freeze("implementation", { protocol = protocol, concrete_kind = concrete_kind, methods = copy })
+end
+function Seme.interface_value(implementation, value)
+  local witness = unpack_value(implementation, "implementation")
+  if Seme.kind(value) ~= witness.concrete_kind then error("seme.interface_concrete_kind", 2) end
+  return freeze("interface", { implementation = implementation, value = value })
+end
+function Seme.dynamic_call(interface, requirement, ...)
+  local boxed = unpack_value(interface, "interface")
+  local witness = unpack_value(boxed.implementation, "implementation")
+  local contract = unpack_value(witness.protocol, "protocol")
+  if type(requirement) ~= "string" or witness.methods[requirement] == nil then error("seme.unknown_protocol_method", 2) end
+  local declared = false
+  for _, name in ipairs(contract.requirements) do if name == requirement then declared = true end end
+  if not declared then error("seme.unknown_protocol_method", 2) end
+  return witness.methods[requirement](boxed.value, ...)
+end
+function Seme.protocol_dispatch(condition, when_false, when_true, requirement, record_name, field_name, receiver_value, argument)
+  if type(condition) ~= "boolean" then error("seme.expected_boolean", 2) end
+  if type(record_name) ~= "string" or type(field_name) ~= "string" then error("seme.invalid_dispatch_record", 2) end
+  local implementation = condition and when_true or when_false
+  local receiver = Seme.record(record_name, { field_name }, { [field_name] = receiver_value })
+  return Seme.dynamic_call(Seme.interface_value(implementation, receiver), requirement, argument)
+end
+
 return Seme
