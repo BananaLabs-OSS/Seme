@@ -44,14 +44,20 @@ func certifyPureMutableClosureFunction(graph wire.Envelope, program, function wi
 		return nil, PureABI{}, fmt.Errorf("wasm.mutable_closure_place")
 	}
 	makeCall := graph.Entities[initializer.Reference]
-	calleeValue, _ := field(makeCall, 0x9600)
-	makeArgs, _ := field(makeCall, 0x9601)
-	makeFunction := graph.Entities[calleeValue.Reference]
-	if makeCall.Schema != identity(0x9060) || makeArgs.Tag != 7 || len(makeArgs.List) != 1 || !isParameterRead(graph, makeArgs.List[0].Reference, parameterIDs[0]) {
-		return nil, PureABI{}, fmt.Errorf("wasm.mutable_closure_constructor_call")
-	}
-	if err := validateMutableConstructor(graph, makeFunction, placeType.Reference); err != nil {
-		return nil, PureABI{}, err
+	if makeCall.Schema == identity(0xa034) {
+		if err := validateMutableClosure(graph, makeCall, placeType.Reference, parameterIDs[0]); err != nil {
+			return nil, PureABI{}, err
+		}
+	} else {
+		calleeValue, calleeErr := field(makeCall, 0x9600)
+		makeArgs, argsErr := field(makeCall, 0x9601)
+		makeFunction := graph.Entities[calleeValue.Reference]
+		if makeCall.Schema != identity(0x9060) || calleeErr != nil || argsErr != nil || makeArgs.Tag != 7 || len(makeArgs.List) != 1 || !isParameterRead(graph, makeArgs.List[0].Reference, parameterIDs[0]) {
+			return nil, PureABI{}, fmt.Errorf("wasm.mutable_closure_constructor_call")
+		}
+		if err := validateMutableConstructor(graph, makeFunction, placeType.Reference); err != nil {
+			return nil, PureABI{}, err
+		}
 	}
 	declareFirst := graph.Entities[statements.List[1].Reference]
 	firstLocalRef, _ := field(declareFirst, 0x9d10)
@@ -140,6 +146,10 @@ func validateMutableConstructor(graph wire.Envelope, function wire.Entity, funct
 		return e
 	}
 	closure := graph.Entities[returned]
+	return validateMutableClosure(graph, closure, functionType, parameter.ID)
+}
+
+func validateMutableClosure(graph wire.Envelope, closure wire.Entity, functionType, initialParameter wire.ID) error {
 	closureType, _ := field(closure, 0xa0340)
 	closureParameters, _ := field(closure, 0xa0341)
 	captures, _ := field(closure, 0xa0342)
@@ -150,7 +160,7 @@ func validateMutableConstructor(graph wire.Envelope, function wire.Entity, funct
 	capture := graph.Entities[captures.List[0].Reference]
 	captureType, _ := field(capture, 0xa0301)
 	initial, _ := field(capture, 0xa0302)
-	if capture.Schema != identity(0xa030) || !isParameterRead(graph, initial.Reference, parameter.ID) {
+	if capture.Schema != identity(0xa030) || !isParameterRead(graph, initial.Reference, initialParameter) {
 		return fmt.Errorf("wasm.mutable_closure_environment")
 	}
 	if scalar, e := pureType(graph, captureType.Reference); e != nil || scalar.name != "i64" {

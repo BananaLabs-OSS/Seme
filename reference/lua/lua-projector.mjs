@@ -50,6 +50,10 @@ const schema = {
   branch: "000000000000000000000000000090c0", recordConstruct: "00000000000000000000000000009033",
   receiverBinding: "0000000000000000000000000000a000", receiverRead: "0000000000000000000000000000a001", method: "0000000000000000000000000000a002",
   interfaceType: "0000000000000000000000000000a010", methodRequirement: "0000000000000000000000000000a011", satisfactionWitness: "0000000000000000000000000000a012", interfaceValue: "0000000000000000000000000000a013", dynamicMethodCall: "0000000000000000000000000000a014",
+  localBinding:"000000000000000000000000000090d0",bindLocal:"000000000000000000000000000090d1",localRead:"000000000000000000000000000090d2",
+  transitionType:"0000000000000000000000000000a004",transitionState:"0000000000000000000000000000a006",transitionResult:"0000000000000000000000000000a007",
+  functionType:"0000000000000000000000000000a020",captureBinding:"0000000000000000000000000000a021",captureRead:"0000000000000000000000000000a022",closureConstruct:"0000000000000000000000000000a023",indirectCall:"0000000000000000000000000000a024",
+  mutableCaptureBinding:"0000000000000000000000000000a030",mutableCaptureRead:"0000000000000000000000000000a031",captureUpdate:"0000000000000000000000000000a032",sequence:"0000000000000000000000000000a033",mutableClosureConstruct:"0000000000000000000000000000a034",statefulIndirectCall:"0000000000000000000000000000a035",
 };
 
 export function projectLua(canonicalG1) {
@@ -141,6 +145,8 @@ function projectFunction(id, exported, context) {
   const block = required(context.graph, reference(field(fn, 0x9113)), schema.block);
   const statements = references(field(block, 0x9800));
   const local = { ...context, parameters: new Map(parameters.map((item) => [item.id, item])), places: new Map() };
+  const closureKind=reachableSchema(reference(field(fn,0x9113)),context.graph,schema.mutableClosureConstruct)?"mutable":reachableSchema(reference(field(fn,0x9113)),context.graph,schema.closureConstruct)?"immutable":null;
+  if(closureKind){const expected=closureKind==="immutable"?2:3;if(parameters.length!==expected||parameters.some((item)=>item.type!=="seme.i64")||resultType!=="seme.i64")fail("lua_projection.closure_signature");const call=closureKind==="immutable"?`Seme.immutable_closure_run(${parameters.map((item)=>item.name).join(", ")})`:`Seme.mutable_closure_run(${parameters.map((item)=>item.name).join(", ")})`;return `${parameters.map((item)=>`---@param ${item.name} ${item.type}`).join("\n")}\n---@return seme.i64\n${exported?"":"local "}function ${context.names.get(id)}(${parameters.map((item)=>item.name).join(", ")})\n  return ${call}\nend`;}
   if (statements.length !== 1 || required(context.graph, statements[0]).schema !== schema.returned) {
     const body=projectControlBlock(reference(field(fn,0x9113)),local,1);
     return `${parameters.map((item) => `---@param ${item.name} ${item.type}`).join("\n")}${parameters.length ? "\n" : ""}---@return ${resultType}\n${exported ? "" : "local "}function ${context.names.get(id)}(${parameters.map((item) => item.name).join(", ")})\n${body}\nend`;
@@ -151,6 +157,8 @@ function projectFunction(id, exported, context) {
   const expression = projectExpression(returnedValues[0], local);
   return `${parameters.map((item) => `---@param ${item.name} ${item.type}`).join("\n")}${parameters.length ? "\n" : ""}---@return ${resultType}\n${exported ? "" : "local "}function ${context.names.get(id)}(${parameters.map((item) => item.name).join(", ")})\n  return ${expression}\nend`;
 }
+
+function reachableSchema(root,graph,wanted,seen=new Set()){if(seen.has(root))return false;seen.add(root);const item=graph.get(root);if(!item)return false;if(item.schema===wanted)return true;for(const value of item.fields.values()){if(value.kind==="rf"&&reachableSchema(value.value,graph,wanted,seen))return true;if(value.kind==="li"&&value.value.some((id)=>reachableSchema(id,graph,wanted,seen)))return true;}return false;}
 
 function projectControlBlock(id,context,depth){const indent="  ".repeat(depth),lines=[];for(const statementID of references(field(required(context.graph,id,schema.block),0x9800))){const s=required(context.graph,statementID);
   if(s.schema===schema.declarePlace){const placeID=reference(field(s,0x9e10)),place=required(context.graph,placeID,schema.mutablePlace),name=text(field(place,0x9e00));if(!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)||context.places.has(placeID))fail("lua_projection.place");context.places.set(placeID,name);lines.push(`${indent}local ${name} = ${projectExpression(reference(field(place,0x9e02)),context)}`);continue;}
