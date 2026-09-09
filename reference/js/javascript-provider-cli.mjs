@@ -12,5 +12,6 @@ const canonical = liftJavaScript({
   packagePath: options.get("--package"),
   revision: Number(options.get("--revision")),
   entryName: options.get("--entry"),
+  identityEvidence: options.has("--identity-evidence") ? JSON.parse(fs.readFileSync(options.get("--identity-evidence"), "utf8")) : undefined,
 });
 fs.writeFileSync(options.get("--out"), canonical);

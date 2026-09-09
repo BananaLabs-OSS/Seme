@@ -15,7 +15,7 @@ const ids = {
   bytes: stableID("execution", "type", "bytes"),
 };
 
-export function liftJavaScript({ source, packagePath, revision, moduleG1, entryName }) {
+export function liftJavaScript({ source, packagePath, revision, moduleG1, entryName, identityEvidence }) {
   if (!packagePath || !Number.isSafeInteger(revision) || revision < 1) fail("javascript.invalid_snapshot");
   const comments = [];
   let program;
@@ -38,11 +38,12 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
   const declarations = program.body.map((item) => item.type === "ExportNamedDeclaration" ? item.declaration : item);
   const functions = declarations.filter((item) => item?.type === "FunctionDeclaration");
   if (functions.length === 0) fail("javascript.requires_function");
+  const recoveredIdentities = recoverDeclarationIdentities(identityEvidence, packagePath, functions);
   const descriptions = functions.map((fn) => {
     if (!fn.id || fn.async || fn.generator) fail("javascript.unsupported_function", fn.loc.start);
     const signature = readSignature(comments, fn);
     if (signature.parameters.length !== fn.params.length) fail("javascript.signature_arity", fn.loc.start);
-    return { fn, signature, id: stableID("session-declaration", packagePath, fn.id.name) };
+    return { fn, signature, id: recoveredIdentities.get(fn.id.name) ?? stableID("session-declaration", packagePath, fn.id.name) };
   }).sort((left, right) => left.id.localeCompare(right.id));
   const functionsByName = new Map(descriptions.map((item) => [item.fn.id.name, item]));
   if (functionsByName.size !== descriptions.length) fail("javascript.duplicate_function");
@@ -139,6 +140,35 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
   const programID = stableID("session-program", packagePath);
   entities.push(graphEntity(programID, entity(programID, "00000000000000000000000000009015", [[0x9150, refs(descriptions.map((item) => item.id))], [0x9151, ref(entry.id)]])));
   return compose(moduleG1, stableID("session-revision", packagePath, String(revision)), entities);
+}
+
+// Identity evidence is deliberately external to ordinary JavaScript source.
+// It is reconciliation evidence supplied by the provider session, not a
+// language annotation that changes the native program.  V1 accepts only an
+// explicit one-to-one declaration rename whose old identity can be
+// independently derived and verified.
+function recoverDeclarationIdentities(evidence, packagePath, functions) {
+  const recovered = new Map();
+  if (evidence === undefined) return recovered;
+  if (!evidence || evidence.version !== 1 || evidence.packagePath !== packagePath || !Array.isArray(evidence.renames)) fail("javascript.invalid_identity_evidence");
+  const currentNames = new Set(functions.map((fn) => fn.id?.name));
+  const previousNames = new Set();
+  for (const rename of evidence.renames) {
+    if (!rename || typeof rename.previousName !== "string" || typeof rename.currentName !== "string" || typeof rename.identity !== "string") fail("javascript.invalid_identity_evidence");
+    if (!/^[A-Za-z_$][\w$]*$/.test(rename.previousName) || !/^[A-Za-z_$][\w$]*$/.test(rename.currentName)) fail("javascript.invalid_identity_evidence");
+    if (rename.previousName === rename.currentName || !currentNames.has(rename.currentName) || currentNames.has(rename.previousName)) fail("javascript.identity_evidence_mismatch");
+    if (previousNames.has(rename.previousName) || recovered.has(rename.currentName)) fail("javascript.identity_evidence_ambiguous");
+    const expected = stableID("session-declaration", packagePath, rename.previousName);
+    if (rename.identity !== expected) fail("javascript.identity_evidence_forged");
+    previousNames.add(rename.previousName);
+    recovered.set(rename.currentName, rename.identity);
+  }
+  return recovered;
+}
+
+export function javascriptDeclarationIdentity(packagePath, name) {
+  if (typeof packagePath !== "string" || packagePath.length === 0 || !/^[A-Za-z_$][\w$]*$/.test(name)) fail("javascript.invalid_identity_request");
+  return stableID("session-declaration", packagePath, name);
 }
 
 // Lift one semantic JavaScript package from independently parsed ECMAScript
