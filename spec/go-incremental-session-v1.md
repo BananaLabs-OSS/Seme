@@ -30,11 +30,21 @@ Results use three dispositions:
   snapshot; session state did not change.
 
 An accepted invalid snapshot returns located diagnostics and retains the last
-valid canonical graph, canonical revision, and source mappings. This permits an
-editor to remain runnable while a user is midway through an incomplete edit.
+valid canonical graph, canonical revision, source mappings, and package
+metadata. This permits an editor to remain runnable while a user is midway
+through an incomplete edit.
 Unsupported but well-typed declarations produce located warnings; supported
 declarations may still form a valid canonical subset. Unsupported source is not
 inserted into the canonical graph or rewritten.
+
+Each valid result also exposes a copy-safe, deterministically ordered neutral
+view of the reachable local packages. It records the single root package,
+direct local dependencies, and supported exported top-level functions with
+their canonical identities and ordered parameter/result type identities. This
+metadata comes from the same typed walk as the canonical graph; it is not
+recovered by parsing G1 text and contains neither source bytes nor the client
+revision. It is intended as provider evidence for a later Project Contract
+instance, not as a claim about unsupported declarations or external packages.
 
 The current bounded lift includes sibling local-package calls, named functions
 and supported value-receiver methods, lexical locals and places, structured

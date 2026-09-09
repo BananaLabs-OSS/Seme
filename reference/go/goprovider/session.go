@@ -52,6 +52,21 @@ type SessionResult struct {
 	Sources           []SourceIdentity
 	ContentDigest     string
 	Disposition       string
+	Packages          []PackageMetadata
+}
+
+// PackageMetadata is the immutable language-neutral ownership/signature view
+// proven by the same typed walk that produced CanonicalG1.
+type PackageMetadata struct {
+	Name         string
+	Root         bool
+	Dependencies []string
+	Functions    []PackageFunctionMetadata
+}
+type PackageFunctionMetadata struct {
+	ID, Name   string
+	Parameters []string
+	Result     string
 }
 
 // IncrementalSession retains only the most recent valid canonical graph while
@@ -63,6 +78,7 @@ type IncrementalSession struct {
 	lastValidRevision uint64
 	lastValidGraph    string
 	lastValidSources  []SourceIdentity
+	lastValidPackages []PackageMetadata
 }
 
 func NewIncrementalSession(executionModuleG1 []byte) (*IncrementalSession, error) {
@@ -81,23 +97,40 @@ func (session *IncrementalSession) Apply(snapshot DocumentSnapshot) SessionResul
 			CanonicalG1: session.lastValidGraph, LastValidRevision: session.lastValidRevision,
 			Diagnostics:   []SessionDiagnostic{{Code: "session.stale_revision", Message: "revision must be strictly newer than the last accepted snapshot", Severity: "error"}},
 			Sources:       cloneSources(session.lastValidSources),
+			Packages:      clonePackageMetadata(session.lastValidPackages),
 			ContentDigest: snapshotDigest(snapshot), Disposition: "rejected-stale",
 		}
 	}
 	session.currentRevision = snapshot.Revision
-	graph, sources, diagnostics := liftDocumentSnapshot(snapshot, session.moduleG1)
+	graph, sources, packages, diagnostics := liftDocumentSnapshot(snapshot, session.moduleG1)
 	valid := graph != ""
 	if valid {
 		session.lastValidRevision = snapshot.Revision
 		session.lastValidGraph = graph
 		session.lastValidSources = cloneSources(sources)
+		session.lastValidPackages = clonePackageMetadata(packages)
 	}
 	return SessionResult{
 		Revision: snapshot.Revision, Accepted: true, Valid: valid,
 		CanonicalG1: session.lastValidGraph, LastValidRevision: session.lastValidRevision,
 		Diagnostics: diagnostics, Sources: cloneSources(session.lastValidSources),
+		Packages:      clonePackageMetadata(session.lastValidPackages),
 		ContentDigest: snapshotDigest(snapshot), Disposition: map[bool]string{true: "accepted-valid", false: "accepted-invalid"}[valid],
 	}
+}
+
+func clonePackageMetadata(in []PackageMetadata) []PackageMetadata {
+	out := make([]PackageMetadata, len(in))
+	for i, p := range in {
+		out[i] = p
+		out[i].Dependencies = append([]string(nil), p.Dependencies...)
+		out[i].Functions = make([]PackageFunctionMetadata, len(p.Functions))
+		for j, f := range p.Functions {
+			out[i].Functions[j] = f
+			out[i].Functions[j].Parameters = append([]string(nil), f.Parameters...)
+		}
+	}
+	return out
 }
 
 func cloneSources(sources []SourceIdentity) []SourceIdentity {
@@ -291,13 +324,13 @@ type goInterfaceInfo struct {
 	requirementIDs []string
 }
 
-func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, []SourceIdentity, []SessionDiagnostic) {
+func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, []SourceIdentity, []PackageMetadata, []SessionDiagnostic) {
 	if snapshot.PackagePath == "" {
-		return "", nil, []SessionDiagnostic{{Code: "session.package_path_missing", Message: "package path is required", Severity: "error"}}
+		return "", nil, nil, []SessionDiagnostic{{Code: "session.package_path_missing", Message: "package path is required", Severity: "error"}}
 	}
 	units, diagnostics := checkSessionPackages(snapshot)
 	if len(diagnostics) != 0 || len(units) == 0 {
-		return "", nil, diagnostics
+		return "", nil, nil, diagnostics
 	}
 	var functions []sessionFunction
 	for _, unit := range units {
@@ -515,14 +548,14 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	for _, instance := range instances {
 		if callee, ok := graphFunctionCallCallee(instance.text); ok && !supportedFunctions[callee] {
 			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.call_target_unsupported", Message: "supported function calls an omitted declaration", Severity: "error"})
-			return "", nil, sortedDiagnostics(diagnostics)
+			return "", nil, nil, sortedDiagnostics(diagnostics)
 		}
 	}
 	if len(functionIDs) == 0 {
 		if len(diagnostics) == 0 {
 			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.no_supported_declarations", Message: "snapshot contains no supported package functions", Severity: "error"})
 		}
-		return "", nil, sortedDiagnostics(diagnostics)
+		return "", nil, nil, sortedDiagnostics(diagnostics)
 	}
 	entryID := ""
 	for _, function := range functions {
@@ -545,14 +578,49 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	}
 	if entryID == "" {
 		diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.entry_missing", Message: "requested root-package entry function is not supported", Severity: "error"})
-		return "", nil, sortedDiagnostics(diagnostics)
+		return "", nil, nil, sortedDiagnostics(diagnostics)
 	}
 	programID := stableID("session-program", snapshot.PackagePath)
 	instances = append(instances, graphEntity{programID, entity(programID, "00000000000000000000000000009015", []graphField{
 		refsField(0x9150, functionIDs), refField(0x9151, entryID),
 	})})
 	revision := stableID("session-revision", snapshot.PackagePath, strconv.FormatUint(snapshot.Revision, 10))
-	return composeExecutionG1(moduleG1, revision, instances), sources, sortedDiagnostics(diagnostics)
+	metadata := buildPackageMetadata(snapshot.PackagePath, units, functions, supportedFunctions)
+	return composeExecutionG1(moduleG1, revision, instances), sources, metadata, sortedDiagnostics(diagnostics)
+}
+
+func buildPackageMetadata(root string, units []*checkedSessionPackage, functions []sessionFunction, supported map[string]bool) []PackageMetadata {
+	local := map[string]bool{}
+	for _, u := range units {
+		local[u.path] = true
+	}
+	out := make([]PackageMetadata, 0, len(units))
+	for _, u := range units {
+		p := PackageMetadata{Name: u.path}
+		if u.path == root {
+			p.Root = true
+		}
+		for _, dep := range u.pkg.Imports() {
+			if local[dep.Path()] {
+				p.Dependencies = append(p.Dependencies, dep.Path())
+			}
+		}
+		sort.Strings(p.Dependencies)
+		for _, f := range functions {
+			if f.packagePath != u.path || f.method || !ast.IsExported(f.name) || !supported[f.id] {
+				continue
+			}
+			m := PackageFunctionMetadata{ID: f.id, Name: f.name, Result: goSemanticTypeIdentity(f.sig.Results().At(0).Type())}
+			for i := 0; i < f.sig.Params().Len(); i++ {
+				m.Parameters = append(m.Parameters, goSemanticTypeIdentity(f.sig.Params().At(i).Type()))
+			}
+			p.Functions = append(p.Functions, m)
+		}
+		sort.Slice(p.Functions, func(i, j int) bool { return p.Functions[i].ID < p.Functions[j].ID })
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
 }
 
 func graphFunctionCallCallee(text string) (string, bool) {

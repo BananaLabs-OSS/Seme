@@ -17,9 +17,11 @@ editor sequence number, timestamp, or source-control label.
 
 This version defines structure only. The reference `projectemitter` can now
 emit a canonical instance from a validated Execution graph and explicit typed
-package metadata. Language providers do not yet produce that metadata
-automatically, and the contract does not define package discovery, dependency
-resolution, workspace layout, or projection policy.
+package metadata. The bounded Go incremental session now produces the neutral
+reachable-package, local-dependency, and exported-signature view needed for
+that input; the atomic compiler/emitter integration is still pending. The
+contract does not define general package discovery, dependency resolution,
+workspace layout, or projection policy.
 
 The emitter resolves and pins the immutable Execution v35, Package v1, and
 Project v1 contracts before construction. Package versions commit to canonical
