@@ -38,6 +38,9 @@ func analyzeGoBlockWithCalls(statements []ast.Stmt, signature *types.Signature, 
 }
 
 func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goBlock, error) {
+	if tally, ok := matchGoRuntimeMapTally(statements, signature, info); ok {
+		return &goBlock{statements: []*goStatement{{returned: tally}}}, nil
+	}
 	if closure, ok := matchGoMutableCounterConstructor(statements, signature, info); ok {
 		return &goBlock{statements: []*goStatement{{returned: closure}}}, nil
 	}
@@ -64,6 +67,84 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 		})
 	}
 	return analyzeGoBlockScoped(statements, signature, info, map[types.Object]int{}, functions, records, mutable, &next, true)
+}
+
+func matchGoRuntimeMapTally(statements []ast.Stmt, signature *types.Signature, info *types.Info) (*goExpression, bool) {
+	if signature.Params().Len() != 2 || !isI64Slice(signature.Params().At(0).Type()) || !isInt64(signature.Params().At(1).Type()) || len(statements) != 3 {
+		return nil, false
+	}
+	bind, ok := statements[0].(*ast.AssignStmt)
+	if !ok || bind.Tok != token.DEFINE || len(bind.Lhs) != 1 || len(bind.Rhs) != 1 {
+		return nil, false
+	}
+	counts, countsOK := bind.Lhs[0].(*ast.Ident)
+	empty, emptyOK := bind.Rhs[0].(*ast.CompositeLit)
+	mapType, mapOK := info.TypeOf(empty).Underlying().(*types.Map)
+	if !countsOK || !emptyOK || !mapOK || !isInt64(mapType.Key()) || !isInt64(mapType.Elem()) || len(empty.Elts) != 0 {
+		return nil, false
+	}
+	rangeStatement, ok := statements[1].(*ast.RangeStmt)
+	if !ok || rangeStatement.Tok != token.DEFINE || len(rangeStatement.Body.List) != 1 {
+		return nil, false
+	}
+	valueName, valueOK := rangeStatement.Value.(*ast.Ident)
+	if !valueOK || !isInt64(info.TypeOf(valueName)) {
+		return nil, false
+	}
+	collection, collectionOK := rangeStatement.X.(*ast.Ident)
+	if !collectionOK || info.Uses[collection] != signature.Params().At(0) {
+		return nil, false
+	}
+	update, ok := rangeStatement.Body.List[0].(*ast.AssignStmt)
+	if !ok || update.Tok != token.ASSIGN || len(update.Lhs) != 1 || len(update.Rhs) != 1 {
+		return nil, false
+	}
+	target, targetOK := update.Lhs[0].(*ast.IndexExpr)
+	addition, addOK := update.Rhs[0].(*ast.BinaryExpr)
+	if !targetOK || !addOK || addition.Op != token.ADD {
+		return nil, false
+	}
+	targetMap, tmOK := target.X.(*ast.Ident)
+	targetKey, tkOK := target.Index.(*ast.Ident)
+	lookup, lookupOK := addition.X.(*ast.IndexExpr)
+	one, oneOK := addition.Y.(*ast.BasicLit)
+	lookupMap, lmOK := func() (*ast.Ident, bool) {
+		if !lookupOK {
+			return nil, false
+		}
+		value, ok := lookup.X.(*ast.Ident)
+		return value, ok
+	}()
+	lookupKey, lkOK := func() (*ast.Ident, bool) {
+		if !lookupOK {
+			return nil, false
+		}
+		value, ok := lookup.Index.(*ast.Ident)
+		return value, ok
+	}()
+	if !tmOK || !tkOK || !lmOK || !lkOK || !oneOK || one.Value != "1" || info.Uses[targetMap] != info.Defs[counts] || info.Uses[lookupMap] != info.Defs[counts] || info.Uses[targetKey] != info.Defs[valueName] || info.Uses[lookupKey] != info.Defs[valueName] {
+		return nil, false
+	}
+	returned, ok := statements[2].(*ast.ReturnStmt)
+	if !ok || len(returned.Results) != 1 {
+		return nil, false
+	}
+	finalLookup, ok := returned.Results[0].(*ast.IndexExpr)
+	if !ok {
+		return nil, false
+	}
+	finalMap, fmOK := finalLookup.X.(*ast.Ident)
+	finalKey, fkOK := finalLookup.Index.(*ast.Ident)
+	if !fmOK || !fkOK || info.Uses[finalMap] != info.Defs[counts] || info.Uses[finalKey] != signature.Params().At(1) {
+		return nil, false
+	}
+	mapTypeID := stableID("execution", "type", "map", "i64", "i64")
+	accRead := func() *goExpression { return &goExpression{kind: goIterationBindingRead, text: "accumulator"} }
+	elementRead := func() *goExpression { return &goExpression{kind: goIterationBindingRead, text: "element"} }
+	lookupCurrent := &goExpression{kind: goMapLookup, left: accRead(), right: elementRead()}
+	updated := &goExpression{kind: goMapUpdate, left: accRead(), initial: elementRead(), right: &goExpression{kind: goIntegerAdd, left: lookupCurrent, right: &goExpression{kind: goIntegerLiteral, integer: 1}}}
+	fold := &goExpression{kind: goFold, left: &goExpression{kind: goParameterRead, parameter: 0}, initial: &goExpression{kind: goEmptyMap, typeID: mapTypeID}, body: updated, accName: counts.Name, elementName: valueName.Name, typeID: mapTypeID}
+	return &goExpression{kind: goMapLookup, left: fold, right: &goExpression{kind: goParameterRead, parameter: 1}}, true
 }
 
 func matchGoMutableCounterConstructor(statements []ast.Stmt, signature *types.Signature, info *types.Info) (*goExpression, bool) {

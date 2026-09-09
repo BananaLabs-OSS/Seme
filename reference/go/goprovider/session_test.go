@@ -6,6 +6,32 @@ import (
 	"testing"
 )
 
+func TestIncrementalSessionLiftsRuntimeKeyedMapFold(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package tally
+func Tally(values []int64, key int64) int64 {
+ counts := map[int64]int64{}
+ for _, value := range values { counts[value] = counts[value] + 1 }
+ return counts[key]
+}`
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/runtime-map", Entry: "Tally", Files: map[string]string{"tally.go": source}})
+	if !result.Valid {
+		t.Fatalf("result = %#v", result)
+	}
+	for _, schema := range []string{"0000000000000000000000000000a040", "0000000000000000000000000000a041", "0000000000000000000000000000a042", "0000000000000000000000000000a043", "000000000000000000000000000090f7"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("canonical graph lacks schema %s", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsMutableClosureWithExplicitStateThreading(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v29/module.g1")
 	if err != nil {

@@ -71,6 +71,10 @@ const schema = {
   sequence: "0000000000000000000000000000a033",
   mutableClosureConstruct: "0000000000000000000000000000a034",
   statefulIndirectCall: "0000000000000000000000000000a035",
+  mapType: "0000000000000000000000000000a040",
+  emptyMap: "0000000000000000000000000000a041",
+  mapLookup: "0000000000000000000000000000a042",
+  mapUpdate: "0000000000000000000000000000a043",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -344,6 +348,16 @@ function projectExpression(id, context) {
 	if (expression.schema === schema.collectionUpdate) {
 		return `${projectExpression(reference(field(expression, 0x9fc0)), context)}.with(Number(${projectExpression(reference(field(expression, 0x9fc1)), context)}), ${projectExpression(reference(field(expression, 0x9fc2)), context)})`;
 	}
+	if (expression.schema === schema.emptyMap) {
+		required(context.graph, reference(field(expression, 0xa0410)), schema.mapType);
+		return "new Map()";
+	}
+	if (expression.schema === schema.mapLookup) {
+		return `(${projectExpression(reference(field(expression, 0xa0420)), context)}.get(${projectExpression(reference(field(expression, 0xa0421)), context)}) ?? 0n)`;
+	}
+	if (expression.schema === schema.mapUpdate) {
+		return `new Map(${projectExpression(reference(field(expression, 0xa0430)), context)}).set(${projectExpression(reference(field(expression, 0xa0431)), context)}, ${projectExpression(reference(field(expression, 0xa0432)), context)})`;
+	}
   if (expression.schema === schema.methodCall) {
     const methodID = reference(field(expression, 0xa0031));
     const method = context.methods.get(methodID);
@@ -477,6 +491,7 @@ function typeName(id, graph) {
   if (type.schema === schema.recordType) return text(field(type, 0x9300));
   if (type.schema === schema.interfaceType) return text(field(type, 0xa0100));
   if (type.schema === schema.functionType) return `function(${references(field(type, 0xa0200)).map((parameter) => typeName(parameter, graph)).join(", ")}): ${typeName(reference(field(type, 0xa0201)), graph)}`;
+  if (type.schema === schema.mapType) return `Map<${typeName(reference(field(type, 0xa0400)), graph)},${typeName(reference(field(type, 0xa0401)), graph)}>`;
 	if (type.schema === schema.fixedArrayType) {
 		const element = required(graph, reference(field(type, 0x9f20)));
 		if (element.schema !== schema.integerType) fail("javascript_projection.fixed_array_element_type");

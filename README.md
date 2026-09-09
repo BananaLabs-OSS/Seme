@@ -335,6 +335,13 @@ state-transition threading in canonical Seme; repeated calls and independent
 environments agree through deterministic Wasm and pinned Pulp. Run
 `./scripts/check-execution-v29.sh`.
 
+[`Core Execution v30`](spec/core-execution-v30.md) adds neutral runtime-keyed
+maps with empty construction, zero-on-missing lookup, and immutable update.
+Native Go maps and JavaScript `Map` values converge on a generic map-valued
+slice fold; repeated, negative, missing, reordered, empty, and bounded inputs
+agree through deterministic Wasm and pinned Pulp. Run
+`./scripts/check-execution-v30.sh`.
+
 [`Live Language Service v1`](spec/live-language-service-v1.md) defines the
 provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and

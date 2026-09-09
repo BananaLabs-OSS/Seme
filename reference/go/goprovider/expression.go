@@ -53,6 +53,9 @@ const (
 	goSequence
 	goMutableClosureConstruct
 	goStatefulIndirectCall
+	goEmptyMap
+	goMapLookup
+	goMapUpdate
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -205,7 +208,11 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			if err != nil {
 				return "", err
 			}
-			emitted[accumulatorID] = graphEntity{accumulatorID, entity(accumulatorID, "000000000000000000000000000090f5", []graphField{bytesField(0x9f50, expression.accName), refField(0x9f51, integerID)})}
+			accumulatorType := integerID
+			if expression.typeID != "" {
+				accumulatorType = expression.typeID
+			}
+			emitted[accumulatorID] = graphEntity{accumulatorID, entity(accumulatorID, "000000000000000000000000000090f5", []graphField{bytesField(0x9f50, expression.accName), refField(0x9f51, accumulatorType)})}
 			emitted[elementID] = graphEntity{elementID, entity(elementID, "000000000000000000000000000090f5", []graphField{bytesField(0x9f50, expression.elementName), refField(0x9f51, integerID)})}
 			id := expressionNodeID(owner, path, "fold")
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090f7", []graphField{refField(0x9f70, collection), refField(0x9f71, initial), refField(0x9f72, accumulatorID), refField(0x9f73, elementID), refField(0x9f74, body)})}
@@ -406,6 +413,39 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			emitted[expression.typeID] = graphEntity{expression.typeID, entity(expression.typeID, "0000000000000000000000000000a004", []graphField{refField(0xa0040, goUnaryI64FunctionTypeID()), refField(0xa0041, integerID)})}
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a035", []graphField{refField(0xa0350, callee), refsField(0xa0351, arguments)})}
 			return id, nil
+		case goEmptyMap:
+			emitted[expression.typeID] = graphEntity{expression.typeID, entity(expression.typeID, "0000000000000000000000000000a040", []graphField{refField(0xa0400, integerID), refField(0xa0401, integerID)})}
+			id := expressionNodeID(owner, path, "empty-map")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a041", []graphField{refField(0xa0410, expression.typeID)})}
+			return id, nil
+		case goMapLookup:
+			mapping, err := emit(expression.left, path+".map")
+			if err != nil {
+				return "", err
+			}
+			key, err := emit(expression.right, path+".key")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "map-lookup")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a042", []graphField{refField(0xa0420, mapping), refField(0xa0421, key)})}
+			return id, nil
+		case goMapUpdate:
+			mapping, err := emit(expression.left, path+".map")
+			if err != nil {
+				return "", err
+			}
+			key, err := emit(expression.initial, path+".key")
+			if err != nil {
+				return "", err
+			}
+			value, err := emit(expression.right, path+".value")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "map-update")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a043", []graphField{refField(0xa0430, mapping), refField(0xa0431, key), refField(0xa0432, value)})}
+			return id, nil
 		case goStateTransition:
 			state, err := emit(expression.left, path+".state")
 			if err != nil {
@@ -536,6 +576,11 @@ func assignFoldBinding(expression *goExpression, role, id string) {
 	}
 	assignFoldBinding(expression.left, role, id)
 	assignFoldBinding(expression.right, role, id)
+	assignFoldBinding(expression.initial, role, id)
+	assignFoldBinding(expression.body, role, id)
+	for _, child := range expression.arguments {
+		assignFoldBinding(child, role, id)
+	}
 }
 
 func assignClosureBindings(expression *goExpression, captureID, parameterID string) {

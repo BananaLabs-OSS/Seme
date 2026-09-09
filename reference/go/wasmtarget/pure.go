@@ -82,6 +82,17 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if len(programs) != 1 {
 		return nil, PureABI{}, fmt.Errorf("wasm.pure_program_cardinality")
 	}
+	if len(bySchema(graph, 0xa040))+len(bySchema(graph, 0xa041))+len(bySchema(graph, 0xa042))+len(bySchema(graph, 0xa043)) > 0 {
+		entry, entryErr := field(programs[0], 0x9151)
+		if entryErr != nil || entry.Tag != 6 {
+			return nil, PureABI{}, fmt.Errorf("wasm.pure_entry_membership")
+		}
+		function, ok := graph.Entities[entry.Reference]
+		if !ok || function.Schema != identity(0x9011) {
+			return nil, PureABI{}, fmt.Errorf("wasm.pure_entry_function")
+		}
+		return certifyPureMapFunction(graph, programs[0], function)
+	}
 	if len(bySchema(graph, 0xa034))+len(bySchema(graph, 0xa035)) > 0 {
 		entry, entryErr := field(programs[0], 0x9151)
 		if entryErr != nil || entry.Tag != 6 {

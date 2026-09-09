@@ -19,6 +19,7 @@ const moduleV26G1 = fs.readFileSync(new URL("../../modules/execution/v26/module.
 const moduleV27G1 = fs.readFileSync(new URL("../../modules/execution/v27/module.g1", import.meta.url), "utf8");
 const moduleV28G1 = fs.readFileSync(new URL("../../modules/execution/v28/module.g1", import.meta.url), "utf8");
 const moduleV29G1 = fs.readFileSync(new URL("../../modules/execution/v29/module.g1", import.meta.url), "utf8");
+const moduleV30G1 = fs.readFileSync(new URL("../../modules/execution/v30/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -300,5 +301,16 @@ export function Run(start, first, second) { const counter = MakeCounter(start); 
   assert.match(projected, /counter\(first\)/);
   assert.match(projected, /return counter\(second\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV29G1, packagePath: "example.test/mutable-closure", revision: 1 });
+  assert.equal(second, first);
+});
+
+test("projects and re-lifts native runtime-keyed Map folds", () => {
+  const source = `/** @param {bigint[]} values @param {bigint} key @returns {bigint} */
+export function Tally(values, key) { return values.reduce((counts, value) => new Map(counts).set(value, (counts.get(value) ?? 0n) + 1n), new Map()).get(key) ?? 0n; }`;
+  const first = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/runtime-map", revision: 1 });
+  const projected = projectJavaScript(first);
+  assert.match(projected, /new Map\(counts\)\.set/);
+  assert.match(projected, /\.get\(key\) \?\? 0n/);
+  const second = liftJavaScript({ source: projected, moduleG1: moduleV30G1, packagePath: "example.test/runtime-map", revision: 1 });
   assert.equal(second, first);
 });
