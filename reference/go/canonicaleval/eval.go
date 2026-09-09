@@ -30,7 +30,9 @@ type Value struct {
 	interfaceType wire.ID
 	witness       wire.ID
 	closure       *closureValue
+	runtime       *observedRuntime
 }
+type observedRuntime struct{ trace []EffectObservation }
 type closureValue struct {
 	typeID     wire.ID
 	parameters []wire.ID
@@ -46,45 +48,72 @@ type Entry struct {
 }
 
 func Evaluate(g wire.Envelope, arguments []Value) (Value, error) {
+	value, _, err := evaluateAuthorized(g, arguments, nil, false)
+	return value, err
+}
+
+func EvaluateAuthorized(g wire.Envelope, arguments []Value, authorized map[string]bool) (Value, []EffectObservation, error) {
+	return evaluateAuthorized(g, arguments, authorized, true)
+}
+
+func evaluateAuthorized(g wire.Envelope, arguments []Value, authorized map[string]bool, effects bool) (Value, []EffectObservation, error) {
+	if effects {
+		for _, entity := range g.Entities {
+			if entity.Schema == id(0x90f1) {
+				capability, _, err := observedInvocation(g, entity)
+				if err != nil {
+					return Value{}, nil, err
+				}
+				if !authorized[capability] {
+					return Value{}, nil, fmt.Errorf("canonicaleval.effect_denied")
+				}
+			}
+		}
+	}
 	programs := schemaEntities(g, 0x9015)
 	if len(programs) != 1 {
-		return Value{}, fmt.Errorf("canonicaleval.program")
+		return Value{}, nil, fmt.Errorf("canonicaleval.program")
 	}
 	entry, err := field(programs[0], 0x9151)
 	if err != nil || entry.Tag != 6 {
-		return Value{}, fmt.Errorf("canonicaleval.entry")
+		return Value{}, nil, fmt.Errorf("canonicaleval.entry")
 	}
 	fn, ok := g.Entities[entry.Reference]
 	if !ok || fn.Schema != id(0x9011) {
-		return Value{}, fmt.Errorf("canonicaleval.entry")
+		return Value{}, nil, fmt.Errorf("canonicaleval.entry")
 	}
 	params, pe := field(fn, 0x9111)
 	body, be := field(fn, 0x9113)
 	if pe != nil || be != nil || params.Tag != 7 || len(params.List) != len(arguments) || body.Tag != 6 {
-		return Value{}, fmt.Errorf("canonicaleval.arguments")
+		return Value{}, nil, fmt.Errorf("canonicaleval.arguments")
 	}
 	env := map[wire.ID]Value{}
+	runtime := &observedRuntime{}
+	if effects {
+		env[wire.ID{}] = Value{runtime: runtime}
+	}
 	for i, p := range params.List {
 		if p.Tag != 6 {
-			return Value{}, fmt.Errorf("canonicaleval.parameter")
+			return Value{}, nil, fmt.Errorf("canonicaleval.parameter")
 		}
 		parameter := g.Entities[p.Reference]
 		if parameter.Schema != id(0x9012) {
-			return Value{}, fmt.Errorf("canonicaleval.parameter_schema")
+			return Value{}, nil, fmt.Errorf("canonicaleval.parameter_schema")
 		}
 		typ, er := field(parameter, 0x9121)
 		if er != nil || typ.Tag != 6 {
-			return Value{}, fmt.Errorf("canonicaleval.parameter_type")
+			return Value{}, nil, fmt.Errorf("canonicaleval.parameter_type")
 		}
 		if er := validateType(g, typ.Reference, map[wire.ID]bool{}, 32); er != nil {
-			return Value{}, fmt.Errorf("canonicaleval.parameter_type:%w", er)
+			return Value{}, nil, fmt.Errorf("canonicaleval.parameter_type:%w", er)
 		}
 		if er := validateValue(g, typ.Reference, arguments[i], 32); er != nil {
-			return Value{}, fmt.Errorf("canonicaleval.argument.%d:%w", i, er)
+			return Value{}, nil, fmt.Errorf("canonicaleval.argument.%d:%w", i, er)
 		}
 		env[p.Reference] = arguments[i]
 	}
-	return evalBlock(g, body.Reference, env, 64)
+	value, err := evalBlock(g, body.Reference, env, 64)
+	return value, append([]EffectObservation(nil), runtime.trace...), err
 }
 
 func validateType(g wire.Envelope, x wire.ID, visiting map[wire.ID]bool, budget int) error {
@@ -440,6 +469,20 @@ func execBlock(g wire.Envelope, block wire.ID, env map[wire.ID]Value, budget int
 			return v.Reference, nil
 		}
 		switch s.Schema {
+		case id(0x90f1):
+			holder, enabled := env[wire.ID{}]
+			if !enabled || holder.runtime == nil {
+				return Value{}, false, fmt.Errorf("canonicaleval.effect_requires_authority")
+			}
+			capability, argument, er := observedInvocation(g, s)
+			if er != nil {
+				return Value{}, false, er
+			}
+			value, er := eval(g, argument, env, budget-1)
+			if er != nil || value.Kind != "bool" {
+				return Value{}, false, fmt.Errorf("canonicaleval.effect_value")
+			}
+			holder.runtime.trace = append(holder.runtime.trace, EffectObservation{Capability: capability, Value: value.Bool})
 		case id(0x9081):
 			values, er := field(s, 0x9810)
 			if er != nil || values.Tag != 7 || len(values.List) != 1 || values.List[0].Tag != 6 {

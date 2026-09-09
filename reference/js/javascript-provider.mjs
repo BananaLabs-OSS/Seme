@@ -70,7 +70,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
     const fieldIDs = record.fields.map((field, index) => {
       const id = stableID("execution", record.id, "field", String(index));
       field.id = id;
-      entities.push(graphEntity(id, entity(id, "00000000000000000000000000009031", [[0x9310, bytes(field.name)], [0x9311, ref(ids[field.type])], [0x9312, `uu ${index}`]])));
+      entities.push(graphEntity(id, entity(id, "00000000000000000000000000009031", [[0x9310, bytes(field.name)], [0x9311, ref(typeID(field.type, { recordsByName, interfacesByName, entities }))], [0x9312, `uu ${index}`]])));
       return id;
     });
     entities.push(graphEntity(record.id, entity(record.id, "00000000000000000000000000009030", [[0x9300, bytes(record.name)], [0x9301, refs(fieldIDs)]])));
@@ -177,7 +177,7 @@ export function javascriptDeclarationIdentity(packagePath, name) {
 // The bounded package profile accepts only relative named imports between files
 // in the supplied snapshot; imports affect native module linkage, not Core
 // meaning, and are removed before the already-certified declaration lift.
-export function liftJavaScriptPackage({ files, packagePath, revision, moduleG1, entryName }) {
+export function liftJavaScriptPackage({ files, packagePath, revision, moduleG1, entryName, identityEvidence }) {
   if (!Array.isArray(files) || files.length < 2) fail("javascript_package.requires_multiple_files");
   const normalized = files.map((file) => {
     if (!file || typeof file.path !== "string" || typeof file.source !== "string") fail("javascript_package.invalid_file");
@@ -218,7 +218,7 @@ export function liftJavaScriptPackage({ files, packagePath, revision, moduleG1, 
     nextLine += lineCount;
   }
   try {
-    return liftJavaScript({ source: chunks.join("\n"), packagePath, revision, moduleG1, entryName });
+    return liftJavaScript({ source: chunks.join("\n"), packagePath, revision, moduleG1, entryName, identityEvidence });
   } catch (error) {
     const located = /^(javascript\.[^:]+):(\d+):(\d+)$/.exec(error.message);
     if (!located) throw error;
@@ -395,6 +395,8 @@ function typeID(type, context) {
 }
 
 function splitCompositeType(value) {
+  const transition = /^(transition:record:[^:]+:(?:i64|bool|string)):(.+)$/.exec(value);
+  if (transition) return [transition[1], transition[2]];
   let depth = 0;
   for (let index = 0; index < value.length; index += 1) {
     if (value[index] === ":" && depth === 0) return [value.slice(0, index), value.slice(index + 1)];
@@ -495,12 +497,16 @@ function emitBlock(statements, path, context, resultType, requireReturn = true) 
       const thenID = emitBlock(blockStatements(current.consequent), `${path}.then`, localContext, resultType, true);
       const elseStatements = current.alternate ? blockStatements(current.alternate) : following;
       if (!elseStatements.length) fail("javascript.branch_not_total", current.loc.start);
-      const elseID = emitBlock(elseStatements, `${path}.else`, localContext, resultType, true);
+      // In a loop/body block that does not itself require a value, an early
+      // return may share a branch with a fall-through continuation. The
+      // Return remains explicit control flow; the continuation is not forced
+      // to manufacture a value merely to make the syntax look total.
+      const elseID = emitBlock(elseStatements, `${path}.else`, localContext, resultType, requireReturn);
       const canonicalPath = statementIDs.length === 0 ? `${path}.statement` : `${path}.statement.${statementIDs.length}`;
       const id = stableID("execution", context.functionID, canonicalPath, "if");
       context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090c0", [[0x9c00, ref(condition.id)], [0x9c01, ref(thenID)], [0x9c02, ref(elseID)]])));
       statementIDs.push(id);
-      terminal = true;
+      terminal = requireReturn;
       break;
     }
     fail("javascript.unsupported_statement", current.loc.start);
@@ -643,6 +649,13 @@ function emitExpression(node, owner, path, context, expected) {
 			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a042", [[0xa0420, ref(map.id)], [0xa0421, ref(key.id)]])));
 			return { id, type: expected };
 		}
+		if (operation === "mapLookup" && expected === "option:i64" && node.arguments.length === 2) {
+			const map = emitExpression(node.arguments[0], owner, `${path}.map`, context, "map:i64:i64");
+			const key = emitExpression(node.arguments[1], owner, `${path}.key`, context, "i64");
+			id = expressionID(owner, path, "map-lookup-option");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a044", [[0xa0440, ref(map.id)], [0xa0441, ref(key.id)], [0xa0442, ref(typeID(expected, context))]])));
+			return { id, type: expected };
+		}
 		if (operation === "mapInsert" && expected === "map:i64:i64" && node.arguments.length === 3) {
 			const map = emitExpression(node.arguments[0], owner, `${path}.map`, context, expected);
 			const key = emitExpression(node.arguments[1], owner, `${path}.key`, context, "i64");
@@ -676,12 +689,17 @@ function emitExpression(node, owner, path, context, expected) {
 					context.entities.push(graphEntity(bindingID, entity(bindingID, "0000000000000000000000000000a060", [[0xa0600, bytes(callback.params[0].name)], [0xa0601, ref(typeID(payloadType, context))]])));
 					armContext = { ...context, variants: new Map([...(context.variants || []), [callback.params[0].name, { id: bindingID, type: payloadType }]]) };
 				}
-				const bodyNode = callback.body.type === "BlockStatement" && callback.body.body.length === 1 && callback.body.body[0].type === "ReturnStatement" ? callback.body.body[0].argument : callback.body;
-				if (!bodyNode || bodyNode.type === "BlockStatement") fail("javascript.match_arm_shape", callback.loc.start);
-				const expression = emitExpression(bodyNode, owner, `${path}.${label}.value`, armContext, expected);
-				const returnedID = expressionID(owner, path, `${label}-return`), blockID = expressionID(owner, path, `${label}-block`);
-				context.entities.push(graphEntity(returnedID, entity(returnedID, "00000000000000000000000000009081", [[0x9810, refs([expression.id])]])));
-				context.entities.push(graphEntity(blockID, entity(blockID, "00000000000000000000000000009080", [[0x9800, refs([returnedID])]])));
+				let blockID;
+				if (callback.body.type === "BlockStatement") {
+					if (callback.body.body.length === 0) fail("javascript.match_arm_shape", callback.loc.start);
+					blockID = emitBlock(callback.body.body, `${path}.${label}`, armContext, expected, true);
+				} else {
+					const expression = emitExpression(callback.body, owner, `${path}.${label}.value`, armContext, expected);
+					const returnedID = expressionID(owner, path, `${label}-return`);
+					blockID = expressionID(owner, path, `${label}-block`);
+					context.entities.push(graphEntity(returnedID, entity(returnedID, "00000000000000000000000000009081", [[0x9810, refs([expression.id])]])));
+					context.entities.push(graphEntity(blockID, entity(blockID, "00000000000000000000000000009080", [[0x9800, refs([returnedID])]])));
+				}
 				return { bindingID, blockID };
 			};
 			if (option) {
@@ -1161,6 +1179,7 @@ function inferExpressionType(node, context) {
   if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme" && ["append", "update", "remove"].includes(node.callee.property.name)) return "slice:i64";
   if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme" && ["emptyMap", "mapInsert", "mapRemove"].includes(node.callee.property.name)) return "map:i64:i64";
   if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme" && ["mapLookupZero", "length", "index"].includes(node.callee.property.name)) return "i64";
+  if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme" && node.callee.property.name === "mapLookup") return "option:i64";
   if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme") fail("javascript.constructor_requires_boundary_type", node.loc.start);
   if (node.type === "NewExpression" && node.callee.type === "Identifier" && node.callee.name === "Map") return "map:i64:i64";
   if (node.type === "LogicalExpression" && node.operator === "??") return inferExpressionType(node.right, context);
