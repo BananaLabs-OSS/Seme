@@ -22,8 +22,8 @@ type vectorFile struct {
 }
 
 func main() {
-	if len(os.Args) != 3 {
-		fatal(fmt.Errorf("usage: canonical-eval PROGRAM.seme VECTORS.json"))
+	if len(os.Args) != 3 && !(len(os.Args) == 4 && os.Args[3] == "--named-rejections") {
+		fatal(fmt.Errorf("usage: canonical-eval PROGRAM.seme VECTORS.json [--named-rejections]"))
 	}
 	program, err := os.ReadFile(os.Args[1])
 	fatal(err)
@@ -38,6 +38,7 @@ func main() {
 	}
 	fatal(validateNames(vectors))
 	observed := map[string]canonicaleval.Value{}
+	rejected := map[string]bool{}
 	for _, item := range vectors.Valid {
 		if _, exists := observed[item.Name]; exists || item.Name == "" {
 			fatal(fmt.Errorf("canonicaleval.vector_name"))
@@ -56,11 +57,16 @@ func main() {
 		if _, err := canonicaleval.Evaluate(graph, item.Arguments); err == nil {
 			fatal(fmt.Errorf("canonicaleval.malformed_accepted:%s", item.Name))
 		}
+		rejected[item.Name] = true
+	}
+	if len(os.Args) == 3 {
+		rejected = nil
 	}
 	fatal(json.NewEncoder(os.Stdout).Encode(struct {
 		Valid     map[string]canonicaleval.Value `json:"valid"`
 		Malformed int                            `json:"malformed"`
-	}{observed, len(vectors.Malformed)}))
+		Rejected  map[string]bool                `json:"rejected,omitempty"`
+	}{observed, len(vectors.Malformed), rejected}))
 }
 
 func validateNames(v vectorFile) error {

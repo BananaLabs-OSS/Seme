@@ -235,6 +235,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 		return nil, PureABI{}, fmt.Errorf("wasm.pure_body")
 	}
 	hasState := len(bySchema(graph, 0x90e0))+len(bySchema(graph, 0x90e1))+len(bySchema(graph, 0x90e2))+len(bySchema(graph, 0x90e3))+len(bySchema(graph, 0x90e4))+len(bySchema(graph, 0x90f0)) > 0
+	hasCollectionExpressions := len(bySchema(graph, 0x90f7))+len(bySchema(graph, 0x90f9))+len(bySchema(graph, 0x90fa))+len(bySchema(graph, 0x90fb))+len(bySchema(graph, 0x90fc))+len(bySchema(graph, 0xa041))+len(bySchema(graph, 0xa042))+len(bySchema(graph, 0xa043))+len(bySchema(graph, 0xa066))+len(bySchema(graph, 0xa067))+len(bySchema(graph, 0xa068)) > 0
 	if !hasState {
 		graph, err = normalizePureLocals(graph, bodyValue.Reference, parameterTypeNames)
 		if err != nil {
@@ -248,7 +249,7 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if len(bySchema(graph, 0x90f1)) > 0 {
 		return certifyPureEffectFunction(graph, bodyValue.Reference, parameterTypes, resultType, parameterTypeNames, parameterLocals, abi)
 	}
-	if hasVariableValues || hasState {
+	if hasVariableValues || hasState || hasCollectionExpressions {
 		abi.Contract = "seme.pure-abi/v2"
 		abi.Provider = "seme.function-v2"
 		abi.FixedHeaderSize = abi.RequestSize
@@ -596,6 +597,11 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 			return err
 		}
 		return validateSymbolicMap(graph, mapping.Reference, parameterTypes, visiting, budget)
+	case identity(0xa041), identity(0xa043), identity(0xa067):
+		if expected != "map:i64:i64" {
+			return fmt.Errorf("wasm.symbolic_map_result_type")
+		}
+		return validateSymbolicMap(graph, expression.ID, parameterTypes, map[wire.ID]bool{}, budget)
 	default:
 		return fmt.Errorf("wasm.pure_unsupported_expression")
 	}
@@ -779,6 +785,10 @@ func fixedI64Collection(graph wire.Envelope, collectionID wire.ID, parameterType
 		values, err := fixedI64ArrayValues(graph, collectionID)
 		return values, wire.ID{}, err
 	}
+	if collection.Schema == identity(0xa068) {
+		values, err := constructedI64SliceValues(graph, collectionID)
+		return values, wire.ID{}, err
+	}
 	if collection.Schema != identity(0x9013) {
 		return nil, wire.ID{}, fmt.Errorf("wasm.fold_collection")
 	}
@@ -787,6 +797,31 @@ func fixedI64Collection(graph wire.Envelope, collectionID wire.ID, parameterType
 		return nil, wire.ID{}, fmt.Errorf("wasm.fold_collection_type")
 	}
 	return nil, parameter.Reference, nil
+}
+
+func constructedI64SliceValues(graph wire.Envelope, constructID wire.ID) ([]wire.ID, error) {
+	construct, ok := graph.Entities[constructID]
+	if !ok || construct.Schema != identity(0xa068) {
+		return nil, fmt.Errorf("wasm.slice_construct")
+	}
+	typeValue, typeErr := field(construct, 0xa0680)
+	valuesValue, valuesErr := field(construct, 0xa0681)
+	if typeErr != nil || valuesErr != nil || typeValue.Tag != 6 || valuesValue.Tag != 7 || len(valuesValue.List) > 512 {
+		return nil, fmt.Errorf("wasm.slice_construct_fields")
+	}
+	t, exists := graph.Entities[typeValue.Reference]
+	element, elementErr := field(t, 0x9f80)
+	if !exists || t.Schema != identity(0x90f8) || elementErr != nil || element.Tag != 6 || !isI64Type(graph, element.Reference) {
+		return nil, fmt.Errorf("wasm.slice_construct_type")
+	}
+	values := make([]wire.ID, len(valuesValue.List))
+	for index, value := range valuesValue.List {
+		if value.Tag != 6 {
+			return nil, fmt.Errorf("wasm.slice_construct_element")
+		}
+		values[index] = value.Reference
+	}
+	return values, nil
 }
 
 func fixedI64ArrayValues(graph wire.Envelope, constructID wire.ID) ([]wire.ID, error) {
@@ -858,6 +893,13 @@ func pureType(graph wire.Envelope, id wire.ID) (pureValueType, error) {
 			return pureValueType{}, fmt.Errorf("wasm.slice_element_type")
 		}
 		return pureValueType{"slice:i64", 0x7e, 8}, nil
+	case identity(0xa040):
+		key, keyErr := field(entity, 0xa0400)
+		value, valueErr := field(entity, 0xa0401)
+		if keyErr != nil || valueErr != nil || key.Tag != 6 || value.Tag != 6 || !isI64Type(graph, key.Reference) || !isI64Type(graph, value.Reference) {
+			return pureValueType{}, fmt.Errorf("wasm.map_type")
+		}
+		return pureValueType{"map:i64:i64", 0x7e, 8}, nil
 	default:
 		return pureValueType{}, fmt.Errorf("wasm.pure_unsupported_type")
 	}

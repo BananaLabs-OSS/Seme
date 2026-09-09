@@ -481,6 +481,11 @@ func lowerHelperInteger(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 			if err != nil {
 				return nil, err
 			}
+		} else if collectionEntity.Schema == identity(0xa068) {
+			values, err = constructedI64SliceValues(graph, collection)
+			if err != nil {
+				return nil, err
+			}
 		} else if collectionEntity.Schema == identity(0x9013) {
 			parameterValue, fieldErr := field(collectionEntity, 0x9130)
 			if fieldErr != nil || parameterValue.Tag != 6 {
