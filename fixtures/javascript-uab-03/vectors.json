@@ -1,0 +1,9 @@
+{
+  "valid": [
+    { "name": "disabled-above", "arguments": ["9", "4", false], "result": "9" },
+    { "name": "disabled-below", "arguments": ["-2", "4", false], "result": "-2" },
+    { "name": "enabled-step", "arguments": ["3", "4", true], "result": "4" },
+    { "name": "enabled-above", "arguments": ["9", "4", true], "result": "9" },
+    { "name": "wrap", "arguments": ["9223372036854775807", "9223372036854775807", true], "result": "-9223372036854775808" }
+  ]
+}

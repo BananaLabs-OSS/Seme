@@ -12,5 +12,5 @@
  * @returns {bigint}
  */
 export function Observe(counter, pair, values, counts, key) {
-  return counter.value + Seme.index(pair, 1n) + Seme.length(values) + (counts.get(key) ?? 0n);
+  return BigInt.asIntN(64, counter.value + Seme.index(pair, 1n) + Seme.length(values) + (counts.get(key) ?? 0n));
 }

@@ -230,9 +230,12 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if err != nil || bodyValue.Tag != 6 {
 		return nil, PureABI{}, fmt.Errorf("wasm.pure_body")
 	}
-	graph, err = normalizePureLocals(graph, bodyValue.Reference, parameterTypeNames)
-	if err != nil {
-		return nil, PureABI{}, err
+	hasState := len(bySchema(graph, 0x90e0))+len(bySchema(graph, 0x90e1))+len(bySchema(graph, 0x90e2))+len(bySchema(graph, 0x90e3))+len(bySchema(graph, 0x90e4))+len(bySchema(graph, 0x90f0)) > 0
+	if !hasState {
+		graph, err = normalizePureLocals(graph, bodyValue.Reference, parameterTypeNames)
+		if err != nil {
+			return nil, PureABI{}, err
+		}
 	}
 	graph, err = normalizePureRecords(graph, bodyValue.Reference)
 	if err != nil {
@@ -241,7 +244,6 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if len(bySchema(graph, 0x90f1)) > 0 {
 		return certifyPureEffectFunction(graph, bodyValue.Reference, parameterTypes, resultType, parameterTypeNames, parameterLocals, abi)
 	}
-	hasState := len(bySchema(graph, 0x90e0))+len(bySchema(graph, 0x90e1))+len(bySchema(graph, 0x90e2))+len(bySchema(graph, 0x90e3))+len(bySchema(graph, 0x90e4))+len(bySchema(graph, 0x90f0)) > 0
 	if hasVariableValues || hasState {
 		abi.Contract = "seme.pure-abi/v2"
 		abi.Provider = "seme.function-v2"
@@ -549,6 +551,15 @@ func validateI64Collection(graph wire.Envelope, id wire.ID, parameterTypes map[w
 	parameter, err := field(collection, 0x9130)
 	typeName := parameterTypes[parameter.Reference]
 	if err != nil || parameter.Tag != 6 || (typeName != "slice:i64" && !strings.HasPrefix(typeName, "fixed-array:i64:")) {
+		return fmt.Errorf("wasm.collection_type")
+	}
+	parameterEntity, exists := graph.Entities[parameter.Reference]
+	declaredType, declaredErr := field(parameterEntity, 0x9121)
+	if !exists || parameterEntity.Schema != identity(0x9012) || declaredErr != nil || declaredType.Tag != 6 {
+		return fmt.Errorf("wasm.collection_parameter")
+	}
+	resolved, resolvedErr := pureType(graph, declaredType.Reference)
+	if resolvedErr != nil || resolved.name != typeName {
 		return fmt.Errorf("wasm.collection_type")
 	}
 	return nil

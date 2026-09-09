@@ -1,0 +1,12 @@
+{"valid":[
+{"name":"false-and-skips-oob","start":"5","limit":"3","enabled":false,"values":["0"],"andIndex":"1","orIndex":"0","arguments":[{"kind":"i64","i64":"5"},{"kind":"i64","i64":"3"},{"kind":"bool","bool":false},{"kind":"slice","items":[{"kind":"i64","i64":"0"}]},{"kind":"i64","i64":"1"},{"kind":"i64","i64":"0"}],"result":{"kind":"i64","i64":"5"}},
+{"name":"true-or-skips-oob","start":"3","limit":"4","enabled":true,"values":["0"],"andIndex":"0","orIndex":"1","arguments":[{"kind":"i64","i64":"3"},{"kind":"i64","i64":"4"},{"kind":"bool","bool":true},{"kind":"slice","items":[{"kind":"i64","i64":"0"}]},{"kind":"i64","i64":"0"},{"kind":"i64","i64":"1"}],"result":{"kind":"i64","i64":"7"}},
+{"name":"i64-max-wrap","start":"9223372036854775807","limit":"9223372036854775807","enabled":true,"values":["0"],"andIndex":"0","orIndex":"1","arguments":[{"kind":"i64","i64":"9223372036854775807"},{"kind":"i64","i64":"9223372036854775807"},{"kind":"bool","bool":true},{"kind":"slice","items":[{"kind":"i64","i64":"0"}]},{"kind":"i64","i64":"0"},{"kind":"i64","i64":"1"}],"result":{"kind":"i64","i64":"-1"}},
+{"name":"i64-min","start":"-9223372036854775808","limit":"-9223372036854775808","enabled":false,"values":["0"],"andIndex":"1","orIndex":"0","arguments":[{"kind":"i64","i64":"-9223372036854775808"},{"kind":"i64","i64":"-9223372036854775808"},{"kind":"bool","bool":false},{"kind":"slice","items":[{"kind":"i64","i64":"0"}]},{"kind":"i64","i64":"1"},{"kind":"i64","i64":"0"}],"result":{"kind":"i64","i64":"-9223372036854775808"}}
+],"malformed":[
+{"name":"true-and-evaluates-oob","start":"5","limit":"3","enabled":true,"values":["0"],"andIndex":"1","orIndex":"0","arguments":[{"kind":"i64","i64":"5"},{"kind":"i64","i64":"3"},{"kind":"bool","bool":true},{"kind":"slice","items":[{"kind":"i64","i64":"0"}]},{"kind":"i64","i64":"1"},{"kind":"i64","i64":"0"}]},
+{"name":"false-or-evaluates-oob","start":"5","limit":"3","enabled":false,"values":["0"],"andIndex":"1","orIndex":"1","arguments":[{"kind":"i64","i64":"5"},{"kind":"i64","i64":"3"},{"kind":"bool","bool":false},{"kind":"slice","items":[{"kind":"i64","i64":"0"}]},{"kind":"i64","i64":"1"},{"kind":"i64","i64":"1"}]},
+{"name":"wrong-arity","arguments":[{"kind":"i64","i64":"1"}]},
+{"name":"wrong-kind","arguments":[{"kind":"bool","bool":true}]},
+{"name":"out-of-range","arguments":[{"kind":"i64","i64":"9223372036854775808"}]}
+]}

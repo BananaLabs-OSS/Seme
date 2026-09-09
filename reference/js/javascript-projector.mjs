@@ -500,7 +500,7 @@ function projectExpression(id, context) {
   if (!binary) fail("javascript_projection.unsupported_expression");
   const [leftField, rightField, operator] = binary;
   const rendered = `(${projectExpression(reference(field(expression, leftField)), context)} ${operator} ${projectExpression(reference(field(expression, rightField)), context)})`;
-  if (expression.schema === schema.integerMultiply) {
+  if (expression.schema === schema.integerAdd || expression.schema === schema.integerMultiply || expression.schema === schema.integerSubtract) {
     return `BigInt.asIntN(64, ${rendered})`;
   }
   return rendered;

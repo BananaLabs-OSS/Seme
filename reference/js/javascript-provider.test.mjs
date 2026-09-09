@@ -164,7 +164,7 @@ export function Pick(values, index) { return Seme.index(values, index); }`;
 
 test("lifts reduce as typed deterministic fold bindings", () => {
   const source = `/** @param {bigint[3]} values @returns {bigint} */
-export function Sum(values) { return values.reduce((total, value) => total + value, 0n); }`;
+export function Sum(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV22G1, packagePath: "example.test/fold", revision: 1 });
   assert.match(canonical, /000000000000000000000000000090f5/);
   assert.match(canonical, /000000000000000000000000000090f6/);
@@ -173,7 +173,7 @@ export function Sum(values) { return values.reduce((total, value) => total + val
 
 test("lifts a runtime-sized bigint slice fold", () => {
   const source = `/** @param {bigint[]} values @returns {bigint} */
-export function Sum(values) { return values.reduce((total, value) => total + value, 0n); }`;
+export function Sum(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV23G1, packagePath: "example.test/slice", revision: 1 });
   assert.match(canonical, /000000000000000000000000000090f8/);
   assert.match(canonical, /000000000000000000000000000090f7/);
@@ -192,6 +192,13 @@ test("does not treat general JavaScript Number values as canonical i64", () => {
   assert.throws(() => liftJavaScript({ source, moduleG1: moduleV24G1, packagePath: "example.test/wrong-number", revision: 1 }), /javascript\.unsupported_expression/);
 });
 
+test("requires an explicit modular boundary for JavaScript BigInt arithmetic", () => {
+  const raw = `/** @param {bigint} left @param {bigint} right @returns {bigint} */\nexport function Add(left, right) { return left + right; }`;
+  assert.throws(() => liftJavaScript({ source: raw, moduleG1: moduleV15G1, packagePath: "example.test/raw-bigint", revision: 1 }), /javascript\.i64_arithmetic_requires_asIntN:2:/);
+  const refined = raw.replace("left + right", "BigInt.asIntN(64, left + right)");
+  assert.match(liftJavaScript({ source: refined, moduleG1: moduleV15G1, packagePath: "example.test/refined-bigint", revision: 1 }), /00000000000000000000000000009014/);
+});
+
 test("lifts immutable collection update followed by append", () => {
   const source = `/** @param {bigint[]} values @param {bigint} index @param {bigint} replacement @param {bigint} appended @returns {bigint[]} */
 export function UpdateAndAppend(values, index, replacement, appended) { return values.with(Number(index), replacement).concat([appended]); }`;
@@ -207,7 +214,7 @@ test("lifts native methods as explicit immutable state transitions", () => {
 class Counter {
   constructor(value) { this.value = value; }
   /** @param {bigint} delta @returns {Transition<Counter,bigint>} */
-  add(delta) { const state = new Counter(this.value + delta); return { state, result: state.value }; }
+  add(delta) { const state = new Counter(BigInt.asIntN(64, this.value + delta)); return { state, result: state.value }; }
 }
 /** @param {Counter} counter @param {bigint} delta @returns {Transition<Counter,bigint>} */
 export function Step(counter, delta) { return counter.add(delta); }`;
@@ -222,7 +229,7 @@ test("lifts explicit state and result projections", () => {
 class Counter {
   constructor(value) { this.value = value; }
   /** @param {bigint} delta @returns {Transition<Counter,bigint>} */
-  add(delta) { const state = new Counter(this.value + delta); return { state, result: state.value }; }
+  add(delta) { const state = new Counter(BigInt.asIntN(64, this.value + delta)); return { state, result: state.value }; }
 }`;
   const stateSource = `${base}\n/** @param {Counter} counter @param {bigint} delta @returns {Counter} */\nexport function Next(counter, delta) { return counter.add(delta).state; }`;
   const resultSource = `${base}\n/** @param {Counter} counter @param {bigint} delta @returns {bigint} */\nexport function Value(counter, delta) { return counter.add(delta).result; }`;
@@ -242,7 +249,7 @@ test("lifts native structural interfaces with explicit dispatch witnesses", () =
 class OffsetAdjuster {
   constructor(Offset) { this.Offset = Offset; }
   /** @param {bigint} value @returns {bigint} */
-  Adjust(value) { return value + this.Offset; }
+  Adjust(value) { return BigInt.asIntN(64, value + this.Offset); }
 }
 /** @typedef {Object} ScaleAdjuster
  * @property {bigint} Factor
@@ -250,7 +257,7 @@ class OffsetAdjuster {
 class ScaleAdjuster {
   constructor(Factor) { this.Factor = Factor; }
   /** @param {bigint} value @returns {bigint} */
-  Adjust(value) { return value * this.Factor; }
+  Adjust(value) { return BigInt.asIntN(64, value * this.Factor); }
 }
 /** @param {Adjuster} adjuster @param {bigint} value @returns {bigint} */
 export function Apply(adjuster, value) { return adjuster.Adjust(value); }`;
@@ -271,7 +278,7 @@ test("lifts a concrete structural value through an explicit interface witness", 
 class OffsetAdjuster {
   constructor(Offset) { this.Offset = Offset; }
   /** @param {bigint} value @returns {bigint} */
-  Adjust(value) { return value + this.Offset; }
+  Adjust(value) { return BigInt.asIntN(64, value + this.Offset); }
 }
 /** @param {bigint} offset @param {bigint} value @returns {bigint} */
 export function ApplyOffset(offset, value) { return new OffsetAdjuster(offset).Adjust(value); }`;
@@ -282,7 +289,7 @@ export function ApplyOffset(offset, value) { return new OffsetAdjuster(offset).A
 
 test("lifts immutable lexical closures and indirect calls", () => {
   const source = `/** @param {bigint} base @returns {function(bigint): bigint} */
-function MakeAdder(base) { return (value) => base + value; }
+function MakeAdder(base) { return (value) => BigInt.asIntN(64, base + value); }
 /** @param {function(bigint): bigint} fn @param {bigint} value @returns {bigint} */
 function Apply(fn, value) { return fn(value); }
 /** @param {bigint} base @param {bigint} value @returns {bigint} */
@@ -293,7 +300,7 @@ export function Run(base, value) { return Apply(MakeAdder(base), value); }`;
 
 test("lifts mutable closure environments and sequenced calls", () => {
   const source = `/** @param {bigint} start @returns {function(bigint): bigint} */
-function MakeCounter(start) { let value = start; return (delta) => { value = value + delta; return value; }; }
+function MakeCounter(start) { let value = start; return (delta) => { value = BigInt.asIntN(64, value + delta); return value; }; }
 /** @param {bigint} start @param {bigint} first @param {bigint} second @returns {bigint} */
 export function Run(start, first, second) { const counter = MakeCounter(start); counter(first); return counter(second); }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV29G1, packagePath: "example.test/mutable-closure", revision: 1 });
@@ -302,7 +309,7 @@ export function Run(start, first, second) { const counter = MakeCounter(start); 
 
 test("lifts runtime-keyed maps as immutable canonical folds", () => {
   const source = `/** @param {bigint[]} values @param {bigint} key @returns {bigint} */
-export function Tally(values, key) { return values.reduce((counts, value) => new Map(counts).set(value, (counts.get(value) ?? 0n) + 1n), new Map()).get(key) ?? 0n; }`;
+export function Tally(values, key) { return values.reduce((counts, value) => new Map(counts).set(value, BigInt.asIntN(64, (counts.get(value) ?? 0n) + 1n)), new Map()).get(key) ?? 0n; }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/runtime-map", revision: 1 });
   for (const suffix of ["a040", "a041", "a042", "a043"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
   assert.match(canonical, /000000000000000000000000000090f7/);
@@ -315,10 +322,10 @@ test("compositionally lifts the cumulative state-flow proof", () => {
 class Accumulator {
   constructor(Value) { this.Value = Value; }
   /** @param {bigint} delta @returns {Transition<Accumulator,bigint>} */
-  Add(delta) { const next = new Accumulator(this.Value + delta); return { state: next, result: next.Value }; }
+  Add(delta) { const next = new Accumulator(BigInt.asIntN(64, this.Value + delta)); return { state: next, result: next.Value }; }
 }
 /** @param {bigint[]} values @returns {bigint} */
-function Sum(values) { return values.reduce((total, value) => total + value, 0n); }
+function Sum(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }
 /** @param {Accumulator} state @param {bigint[]} values @param {boolean} enabled @returns {Transition<Accumulator,bigint>} */
 export function Run(state, values, enabled) { const delta = Sum(values); if (enabled) { return state.Add(delta); } else { return state.Add(0n); } }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/cumulative-state-flow", revision: 1 });
@@ -327,7 +334,7 @@ export function Run(state, values, enabled) { const delta = Sum(values); if (ena
 
 test("compositionally lifts the cumulative text-collection proof", () => {
   const source = `/** @param {bigint[]} values @returns {bigint} */
-function Sum(values) { return values.reduce((total, value) => total + value, 0n); }
+function Sum(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }
 /** @param {string} prefix @param {bigint[]} values @returns {string} */
 export function Describe(prefix, values) { const total = Sum(values); if (total <= 0n) { return prefix + ":non-positive"; } return prefix + ":positive"; }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/cumulative-text-collection", revision: 1 });

@@ -249,7 +249,7 @@ func TestRejectsUnsupportedCanonicalExpression(t *testing.T) {
 	if !result.Valid {
 		t.Fatal(result.Diagnostics)
 	}
-	unsupported := strings.Replace(result.CanonicalG1, "00000000000000000000000000009014 1 3", "000000000000000000000000000090a0 1 3", 1)
+	unsupported := strings.Replace(result.CanonicalG1, "00000000000000000000000000009014 1 3", "0000000000000000000000000000ffff 1 3", 1)
 	if _, err := goprojector.Project([]byte(unsupported), "reject"); err == nil || !strings.Contains(err.Error(), "go_projection.unsupported_expression") {
 		t.Fatalf("unsupported semantic expression accepted: %v", err)
 	}

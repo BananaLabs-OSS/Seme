@@ -1,6 +1,13 @@
 import crypto from "node:crypto";
 import { parse } from "acorn";
 
+const refinedI64Arithmetic = new WeakSet();
+function admitRefinedI64Arithmetic(node) {
+  if (!node || typeof node !== "object") return;
+  if (node.type === "BinaryExpression" && ["+", "-", "*"].includes(node.operator)) refinedI64Arithmetic.add(node);
+  if (node.type === "BinaryExpression") { admitRefinedI64Arithmetic(node.left); admitRefinedI64Arithmetic(node.right); }
+}
+
 const ids = {
   i64: stableID("execution", "type", "i64"),
   bool: stableID("execution", "type", "bool"),
@@ -657,7 +664,7 @@ function emitExpression(node, owner, path, context, expected) {
 			return id;
 		});
 		const parameterNames = new Set(node.params.map((item) => item.name));
-		const freeNames = referencedIdentifiers(node.body).filter((name, index, all) => !parameterNames.has(name) && all.indexOf(name) === index);
+		const freeNames = referencedIdentifiers(node.body).filter((name, index, all) => name !== "BigInt" && !parameterNames.has(name) && all.indexOf(name) === index);
 		const captures = [];
 		for (const name of freeNames) {
 			const outerIndex = context.parameterNames.indexOf(name);
@@ -705,6 +712,7 @@ function emitExpression(node, owner, path, context, expected) {
 		return { id, type: expected };
 	}
 	if (node.type === "CallExpression" && expected === "i64" && !node.optional && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "BigInt" && node.callee.property.name === "asIntN" && node.arguments.length === 2 && node.arguments[0].type === "Literal" && node.arguments[0].value === 64) {
+		admitRefinedI64Arithmetic(node.arguments[1]);
 		return emitExpression(node.arguments[1], owner, path, context, expected);
 	}
 	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.type === "Identifier") {
@@ -803,9 +811,10 @@ function emitExpression(node, owner, path, context, expected) {
 	if (node.type === "CallExpression" && expected === "i64" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.property.name === "reduce" && node.arguments.length === 2) {
 		const collectionType = inferExpressionType(node.callee.object, context);
 		const callback = node.arguments[0];
-		if (!(collectionType.startsWith("array:i64:") || collectionType === "slice:i64") || callback.type !== "ArrowFunctionExpression" || callback.async || callback.params.length !== 2 || callback.params.some((item) => item.type !== "Identifier") || callback.body.type !== "BinaryExpression" || callback.body.operator !== "+") fail("javascript.fold_shape", node.loc.start);
+		const callbackBody = unwrapI64AsIntN(callback.body);
+		if (!(collectionType.startsWith("array:i64:") || collectionType === "slice:i64") || callback.type !== "ArrowFunctionExpression" || callback.async || callback.params.length !== 2 || callback.params.some((item) => item.type !== "Identifier") || callbackBody === callback.body || callbackBody.type !== "BinaryExpression" || callbackBody.operator !== "+") fail("javascript.i64_arithmetic_requires_asIntN", callback?.body?.loc?.start || node.loc.start);
 		const [accumulator, element] = callback.params;
-		if (callback.body.left.type !== "Identifier" || callback.body.left.name !== accumulator.name || callback.body.right.type !== "Identifier" || callback.body.right.name !== element.name) fail("javascript.fold_body", callback.body.loc.start);
+		if (callbackBody.left.type !== "Identifier" || callbackBody.left.name !== accumulator.name || callbackBody.right.type !== "Identifier" || callbackBody.right.name !== element.name) fail("javascript.fold_body", callbackBody.loc.start);
 		const collection = emitExpression(node.callee.object, owner, `${path}.collection`, context, collectionType);
 		const initial = emitExpression(node.arguments[1], owner, `${path}.initial`, context, "i64");
 		const accumulatorID = expressionID(owner, path, "fold-accumulator-binding");
@@ -970,6 +979,7 @@ function emitExpression(node, owner, path, context, expected) {
   };
   const rule = table[`${operator}:${expected}`];
   if (!rule || !["BinaryExpression", "LogicalExpression"].includes(node.type)) fail("javascript.unsupported_expression", node.loc.start);
+  if (expected === "i64" && node.type === "BinaryExpression" && ["+", "-", "*"].includes(node.operator) && !refinedI64Arithmetic.has(node)) fail("javascript.i64_arithmetic_requires_asIntN", node.loc.start);
   const [kind, schema, leftField, rightField, operandType] = rule;
   const left = emitExpression(node.left, owner, `${path}.left`, context, operandType);
   const right = emitExpression(node.right, owner, `${path}.right`, context, operandType);
@@ -983,11 +993,17 @@ function emitExpression(node, owner, path, context, expected) {
   return { id, type: expected };
 }
 
+function unwrapI64AsIntN(node) {
+	if (node?.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "BigInt" && node.callee.property.name === "asIntN" && node.arguments.length === 2 && node.arguments[0].type === "Literal" && node.arguments[0].value === 64) return node.arguments[1];
+	return node;
+}
+
 function emitMutableClosure(node, owner, path, context, expected, parameterTypes, resultType, captureName) {
 	if (parameterTypes.length !== 1 || resultType !== "i64" || node.params.length !== 1 || node.params[0].type !== "Identifier" || node.body.type !== "BlockStatement" || node.body.body.length !== 2) fail("javascript.mutable_closure_shape", node.loc.start);
 	const [assignmentStatement, returnStatement] = node.body.body;
 	const assignment = assignmentStatement.type === "ExpressionStatement" ? assignmentStatement.expression : undefined;
-	if (assignment?.type !== "AssignmentExpression" || assignment.operator !== "=" || assignment.left.type !== "Identifier" || assignment.left.name !== captureName || assignment.right.type !== "BinaryExpression" || assignment.right.operator !== "+" || assignment.right.left.type !== "Identifier" || assignment.right.left.name !== captureName || assignment.right.right.type !== "Identifier" || assignment.right.right.name !== node.params[0].name || returnStatement.type !== "ReturnStatement" || returnStatement.argument?.type !== "Identifier" || returnStatement.argument.name !== captureName) fail("javascript.mutable_closure_body", node.loc.start);
+	const assignmentRight = assignment ? unwrapI64AsIntN(assignment.right) : undefined;
+	if (assignment?.type !== "AssignmentExpression" || assignment.operator !== "=" || assignment.left.type !== "Identifier" || assignment.left.name !== captureName || assignmentRight === assignment.right || assignmentRight?.type !== "BinaryExpression" || assignmentRight.operator !== "+" || assignmentRight.left.type !== "Identifier" || assignmentRight.left.name !== captureName || assignmentRight.right.type !== "Identifier" || assignmentRight.right.name !== node.params[0].name || returnStatement.type !== "ReturnStatement" || returnStatement.argument?.type !== "Identifier" || returnStatement.argument.name !== captureName) fail("javascript.mutable_closure_body", node.loc.start);
 	const initialNode = context.mutableCaptureInitials.get(captureName);
 	const initial = emitExpression(initialNode, owner, `${path}.capture.initial`, context, "i64");
 	const captureID = expressionID(owner, path, "mutable-capture");
@@ -1108,6 +1124,7 @@ function referencedIdentifiers(node) {
   const visit = (value) => {
     if (!value || typeof value !== "object") return;
     if (value.type === "Identifier") { names.push(value.name); return; }
+    if (value.type === "MemberExpression" && !value.computed) { visit(value.object); return; }
     for (const [key, child] of Object.entries(value)) {
       if (key === "loc" || key === "start" || key === "end") continue;
       if (Array.isArray(child)) child.forEach(visit); else visit(child);

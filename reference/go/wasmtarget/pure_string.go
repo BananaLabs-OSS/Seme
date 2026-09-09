@@ -46,7 +46,14 @@ func certifyPureStringFunction(graph wire.Envelope, body wire.ID, parameters []p
 		}
 		if err == nil {
 			budget = 4096
-			instructions, err = context.lowerStateBlock(body, result.name, true, map[wire.ID]bool{}, &budget)
+			instructions, err = context.lowerStateBlock(body, result.name, true, 0, map[wire.ID]bool{}, &budget)
+			if err == nil {
+				// Every canonical Return branches to this result-bearing block. This
+				// preserves function-return semantics through arbitrarily nested Wasm
+				// if/loop labels without leaving a value on a void construct's stack.
+				instructions = append([]byte{0x02, result.wasm}, instructions...)
+				instructions = append(instructions, 0x0b)
+			}
 		}
 	} else {
 		instructions, err = context.lowerBlock(body, result.name, parameterTypes, map[wire.ID]bool{}, &budget)
@@ -85,7 +92,7 @@ func (context *stringLowering) planPlaces(parameters []pureValueType) error {
 	return nil
 }
 
-func (context *stringLowering) lowerStateBlock(id wire.ID, result string, requireReturn bool, visiting map[wire.ID]bool, budget *int) ([]byte, error) {
+func (context *stringLowering) lowerStateBlock(id wire.ID, result string, requireReturn bool, returnDepth uint32, visiting map[wire.ID]bool, budget *int) ([]byte, error) {
 	if *budget == 0 || visiting[id] {
 		return nil, fmt.Errorf("wasm.pure_state_cycle_or_size")
 	}
@@ -145,7 +152,7 @@ func (context *stringLowering) lowerStateBlock(id wire.ID, result string, requir
 			if lowerErr != nil {
 				return nil, lowerErr
 			}
-			bodyCode, lowerErr := context.lowerStateBlock(body.Reference, result, false, visiting, budget)
+			bodyCode, lowerErr := context.lowerStateBlock(body.Reference, result, false, returnDepth+2, visiting, budget)
 			if lowerErr != nil {
 				return nil, lowerErr
 			}
@@ -173,7 +180,7 @@ func (context *stringLowering) lowerStateBlock(id wire.ID, result string, requir
 			if lowerErr != nil {
 				return nil, lowerErr
 			}
-			bodyCode, lowerErr := context.lowerStateBlock(body.Reference, result, false, visiting, budget)
+			bodyCode, lowerErr := context.lowerStateBlock(body.Reference, result, false, returnDepth+1, visiting, budget)
 			if lowerErr != nil {
 				return nil, lowerErr
 			}
@@ -181,6 +188,35 @@ func (context *stringLowering) lowerStateBlock(id wire.ID, result string, requir
 			code = append(code, 0x04, 0x40)
 			code = append(code, bodyCode...)
 			code = append(code, 0x0b)
+		case identity(0x90c0):
+			condition, conditionErr := field(statement, 0x9c00)
+			thenBlock, thenErr := field(statement, 0x9c01)
+			elseBlock, elseErr := field(statement, 0x9c02)
+			if conditionErr != nil || thenErr != nil || elseErr != nil || condition.Tag != 6 || thenBlock.Tag != 6 || elseBlock.Tag != 6 || index != len(statements.List)-1 {
+				return nil, fmt.Errorf("wasm.pure_state_if")
+			}
+			conditionCode, lowerErr := context.lowerStateExpression(condition.Reference, "bool", budget)
+			if lowerErr != nil {
+				return nil, lowerErr
+			}
+			thenCode, lowerErr := context.lowerStateBlock(thenBlock.Reference, result, true, returnDepth+1, visiting, budget)
+			if lowerErr != nil {
+				return nil, lowerErr
+			}
+			elseCode, lowerErr := context.lowerStateBlock(elseBlock.Reference, result, true, returnDepth+1, visiting, budget)
+			if lowerErr != nil {
+				return nil, lowerErr
+			}
+			code = append(code, conditionCode...)
+			code = append(code, 0x04, 0x40)
+			code = append(code, thenCode...)
+			code = append(code, 0x05)
+			code = append(code, elseCode...)
+			code = append(code, 0x0b)
+			// Both canonical branches return through the enclosing result block.
+			// Mark the syntactic fallthrough unreachable for Wasm validation.
+			code = append(code, 0x00)
+			returned = true
 		case identity(0x9081):
 			values, e := field(statement, 0x9810)
 			if e != nil || values.Tag != 7 || len(values.List) != 1 || index != len(statements.List)-1 {
@@ -191,6 +227,10 @@ func (context *stringLowering) lowerStateBlock(id wire.ID, result string, requir
 				return nil, lowerErr
 			}
 			code = append(code, value...)
+			code = append(code, 0x0c)
+			depth := &bytes.Buffer{}
+			uleb(depth, uint64(returnDepth))
+			code = append(code, depth.Bytes()...)
 			returned = true
 		default:
 			return nil, fmt.Errorf("wasm.pure_state_statement")
@@ -391,6 +431,35 @@ func (context *stringLowering) lowerSlice(id wire.ID, budget *int) ([]byte, erro
 
 func (context *stringLowering) lowerInteger(id wire.ID, budget *int) ([]byte, error) {
 	expression, ok := context.graph.Entities[id]
+	if ok && expression.Schema == identity(0x90e2) {
+		place, err := field(expression, 0x9e20)
+		if err != nil || place.Tag != 6 || context.placeTypes[place.Reference] != "i64" {
+			return nil, fmt.Errorf("wasm.pure_place_read_type")
+		}
+		return []byte{0x20, context.locals[place.Reference]}, nil
+	}
+	if ok && (expression.Schema == identity(0x9014) || expression.Schema == identity(0x9090) || expression.Schema == identity(0x90a0)) {
+		leftField, rightField, typeField, opcode := uint64(0x9140), uint64(0x9141), uint64(0x9142), byte(0x7c)
+		if expression.Schema == identity(0x9090) {
+			leftField, rightField, typeField, opcode = 0x9900, 0x9901, 0x9902, 0x7e
+		} else if expression.Schema == identity(0x90a0) {
+			leftField, rightField, typeField, opcode = 0x9a00, 0x9a01, 0x9a02, 0x7d
+		}
+		left, leftErr := field(expression, leftField)
+		right, rightErr := field(expression, rightField)
+		if leftErr != nil || rightErr != nil || left.Tag != 6 || right.Tag != 6 || validateIntegerTypeReference(context.graph, expression, typeField) != nil {
+			return nil, fmt.Errorf("wasm.helper_integer_arithmetic")
+		}
+		leftCode, err := context.lowerInteger(left.Reference, budget)
+		if err != nil {
+			return nil, err
+		}
+		rightCode, err := context.lowerInteger(right.Reference, budget)
+		if err != nil {
+			return nil, err
+		}
+		return append(append(leftCode, rightCode...), opcode), nil
+	}
 	if !ok || expression.Schema != identity(0x90f7) {
 		return lowerHelperInteger(context.graph, id, context.locals, context.used, map[wire.ID]bool{}, budget)
 	}

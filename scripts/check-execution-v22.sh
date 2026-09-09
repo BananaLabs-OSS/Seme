@@ -39,9 +39,9 @@ node "$repo/reference/js/pure-function-runner.mjs" "$work/empty.wasm" "" > "$wor
 rg -q '"response":"0000000000000000"' "$work/empty.log"
 
 printf '%s\n' '/** @param {bigint[3]} values @returns {bigint} */' \
-  'export function Sum(values) { return values.reduce((total, value) => total + value, 0n); }' \
+  'export function Sum(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }' \
   '/** @param {bigint[0]} values @returns {bigint} */' \
-  'function SumEmpty(values) { return values.reduce((total, value) => total + value, 0n); }' > "$work/program.mjs"
+  'function SumEmpty(values) { return values.reduce((total, value) => BigInt.asIntN(64, total + value), 0n); }' > "$work/program.mjs"
 node "$repo/reference/js/javascript-provider-cli.mjs" --source "$work/program.mjs" \
   --module "$repo/modules/execution/v22/module.g1" --package example.com/seme-fold-proof \
   --entry Sum --revision 1 --out "$work/js.g1"
@@ -69,7 +69,7 @@ cp "$work/sum.wasm" "$work/pulp/pure-function.wasm"
 rg -q '"response":"2300000000000000"' "$work/pulp.log"
 
 printf '%s\n' '/** @param {bigint[3]} values @returns {bigint} */' \
-  'export function Invalid(values) { return values.reduce((total, value) => value + total, 0n); }' > "$work/invalid.mjs"
+  'export function Invalid(values) { return values.reduce((total, value) => BigInt.asIntN(64, value + total), 0n); }' > "$work/invalid.mjs"
 if node "$repo/reference/js/javascript-provider-cli.mjs" --source "$work/invalid.mjs" \
   --module "$repo/modules/execution/v22/module.g1" --package example.com/seme-invalid-fold \
   --revision 1 --out "$work/invalid.g1" > "$work/invalid.log" 2>&1; then

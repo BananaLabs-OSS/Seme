@@ -31,7 +31,14 @@ test("rejects nearby Lua semantics with located diagnostics", () => {
   const base = { moduleG1, packagePath: "example.test/lua-reject", revision: 1, entryName: "Run" };
   assert.throws(() => liftLua({ ...base, sources: [{ name: "bad.lua", source: "function Run(value)\n return value\nend" }] }), /lua\.unsupported_annotation:bad\.lua:1:1/);
   assert.throws(() => liftLua({ ...base, sources: [{ name: "bad.lua", source: "---@param value boolean\n---@return boolean\nfunction Run(value)\n return Missing(value)\nend" }] }), /lua\.unknown_call:bad\.lua:4:1/);
-  assert.throws(() => liftLua({ ...base, sources: [{ name: "bad.lua", source: "---@param value boolean\n---@return boolean\nfunction Run(value)\n value = false\n return value\nend" }] }), /lua\.function_body_profile:bad\.lua:3:1/);
+  assert.throws(() => liftLua({ ...base, sources: [{ name: "bad.lua", source: "---@param value boolean\n---@return boolean\nfunction Run(value)\n value = false\n return value\nend" }] }), /lua\.assignment_scope:bad\.lua:4:1/);
+});
+
+test("lifts typed UAB-03 blocks and projects them byte-identically", () => {
+  const source = fs.readFileSync(new URL("../../fixtures/lua-uab-03/program.lua", import.meta.url), "utf8");
+  const options = { sources:[{name:"program.lua",source}], moduleG1, packagePath:"example.test/lua-uab03", revision:1, entryName:"Accumulate" };
+  const canonical=liftLua(options),projected=projectLua(canonical),relifted=liftLua({...options,sources:[{name:"projected.lua",source:projected}]});
+  assert.equal(relifted,canonical); for(const suffix of [0x90e0,0x90e1,0x90e2,0x90e3,0x90e4,0x90f0,0x9021,0x90b1])assert.match(canonical,new RegExp(schemaID(suffix)));
 });
 
 test("keeps the four explicit scalar boundaries distinct", () => {
