@@ -417,14 +417,31 @@ func TestIncrementalSessionLiftsClosedFunctionCalls(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/calls", Entry: "Render", Files: map[string]string{
-		"calls.go": "package calls\nfunc decorate(value string) string { return \"[\" + value + \"]\" }\nfunc combine(left, right string) string { return decorate(left) + decorate(right) }\nfunc Render(left, right string) string { joined := combine(left, right); return decorate(joined) }\n",
-	}})
+	files := map[string]string{
+		"decorate.go": "package calls\nfunc decorate(value string) string { return \"[\" + value + \"]\" }\n",
+		"combine.go":  "package calls\nfunc combine(left, right string) string { return decorate(left) + decorate(right) }\n",
+		"render.go":   "package calls\nfunc Render(left, right string) string { joined := combine(left, right); return decorate(joined) }\n",
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/calls", Entry: "Render", Files: files})
 	if !result.Valid || len(result.Diagnostics) != 0 || len(result.Sources) != 3 {
 		t.Fatalf("call result = %#v", result)
 	}
 	if strings.Count(result.CanonicalG1, "00000000000000000000000000009060") != 6 {
 		t.Fatal("canonical function calls missing")
+	}
+
+	// File-map insertion order is not semantic. A fresh session presented with
+	// the same package in another order must produce byte-identical canonical
+	// meaning.
+	second, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reordered := second.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/calls", Entry: "Render", Files: map[string]string{
+		"render.go": files["render.go"], "decorate.go": files["decorate.go"], "combine.go": files["combine.go"],
+	}})
+	if !reordered.Valid || reordered.CanonicalG1 != result.CanonicalG1 {
+		t.Fatalf("multi-file canonical result depends on presentation order")
 	}
 }
 

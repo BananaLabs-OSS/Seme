@@ -301,6 +301,14 @@ and one shared cumulative application. Broad language, runtime, standard
 library, tooling, and third-party package compatibility remain separately
 versioned conformance tracks.
 
+UAB-01 is complete in all three language columns: native multi-source packages,
+typed named functions, parameters, and calls lift directly to canonical Seme,
+project back to their own ecosystem, re-lift identically, and agree with the
+claimed targets. Run `./scripts/check-uab-v1-go-01.sh`,
+`./scripts/check-javascript-uab-01.sh`, and
+`./scripts/check-lua-provider-v1.sh`. The machine-readable profile score is
+reported by `./scripts/check-uab-v1-scorecard.sh`.
+
 [`Core Execution v25`](spec/core-execution-v25.md) adds neutral immutable
 collection append and update with dynamically sized slice results. Native Go
 and JavaScript forms converge canonically; projection remains native, and
