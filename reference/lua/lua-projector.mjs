@@ -29,6 +29,15 @@ const schema = {
   emptyMap: "0000000000000000000000000000a041",
   mapLookup: "0000000000000000000000000000a042",
   mapUpdate: "0000000000000000000000000000a043",
+  variantBinding: "0000000000000000000000000000a060",
+  variantRead: "0000000000000000000000000000a061",
+  resultMatch: "0000000000000000000000000000a062",
+  optionMatch: "0000000000000000000000000000a063",
+  bytesLiteral: "0000000000000000000000000000a064",
+  bytesEqual: "0000000000000000000000000000a065",
+  stringLiteral: "00000000000000000000000000009050",
+  stringEqual: "000000000000000000000000000090c2",
+  boolLiteral: "000000000000000000000000000090b0",
 };
 
 export function projectLua(canonicalG1) {
@@ -133,7 +142,36 @@ function projectExpression(id, context) {
     return `Seme.lookup_zero(${projectExpression(mapID, context)}, ${projectExpression(reference(field(expression, 0xa0421)), context)}, "${mapExpressionDescriptor(mapID, context)}")`;
   }
   if (expression.schema === schema.mapUpdate) return `Seme.map_update(${projectExpression(reference(field(expression, 0xa0430)), context)}, ${projectExpression(reference(field(expression, 0xa0431)), context)}, ${projectExpression(reference(field(expression, 0xa0432)), context)})`;
+  if (expression.schema === schema.variantRead) return bindingName(reference(field(expression, 0xa0610)), context);
+  if (expression.schema === schema.bytesLiteral) return `Seme.bytes_literal(${JSON.stringify(text(field(expression, 0xa0640)))})`;
+  if (expression.schema === schema.bytesEqual) return `Seme.bytes_equal(${projectExpression(reference(field(expression, 0xa0650)), context)}, ${projectExpression(reference(field(expression, 0xa0651)), context)})`;
+  if (expression.schema === schema.stringLiteral) return JSON.stringify(text(field(expression, 0x9500)));
+  if (expression.schema === schema.stringEqual) return `Seme.text_equal(${projectExpression(reference(field(expression, 0x9c20)), context)}, ${projectExpression(reference(field(expression, 0x9c21)), context)})`;
+  if (expression.schema === schema.boolLiteral) return boolean(field(expression, 0x9b00)) ? "true" : "false";
+  if (expression.schema === schema.resultMatch) {
+    const ok = reference(field(expression, 0xa0621)), error = reference(field(expression, 0xa0623));
+    return `Seme.match_result(${projectExpression(reference(field(expression, 0xa0620)), context)}, function(${bindingName(ok, context)}) return ${projectBlockExpression(reference(field(expression, 0xa0622)), context)} end, function(${bindingName(error, context)}) return ${projectBlockExpression(reference(field(expression, 0xa0624)), context)} end)`;
+  }
+  if (expression.schema === schema.optionMatch) {
+    const some = reference(field(expression, 0xa0632));
+    const none = projectBlockExpression(reference(field(expression, 0xa0631)), context);
+    if (none !== "false") fail("lua_projection.option_none_profile");
+    return `Seme.match_option(${projectExpression(reference(field(expression, 0xa0630)), context)}, false, function(${bindingName(some, context)}) return ${projectBlockExpression(reference(field(expression, 0xa0633)), context)} end)`;
+  }
   fail("lua_projection.unsupported_expression");
+}
+
+function projectBlockExpression(id, context) {
+  const statements = references(field(required(context.graph, id, schema.block), 0x9800));
+  if (statements.length !== 1) fail("lua_projection.match_block");
+  const values = references(field(required(context.graph, statements[0], schema.returned), 0x9810));
+  if (values.length !== 1) fail("lua_projection.match_return");
+  return projectExpression(values[0], context);
+}
+function bindingName(id, context) {
+  const value = text(field(required(context.graph, id, schema.variantBinding), 0xa0600));
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(value)) fail("lua_projection.binding_name");
+  return value;
 }
 
 function parseG1(source) {
@@ -146,7 +184,7 @@ function parseG1(source) {
     const item = { id: header[1], schema: header[2], fields: new Map() };
     const count = Number(header[4]); index += 1;
     for (let seen = 0; seen < count; seen += 1, index += 1) {
-      const match = /^fi\s+([0-9a-f]{32})\s+(by|rf|li|uu|tr)(?:\s+(.+))?$/.exec(lines[index]);
+      const match = /^fi\s+([0-9a-f]{32})\s+(by|rf|li|uu|tr|fa)(?:\s+(.+))?$/.exec(lines[index]);
       if (!match) fail("lua_projection.invalid_field");
       if (match[2] === "li") {
         const length = Number(match[3]); const values = [];
@@ -170,6 +208,7 @@ function reference(value) { if (value.kind !== "rf") fail("lua_projection.expect
 function references(value) { if (value.kind !== "li") fail("lua_projection.expected_references"); return value.value; }
 function text(value) { if (value.kind !== "by") fail("lua_projection.expected_text"); if (value.value === "-") return ""; const data = Buffer.from(value.value, "hex"); const decoded = new TextDecoder("utf-8", { fatal: true }).decode(data); return decoded; }
 function unsigned(value) { if (value.kind !== "uu" || !/^(?:0|[1-9][0-9]*)$/.test(value.value)) fail("lua_projection.expected_unsigned"); return value.value; }
+function boolean(value) { if (value.kind === "tr") return true; if (value.kind === "fa") return false; fail("lua_projection.expected_boolean"); }
 function mapValueDescriptor(typeID, context) {
   const map = required(context.graph, typeID, schema.mapType);
   const type = context.types.get(reference(field(map, 0xa0401)));

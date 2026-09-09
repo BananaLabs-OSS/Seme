@@ -5,7 +5,7 @@
   "description": "Reference JavaScript provider and conformance tools for Seme",
   "type": "module",
   "scripts": {
-    "test": "node --test javascript-provider.test.mjs javascript-projector.test.mjs javascript-package.test.mjs javascript-uab-v1-fidelity.test.mjs string-abi-v2.test.mjs && node javascript-package-native-runner.mjs"
+    "test": "node --test javascript-provider.test.mjs javascript-projector.test.mjs javascript-package.test.mjs javascript-uab-v1-fidelity.test.mjs seme-values.test.mjs string-abi-v2.test.mjs && node javascript-package-native-runner.mjs"
   },
   "license": "Apache-2.0",
   "dependencies": {

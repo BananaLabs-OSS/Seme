@@ -19,6 +19,7 @@ const moduleV27G1 = fs.readFileSync(new URL("../../modules/execution/v27/module.
 const moduleV28G1 = fs.readFileSync(new URL("../../modules/execution/v28/module.g1", import.meta.url), "utf8");
 const moduleV29G1 = fs.readFileSync(new URL("../../modules/execution/v29/module.g1", import.meta.url), "utf8");
 const moduleV30G1 = fs.readFileSync(new URL("../../modules/execution/v30/module.g1", import.meta.url), "utf8");
+const moduleV32G1 = fs.readFileSync(new URL("../../modules/execution/v32/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -331,4 +332,24 @@ function Sum(values) { return values.reduce((total, value) => total + value, 0n)
 export function Describe(prefix, values) { const total = Sum(values); if (total <= 0n) { return prefix + ":non-positive"; } return prefix + ":positive"; }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/cumulative-text-collection", revision: 1 });
   for (const suffix of ["9060", "90d0", "90d2", "90c0", "90c3", "90f7"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
+});
+
+test("lifts explicit bytes, Option, and Result constructors", () => {
+  const cases = [
+    ["/** @returns {Uint8Array} */ export function Value() { return Seme.bytes([0, 255, 42]); }", "a064"],
+    ["/** @returns {Seme.Option<bigint>} */ export function Value() { return Seme.none(); }", "a051"],
+    ["/** @param {bigint} value @returns {Seme.Option<bigint>} */ export function Value(value) { return Seme.some(value); }", "a052"],
+    ["/** @param {Uint8Array} value @returns {Seme.Result<Uint8Array,string>} */ export function Value(value) { return Seme.ok(value); }", "9043"],
+    ["/** @param {string} error @returns {Seme.Result<Uint8Array,string>} */ export function Value(error) { return Seme.error(error); }", "9044"],
+  ];
+  for (const [index, [source, suffix]] of cases.entries()) {
+    const canonical = liftJavaScript({ source, moduleG1: moduleV32G1, packagePath: `example.test/composite/${index}`, revision: 1 });
+    assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
+  }
+});
+
+test("lifts total nested Option and Result matches with scoped payloads", () => {
+  const source = "/** @param {Seme.Option<Seme.Result<Uint8Array,string>>} value @returns {boolean} */ export function Accepted(value) { return Seme.matchOption(value, () => false, (result) => Seme.matchResult(result, (payload) => Seme.bytesEqual(payload, Seme.bytes([111, 107])), (error) => error === \"bad\")); }";
+  const canonical = liftJavaScript({ source, moduleG1: moduleV32G1, packagePath: "example.test/composite-match", revision: 1 });
+  for (const suffix of ["a060", "a061", "a062", "a063", "a064", "a065"]) assert.match(canonical, new RegExp(`0000000000000000000000000000${suffix}`));
 });

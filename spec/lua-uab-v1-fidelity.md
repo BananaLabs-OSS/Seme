@@ -77,6 +77,15 @@ canonical zero construction is specified. Fold is also deferred: an honest
 mapping requires Lua callback lifting plus canonical accumulator and iteration
 bindings, not a host-side wrapper loop.
 
+The bounded total expression
+`Option<Result<bytes,text>> -> Boolean` now lifts directly from structural Lua
+callback syntax to `OptionMatch`, `ResultMatch`, scoped `VariantBinding` reads,
+`BytesEqual`, and text equality. It projects and re-lifts without drift, and
+its five native vectors agree through deterministic Wasm and pinned Pulp.
+Partial matches and out-of-scope binding shapes reject rather than receiving
+guessed meaning. This is the exact v32 composite profile, not general pattern
+matching or general composite lowering.
+
 ## Hard blockers that must not be guessed
 
 - Lua 5.1 `number` cannot be called canonical i64. The full range requires an

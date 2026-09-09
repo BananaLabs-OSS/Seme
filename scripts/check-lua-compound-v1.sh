@@ -22,14 +22,22 @@ printf '%s\n' \
   'function Reject(value)' \
   '  return Seme.err(value)' \
   'end' > "$work/result.lua"
+printf '%s\n' '---@param value seme.i64' '---@return seme.i64' 'function I64(value)' '  return value' 'end' > "$work/i64.lua"
+printf '%s\n' '---@param value boolean' '---@return boolean' 'function Boolean(value)' '  return value' 'end' > "$work/boolean.lua"
+printf '%s\n' '---@param value seme.text' '---@return seme.text' 'function Text(value)' '  return value' 'end' > "$work/text.lua"
+printf '%s\n' '---@param value seme.bytes' '---@return seme.bytes' 'function Bytes(value)' '  return value' 'end' > "$work/bytes.lua"
 
 printf '%s\n' '---@param a seme.i64' '---@param b seme.i64' '---@param c seme.i64' '---@return seme.array<seme.i64,3>' 'function Array(a, b, c)' '  return Seme.array(a, b, c)' 'end' > "$work/array.lua"
 printf '%s\n' '---@param value seme.slice<seme.text>' '---@return seme.slice<seme.text>' 'function Slice(value)' '  return value' 'end' > "$work/slice.lua"
 printf '%s\n' '---@param values seme.map<seme.i64,seme.bytes>' '---@param key seme.i64' '---@param value seme.bytes' '---@return seme.map<seme.i64,seme.bytes>' 'function Map(values, key, value)' '  return Seme.map_update(values, key, value)' 'end' > "$work/map.lua"
 printf '%s\n' '---@class Bounds' '---@field minimum seme.i64' '---@field maximum seme.i64' '' '---@param value Bounds' '---@return seme.i64' 'function Record(value)' '  return Seme.field(value, "minimum")' 'end' > "$work/record.lua"
 
-for name in option result array slice map record; do
+for name in i64 boolean text bytes option result array slice map record; do
   case "$name" in
+    i64) entry=I64 ;;
+    boolean) entry=Boolean ;;
+    text) entry=Text ;;
+    bytes) entry=Bytes ;;
     option) entry=Some ;;
     result) entry=Reject ;;
     array) entry=Array ;;

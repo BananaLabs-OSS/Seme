@@ -20,6 +20,7 @@ const moduleV27G1 = fs.readFileSync(new URL("../../modules/execution/v27/module.
 const moduleV28G1 = fs.readFileSync(new URL("../../modules/execution/v28/module.g1", import.meta.url), "utf8");
 const moduleV29G1 = fs.readFileSync(new URL("../../modules/execution/v29/module.g1", import.meta.url), "utf8");
 const moduleV30G1 = fs.readFileSync(new URL("../../modules/execution/v30/module.g1", import.meta.url), "utf8");
+const moduleV32G1 = fs.readFileSync(new URL("../../modules/execution/v32/module.g1", import.meta.url), "utf8");
 const source = `/**
  * @param {string} left
  * @param {string} right
@@ -349,4 +350,26 @@ export function Describe(prefix, values) { const total = Sum(values); if (total 
   assert.match(projected, /prefix \+ ":non-positive"/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV30G1, packagePath: "example.test/cumulative-text-collection", revision: 1 });
   assert.equal(second, first);
+});
+
+test("projects bytes, Option, and Result constructors and re-lifts identically", () => {
+  const sources = [
+    "/** @returns {Uint8Array} */ export function Value() { return Seme.bytes([0, 255, 42]); }",
+    "/** @returns {Seme.Option<bigint>} */ export function Value() { return Seme.none(); }",
+    "/** @param {bigint} value @returns {Seme.Option<bigint>} */ export function Value(value) { return Seme.some(value); }",
+    "/** @param {Uint8Array} value @returns {Seme.Result<Uint8Array,string>} */ export function Value(value) { return Seme.ok(value); }",
+    "/** @param {string} error @returns {Seme.Result<Uint8Array,string>} */ export function Value(error) { return Seme.error(error); }",
+  ];
+  for (const [index, source] of sources.entries()) {
+    const options = { moduleG1: moduleV32G1, packagePath: `example.test/project-composite/${index}`, revision: 1 };
+    const canonical = liftJavaScript({ ...options, source });
+    assert.equal(liftJavaScript({ ...options, source: projectJavaScript(canonical) }), canonical);
+  }
+});
+
+test("projects total nested Option and Result matches and re-lifts identically", () => {
+  const source = "/** @param {Seme.Option<Seme.Result<Uint8Array,string>>} value @returns {boolean} */ export function Accepted(value) { return Seme.matchOption(value, () => false, (result) => Seme.matchResult(result, (payload) => Seme.bytesEqual(payload, Seme.bytes([111, 107])), (error) => error === \"bad\")); }";
+  const options = { moduleG1: moduleV32G1, packagePath: "example.test/project-composite-match", revision: 1 };
+  const canonical = liftJavaScript({ ...options, source });
+  assert.equal(liftJavaScript({ ...options, source: projectJavaScript(canonical) }), canonical);
 });

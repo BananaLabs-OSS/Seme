@@ -156,4 +156,21 @@ test("rejects one-based or out-of-range canonical indexes", () => {
   assert.throws(() => liftLua({ sources: [{ name: "bad-index.lua", source }], moduleG1: moduleV31G1, packagePath: "example.test/lua-index", revision: 1, entryName: "Bad" }), /lua\.index_type_or_range:bad-index\.lua:4:1/);
 });
 
+test("lifts and projects structural total Option/Result/bytes matching", () => {
+  const expression = 'Seme.match_option(value, false, function(some) return Seme.match_result(some, function(ok) return Seme.bytes_equal(ok, Seme.bytes_literal("ok")) end, function(err) return Seme.text_equal(err, "bad") end) end)';
+  const source = `---@param value seme.option<seme.result<seme.bytes,seme.text>>\n---@return boolean\nfunction Check(value)\n  return ${expression}\nend\n`;
+  const options = { sources: [{ name: "match.lua", source }], moduleG1: fs.readFileSync(new URL("../../modules/execution/v32/module.g1", import.meta.url), "utf8"), packagePath: "example.test/lua-composite", revision: 1, entryName: "Check" };
+  const canonical = liftLua(options);
+  for (const suffix of [0xa060, 0xa061, 0xa062, 0xa063, 0xa064, 0xa065]) assert.match(canonical, new RegExp(schemaID(suffix)));
+  const projected = projectLua(canonical);
+  assert.match(projected, /Seme\.match_option/);
+  assert.equal(liftLua({ ...options, sources: [{ name: "projected.lua", source: projected }] }), canonical);
+});
+
+test("rejects non-total or unscoped composite matching", () => {
+  const module = fs.readFileSync(new URL("../../modules/execution/v32/module.g1", import.meta.url), "utf8");
+  const source = `---@param value seme.option<seme.result<seme.bytes,seme.text>>\n---@return boolean\nfunction Check(value)\n  return Seme.match_option(value, false, function(some) return true end)\nend`;
+  assert.throws(() => liftLua({ sources: [{ name: "partial.lua", source }], moduleG1: module, packagePath: "example.test/lua-partial", revision: 1, entryName: "Check" }), /lua\.unsupported_expression:partial\.lua:4:1/);
+});
+
 function schemaID(suffix) { return suffix.toString(16).padStart(32, "0"); }
