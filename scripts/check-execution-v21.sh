@@ -42,7 +42,7 @@ do
 done
 
 printf '%s\n' '/** @param {bigint} first @param {bigint} second @param {bigint} third @param {bigint} index @returns {bigint} */' \
-  'export function Pick(first, second, third, index) { return [first, second, third][index]; }' > "$work/program.mjs"
+  'export function Pick(first, second, third, index) { return Seme.index(Seme.array([first, second, third]), index); }' > "$work/program.mjs"
 node "$repo/reference/js/javascript-provider-cli.mjs" --source "$work/program.mjs" \
   --module "$repo/modules/execution/v21/module.g1" --package example.com/seme-fixed-array-proof \
   --revision 1 --out "$work/js.g1"
@@ -72,7 +72,7 @@ if "$work/pulp-runner" -manifest "$work/pulp/pulp.cell.toml" -provider seme.func
 fi
 
 printf '%s\n' '/** @param {bigint} value @param {bigint} index @returns {bigint} */' \
-  'export function Invalid(value, index) { return [value, , value][index]; }' > "$work/invalid.mjs"
+  'export function Invalid(value, index) { return Seme.index(Seme.array([value, , value]), index); }' > "$work/invalid.mjs"
 if node "$repo/reference/js/javascript-provider-cli.mjs" --source "$work/invalid.mjs" \
   --module "$repo/modules/execution/v21/module.g1" --package example.com/seme-invalid-array \
   --revision 1 --out "$work/invalid.g1" > "$work/invalid.log" 2>&1; then

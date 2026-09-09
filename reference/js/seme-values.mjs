@@ -2,6 +2,18 @@ const freeze = (value) => Object.freeze(value);
 
 // Explicit native values for meanings JavaScript does not possess directly.
 export const Seme = Object.freeze({
+  array(values) {
+    if (!Array.isArray(values)) throw new TypeError("seme.invalid_array");
+    return Object.freeze([...values]);
+  },
+  index(values, index) {
+    if (!Array.isArray(values) || typeof index !== "bigint" || index < 0n || index >= BigInt(values.length)) throw new RangeError("seme.index_out_of_bounds");
+    return values[Number(index)];
+  },
+  length(values) {
+    if (!Array.isArray(values)) throw new TypeError("seme.invalid_collection");
+    return BigInt(values.length);
+  },
   bytes(values) {
     if (!Array.isArray(values) || values.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) throw new TypeError("seme.invalid_bytes");
     return Uint8Array.from(values);

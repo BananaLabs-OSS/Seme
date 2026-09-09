@@ -22,6 +22,17 @@ type PureValueLayout struct {
 	MaximumPayload  uint64                   `json:"maximum_payload,omitempty"`
 	Encoding        string                   `json:"encoding"`
 	Variants        []PureValueVariantLayout `json:"variants,omitempty"`
+	Elements        *PureValueLayout         `json:"elements,omitempty"`
+	Length          uint64                   `json:"length,omitempty"`
+	Fields          []PureValueFieldLayout   `json:"fields,omitempty"`
+	Key             *PureValueLayout         `json:"key,omitempty"`
+	Value           *PureValueLayout         `json:"value,omitempty"`
+}
+
+type PureValueFieldLayout struct {
+	Name   string          `json:"name"`
+	Offset uint64          `json:"offset"`
+	Value  PureValueLayout `json:"value"`
 }
 
 type PureValueVariantLayout struct {
@@ -112,6 +123,47 @@ func validatePureValueAt(layout PureValueLayout, data []byte, offset, rootFixed 
 				return fmt.Errorf("wasm.pure_value_inactive_payload")
 			}
 		}
+	case len(layout.Fields) > 0:
+		for _, field := range layout.Fields {
+			if err := validatePureValueAt(field.Value, data, offset+field.Offset, rootFixed, ranges, budget-1); err != nil {
+				return err
+			}
+		}
+	case layout.Elements != nil && layout.Length > 0:
+		for index := uint64(0); index < layout.Length; index++ {
+			if err := validatePureValueAt(*layout.Elements, data, offset+index*layout.Elements.FixedSize, rootFixed, ranges, budget-1); err != nil {
+				return err
+			}
+		}
+	case layout.Elements != nil:
+		start, count := uint64(binary.LittleEndian.Uint32(fixed[:4])), uint64(binary.LittleEndian.Uint32(fixed[4:8]))
+		if count > 512 || start < rootFixed || start+count*layout.Elements.FixedSize < start || start+count*layout.Elements.FixedSize > uint64(len(data)) {
+			return fmt.Errorf("wasm.pure_value_collection_descriptor")
+		}
+		*ranges = append(*ranges, pureValueRange{start, start + count*layout.Elements.FixedSize})
+	case layout.Key != nil && layout.Value != nil:
+		start, count := uint64(binary.LittleEndian.Uint32(fixed[:4])), uint64(binary.LittleEndian.Uint32(fixed[4:8]))
+		stride := layout.Key.FixedSize + layout.Value.FixedSize
+		if count > 512 || start < rootFixed || start+count*stride < start || start+count*stride > uint64(len(data)) {
+			return fmt.Errorf("wasm.pure_value_map_descriptor")
+		}
+		for index := uint64(0); index < count; index++ {
+			at := start + index*stride
+			if err := validatePureValueAt(*layout.Key, data, at, rootFixed, ranges, budget-1); err != nil {
+				return err
+			}
+			if err := validatePureValueAt(*layout.Value, data, at+layout.Key.FixedSize, rootFixed, ranges, budget-1); err != nil {
+				return err
+			}
+			if layout.Key.Type == "i64" && index > 0 {
+				previous := int64(binary.LittleEndian.Uint64(data[at-stride : at-stride+8]))
+				current := int64(binary.LittleEndian.Uint64(data[at : at+8]))
+				if previous >= current {
+					return fmt.Errorf("wasm.pure_value_map_order")
+				}
+			}
+		}
+		*ranges = append(*ranges, pureValueRange{start, start + count*stride})
 	}
 	return nil
 }
@@ -170,6 +222,75 @@ func certifyPureValueLayout(graph wire.Envelope, typeID wire.ID, visiting map[wi
 		base.VariablePayload, base.MaximumPayload = valueLayout.VariablePayload, valueLayout.MaximumPayload
 		base.Encoding = "u8-tag(0=none,1=some)/zeroed-absent-payload"
 		base.Variants = []PureValueVariantLayout{{Tag: 0, Name: "none", Offset: 1}, {Tag: 1, Name: "some", Offset: 1, Payload: &valueLayout}}
+	case identity(0x9030):
+		members, err := field(entity, 0x9301)
+		if err != nil || members.Tag != 7 || len(members.List) == 0 {
+			return PureValueLayout{}, fmt.Errorf("wasm.pure_record_type_fields")
+		}
+		base.Type, base.Encoding = "record", "ordered-inline-fields"
+		for index, member := range members.List {
+			if member.Tag != 6 {
+				return PureValueLayout{}, fmt.Errorf("wasm.pure_record_type_fields")
+			}
+			declared := graph.Entities[member.Reference]
+			name, nErr := field(declared, 0x9310)
+			typeRef, tErr := field(declared, 0x9311)
+			position, pErr := field(declared, 0x9312)
+			if declared.Schema != identity(0x9031) || nErr != nil || tErr != nil || pErr != nil || name.Tag != 5 || typeRef.Tag != 6 || position.Unsigned != uint64(index) {
+				return PureValueLayout{}, fmt.Errorf("wasm.pure_record_type_fields")
+			}
+			child, err := certifyPureValueLayout(graph, typeRef.Reference, visiting, budget-1)
+			if err != nil {
+				return PureValueLayout{}, err
+			}
+			base.Fields = append(base.Fields, PureValueFieldLayout{Name: string(name.Bytes), Offset: base.FixedSize, Value: child})
+			base.FixedSize += child.FixedSize
+			base.VariablePayload = base.VariablePayload || child.VariablePayload
+			base.MaximumPayload += child.MaximumPayload
+		}
+	case identity(0x90f2):
+		element, eErr := requiredTypeReference(entity, 0x9f20)
+		length, lErr := field(entity, 0x9f21)
+		if eErr != nil || lErr != nil || length.Tag != 3 || length.Unsigned == 0 || length.Unsigned > 32 {
+			return PureValueLayout{}, fmt.Errorf("wasm.pure_array_type_fields")
+		}
+		child, err := certifyPureValueLayout(graph, element, visiting, budget-1)
+		if err != nil {
+			return PureValueLayout{}, err
+		}
+		base.Type, base.Length, base.FixedSize, base.Encoding, base.Elements = fmt.Sprintf("array<%s,%d>", child.Type, length.Unsigned), length.Unsigned, length.Unsigned*child.FixedSize, "ordered-inline-elements", &child
+		base.VariablePayload, base.MaximumPayload = child.VariablePayload, length.Unsigned*child.MaximumPayload
+	case identity(0x90f8):
+		element, err := requiredTypeReference(entity, 0x9f80)
+		if err != nil {
+			return PureValueLayout{}, fmt.Errorf("wasm.pure_slice_type_fields")
+		}
+		child, err := certifyPureValueLayout(graph, element, visiting, budget-1)
+		if err != nil {
+			return PureValueLayout{}, err
+		}
+		if child.VariablePayload {
+			return PureValueLayout{}, fmt.Errorf("wasm.pure_slice_nested_variable")
+		}
+		base.Type, base.FixedSize, base.VariablePayload, base.MaximumPayload, base.Encoding, base.Elements = "slice<"+child.Type+">", 8, true, 4096, "u32le-offset-u32le-count/packed-elements", &child
+	case identity(0xa040):
+		key, kErr := requiredTypeReference(entity, 0xa0400)
+		value, vErr := requiredTypeReference(entity, 0xa0401)
+		if kErr != nil || vErr != nil {
+			return PureValueLayout{}, fmt.Errorf("wasm.pure_map_type_fields")
+		}
+		keyLayout, err := certifyPureValueLayout(graph, key, visiting, budget-1)
+		if err != nil {
+			return PureValueLayout{}, err
+		}
+		valueLayout, err := certifyPureValueLayout(graph, value, visiting, budget-1)
+		if err != nil {
+			return PureValueLayout{}, err
+		}
+		if keyLayout.Type != "i64" || keyLayout.VariablePayload || valueLayout.VariablePayload {
+			return PureValueLayout{}, fmt.Errorf("wasm.pure_map_profile")
+		}
+		base.Type, base.FixedSize, base.VariablePayload, base.MaximumPayload, base.Encoding, base.Key, base.Value = "map<"+keyLayout.Type+","+valueLayout.Type+">", 8, true, 4096, "u32le-offset-u32le-count/sorted-unique-entries", &keyLayout, &valueLayout
 	default:
 		return PureValueLayout{}, fmt.Errorf("wasm.pure_value_type_unsupported")
 	}

@@ -147,7 +147,7 @@ export function Observe(first, second) { console.log(first); console.log(second)
 
 test("lifts a fixed array construction and indexed read", () => {
   const source = `/** @param {bigint} first @param {bigint} second @param {bigint} third @param {bigint} index @returns {bigint} */
-export function Pick(first, second, third, index) { return [first, second, third][index]; }`;
+export function Pick(first, second, third, index) { return Seme.index(Seme.array([first, second, third]), index); }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array", revision: 1 });
   assert.match(canonical, /000000000000000000000000000090f2/);
   assert.match(canonical, /000000000000000000000000000090f3/);
@@ -156,7 +156,7 @@ export function Pick(first, second, third, index) { return [first, second, third
 
 test("lifts a fixed i64 array parameter", () => {
   const source = `/** @param {bigint[3]} values @param {bigint} index @returns {bigint} */
-export function Pick(values, index) { return values[index]; }`;
+export function Pick(values, index) { return Seme.index(values, index); }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV21G1, packagePath: "example.test/fixed-array-boundary", revision: 1 });
   assert.match(canonical, /000000000000000000000000000090f2/);
   assert.match(canonical, /000000000000000000000000000090f4/);
@@ -181,7 +181,7 @@ export function Sum(values) { return values.reduce((total, value) => total + val
 
 test("lifts collection length and computed slice indexing", () => {
   const source = `/** @param {bigint[]} values @param {bigint} fallback @returns {bigint} */
-export function LastOr(values, fallback) { if (values.length <= 0n) return fallback; return values[values.length - 1]; }`;
+export function LastOr(values, fallback) { if (values.length <= 0n) return fallback; return Seme.index(values, values.length - 1); }`;
   const canonical = liftJavaScript({ source, moduleG1: moduleV24G1, packagePath: "example.test/query", revision: 1 });
   assert.match(canonical, /000000000000000000000000000090f9/);
   assert.match(canonical, /000000000000000000000000000090fa/);

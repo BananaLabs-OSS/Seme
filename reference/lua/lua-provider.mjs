@@ -40,6 +40,8 @@ const schema = {
   stringLiteral: "00000000000000000000000000009050",
   stringEqual: "000000000000000000000000000090c2",
   boolLiteral: "000000000000000000000000000090b0",
+  integerAdd: "00000000000000000000000000009014",
+  stringConcat: "000000000000000000000000000090c3",
 };
 
 /**
@@ -165,6 +167,22 @@ function splitGenericArguments(value, location) {
 }
 
 function parseExpression(text, file, line) {
+  const integer = /^Seme\.i64_literal\("([0-9]+)"\)$/.exec(text);
+  if (integer) return { kind: "integer_literal", value: integer[1], location: { file, line, column: 1 } };
+  const concat = /^Seme\.text_concat\((.*)\)$/.exec(text);
+  if (concat) {
+    const arguments_ = splitCallArguments(concat[1], file, line);
+    if (arguments_.length !== 2) fail("lua.text_concat_arity", { file, line, column: 1 });
+    return { kind: "text_concat", left: parseExpression(arguments_[0], file, line), right: parseExpression(arguments_[1], file, line), location: { file, line, column: 1 } };
+  }
+  const string = /^"([^"\\]*)"$/.exec(text);
+  if (string) return { kind: "text_literal", value: string[1], location: { file, line, column: 1 } };
+  const add = /^Seme\.add\((.*)\)$/.exec(text);
+  if (add) {
+    const arguments_ = splitCallArguments(add[1], file, line);
+    if (arguments_.length !== 2) fail("lua.add_arity", { file, line, column: 1 });
+    return { kind: "add", left: parseExpression(arguments_[0], file, line), right: parseExpression(arguments_[1], file, line), location: { file, line, column: 1 } };
+  }
   const composite = /^Seme\.match_option\(([A-Za-z_][A-Za-z0-9_]*), false, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.match_result\(\2, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.bytes_equal\(\3, Seme\.bytes_literal\("([^"]*)"\)\) end, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.text_equal\(\5, "([^"]*)"\) end\) end\)$/.exec(text);
   if (composite) return { kind: "composite_match", value: composite[1], some: composite[2], ok: composite[3], bytes: composite[4], error: composite[5], text: composite[6], location: { file, line, column: 1 } };
   const field = /^Seme\.field\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\)$/.exec(text);
@@ -224,6 +242,33 @@ function emitExpression(expression, context, path) {
   }
   if (["array", "length", "index", "empty_map", "lookup_zero", "map_update"].includes(expression.kind)) return emitCollectionExpression(expression, context, path);
   if (expression.kind === "composite_match") return emitCompositeMatch(expression, context, path);
+  if (expression.kind === "add") {
+    if (context.description.resultType !== "i64") fail("lua.add_result_type", expression.location);
+    const left = emitExpression(expression.left, context, `${path}.left`);
+    const right = emitExpression(expression.right, context, `${path}.right`);
+    const id = stableID("execution", context.description.id, "expression", path, "add");
+    context.additions.push(graphEntity(id, entity(id, schema.integerAdd, [[0x9140, ref(left)], [0x9141, ref(right)], [0x9142, ref(ids.i64)]])));
+    return id;
+  }
+  if (expression.kind === "integer_literal") {
+    if (context.description.resultType !== "i64") fail("lua.integer_literal_result_type", expression.location);
+    const id = stableID("execution", context.description.id, "expression", path, "integer-literal");
+    context.additions.push(graphEntity(id, entity(id, schema.integerLiteral, [[0x9700, `uu ${expression.value}`], [0x9701, ref(ids.i64)]])));
+    return id;
+  }
+  if (expression.kind === "text_literal") {
+    if (context.description.resultType !== "text") fail("lua.text_literal_result_type", expression.location);
+    const id = stableID("execution", context.description.id, "expression", path, "text-literal");
+    context.additions.push(graphEntity(id, entity(id, schema.stringLiteral, [[0x9500, bytes(expression.value)]])));
+    return id;
+  }
+  if (expression.kind === "text_concat") {
+    if (context.description.resultType !== "text") fail("lua.text_concat_result_type", expression.location);
+    const left = emitExpression(expression.left, context, `${path}.left`), right = emitExpression(expression.right, context, `${path}.right`);
+    const id = stableID("execution", context.description.id, "expression", path, "text-concat");
+    context.additions.push(graphEntity(id, entity(id, schema.stringConcat, [[0x9c30, ref(left)], [0x9c31, ref(right)]])));
+    return id;
+  }
   const callee = context.descriptionsByName.get(expression.name);
   if (!callee) fail("lua.unknown_call", expression.location);
   if (callee.parameters.length !== expression.arguments.length) fail("lua.call_arity", expression.location);
@@ -238,6 +283,20 @@ function emitExpression(expression, context, path) {
   const id = stableID("execution", context.description.id, "expression", path, "call");
   context.additions.push(graphEntity(id, entity(id, schema.call, [[0x9600, ref(callee.id)], [0x9601, refs(arguments_)]])));
   return id;
+}
+
+function splitCallArguments(value, file, line) {
+  const result = []; let depth = 0; let quoted = false; let start = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    const char = value[index];
+    if (char === '"' && value[index - 1] !== "\\") quoted = !quoted;
+    else if (!quoted && char === "(") depth += 1;
+    else if (!quoted && char === ")") depth -= 1;
+    else if (!quoted && depth === 0 && char === ",") { result.push(value.slice(start, index).trim()); start = index + 1; }
+    if (depth < 0) fail("lua.call_parentheses", { file, line, column: 1 });
+  }
+  if (quoted || depth !== 0) fail("lua.call_parentheses", { file, line, column: 1 });
+  result.push(value.slice(start).trim()); return result;
 }
 
 function emitCompositeMatch(expression, context, path) {

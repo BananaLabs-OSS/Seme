@@ -3,6 +3,13 @@
 local Seme = {}
 local storage = setmetatable({}, { __mode = "k" })
 
+-- Explicit adapted boundary for canonical Boolean. Lua truthiness is broader:
+-- values such as 0 and "" are truthy, so they must never cross implicitly.
+function Seme.boolean(value)
+  if type(value) ~= "boolean" then error("seme.expected_boolean", 2) end
+  return value
+end
+
 local function freeze(kind, value)
   local proxy = newproxy(true)
   storage[proxy] = { kind = kind, value = value }
@@ -33,12 +40,41 @@ function Seme.i64(decimal)
   if #digits > #limit or (#digits == #limit and digits > limit) then error("seme.invalid_i64", 2) end
   return freeze("i64", decimal)
 end
+function Seme.add(left, right)
+  local ffi = require("ffi")
+  local function operand(value)
+    if type(value) == "number" and value >= 0 and value % 1 == 0 then return tostring(value) end
+    return unpack_value(value, "i64")
+  end
+  local left_value, right_value = operand(left), operand(right)
+  local function native_i64(decimal)
+    local negative, start = string.sub(decimal, 1, 1) == "-", 1
+    if negative then start = 2 end
+    local result = ffi.new("int64_t", 0)
+    for index = start, #decimal do
+      local digit = string.byte(decimal, index) - string.byte("0")
+      result = negative and (result * 10 - digit) or (result * 10 + digit)
+    end
+    return result
+  end
+  local result = native_i64(left_value) + native_i64(right_value)
+  return Seme.i64((string.gsub(tostring(result), "LL$", "")))
+end
+function Seme.i64_decimal(value) return unpack_value(value, "i64") end
+Seme.i64_literal = Seme.i64
 
 function Seme.text(value)
   if type(value) ~= "string" then error("seme.invalid_text", 2) end
   -- Native UTF-8 validation belongs to the provider boundary; this wrapper
   -- prevents text/bytes conflation and retains the exact byte sequence.
   return freeze("text", value)
+end
+function Seme.text_string(value) return unpack_value(value, "text") end
+function Seme.text_concat(left, right)
+  local left_value = storage[left] and unpack_value(left, "text") or left
+  local right_value = storage[right] and unpack_value(right, "text") or right
+  if type(left_value) ~= "string" or type(right_value) ~= "string" then error("seme.expected_text", 2) end
+  return Seme.text(left_value .. right_value)
 end
 
 function Seme.bytes(value)
@@ -131,6 +167,7 @@ function Seme.record_get(record, name)
   for _, field in ipairs(unpack_value(record, "record").fields) do if field.name == name then return field.value end end
   error("seme.missing_record_field", 2)
 end
+Seme.field = Seme.record_get
 
 local function key_token(key)
   local item = storage[key]

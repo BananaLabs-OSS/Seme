@@ -1,0 +1,1 @@
+{"valid":[{"name":"zero","arguments":[{"kind":"i64","i64":"0"}],"result":{"kind":"i64","i64":"1"}},{"name":"wrap","arguments":[{"kind":"i64","i64":"9223372036854775807"}],"result":{"kind":"i64","i64":"-9223372036854775808"}}],"malformed":[{"name":"overflow","arguments":[{"kind":"i64","i64":"9223372036854775808"}]}]}

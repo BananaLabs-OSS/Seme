@@ -90,10 +90,19 @@ func TestProjectsExistingCompositeCollectionsAndRecords(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct{ name, fixture, entry, nativeTest string }{
-		{"record", "../../../fixtures/go-execution-v17/function.go", "Label", `func TestNative(t *testing.T) { if Label("item") != "item" { t.Fatal("record") } }`},
-		{"array", "../../../fixtures/go-execution-v21/function.go", "Pick", `func TestNative(t *testing.T) { if Pick(3, 5, 8, 1) != 5 { t.Fatal("array") } }`},
-		{"slice", "../../../fixtures/go-execution-v23/function.go", "Sum", `func TestNative(t *testing.T) { if Sum([]int64{3, -2, 5}) != 6 { t.Fatal("slice") } }`},
-		{"map", "../../../fixtures/go-execution-v30/tally.go", "Tally", `func TestNative(t *testing.T) { if Tally([]int64{3, 3, -1}, 3) != 2 { t.Fatal("map") } }`},
+		{"record", "../../../fixtures/go-execution-v17/function.go", "Label", `func TestNative(t *testing.T) { if Label("雪🦀") != "雪🦀" { t.Fatal("record") } }`},
+		{"array", "../../../fixtures/go-execution-v21/function.go", "Pick", `func TestNative(t *testing.T) {
+ if Pick(-7, 0, 42, 0) != -7 || Pick(-7, 0, 42, 1) != 0 || Pick(-7, 0, 42, 2) != 42 { t.Fatal("array") }
+ for _, index := range []int64{-1, 3} { func() { defer func() { if recover() == nil { t.Fatalf("index %d did not panic", index) } }(); Pick(1, 2, 3, index) }() }
+}`},
+		{"slice", "../../../fixtures/go-execution-v23/function.go", "Sum", `func TestNative(t *testing.T) {
+ if Sum(nil) != 0 || Sum([]int64{-7, 0, 42}) != 35 || Sum([]int64{1, 2, 3, 4, 5}) != 15 || Sum([]int64{9223372036854775807, 1, -1}) != 9223372036854775807 { t.Fatal("slice") }
+}`},
+		{"map", "../../../fixtures/go-execution-v30/tally.go", "Tally", `func TestNative(t *testing.T) {
+ values := []int64{3, -2, 3, 7, -2, 3}
+ if Tally(values, 3) != 3 || Tally(values, -2) != 2 || Tally([]int64{3, -2, 3}, 99) != 0 || Tally([]int64{-2, 3, 3, -2, 7, 3}, 3) != 3 || Tally(nil, 1) != 0 { t.Fatal("map") }
+ maximum := make([]int64, 512); for i := range maximum { maximum[i] = -9 }; if Tally(maximum, -9) != 512 { t.Fatal("map maximum") }
+}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			source, err := os.ReadFile(test.fixture)

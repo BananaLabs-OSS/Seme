@@ -1,0 +1,8 @@
+{
+  "valid": [
+    {"name":"present","record":"5","array":["2","7"],"slice":["1","2","3"],"map":[["-2","11"],["4","9"]],"key":"-2","result":"26"},
+    {"name":"missing","record":"-5","array":["8","3"],"slice":[],"map":[["1","7"]],"key":"99","result":"-2"},
+    {"name":"empty-map","record":"0","array":["-9","4"],"slice":["2"],"map":[],"key":"0","result":"5"}
+  ],
+  "malformed": ["missing-record-field", "short-fixed-array", "invalid-map-shape"]
+}

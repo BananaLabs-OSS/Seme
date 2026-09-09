@@ -38,6 +38,8 @@ const schema = {
   stringLiteral: "00000000000000000000000000009050",
   stringEqual: "000000000000000000000000000090c2",
   boolLiteral: "000000000000000000000000000090b0",
+  integerAdd: "00000000000000000000000000009014",
+  stringConcat: "000000000000000000000000000090c3",
 };
 
 export function projectLua(canonicalG1) {
@@ -158,6 +160,9 @@ function projectExpression(id, context) {
     if (none !== "false") fail("lua_projection.option_none_profile");
     return `Seme.match_option(${projectExpression(reference(field(expression, 0xa0630)), context)}, false, function(${bindingName(some, context)}) return ${projectBlockExpression(reference(field(expression, 0xa0633)), context)} end)`;
   }
+  if (expression.schema === schema.integerAdd) return `Seme.add(${projectExpression(reference(field(expression, 0x9140)), context)}, ${projectExpression(reference(field(expression, 0x9141)), context)})`;
+  if (expression.schema === schema.integerLiteral) return `Seme.i64_literal(${JSON.stringify(unsigned(field(expression, 0x9700)).toString())})`;
+  if (expression.schema === schema.stringConcat) return `Seme.text_concat(${projectExpression(reference(field(expression, 0x9c30)), context)}, ${projectExpression(reference(field(expression, 0x9c31)), context)})`;
   fail("lua_projection.unsupported_expression");
 }
 

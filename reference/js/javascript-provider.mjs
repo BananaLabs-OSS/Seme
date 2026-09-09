@@ -219,6 +219,7 @@ function sourceGapIsWhitespace(_end, _start, _fn) { return true; }
 function semanticType(type) {
   type = type.replace(/\s+/g, "");
   if (type === "Uint8Array") return "bytes";
+  if (type === "Map<bigint,bigint>") return "map:i64:i64";
   const option = /^Seme\.Option<(.+)>$/.exec(type);
   if (option) return `option:${semanticType(option[1])}`;
   const result = /^Seme\.Result<(.+),(.+)>$/.exec(type);
@@ -294,6 +295,12 @@ function readRecords(comments, packagePath) {
 
 function typeID(type, context) {
   if (ids[type]) return ids[type];
+	if (type.startsWith("array:i64:")) {
+		const length = type.slice("array:i64:".length);
+		const id = stableID("execution", "type", "fixed-array", "i64", length);
+		if (context.entities && !context.entities.some((item) => item.id === id)) context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f2", [[0x9f20, ref(ids.i64)], [0x9f21, `uu ${length}`]])));
+		return id;
+	}
 	if (type.startsWith("option:")) {
 		const valueType = type.slice("option:".length);
 		const valueID = typeID(valueType, context);
@@ -521,7 +528,33 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 function emitExpression(node, owner, path, context, expected) {
 	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme") {
 		const operation = node.callee.property.name;
-		const id = expressionID(owner, path, operation);
+		let id = expressionID(owner, path, operation);
+		if (operation === "array" && expected.startsWith("array:i64:") && node.arguments.length === 1 && node.arguments[0].type === "ArrayExpression") {
+			id = expressionID(owner, path, "fixed-array-construct");
+			const length = Number(expected.slice("array:i64:".length));
+			if (node.arguments[0].elements.length !== length || node.arguments[0].elements.some((item) => item == null)) fail("javascript.fixed_array_shape", node.loc.start);
+			const values = node.arguments[0].elements.map((item, index) => emitExpression(item, owner, `${path}.element.${index}`, context, "i64"));
+			context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f3", [[0x9f30, ref(typeID(expected, context))], [0x9f31, refs(values.map((item) => item.id))]])));
+			return { id, type: expected };
+		}
+		if (operation === "index" && expected === "i64" && node.arguments.length === 2) {
+			const collectionType = inferExpressionType(node.arguments[0], context);
+			if (!(collectionType.startsWith("array:i64:") || collectionType === "slice:i64")) fail("javascript.index_collection_type", node.loc.start);
+			const collection = emitExpression(node.arguments[0], owner, `${path}.collection`, context, collectionType);
+			const index = dynamicIndexExpression(node.arguments[1], owner, `${path}.index`, context);
+			const dynamic = collectionType === "slice:i64";
+			id = expressionID(owner, path, dynamic ? "dynamic-index-read" : "index-read");
+			context.entities.push(graphEntity(id, entity(id, dynamic ? "000000000000000000000000000090fa" : "000000000000000000000000000090f4", [[dynamic ? 0x9fa0 : 0x9f40, ref(collection.id)], [dynamic ? 0x9fa1 : 0x9f41, ref(index.id)]])));
+			return { id, type: expected };
+		}
+		if (operation === "length" && expected === "i64" && node.arguments.length === 1) {
+			const collectionType = inferExpressionType(node.arguments[0], context);
+			if (!(collectionType.startsWith("array:i64:") || collectionType === "slice:i64")) fail("javascript.length_collection_type", node.loc.start);
+			const collection = emitExpression(node.arguments[0], owner, `${path}.collection`, context, collectionType);
+			id = expressionID(owner, path, "collection-length");
+			context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f9", [[0x9f90, ref(collection.id)]])));
+			return { id, type: expected };
+		}
 		if (operation === "bytesEqual" && expected === "bool" && node.arguments.length === 2) {
 			const left = emitExpression(node.arguments[0], owner, `${path}.left`, context, "bytes"), right = emitExpression(node.arguments[1], owner, `${path}.right`, context, "bytes");
 			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a065", [[0xa0650, ref(left.id)], [0xa0651, ref(right.id)]])));
@@ -790,6 +823,7 @@ function emitExpression(node, owner, path, context, expected) {
 		return { id, type: "i64" };
 	}
 	if (node.type === "MemberExpression" && node.computed && expected === "i64" && node.object.type === "Identifier") {
+		fail("javascript.raw_index_requires_adapter", node.loc.start);
 		const parameterIndex = context.parameterNames.indexOf(node.object.name);
 		const arrayType = parameterIndex >= 0 ? context.parameterTypes[parameterIndex] : undefined;
 		if (!(arrayType?.startsWith("array:i64:") || arrayType === "slice:i64")) fail("javascript.index_read_collection", node.loc.start);
@@ -801,6 +835,7 @@ function emitExpression(node, owner, path, context, expected) {
 		return { id, type: "i64" };
 	}
 	if (node.type === "MemberExpression" && node.computed && node.object.type === "ArrayExpression" && expected === "i64") {
+		fail("javascript.raw_index_requires_adapter", node.loc.start);
 		if (node.object.elements.length > 32 || node.object.elements.some((item) => !item || item.type === "SpreadElement")) fail("javascript.fixed_array_shape", node.loc.start);
 		const length = node.object.elements.length;
 		const arrayType = stableID("execution", "type", "fixed-array", "i64", String(length));
@@ -997,6 +1032,7 @@ function dynamicIndexExpression(node, owner, path, context) {
 }
 
 function inferExpressionType(node, context) {
+  if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme" && node.callee.property.name === "array" && node.arguments.length === 1 && node.arguments[0].type === "ArrayExpression" && node.arguments[0].elements.length > 0) return `array:i64:${node.arguments[0].elements.length}`;
   if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme") fail("javascript.constructor_requires_boundary_type", node.loc.start);
   if (node.type === "NewExpression" && node.callee.type === "Identifier" && node.callee.name === "Map") return "map:i64:i64";
   if (node.type === "LogicalExpression" && node.operator === "??") return inferExpressionType(node.right, context);

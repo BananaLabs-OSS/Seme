@@ -373,10 +373,10 @@ function projectExpression(id, context) {
 		return `${projectExpression(reference(field(expression, 0x9f70)), context)}.reduce((${accumulatorName}, ${elementName}) => ${projectExpression(reference(field(expression, 0x9f74)), foldContext)}, ${projectExpression(reference(field(expression, 0x9f71)), context)})`;
 	}
 	if (expression.schema === schema.collectionLength) {
-		return `${projectExpression(reference(field(expression, 0x9f90)), context)}.length`;
+		return `Seme.length(${projectExpression(reference(field(expression, 0x9f90)), context)})`;
 	}
 	if (expression.schema === schema.dynamicIndexRead) {
-		return `${projectExpression(reference(field(expression, 0x9fa0)), context)}[${projectIndexExpression(reference(field(expression, 0x9fa1)), context)}]`;
+		return `Seme.index(${projectExpression(reference(field(expression, 0x9fa0)), context)}, ${projectIndexExpression(reference(field(expression, 0x9fa1)), context)})`;
 	}
 	if (expression.schema === schema.collectionAppend) {
 		return `${projectExpression(reference(field(expression, 0x9fb0)), context)}.concat([${projectExpression(reference(field(expression, 0x9fb1)), context)}])`;
@@ -481,11 +481,11 @@ function projectExpression(id, context) {
       if (reference(field(type, 0x9f20)) !== [...context.graph.values()].find((item) => item.schema === schema.integerType)?.id) fail("javascript_projection.fixed_array_element_type");
       const values = references(field(collection, 0x9f31));
       if (BigInt(values.length) !== unsigned(field(type, 0x9f21))) fail("javascript_projection.fixed_array_length");
-      rendered = `[${values.map((value) => projectExpression(value, context)).join(", ")}]`;
+      rendered = `Seme.array([${values.map((value) => projectExpression(value, context)).join(", ")}])`;
     } else {
       rendered = projectExpression(collectionID, context);
     }
-    return `${rendered}[${projectExpression(reference(field(expression, 0x9f41)), context)}]`;
+    return `Seme.index(${rendered}, ${projectExpression(reference(field(expression, 0x9f41)), context)})`;
   }
   const binary = new Map([
 	[schema.integerAdd, [0x9140, 0x9141, "+"]],

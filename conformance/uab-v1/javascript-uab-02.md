@@ -1,9 +1,7 @@
-# JavaScript UAB-02 partial evidence
+# JavaScript UAB-02 acceptance evidence
 
-JavaScript UAB-02 is **not certified**. The bridge covers every required family,
-but the historical collection gates do not yet drive identical boundary and
-adversarial vectors through original native source, projected native source,
-canonical execution, standalone Wasm, and pinned Pulp.
+JavaScript UAB-02 has one complete acceptance gate covering every required
+family. Independent integration review awarded all five evidence classes.
 
 The bounded ECMAScript/Node profile maps JavaScript `bigint` to signed Seme
 i64 as an explicit adaptation. Boolean and scalar-valid strings map exactly.
@@ -23,6 +21,16 @@ the pinned Pulp proof runtime. The composite proof specifically executes a
 directly lifted `Option<Result<Uint8Array,string>> -> boolean` function rather
 than substituting the consumer-neutral fixture.
 
-This aggregate gate records prerequisite coverage only. It must not award the
-UAB-02 cell until shared per-family observation tables close the cross-path
-vector gaps.
+The acceptance gate uses versioned shared vector tables for scalar, collection,
+and tagged-composite programs. Original and projected JavaScript, the
+structural canonical evaluator, standalone Wasm, and pinned Pulp must agree on
+every valid observation. Malformed native values, canonical values, and wire
+messages use representation-appropriate cases from the same semantic
+categories; they need not use byte-identical encodings across representations.
+
+Checked indexing is an explicit adaptation as well. Raw JavaScript bracket
+access can return `undefined` for an invalid index, whereas canonical Seme
+rejects the operation. The bounded bridge therefore uses `Seme.array` and
+`Seme.index`; their native implementation requires a BigInt index and rejects
+negative and upper-bound indices. Raw bracket indexing is rejected by the
+provider rather than silently receiving Seme's stricter meaning.
