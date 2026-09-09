@@ -6,6 +6,7 @@ import { projectLua } from "./lua-projector.mjs";
 
 const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v30/module.g1", import.meta.url), "utf8");
 const moduleV31G1 = fs.readFileSync(new URL("../../modules/execution/v31/module.g1", import.meta.url), "utf8");
+const moduleV33G1 = fs.readFileSync(new URL("../../modules/execution/v33/module.g1", import.meta.url), "utf8");
 const sources = [
   { name: "identity.lua", source: `---@param value boolean\n---@return boolean\nlocal function Identity(value)\n  return value\nend\n` },
   { name: "run.lua", source: `---@param enabled boolean\n---@return boolean\nfunction Run(enabled)\n  return Identity(enabled)\nend\n` },
@@ -179,5 +180,19 @@ test("rejects non-total or unscoped composite matching", () => {
   const source = `---@param value seme.option<seme.result<seme.bytes,seme.text>>\n---@return boolean\nfunction Check(value)\n  return Seme.match_option(value, false, function(some) return true end)\nend`;
   assert.throws(() => liftLua({ sources: [{ name: "partial.lua", source }], moduleG1: module, packagePath: "example.test/lua-partial", revision: 1, entryName: "Check" }), /lua\.unsupported_expression:partial\.lua:4:1/);
 });
+
+test("lifts and projects explicit immutable v33 collection mutations", () => {
+  const cases=[
+    ["Construct","---@param first seme.i64\n---@param second seme.i64\n---@return seme.slice<seme.i64>","Seme.slice(first, second)",0xa068],
+    ["Append","---@param values seme.slice<seme.i64>\n---@param value seme.i64\n---@return seme.slice<seme.i64>","Seme.collection_append(values, value)",0x90fb],
+    ["Update","---@param values seme.slice<seme.i64>\n---@param index seme.i64\n---@param value seme.i64\n---@return seme.slice<seme.i64>","Seme.collection_update(values, index, value)",0x90fc],
+    ["Remove","---@param values seme.slice<seme.i64>\n---@param index seme.i64\n---@return seme.slice<seme.i64>","Seme.slice_remove(values, index)",0xa066],
+    ["MapRemove","---@param values seme.map<seme.i64,seme.i64>\n---@param key seme.i64\n---@return seme.map<seme.i64,seme.i64>","Seme.map_remove(values, key)",0xa067],
+    ["Fold","---@param values seme.slice<seme.i64>\n---@param initial seme.i64\n---@return seme.i64","Seme.fold(values, initial, function(accumulator, element) return Seme.add(accumulator, element) end)",0x90f7],
+  ];
+  for(const [name,annotations,expression,suffix] of cases){const source=`${annotations}\nfunction ${name}(${annotations.split("\n").filter(line=>line.startsWith("---@param")).map(line=>line.split(/\s+/)[1]).join(", ")})\n return ${expression}\nend`;const options={sources:[{name:"v33.lua",source}],moduleG1:moduleV33G1,packagePath:`example.test/lua-v33-${name}`,revision:1,entryName:name};const canonical=liftLua(options),projected=projectLua(canonical);assert.match(canonical,new RegExp(schemaID(suffix)));assert.equal(liftLua({...options,sources:[{name:"projected.lua",source:projected}]}),canonical);}
+});
+
+test("projects every entry in the shared Lua UAB-04 corpus",()=>{const source=fs.readFileSync(new URL("../../fixtures/lua-uab-04/program.lua",import.meta.url),"utf8"),module=fs.readFileSync(new URL("../../modules/execution/v34/module.g1",import.meta.url),"utf8");for(const entryName of ["ConstructSlice","Append","Update","Remove","Length","Index","Traverse","EmptyMap","Insert","Lookup","RemoveMap"]){const options={sources:[{name:"program.lua",source}],moduleG1:module,packagePath:`example.test/lua-uab04-${entryName}`,revision:1,entryName};const canonical=liftLua(options),projected=projectLua(canonical);assert.equal(liftLua({...options,sources:[{name:"projected.lua",source:projected}]}),canonical);}});
 
 function schemaID(suffix) { return suffix.toString(16).padStart(32, "0"); }

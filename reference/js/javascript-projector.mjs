@@ -79,6 +79,9 @@ const schema = {
   emptyMap: "0000000000000000000000000000a041",
   mapLookup: "0000000000000000000000000000a042",
   mapUpdate: "0000000000000000000000000000a043",
+  mapRemove: "0000000000000000000000000000a067",
+  sliceRemove: "0000000000000000000000000000a066",
+  sliceConstruct: "0000000000000000000000000000a068",
   optionType: "0000000000000000000000000000a050",
   optionNone: "0000000000000000000000000000a051",
   optionSome: "0000000000000000000000000000a052",
@@ -375,24 +378,34 @@ function projectExpression(id, context) {
 	if (expression.schema === schema.collectionLength) {
 		return `Seme.length(${projectExpression(reference(field(expression, 0x9f90)), context)})`;
 	}
+	if (expression.schema === schema.sliceConstruct) {
+		required(context.graph, reference(field(expression, 0xa0680)), schema.sliceType);
+		return `Seme.slice([${references(field(expression, 0xa0681)).map((value) => projectExpression(value, context)).join(", ")}])`;
+	}
 	if (expression.schema === schema.dynamicIndexRead) {
 		return `Seme.index(${projectExpression(reference(field(expression, 0x9fa0)), context)}, ${projectIndexExpression(reference(field(expression, 0x9fa1)), context)})`;
 	}
 	if (expression.schema === schema.collectionAppend) {
-		return `${projectExpression(reference(field(expression, 0x9fb0)), context)}.concat([${projectExpression(reference(field(expression, 0x9fb1)), context)}])`;
+		return `Seme.append(${projectExpression(reference(field(expression, 0x9fb0)), context)}, ${projectExpression(reference(field(expression, 0x9fb1)), context)})`;
 	}
 	if (expression.schema === schema.collectionUpdate) {
-		return `${projectExpression(reference(field(expression, 0x9fc0)), context)}.with(Number(${projectExpression(reference(field(expression, 0x9fc1)), context)}), ${projectExpression(reference(field(expression, 0x9fc2)), context)})`;
+		return `Seme.update(${projectExpression(reference(field(expression, 0x9fc0)), context)}, ${projectExpression(reference(field(expression, 0x9fc1)), context)}, ${projectExpression(reference(field(expression, 0x9fc2)), context)})`;
+	}
+	if (expression.schema === schema.sliceRemove) {
+		return `Seme.remove(${projectExpression(reference(field(expression, 0xa0660)), context)}, ${projectExpression(reference(field(expression, 0xa0661)), context)})`;
 	}
 	if (expression.schema === schema.emptyMap) {
 		required(context.graph, reference(field(expression, 0xa0410)), schema.mapType);
-		return "new Map()";
+		return "Seme.emptyMap()";
 	}
 	if (expression.schema === schema.mapLookup) {
-		return `(${projectExpression(reference(field(expression, 0xa0420)), context)}.get(${projectExpression(reference(field(expression, 0xa0421)), context)}) ?? 0n)`;
+		return `Seme.mapLookupZero(${projectExpression(reference(field(expression, 0xa0420)), context)}, ${projectExpression(reference(field(expression, 0xa0421)), context)})`;
 	}
 	if (expression.schema === schema.mapUpdate) {
-		return `new Map(${projectExpression(reference(field(expression, 0xa0430)), context)}).set(${projectExpression(reference(field(expression, 0xa0431)), context)}, ${projectExpression(reference(field(expression, 0xa0432)), context)})`;
+		return `Seme.mapInsert(${projectExpression(reference(field(expression, 0xa0430)), context)}, ${projectExpression(reference(field(expression, 0xa0431)), context)}, ${projectExpression(reference(field(expression, 0xa0432)), context)})`;
+	}
+	if (expression.schema === schema.mapRemove) {
+		return `Seme.mapRemove(${projectExpression(reference(field(expression, 0xa0670)), context)}, ${projectExpression(reference(field(expression, 0xa0671)), context)})`;
 	}
   if (expression.schema === schema.methodCall) {
     const methodID = reference(field(expression, 0xa0031));
@@ -508,15 +521,15 @@ function projectExpression(id, context) {
 
 function projectIndexExpression(id, context) {
 	const expression = required(context.graph, id);
-	if (expression.schema === schema.integerLiteral) return BigInt.asIntN(64, unsigned(field(expression, 0x9700))).toString();
-	if (expression.schema === schema.collectionLength) return `${projectExpression(reference(field(expression, 0x9f90)), context)}.length`;
+	if (expression.schema === schema.integerLiteral) return `${BigInt.asIntN(64, unsigned(field(expression, 0x9700))).toString()}n`;
+	if (expression.schema === schema.collectionLength) return `Seme.length(${projectExpression(reference(field(expression, 0x9f90)), context)})`;
 	if (expression.schema === schema.integerAdd || expression.schema === schema.integerSubtract) {
 		const leftField = expression.schema === schema.integerAdd ? 0x9140 : 0x9a00;
 		const rightField = expression.schema === schema.integerAdd ? 0x9141 : 0x9a01;
 		const operator = expression.schema === schema.integerAdd ? "+" : "-";
 		return `(${projectIndexExpression(reference(field(expression, leftField)), context)} ${operator} ${projectIndexExpression(reference(field(expression, rightField)), context)})`;
 	}
-	return `Number(${projectExpression(id, context)})`;
+	return projectExpression(id, context);
 }
 
 function projectMatchBlock(id, context) {

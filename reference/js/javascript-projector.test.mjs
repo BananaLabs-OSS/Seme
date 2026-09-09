@@ -182,8 +182,8 @@ test("projects and re-lifts collection queries", () => {
 export function LastOr(values, fallback) { if (values.length <= 0n) return fallback; return Seme.index(values, values.length - 1); }`;
   const first = liftJavaScript({ source, moduleG1: moduleV24G1, packagePath: "example.test/query", revision: 1 });
   const projected = projectJavaScript(first);
-  assert.match(projected, /values\.length/);
-  assert.match(projected, /Seme\.index\(values, \(values\.length - 1\)\)/);
+  assert.match(projected, /Seme\.length\(values\)/);
+  assert.match(projected, /Seme\.index\(values, \(Seme\.length\(values\) - 1n\)\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV24G1, packagePath: "example.test/query", revision: 1 });
   assert.equal(second, first);
 });
@@ -193,7 +193,7 @@ test("projects and re-lifts immutable collection results", () => {
 export function UpdateAndAppend(values, index, replacement, appended) { return values.with(Number(index), replacement).concat([appended]); }`;
   const first = liftJavaScript({ source, moduleG1: moduleV25G1, packagePath: "example.test/update", revision: 1 });
   const projected = projectJavaScript(first);
-  assert.match(projected, /\.with\(Number\(index\), replacement\)\.concat\(\[appended\]\)/);
+  assert.match(projected, /Seme\.append\(Seme\.update\(values, index, replacement\), appended\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV25G1, packagePath: "example.test/update", revision: 1 });
   assert.equal(second, first);
 });
@@ -310,8 +310,9 @@ test("projects and re-lifts native runtime-keyed Map folds", () => {
 export function Tally(values, key) { return values.reduce((counts, value) => new Map(counts).set(value, BigInt.asIntN(64, (counts.get(value) ?? 0n) + 1n)), new Map()).get(key) ?? 0n; }`;
   const first = liftJavaScript({ source, moduleG1: moduleV30G1, packagePath: "example.test/runtime-map", revision: 1 });
   const projected = projectJavaScript(first);
-  assert.match(projected, /new Map\(counts\)\.set/);
-  assert.match(projected, /\.get\(key\) \?\? 0n/);
+  assert.match(projected, /Seme\.mapInsert\(counts/);
+  assert.match(projected, /Seme\.mapLookupZero/);
+  assert.match(projected, /Seme\.emptyMap\(\)/);
   const second = liftJavaScript({ source: projected, moduleG1: moduleV30G1, packagePath: "example.test/runtime-map", revision: 1 });
   assert.equal(second, first);
 });

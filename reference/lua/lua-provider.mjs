@@ -28,6 +28,9 @@ const schema = {
   collectionLength: "000000000000000000000000000090f9",
   indexRead: "000000000000000000000000000090f4",
   dynamicIndexRead: "000000000000000000000000000090fa",
+  iterationBinding: "000000000000000000000000000090f5", iterationRead: "000000000000000000000000000090f6", fold: "000000000000000000000000000090f7",
+  collectionAppend: "000000000000000000000000000090fb",
+  collectionUpdate: "000000000000000000000000000090fc",
   integerLiteral: "00000000000000000000000000009070",
   emptyMap: "0000000000000000000000000000a041",
   mapLookup: "0000000000000000000000000000a042",
@@ -38,6 +41,9 @@ const schema = {
   optionMatch: "0000000000000000000000000000a063",
   bytesLiteral: "0000000000000000000000000000a064",
   bytesEqual: "0000000000000000000000000000a065",
+  sliceRemove: "0000000000000000000000000000a066",
+  mapRemove: "0000000000000000000000000000a067",
+  sliceConstruct: "0000000000000000000000000000a068",
   stringLiteral: "00000000000000000000000000009050",
   stringEqual: "000000000000000000000000000090c2",
   boolLiteral: "000000000000000000000000000090b0",
@@ -301,6 +307,8 @@ function parseExpression(text, file, line) {
   if (field) return { kind: "field", base: field[1], field: field[2], location: { file, line, column: 1 } };
   const array = /^Seme\.array\s*\((.*)\)$/.exec(text);
   if (array) return { kind: "array", arguments: array[1].trim() ? array[1].split(",").map((name) => name.trim()) : [], location: { file, line, column: 1 } };
+  const sliceConstruct=/^Seme\.slice\s*\((.*)\)$/.exec(text);
+  if(sliceConstruct)return{kind:"slice",arguments:sliceConstruct[1].trim()?splitCallArguments(sliceConstruct[1],file,line):[],location:{file,line,column:1}};
   const length = /^Seme\.length\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/.exec(text);
   if (length) return { kind: "length", base: length[1], location: { file, line, column: 1 } };
   const index = /^Seme\.index_zero\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*|[0-9]+)\s*\)$/.exec(text);
@@ -311,6 +319,12 @@ function parseExpression(text, file, line) {
   if (lookup) return { kind: "lookup_zero", base: lookup[1], key: lookup[2], descriptor: lookup[3], location: { file, line, column: 1 } };
   const mapOperation = /^Seme\.(map_update)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/.exec(text);
   if (mapOperation) return { kind: mapOperation[1], base: mapOperation[2], key: mapOperation[3], value: mapOperation[4], location: { file, line, column: 1 } };
+  const collectionOperation=/^Seme\.(collection_append|collection_update|slice_remove)\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)(?:\s*,\s*([A-Za-z_][A-Za-z0-9_]*))?\s*\)$/.exec(text);
+  if(collectionOperation)return{kind:collectionOperation[1],base:collectionOperation[2],index:collectionOperation[1]==="collection_append"?undefined:collectionOperation[3],value:collectionOperation[1]==="collection_append"?collectionOperation[3]:collectionOperation[4],location:{file,line,column:1}};
+  const mapRemove=/^Seme\.map_remove\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)$/.exec(text);
+  if(mapRemove)return{kind:"map_remove",base:mapRemove[1],key:mapRemove[2],location:{file,line,column:1}};
+  const fold=/^Seme\.fold\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*function\(([A-Za-z_][A-Za-z0-9_]*),\s*([A-Za-z_][A-Za-z0-9_]*)\)\s*return\s*Seme\.add\(\3,\s*\4\)\s*end\s*\)$/.exec(text);
+  if(fold)return{kind:"fold",base:fold[1],initial:fold[2],accumulator:fold[3],element:fold[4],location:{file,line,column:1}};
   const identifier = /^([A-Za-z_][A-Za-z0-9_]*)$/.exec(text);
   if (identifier) return { kind: "identifier", name: identifier[1], location: { file, line, column: 1 } };
   const constructor = /^Seme\.(some|none|ok|err)\s*\((.*)\)$/.exec(text);
@@ -354,7 +368,7 @@ function emitExpression(expression, context, path) {
     context.additions.push(graphEntity(id, entity(id, schema.fieldRead, [[0x9320, ref(readID)], [0x9321, ref(fieldID)]])));
     return id;
   }
-  if (["array", "length", "index", "empty_map", "lookup_zero", "map_update"].includes(expression.kind)) return emitCollectionExpression(expression, context, path);
+  if (["array", "slice", "length", "index", "fold", "empty_map", "lookup_zero", "map_update", "collection_append", "collection_update", "slice_remove", "map_remove"].includes(expression.kind)) return emitCollectionExpression(expression, context, path);
   if (expression.kind === "composite_match") return emitCompositeMatch(expression, context, path);
   if (expression.kind === "add") {
     if (context.description.resultType !== "i64") fail("lua.add_result_type", expression.location);
@@ -461,6 +475,11 @@ function emitCollectionExpression(expression, context, path) {
     context.additions.push(graphEntity(id, entity(id, schema.fixedArrayConstruct, [[0x9f30, ref(typeID(result))], [0x9f31, refs(values)]])));
     return id;
   }
+  if(expression.kind==="slice"){
+    if(result!=="slice:i64"||expression.arguments.length>512)fail("lua.slice_construct_type_or_bound",expression.location);
+    const values=expression.arguments.map((name,index)=>parameterRead(name,"i64",context,`${path}.element.${index}`,expression.location));
+    context.additions.push(graphEntity(id,entity(id,schema.sliceConstruct,[[0xa0680,ref(typeID(result))],[0xa0681,refs(values)]])));return id;
+  }
   if (expression.kind === "empty_map") {
     if (!result.startsWith("map:")) fail("lua.map_result_type", expression.location);
     if (result.split(":")[2] !== expression.descriptor) fail("lua.map_descriptor_type", expression.location);
@@ -475,8 +494,21 @@ function emitCollectionExpression(expression, context, path) {
     context.additions.push(graphEntity(id, entity(id, schema.collectionLength, [[0x9f90, ref(base)]])));
     return id;
   }
+  if(expression.kind==="fold"){
+    if(result!=="i64")fail("lua.fold_result_type",expression.location);
+    const collection=context.description.parameters.find(item=>item.name===expression.base),initial=context.description.parameters.find(item=>item.name===expression.initial);
+    if(!collection||!(collection.type==="slice:i64"||collection.type.startsWith("array:i64:"))||!initial||initial.type!=="i64")fail("lua.fold_parameter_type",expression.location);
+    const collectionRead=parameterRead(expression.base,collection.type,context,`${path}.collection`,expression.location),initialRead=parameterRead(expression.initial,"i64",context,`${path}.initial`,expression.location);
+    const accumulator=stableID("execution",context.description.id,path,"accumulator"),element=stableID("execution",context.description.id,path,"element"),left=stableID("execution",context.description.id,path,"left"),right=stableID("execution",context.description.id,path,"right"),body=stableID("execution",context.description.id,path,"body");
+    context.additions.push(graphEntity(accumulator,entity(accumulator,schema.iterationBinding,[[0x9f50,bytes(expression.accumulator)],[0x9f51,ref(ids.i64)]])),graphEntity(element,entity(element,schema.iterationBinding,[[0x9f50,bytes(expression.element)],[0x9f51,ref(ids.i64)]])),graphEntity(left,entity(left,schema.iterationRead,[[0x9f60,ref(accumulator)]])),graphEntity(right,entity(right,schema.iterationRead,[[0x9f60,ref(element)]])),graphEntity(body,entity(body,schema.integerAdd,[[0x9140,ref(left)],[0x9141,ref(right)],[0x9142,ref(ids.i64)]])),graphEntity(id,entity(id,schema.fold,[[0x9f70,ref(collectionRead)],[0x9f71,ref(initialRead)],[0x9f72,ref(accumulator)],[0x9f73,ref(element)],[0x9f74,ref(body)]])));return id;
+  }
   if (expression.kind === "index") {
     const parameter = context.description.parameters.find((item) => item.name === expression.base);
+    if(parameter?.type==="slice:i64"){
+      if(result!=="i64"||!/^[A-Za-z_]/.test(expression.index))fail("lua.dynamic_index_type",expression.location);
+      const base=parameterRead(expression.base,parameter.type,context,`${path}.collection`,expression.location),index=parameterRead(expression.index,"i64",context,`${path}.index`,expression.location);
+      context.additions.push(graphEntity(id,entity(id,schema.dynamicIndexRead,[[0x9fa0,ref(base)],[0x9fa1,ref(index)]])));return id;
+    }
     if (!parameter || !parameter.type.startsWith("array:")) fail("lua.index_collection_type", expression.location);
     const [, element, length] = parameter.type.split(":");
     if (result !== element || BigInt(expression.index) >= BigInt(length)) fail("lua.index_type_or_range", expression.location);
@@ -486,11 +518,24 @@ function emitCollectionExpression(expression, context, path) {
     context.additions.push(graphEntity(id, entity(id, schema.indexRead, [[0x9f40, ref(base)], [0x9f41, ref(literal)]])));
     return id;
   }
+  if(["collection_append","collection_update","slice_remove"].includes(expression.kind)){
+    if(result!=="slice:i64")fail("lua.collection_mutation_result_type",expression.location);
+    const parameter=context.description.parameters.find(item=>item.name===expression.base);if(!parameter||parameter.type!=="slice:i64")fail("lua.collection_mutation_receiver",expression.location);
+    const base=parameterRead(expression.base,"slice:i64",context,`${path}.collection`,expression.location),fields=[];
+    if(expression.kind==="collection_append"){const value=parameterRead(expression.value,"i64",context,`${path}.value`,expression.location);fields.push([0x9fb0,ref(base)],[0x9fb1,ref(value)]);context.additions.push(graphEntity(id,entity(id,schema.collectionAppend,fields)));return id;}
+    const index=parameterRead(expression.index,"i64",context,`${path}.index`,expression.location);
+    if(expression.kind==="slice_remove"){context.additions.push(graphEntity(id,entity(id,schema.sliceRemove,[[0xa0660,ref(base)],[0xa0661,ref(index)]])));return id;}
+    const value=parameterRead(expression.value,"i64",context,`${path}.value`,expression.location);context.additions.push(graphEntity(id,entity(id,schema.collectionUpdate,[[0x9fc0,ref(base)],[0x9fc1,ref(index)],[0x9fc2,ref(value)]])));return id;
+  }
   const mapParameter = context.description.parameters.find((item) => item.name === expression.base);
   if (!mapParameter || !mapParameter.type.startsWith("map:")) fail("lua.map_receiver_type", expression.location);
   const [, keyType, valueType] = mapParameter.type.split(":");
   const map = parameterRead(expression.base, mapParameter.type, context, `${path}.map`, expression.location);
   const key = parameterRead(expression.key, keyType, context, `${path}.key`, expression.location);
+  if(expression.kind==="map_remove"){
+    if(result!==mapParameter.type)fail("lua.map_remove_result_type",expression.location);
+    context.additions.push(graphEntity(id,entity(id,schema.mapRemove,[[0xa0670,ref(map)],[0xa0671,ref(key)]])));return id;
+  }
   if (expression.kind === "lookup_zero") {
     if (result !== valueType || expression.value || expression.descriptor !== valueType) fail("lua.map_lookup_type", expression.location);
     context.additions.push(graphEntity(id, entity(id, schema.mapLookup, [[0xa0420, ref(map)], [0xa0421, ref(key)]])));

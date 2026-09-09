@@ -140,7 +140,11 @@ function Seme.array(length, values, ...)
   return freeze("array", copy)
 end
 
-function Seme.slice(values) return freeze("slice", copy_values(values)) end
+function Seme.slice(values, ...)
+  if type(values) == "table" then return freeze("slice", copy_values(values)) end
+  if values == nil then return freeze("slice", {}) end
+  return freeze("slice", copy_values({ values, ... }))
+end
 function Seme.collection_length(value)
   local item = storage[value]
   if item == nil or (item.kind ~= "array" and item.kind ~= "slice") then error("seme.expected_collection", 2) end
@@ -155,6 +159,40 @@ function Seme.collection_get(value, zero_index)
 end
 Seme.length = Seme.collection_length
 Seme.index_zero = Seme.collection_get
+function Seme.collection_append(value, element)
+  local item = storage[value]
+  if item == nil or item.kind ~= "slice" or storage[element] == nil then error("seme.expected_slice_append", 2) end
+  local copy = {}; for index, old in ipairs(item.value) do copy[index] = old end
+  copy[#copy + 1] = element
+  return freeze("slice", copy)
+end
+function Seme.collection_update(value, zero_index, element)
+  local item = storage[value]
+  if item == nil or (item.kind ~= "array" and item.kind ~= "slice") or storage[element] == nil then error("seme.expected_collection_update", 2) end
+  if storage[zero_index] and storage[zero_index].kind == "i64" then zero_index = tonumber(unpack_value(zero_index, "i64")) end
+  if type(zero_index) ~= "number" or zero_index % 1 ~= 0 or zero_index < 0 or zero_index >= #item.value then error("seme.index_out_of_range", 2) end
+  local copy = {}; for index, old in ipairs(item.value) do copy[index] = old end
+  copy[zero_index + 1] = element
+  return freeze(item.kind, copy)
+end
+function Seme.slice_remove(value, zero_index)
+  local item = storage[value]
+  if item == nil or item.kind ~= "slice" then error("seme.expected_slice_remove", 2) end
+  if storage[zero_index] and storage[zero_index].kind == "i64" then zero_index = tonumber(unpack_value(zero_index, "i64")) end
+  if type(zero_index) ~= "number" or zero_index % 1 ~= 0 or zero_index < 0 or zero_index >= #item.value then error("seme.index_out_of_range", 2) end
+  local copy = {}; for index, old in ipairs(item.value) do if index ~= zero_index + 1 then copy[#copy + 1] = old end end
+  return freeze("slice", copy)
+end
+function Seme.fold(value, initial, callback)
+  local item = storage[value]
+  if item == nil or (item.kind ~= "array" and item.kind ~= "slice") or storage[initial] == nil or type(callback) ~= "function" then error("seme.invalid_fold", 2) end
+  local accumulator = initial
+  for index = 1, #item.value do
+    accumulator = callback(accumulator, item.value[index])
+    if storage[accumulator] == nil then error("seme.untyped_fold_result", 2) end
+  end
+  return accumulator
+end
 
 function Seme.record(type_name, field_names, values)
   if type(type_name) ~= "string" or type(field_names) ~= "table" or type(values) ~= "table" then error("seme.invalid_record", 2) end
@@ -208,6 +246,14 @@ function Seme.map_update(map, key, value)
     else entries[#entries + 1] = { key = entry.key, value = entry.value } end
   end
   if not replaced then entries[#entries + 1] = { key = key, value = value } end
+  return Seme.map(old.value_kind, entries)
+end
+function Seme.map_remove(map, key)
+  local old, token = unpack_value(map, "map"), key_token(key)
+  local entries = {}
+  for _, entry in ipairs(old.entries) do
+    if entry.token ~= token then entries[#entries + 1] = { key = entry.key, value = entry.value } end
+  end
   return Seme.map(old.value_kind, entries)
 end
 function Seme.lookup_zero(map, key)

@@ -26,6 +26,8 @@ const schema = {
   collectionLength: "000000000000000000000000000090f9",
   indexRead: "000000000000000000000000000090f4",
   dynamicIndexRead: "000000000000000000000000000090fa",
+  iterationBinding: "000000000000000000000000000090f5", iterationRead: "000000000000000000000000000090f6", fold: "000000000000000000000000000090f7",
+  collectionAppend: "000000000000000000000000000090fb", collectionUpdate: "000000000000000000000000000090fc",
   integerLiteral: "00000000000000000000000000009070",
   emptyMap: "0000000000000000000000000000a041",
   mapLookup: "0000000000000000000000000000a042",
@@ -36,6 +38,8 @@ const schema = {
   optionMatch: "0000000000000000000000000000a063",
   bytesLiteral: "0000000000000000000000000000a064",
   bytesEqual: "0000000000000000000000000000a065",
+  sliceRemove: "0000000000000000000000000000a066", mapRemove: "0000000000000000000000000000a067",
+  sliceConstruct: "0000000000000000000000000000a068",
   stringLiteral: "00000000000000000000000000009050",
   stringEqual: "000000000000000000000000000090c2",
   boolLiteral: "000000000000000000000000000090b0",
@@ -147,18 +151,24 @@ function projectExpression(id, context) {
     return `Seme.field(${projectExpression(reference(field(expression, 0x9320)), context)}, "${text(field(member, 0x9310))}")`;
   }
   if (expression.schema === schema.fixedArrayConstruct) return `Seme.array(${references(field(expression, 0x9f31)).map((value) => projectExpression(value, context)).join(", ")})`;
+  if(expression.schema===schema.sliceConstruct)return `Seme.slice(${references(field(expression,0xa0681)).map(value=>projectExpression(value,context)).join(", ")})`;
   if (expression.schema === schema.collectionLength) return `Seme.length(${projectExpression(reference(field(expression, 0x9f90)), context)})`;
   if (expression.schema === schema.indexRead) {
     const index = required(context.graph, reference(field(expression, 0x9f41)), schema.integerLiteral);
     return `Seme.index_zero(${projectExpression(reference(field(expression, 0x9f40)), context)}, ${unsigned(field(index, 0x9700))})`;
   }
   if(expression.schema===schema.dynamicIndexRead)return `Seme.index_zero(${projectExpression(reference(field(expression,0x9fa0)),context)}, ${projectExpression(reference(field(expression,0x9fa1)),context)})`;
+  if(expression.schema===schema.fold){const accumulatorID=reference(field(expression,0x9f72)),elementID=reference(field(expression,0x9f73)),accumulator=required(context.graph,accumulatorID,schema.iterationBinding),element=required(context.graph,elementID,schema.iterationBinding),body=required(context.graph,reference(field(expression,0x9f74)),schema.integerAdd),left=required(context.graph,reference(field(body,0x9140)),schema.iterationRead),right=required(context.graph,reference(field(body,0x9141)),schema.iterationRead);if(reference(field(left,0x9f60))!==accumulatorID||reference(field(right,0x9f60))!==elementID)fail("lua_projection.fold_body");const a=text(field(accumulator,0x9f50)),e=text(field(element,0x9f50));return `Seme.fold(${projectExpression(reference(field(expression,0x9f70)),context)}, ${projectExpression(reference(field(expression,0x9f71)),context)}, function(${a}, ${e}) return Seme.add(${a}, ${e}) end)`;}
+  if(expression.schema===schema.collectionAppend)return `Seme.collection_append(${projectExpression(reference(field(expression,0x9fb0)),context)}, ${projectExpression(reference(field(expression,0x9fb1)),context)})`;
+  if(expression.schema===schema.collectionUpdate)return `Seme.collection_update(${projectExpression(reference(field(expression,0x9fc0)),context)}, ${projectExpression(reference(field(expression,0x9fc1)),context)}, ${projectExpression(reference(field(expression,0x9fc2)),context)})`;
+  if(expression.schema===schema.sliceRemove)return `Seme.slice_remove(${projectExpression(reference(field(expression,0xa0660)),context)}, ${projectExpression(reference(field(expression,0xa0661)),context)})`;
   if (expression.schema === schema.emptyMap) return `Seme.empty_map("${mapValueDescriptor(reference(field(expression, 0xa0410)), context)}")`;
   if (expression.schema === schema.mapLookup) {
     const mapID = reference(field(expression, 0xa0420));
     return `Seme.lookup_zero(${projectExpression(mapID, context)}, ${projectExpression(reference(field(expression, 0xa0421)), context)}, "${mapExpressionDescriptor(mapID, context)}")`;
   }
   if (expression.schema === schema.mapUpdate) return `Seme.map_update(${projectExpression(reference(field(expression, 0xa0430)), context)}, ${projectExpression(reference(field(expression, 0xa0431)), context)}, ${projectExpression(reference(field(expression, 0xa0432)), context)})`;
+  if(expression.schema===schema.mapRemove)return `Seme.map_remove(${projectExpression(reference(field(expression,0xa0670)),context)}, ${projectExpression(reference(field(expression,0xa0671)),context)})`;
   if (expression.schema === schema.variantRead) return bindingName(reference(field(expression, 0xa0610)), context);
   if (expression.schema === schema.bytesLiteral) return `Seme.bytes_literal(${JSON.stringify(text(field(expression, 0xa0640)))})`;
   if (expression.schema === schema.bytesEqual) return `Seme.bytes_equal(${projectExpression(reference(field(expression, 0xa0650)), context)}, ${projectExpression(reference(field(expression, 0xa0651)), context)})`;

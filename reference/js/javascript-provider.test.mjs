@@ -207,6 +207,17 @@ export function UpdateAndAppend(values, index, replacement, appended) { return v
   assert.match(canonical, /000000000000000000000000000090fc/);
 });
 
+test("lifts explicit collection adapters including immutable map removal", () => {
+  const source = `/** @param {bigint[]} values @param {bigint} index @param {bigint} replacement @param {bigint} appended @returns {bigint[]} */
+export function Adapt(values, index, replacement, appended) { return Seme.append(Seme.update(values, index, replacement), appended); }`;
+  const canonical = liftJavaScript({ source, moduleG1: moduleV25G1, packagePath: "example.test/explicit-collections", revision: 1 });
+  assert.match(canonical, /000000000000000000000000000090fb/);
+  assert.match(canonical, /000000000000000000000000000090fc/);
+  const removal = `/** @param {Map<bigint,bigint>} values @param {bigint} key @returns {Map<bigint,bigint>} */
+export function Remove(values, key) { return Seme.mapRemove(values, key); }`;
+  assert.match(liftJavaScript({ source: removal, moduleG1: moduleV30G1, packagePath: "example.test/map-remove", revision: 1 }), /0000000000000000000000000000a067/);
+});
+
 test("lifts native methods as explicit immutable state transitions", () => {
   const source = `/** @typedef {Object} Counter
  * @property {bigint} value
