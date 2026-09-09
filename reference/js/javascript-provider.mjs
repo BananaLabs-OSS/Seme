@@ -43,7 +43,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
     if (!fn.id || fn.async || fn.generator) fail("javascript.unsupported_function", fn.loc.start);
     const signature = readSignature(comments, fn);
     if (signature.parameters.length !== fn.params.length) fail("javascript.signature_arity", fn.loc.start);
-    return { fn, signature, id: recoveredIdentities.get(fn.id.name) ?? stableID("session-declaration", packagePath, fn.id.name) };
+    return { fn, signature, id: recoveredIdentities.get(fn.id.name) ?? stableID("session-declaration", packagePath, fn.id.name), mutableClosureFactory: returnsMutableClosure(fn) };
   }).sort((left, right) => left.id.localeCompare(right.id));
   const functionsByName = new Map(descriptions.map((item) => [item.fn.id.name, item]));
   if (functionsByName.size !== descriptions.length) fail("javascript.duplicate_function");
@@ -376,6 +376,15 @@ function typeID(type, context) {
 		if (context.entities && !context.entities.some((item) => item.id === id)) context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a020", [[0xa0200, refs(parameterIDs)], [0xa0201, ref(resultID)]])));
 		return id;
 	}
+	if (type.startsWith("transition-function:")) {
+		const functionType = type.slice("transition-function:".length);
+		const functionID = typeID(functionType, context);
+		const resultType = functionType.slice(functionType.indexOf("=>") + 2);
+		const resultID = typeID(resultType, context);
+		const id = stableID("execution", "type", "state-transition", functionID, resultID);
+		if (context.entities && !context.entities.some((item) => item.id === id)) context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a004", [[0xa0040, ref(functionID)], [0xa0041, ref(resultID)]])));
+		return id;
+	}
 	if (type === "slice:i64") return stableID("execution", "type", "slice", "i64");
   if (type.startsWith("transition:")) {
     const parts = type.split(":");
@@ -432,18 +441,44 @@ function emitBlock(statements, path, context, resultType, requireReturn = true) 
       const local = localContext.nextLocal.value++;
       const bindingID = stableID("execution", context.functionID, path, "local", String(local));
       const initializer = emitExpression(declaration.init, `${context.functionID}:${path}:local:${local}`, "root", localContext, valueType);
-      const mutable = current.kind === "let";
+      const factory = declaration.init.type === "CallExpression" && declaration.init.callee.type === "Identifier" ? localContext.functionsByName.get(declaration.init.callee.name) : undefined;
+      const stateful = !!factory?.mutableClosureFactory;
+      const mutable = current.kind === "let" || stateful;
       context.entities.push(graphEntity(bindingID, entity(bindingID, mutable ? "000000000000000000000000000090e0" : "000000000000000000000000000090d0", mutable ? [[0x9e00, bytes(declaration.id.name)], [0x9e01, ref(typeID(valueType, context))], [0x9e02, ref(initializer.id)]] : [[0x9d00, bytes(declaration.id.name)], [0x9d01, ref(typeID(valueType, context))], [0x9d02, ref(initializer.id)]])));
       const statementID = stableID("execution", context.functionID, statementPath, mutable ? "declare-place" : "bind-local");
       context.entities.push(graphEntity(statementID, entity(statementID, mutable ? "000000000000000000000000000090e1" : "000000000000000000000000000090d1", [[mutable ? 0x9e10 : 0x9d10, ref(bindingID)]])));
       statementIDs.push(statementID);
-      localContext.locals.set(declaration.id.name, { id: bindingID, type: valueType, mutable });
+      localContext.locals.set(declaration.id.name, { id: bindingID, type: valueType, mutable, stateful });
       continue;
     }
     if (current.type === "ExpressionStatement" && current.expression.type === "AssignmentExpression") {
       const assignment = current.expression;
       const local = assignment.left.type === "Identifier" ? localContext.locals.get(assignment.left.name) : undefined;
       if (assignment.operator !== "=" || !local?.mutable) fail("javascript.assignment_target", current.loc.start);
+      const called = assignment.right.type === "CallExpression" && assignment.right.callee.type === "Identifier" ? localContext.locals.get(assignment.right.callee.name) : undefined;
+      if (called?.stateful) {
+        const transition = emitStatefulCall(assignment.right, `${context.functionID}:${path}:assignment:${index}`, "root", localContext, called.type);
+        const temporary = localContext.nextLocal.value++;
+        const transitionID = stableID("execution", context.functionID, path, "local", String(temporary));
+        context.entities.push(graphEntity(transitionID, entity(transitionID, "000000000000000000000000000090d0", [[0x9d00, bytes(`${assignment.right.callee.name}Transition`)], [0x9d01, ref(typeID(transition.type, context))], [0x9d02, ref(transition.id)]])));
+        const bindID = stableID("execution", context.functionID, `${statementPath}.transition`, "bind-local");
+        context.entities.push(graphEntity(bindID, entity(bindID, "000000000000000000000000000090d1", [[0x9d10, ref(transitionID)]])));
+        const transitionRead = (suffix) => {
+          const id = stableID("execution", context.functionID, statementPath, suffix, "transition-read");
+          context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090d2", [[0x9d20, ref(transitionID)]])));
+          return id;
+        };
+        const stateID = stableID("execution", context.functionID, statementPath, "transition-state");
+        context.entities.push(graphEntity(stateID, entity(stateID, "0000000000000000000000000000a006", [[0xa0060, ref(transitionRead("state"))]])));
+        const updateClosureID = stableID("execution", context.functionID, `${statementPath}.closure`, "assign-place");
+        context.entities.push(graphEntity(updateClosureID, entity(updateClosureID, "000000000000000000000000000090e3", [[0x9e30, ref(called.id)], [0x9e31, ref(stateID)]])));
+        const resultID = stableID("execution", context.functionID, statementPath, "transition-result");
+        context.entities.push(graphEntity(resultID, entity(resultID, "0000000000000000000000000000a007", [[0xa0070, ref(transitionRead("result"))]])));
+        const updateTargetID = stableID("execution", context.functionID, `${statementPath}.target`, "assign-place");
+        context.entities.push(graphEntity(updateTargetID, entity(updateTargetID, "000000000000000000000000000090e3", [[0x9e30, ref(local.id)], [0x9e31, ref(resultID)]])));
+        statementIDs.push(bindID, updateClosureID, updateTargetID);
+        continue;
+      }
       const value = emitExpression(assignment.right, `${context.functionID}:${path}:assignment:${index}`, "root", localContext, local.type);
       const statementID = stableID("execution", context.functionID, statementPath, "assign-place");
       context.entities.push(graphEntity(statementID, entity(statementID, "000000000000000000000000000090e3", [[0x9e30, ref(local.id)], [0x9e31, ref(value.id)]])));
@@ -516,6 +551,14 @@ function emitBlock(statements, path, context, resultType, requireReturn = true) 
   const blockID = stableID("execution", context.functionID, path, "block");
   context.entities.push(graphEntity(blockID, entity(blockID, "00000000000000000000000000009080", [[0x9800, refs(statementIDs)]])));
   return blockID;
+}
+
+function returnsMutableClosure(fn) {
+  if (fn.body.body.length !== 2 || fn.body.body[0].type !== "VariableDeclaration" || fn.body.body[0].kind !== "let" || fn.body.body[0].declarations.length !== 1 || fn.body.body[1].type !== "ReturnStatement") return false;
+  const capture = fn.body.body[0].declarations[0].id?.name;
+  const closure = fn.body.body[1].argument;
+  if (!capture || (closure?.type !== "ArrowFunctionExpression" && closure?.type !== "FunctionExpression")) return false;
+  return referencedIdentifiers(closure.body).includes(capture);
 }
 
 function isMutableClosureRun(statements, context) {

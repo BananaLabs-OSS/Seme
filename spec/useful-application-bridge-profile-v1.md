@@ -174,17 +174,17 @@ selected shapes. A direct bounded Lua provider and projector now cover the
 UAB-01 Boolean function/call slice without using either language as an
 intermediate representation.
 
-The repository currently justifies 30/36 UAB-v1 cells: UAB-01 through UAB-10
-pass all five evidence classes independently for Go, JavaScript, and Lua. It
-does not yet justify any other cell because:
+The repository currently justifies 31/36 UAB-v1 cells: UAB-01 through UAB-10
+pass all five evidence classes independently for Go, JavaScript, and Lua, and
+UAB-11 passes all five evidence classes for JavaScript. It does not yet
+justify any other cell because:
 
 - the Core checkpoint sequence and both cumulative architectural composition
   gates are complete, establishing the prerequisite for this profile;
-- current proofs remain primarily isolated bounded shapes rather than UAB-11's
-  cumulative application;
-- some Go and JavaScript provider recognition remains deliberately
-  shape-constrained;
-- JavaScript projection does not cover its general runtime semantics; and
+- Go and Lua do not yet pass the complete cumulative UAB-11 gate;
+- some Go and Lua provider recognition remains deliberately shape-constrained;
+- the three language projections have not yet proved one byte-identical
+  canonical UAB-12 application; and
 - every language bridge remains deliberately bounded to the capabilities
   evidenced by this profile rather than claiming its full ecosystem.
 

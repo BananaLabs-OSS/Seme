@@ -193,6 +193,12 @@ function projectBlock(id, context, indent) {
   const localContext = { ...context, locals: new Map(context.locals) };
   const lines = [];
   for (let index = 0; index < statements.length; index += 1) {
+    const statefulAssignment = projectStatefulAssignment(statements, index, localContext);
+    if (statefulAssignment) {
+      lines.push(`${indent}${statefulAssignment.line}`);
+      index += statefulAssignment.consumed - 1;
+      continue;
+    }
     const statement = required(context.graph, statements[index]);
     if (statement.schema === schema.bindLocal || statement.schema === schema.declarePlace) {
 	  const mutable = statement.schema === schema.declarePlace;
@@ -260,6 +266,28 @@ function projectBlock(id, context, indent) {
     fail("javascript_projection.unsupported_statement");
   }
   return lines.join("\n");
+}
+
+function projectStatefulAssignment(statementIDs, index, context) {
+  if (index + 2 >= statementIDs.length) return undefined;
+  const bind = required(context.graph, statementIDs[index]);
+  const updateClosure = required(context.graph, statementIDs[index + 1]);
+  const updateTarget = required(context.graph, statementIDs[index + 2]);
+  if (bind.schema !== schema.bindLocal || updateClosure.schema !== schema.assignPlace || updateTarget.schema !== schema.assignPlace) return undefined;
+  const temporary = required(context.graph, reference(field(bind, 0x9d10)), schema.localBinding);
+  const call = required(context.graph, reference(field(temporary, 0x9d02)), schema.statefulIndirectCall);
+  const closure = context.locals.get(reference(field(updateClosure, 0x9e30)));
+  const target = context.locals.get(reference(field(updateTarget, 0x9e30)));
+  if (!closure?.mutable || !target?.mutable) fail("javascript_projection.stateful_assignment_target");
+  const state = required(context.graph, reference(field(updateClosure, 0x9e31)), schema.transitionState);
+  const result = required(context.graph, reference(field(updateTarget, 0x9e31)), schema.transitionResult);
+  const stateRead = required(context.graph, reference(field(state, 0xa0060)), schema.localRead);
+  const resultRead = required(context.graph, reference(field(result, 0xa0070)), schema.localRead);
+  if (reference(field(stateRead, 0x9d20)) !== temporary.id || reference(field(resultRead, 0x9d20)) !== temporary.id) fail("javascript_projection.stateful_assignment_transition");
+  const callee = required(context.graph, reference(field(call, 0xa0350)), schema.placeRead);
+  if (reference(field(callee, 0x9e20)) !== reference(field(updateClosure, 0x9e30))) fail("javascript_projection.stateful_assignment_closure");
+  const arguments_ = references(field(call, 0xa0351)).map((id) => projectExpression(id, context));
+  return { consumed: 3, line: `${target.name} = ${closure.name}(${arguments_.join(", ")});` };
 }
 
 function projectMutableInvocationBlock(statementIDs, context, indent) {

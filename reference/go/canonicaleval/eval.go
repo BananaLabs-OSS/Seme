@@ -395,6 +395,28 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 		t, err := field(e, 0x9330)
 		return t.Reference, err == nil && t.Tag == 6
 	}
+	if e.Schema == id(0x9032) {
+		base, baseErr := field(e, 0x9320)
+		member, memberErr := field(e, 0x9321)
+		if baseErr != nil || memberErr != nil || base.Tag != 6 || member.Tag != 6 {
+			return wire.ID{}, false
+		}
+		baseType, known := expressionType(g, base.Reference)
+		record, exists := g.Entities[baseType]
+		declaration, memberExists := g.Entities[member.Reference]
+		if !known || !exists || record.Schema != id(0x9030) || !memberExists || declaration.Schema != id(0x9031) {
+			return wire.ID{}, false
+		}
+		members, listErr := field(record, 0x9301)
+		owned := false
+		if listErr == nil && members.Tag == 7 {
+			for _, candidate := range members.List {
+				owned = owned || candidate.Tag == 6 && candidate.Reference == member.Reference
+			}
+		}
+		valueType, typeErr := field(declaration, 0x9311)
+		return valueType.Reference, owned && typeErr == nil && valueType.Tag == 6
+	}
 	if e.Schema == id(0xa013) {
 		t, err := field(e, 0xa0130)
 		return t.Reference, err == nil && t.Tag == 6
@@ -479,8 +501,11 @@ func execBlock(g wire.Envelope, block wire.ID, env map[wire.ID]Value, budget int
 				return Value{}, false, er
 			}
 			value, er := eval(g, argument, env, budget-1)
-			if er != nil || value.Kind != "bool" {
-				return Value{}, false, fmt.Errorf("canonicaleval.effect_value")
+			if er != nil {
+				return Value{}, false, fmt.Errorf("canonicaleval.effect_value:%w", er)
+			}
+			if value.Kind != "bool" {
+				return Value{}, false, fmt.Errorf("canonicaleval.effect_value_kind:%s", value.Kind)
 			}
 			holder.runtime.trace = append(holder.runtime.trace, EffectObservation{Capability: capability, Value: value.Bool})
 		case id(0x9081):
@@ -732,7 +757,7 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 		arguments, ae := field(e, argumentsField)
 		callee, err := eval(g, calleeID, env, budget-1)
 		if ce != nil || ae != nil || err != nil || arguments.Tag != 7 || callee.Kind != "closure" || callee.closure == nil || callee.closure.mutable != stateful {
-			return Value{}, fmt.Errorf("canonicaleval.indirect_call")
+			return Value{}, fmt.Errorf("canonicaleval.indirect_call:callee=%s:mutable=%v:stateful=%v:cause=%v", callee.Kind, callee.closure != nil && callee.closure.mutable, stateful, err)
 		}
 		result, next, err := invokeClosure(g, callee.closure, arguments, env, budget-1)
 		if err != nil {
@@ -1021,10 +1046,10 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 		return Value{Kind: "bytes", Bytes: hex.EncodeToString(v.Bytes)}, nil
 	case id(0x90b0):
 		v, er := field(e, 0x9b00)
-		if er != nil || v.Tag != 1 || v.Unsigned > 1 {
+		if er != nil || (v.Tag != 1 && v.Tag != 2) {
 			return Value{}, fmt.Errorf("canonicaleval.bool_literal")
 		}
-		return Value{Kind: "bool", Bool: v.Unsigned == 1}, nil
+		return Value{Kind: "bool", Bool: v.Tag == 2}, nil
 	case id(0x9014):
 		l, r, er := bin(0x9140, 0x9141)
 		if er != nil {
@@ -1511,8 +1536,11 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.option_fields")
 		}
 		v, er := eval(g, valueID, env, budget-1)
-		if er != nil || v.Kind != "option" {
-			return Value{}, fmt.Errorf("canonicaleval.option")
+		if er != nil {
+			return Value{}, fmt.Errorf("canonicaleval.option:%w", er)
+		}
+		if v.Kind != "option" {
+			return Value{}, fmt.Errorf("canonicaleval.option_kind:%s", v.Kind)
 		}
 		if v.Variant == "none" {
 			b, be := refField(0xa0631)
@@ -1539,8 +1567,11 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.result_fields")
 		}
 		v, er := eval(g, valueID, env, budget-1)
-		if er != nil || v.Kind != "result" || v.Payload == nil {
-			return Value{}, fmt.Errorf("canonicaleval.result")
+		if er != nil {
+			return Value{}, fmt.Errorf("canonicaleval.result:%w", er)
+		}
+		if v.Kind != "result" || v.Payload == nil {
+			return Value{}, fmt.Errorf("canonicaleval.result_kind:%s", v.Kind)
 		}
 		var binding, body wire.ID
 		if v.Variant == "ok" {

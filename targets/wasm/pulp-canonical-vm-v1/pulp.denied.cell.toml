@@ -1,0 +1,14 @@
+schema_version = 1
+name = "seme-canonical-vm-denied"
+version = "1.0.0"
+wasm = "canonical-vm.wasm"
+
+provides = ["seme.evaluate.v1"]
+consumes = []
+capabilities = []
+
+shared_memory_groups = []
+dedicated_thread = false
+snapshotable = false
+
+[config]
