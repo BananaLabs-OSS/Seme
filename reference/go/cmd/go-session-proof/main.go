@@ -46,14 +46,18 @@ func main() {
 		return nil
 	}))
 	moduleData, err := os.ReadFile(filepath.Join(*project, "go.mod"))
-	fatal(err)
-	moduleRoot := ""
-	fields := strings.Fields(string(moduleData))
-	for i := 0; i+1 < len(fields); i++ {
-		if fields[i] == "module" {
-			moduleRoot = fields[i+1]
-			break
+	moduleRoot := *packagePath
+	if err == nil {
+		moduleRoot = ""
+		fields := strings.Fields(string(moduleData))
+		for i := 0; i+1 < len(fields); i++ {
+			if fields[i] == "module" {
+				moduleRoot = fields[i+1]
+				break
+			}
 		}
+	} else if !os.IsNotExist(err) {
+		fatal(err)
 	}
 	if moduleRoot == "" {
 		fatal(fmt.Errorf("go.mod module path missing"))

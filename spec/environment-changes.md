@@ -232,3 +232,49 @@ using temporary caches. Lua compound tests reused the existing Neovim/LuaJIT
 runtime with temporary XDG paths. A blocked automatic Go 1.26 download wrote
 nothing. No software, dependency, global setting, SSH setting, or persistent
 environment configuration was installed or changed.
+
+## 2026-09-09 — Lua UAB-03 through UAB-11 verification
+
+Lua UAB-03 through UAB-11 used the existing Node 22 runtime, Go 1.25.6
+toolchain, Neovim 0.11.2 embedded LuaJIT 2.1 runtime, Seme bootstrap, pinned
+Pulp source at `acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`, and the already pinned
+repository-local `acorn@8.15.0` dependency. Each gate created an automatically
+removed `mktemp` directory under `${TMPDIR:-/tmp}`; Go and runtime caches were
+redirected there with `GOCACHE` and `XDG_CACHE_HOME`, and Neovim data, state,
+and cache paths were redirected with `XDG_DATA_HOME`, `XDG_STATE_HOME`, and
+`XDG_CACHE_HOME`. No timeout override was set. No software, dependency, global
+setting, SSH setting, or persistent environment configuration was installed
+or changed.
+
+## 2026-09-09 — Core v33 through v35 reproduction
+
+Core v33 through v35 generation and reproduction used the existing Go 1.25.6
+toolchain and Seme bootstrap. Generation output and `GOCACHE` lived in each
+gate's automatically removed `${TMPDIR:-/tmp}` directory. The v35 gate
+regenerated v2 through v35 canonical module artifacts and compared them with
+the checked artifacts. No timeout override was set, and no software,
+dependency, global setting, SSH setting, or persistent environment
+configuration was installed or changed.
+
+## 2026-09-09 — shared cross-language UAB-12 verification
+
+UAB-12 used the existing Go 1.25.6 toolchain, Node 22 runtime, Neovim
+0.11.2/LuaJIT 2.1 runtime, Seme bootstrap, pinned Pulp source, and the existing
+repository-local Acorn dependency. Its generated Go, JavaScript, Lua,
+canonical, Wasm, and Pulp evidence and all tool caches were confined to an
+automatically removed `${TMPDIR:-/tmp}` directory; `GOCACHE`,
+`XDG_CACHE_HOME`, and Neovim's XDG data/state/cache paths were redirected into
+that directory. No timeout override was set. No software, dependency, global
+setting, SSH setting, or persistent environment configuration was installed
+or changed.
+
+## 2026-09-09 — UAB-v1 completion audit
+
+The completion audit reused the existing toolchains and dependencies above.
+Read-only default cache paths were avoided with process-local `GOCACHE` and
+XDG paths under `/tmp`. The semantic-module audit was rerun with the documented
+process-local `SEME_SEMANTIC_STEP_TIMEOUT` first set to 300 seconds after its
+120-second default expired and then to 900 seconds when one validator exceeded
+300 seconds; neither value persisted beyond its command. No
+software, dependency, global setting, SSH setting, or persistent environment
+configuration was installed or changed.

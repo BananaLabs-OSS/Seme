@@ -12,7 +12,7 @@ XDG_CACHE_HOME="$work/cache"; export XDG_CACHE_HOME
 if [ -n "${SEME_PURE_WASM_LOWER:-}" ]; then
   cp "$SEME_PURE_WASM_LOWER" "$work/lower"
 else
-  (cd "$repo/reference/go" && go build -buildvcs=false -o "$work/lower" ./cmd/pure-wasm-lower)
+  (cd "$repo/reference/go" && go build -buildvcs=false -o "$work/lower" ./cmd/pure-wasm-lower && go build -buildvcs=false -o "$work/eval" ./cmd/canonical-eval)
 fi
 
 cd "$repo"
@@ -30,6 +30,16 @@ node reference/js/javascript-provider-cli.mjs \
 bootstrap/seme-k0-linux-amd64 compiler/g1-compiler.k0 "$work/relift.g1" "$work/relift.seme"
 cmp "$work/package.seme" "$work/relift.seme"
 
+node reference/js/javascript-uab-01-vectors.mjs > "$work/vectors.json"
+node reference/js/javascript-package-native-runner.mjs fixtures/javascript-uab-01/application.js "$work/vectors.json" > "$work/original.json"
+node reference/js/javascript-package-native-runner.mjs "$work/projected.mjs" "$work/vectors.json" > "$work/projected.json"
+cmp "$work/original.json" "$work/projected.json"
+if [ ! -x "$work/eval" ]; then
+  (cd "$repo/reference/go" && go build -buildvcs=false -o "$work/eval" ./cmd/canonical-eval)
+fi
+"$work/eval" "$work/package.seme" "$work/vectors.json" --named-rejections > "$work/canonical.json"
+node -e 'const f=require("fs"),u=require("util"),n=JSON.parse(f.readFileSync(process.argv[1])).valid,c=JSON.parse(f.readFileSync(process.argv[2]));const cv=Object.fromEntries(Object.entries(c.valid).map(([k,v])=>[k,v.i64]));if(!u.isDeepStrictEqual(n,cv)||JSON.stringify(Object.keys(c.rejected).sort())!==JSON.stringify(["wrong-arity","wrong-type"]))process.exit(1)' "$work/original.json" "$work/canonical.json"
+
 "$work/lower" "$work/package.seme" "$work/package.wasm" "$work/package-abi.json"
 "$work/lower" "$work/package.seme" "$work/package-second.wasm" "$work/package-second-abi.json"
 cmp "$work/package.wasm" "$work/package-second.wasm"
@@ -44,6 +54,8 @@ node reference/js/pure-function-runner.mjs "$work/package.wasm" \
   f9ffffffffffffff0500000000000000 > "$work/standalone.log"
 rg -q '"response":"0c00000000000000"' "$work/standalone.log"
 rg -q '"response":"feffffffffffffff"' "$work/standalone.log"
+node reference/js/pure-function-runner.mjs "$work/package.wasm" 00 > "$work/malformed-target.log"
+rg -q '"status":[1-9][0-9]*,"response":""' "$work/malformed-target.log"
 
 mkdir "$work/pulp" "$work/pulp-pinned"
 git -C "$pulp_repo" archive "$pulp_commit" | tar -x -C "$work/pulp-pinned"
@@ -53,5 +65,15 @@ cp "$work/package.wasm" "$work/pulp/pure-function.wasm"
 "$work/pulp-runner" -manifest "$work/pulp/pulp.cell.toml" \
   -provider seme.function-v1 -request 07000000000000000500000000000000 > "$work/pulp.log" 2>&1
 rg -q '"response":"0c00000000000000"' "$work/pulp.log"
+if "$work/pulp-runner" -manifest "$work/pulp/pulp.cell.toml" \
+  -provider seme.function-v1 -request 00 > "$work/pulp-malformed.log" 2>&1; then exit 1; fi
+
+printf '%s\n' '/** @param {bigint} base @param {bigint} delta @returns {bigint} */' \
+  'export function Run(base, delta) { return base + delta; }' > "$work/coercive.js"
+if node reference/js/javascript-provider-cli.mjs --source "$work/coercive.js" \
+  --module modules/execution/v30/module.g1 --package example.test/uab01-reject \
+  --entry Run --revision 1 --out "$work/rejected.g1" > "$work/rejected.log" 2>&1; then exit 1; fi
+rg -q 'javascript.i64_arithmetic_requires_asIntN:' "$work/rejected.log"
+test ! -e "$work/rejected.g1"
 
 echo "JavaScript UAB-01: multi-source lift, native parity, Wasm/Pulp parity, projection/re-lift, and rejection pass"

@@ -39,7 +39,10 @@ node "$repo/reference/js/javascript-uab-10-native-runner.mjs" "$renamed" > "$wor
 node "$repo/reference/js/javascript-uab-10-native-runner.mjs" "$work/projected.js" > "$work/projected.json"
 cmp "$work/original.json" "$work/formatted.json"; cmp "$work/original.json" "$work/renamed.json"; cmp "$work/original.json" "$work/projected.json"
 
-(cd "$repo/reference/go" && go test -buildvcs=false ./canonicaleval ./wasmtarget && go build -buildvcs=false -o "$work/lower" ./cmd/pure-wasm-lower)
+(cd "$repo/reference/go" && go test -buildvcs=false ./canonicaleval ./wasmtarget && go build -buildvcs=false -o "$work/lower" ./cmd/pure-wasm-lower && go build -buildvcs=false -o "$work/eval" ./cmd/canonical-eval)
+node -e 'const inputs=["0","7","-1","9223372036854775807","-9223372036854775808"];process.stdout.write(JSON.stringify({valid:inputs.map((x,i)=>({name:`case-${i}`,arguments:[{kind:"i64",i64:x}],result:{kind:"i64",i64:x}})),malformed:[{name:"wrong-type",arguments:[{kind:"bool",bool:true}]}]})+"\n")' > "$work/vectors.json"
+"$work/eval" "$work/renamed.seme" "$work/vectors.json" --named-rejections > "$work/canonical.json"
+node -e 'const f=require("fs"),u=require("util"),n=JSON.parse(f.readFileSync(process.argv[1])),c=JSON.parse(f.readFileSync(process.argv[2]));const cv=Object.entries(c.valid).sort(([a],[b])=>a.localeCompare(b)).map(([,v],i)=>({input:["0","7","-1","9223372036854775807","-9223372036854775808"][i],output:v.i64}));if(!u.isDeepStrictEqual(n,cv)||JSON.stringify(Object.keys(c.rejected))!==JSON.stringify(["wrong-type"]))process.exit(1)' "$work/renamed.json" "$work/canonical.json"
 "$work/lower" "$work/renamed.seme" "$work/program.wasm" "$work/abi.json"
 rg -q '"request_size": 8' "$work/abi.json"; rg -q '"response_size": 8' "$work/abi.json"
 node "$repo/reference/js/pure-function-runner.mjs" "$work/program.wasm" 0000000000000000 0700000000000000 ffffffffffffffff ffffffffffffff7f 0000000000000080 > "$work/wasm.log"

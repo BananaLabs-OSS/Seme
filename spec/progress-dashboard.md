@@ -1,6 +1,6 @@
 # Seme progress dashboard
 
-Snapshot: 2026-09-09 after the Core v30 cumulative composition proof.
+Snapshot: 2026-09-09 after the UAB-v1 exact cross-language application proof.
 
 Percentages answer different questions and must not be conflated:
 
@@ -11,13 +11,16 @@ Percentages answer different questions and must not be conflated:
 | Collection sequence | 100% | All five planned checkpoints v21 through v25 are implemented and independently gated. This is completion of that bounded sequence, not all collection behavior. |
 | Bounded Go/JavaScript semantic bridge | about 82% | Estimate for the deliberately supported, tested language subset—not either complete language. |
 | Useful small-application subset | about 75% | Estimate against the semantics needed for modest deterministic applications. |
-| Useful Application Bridge Profile v1 | 14/36 cells (38.89%) | UAB-01 through UAB-04 pass all five evidence classes independently for Go, JavaScript, and Lua; Go and JavaScript also pass UAB-05. The other 22 cells remain unclaimed. |
+| Useful Application Bridge Profile v1 | 36/36 cells (100%) | UAB-01 through UAB-11 pass all five evidence classes independently for Go, JavaScript, and Lua. UAB-12 projects one shared application into all three languages, requires byte-identical re-lift, and passes 2,048 observations through native, canonical, Wasm, and pinned-Pulp realizations. This is 100% of the frozen bounded profile, not complete language support. |
 | UAB-02 exact value bridge | complete | All three languages pass shared scalar, aggregate-collection, and tagged-composite observations through original and projected native source, structural canonical evaluation, standalone Wasm, and pinned Pulp, with representation-appropriate rejection evidence. |
 | UAB-03 compositional control flow | complete | All three languages pass shared locals, mutation, modular arithmetic, comparison, hazardous short-circuit, conditional, loop, and early-return observations through all five evidence paths. |
 | UAB-04 collection operations | Go/JavaScript/Lua complete | All three languages pass construction, length, checked indexing, traversal, immutable update/append/removal, and map lookup/insert/removal through original/projected native code, canonical evaluation, standalone Wasm, and pinned Pulp with direct rejection evidence. |
-| UAB-05 bounded dynamic dispatch | Go/JavaScript complete; Lua pending | Go and JavaScript pass frozen structural interfaces/protocols, exact witnesses, native methods, and bounded dynamic dispatch through all five paths; language-specific method and prototype behavior remains outside the exact neutral subset. |
+| UAB-05 bounded dynamic dispatch | Go/JavaScript/Lua complete | All three bridges pass frozen structural interfaces/protocols, exact witnesses, native equivalents, and bounded dynamic dispatch through all five evidence paths; language-specific object-model behavior remains outside the exact neutral subset. |
+| UAB-06 through UAB-10 | Go/JavaScript/Lua complete | The bounded profile proves closures, explicit transitions, fallibility, authorized effects, and stable semantic identity independently in all three languages. |
+| UAB-11 cumulative application | Go/JavaScript/Lua complete | Each bridge independently passes the 2,048-command cumulative stateful application through original/projected native code, canonical execution, standalone Wasm, pinned Pulp, and adversarial rejection. |
+| UAB-12 exact cross-language application | complete | One canonical application projects to Go, JavaScript, and Lua; all projections re-lift byte-identically and produce the same 2,048 observations across every realization. |
 | Broad Go/JavaScript ecosystem compatibility | under 5% | Real packages depend on much larger language, runtime, standard-library, build, and foreign-interface surfaces. |
-| Universal-language vision | about 2% | Only Go and JavaScript have bounded adapters; universal multi-runtime interoperability remains a long-horizon goal. |
+| Universal-language vision | about 2% | Go, JavaScript, and Lua have bounded adapters; universal multi-runtime interoperability remains a long-horizon goal. |
 
 The checkpoint percentage measures delivery against a finite internal roadmap.
 It is not a claim that Seme supports the same percentage of Go, JavaScript, or

@@ -54,8 +54,10 @@ meaning. `N/A` is not permitted in v1.
 The frozen machine-readable denominator and current evidence claims live in
 `conformance/uab-v1/scorecard.json`. Run `./scripts/check-uab-v1-scorecard.sh`
 to validate its exact 36-cell shape and compute the per-language and overall
-scores. Evidence names may be added to a cell only by a gate that directly
-produces that evidence.
+scores. That command validates declarations, not their truth. Run
+`./scripts/check-uab-v1-complete-profile.sh` to execute the authoritative gates
+for every claimed cell. Evidence names may be added to a cell only by a gate
+that directly produces that evidence.
 
 ## Required application proof
 

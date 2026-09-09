@@ -258,11 +258,10 @@ func checkSessionPackages(snapshot DocumentSnapshot) ([]*checkedSessionPackage, 
 	for path := range groups {
 		sort.Strings(groups[path])
 	}
-	// A single-package editor snapshot may use a semantic package identity that
-	// intentionally differs from its on-disk go.mod path. Preserve that
-	// long-standing mode while reserving ModulePath for genuine multi-package
-	// source closures.
-	if len(groups) == 1 && snapshot.PackagePath != module {
+	// An editor snapshot may give its root package a semantic identity that
+	// intentionally differs from its on-disk go.mod path. Remap only that root;
+	// genuine imported subpackages retain their module-relative identities.
+	if snapshot.PackagePath != module {
 		if rootFiles, exists := groups[module]; exists {
 			delete(groups, module)
 			groups[snapshot.PackagePath] = rootFiles

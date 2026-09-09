@@ -41,6 +41,6 @@ while IFS= read -r row; do
   printf '%s\n' "$row" >>"$work/ledger.tsv"
 done <"$work/q.tsv"
 cmp "$work/q.tsv" "$work/ledger.tsv"
-sed 's/Seme.observe(first)/print(first)/' "$source">"$work/bad.lua";if node "$repo/reference/lua/lua-provider-cli.mjs" --source "$work/bad.lua" --module "$module" --package bad --revision 1 --entry Observe --out "$work/bad.g1" 2>"$work/bad.log";then exit 1;fi;rg -q 'lua.unsupported_statement:.*:[1-9][0-9]*:1' "$work/bad.log"
+sed 's/Seme.observe(first)/print(first)/' "$source">"$work/bad.lua";if node "$repo/reference/lua/lua-provider-cli.mjs" --source "$work/bad.lua" --module "$module" --package bad --revision 1 --entry Observe --out "$work/bad.g1" 2>"$work/bad.log";then exit 1;fi;rg -q 'lua.call_statement_profile:.*:[1-9][0-9]*:1' "$work/bad.log"
 node -e 'const s=require(process.argv[1]),e=["lift","native_parity","target_parity","projection_round_trip","rejection"];require("assert").deepStrictEqual(s.languages.lua["UAB-09"],e)' "$repo/conformance/uab-v1/scorecard.json"
 echo 'Lua UAB-09 complete acceptance: all five evidence classes pass'
