@@ -43,8 +43,8 @@ func TestProjectPackagesPreservesOwnershipCallsAndRelift(t *testing.T) {
 			undeclared[i].Dependencies = nil
 		}
 	}
-	if _, e := ProjectPackages([]byte(first.CanonicalG1), undeclared); e == nil || !strings.Contains(e.Error(), "undeclared_dependency") {
-		t.Fatalf("accepted undeclared cross-package call: %v", e)
+	if output, e := ProjectPackages([]byte(first.CanonicalG1), undeclared); e == nil || !strings.HasPrefix(e.Error(), "go_projection.undeclared_dependency:") || output != nil {
+		t.Fatalf("undeclared call result=%#v error=%v", output, e)
 	}
 	inaccessible := clonePackageMetadata(first.Packages)
 	for i := range inaccessible {
@@ -64,8 +64,8 @@ func TestProjectPackagesPreservesOwnershipCallsAndRelift(t *testing.T) {
 		}
 		inaccessible[i].Functions = public
 	}
-	if _, e := ProjectPackages([]byte(first.CanonicalG1), inaccessible); e == nil || !strings.Contains(e.Error(), "inaccessible_member") {
-		t.Fatalf("accepted cross-package call to private member: %v", e)
+	if output, e := ProjectPackages([]byte(first.CanonicalG1), inaccessible); e == nil || !strings.HasPrefix(e.Error(), "go_projection.inaccessible_member:") || output != nil {
+		t.Fatalf("private call result=%#v error=%v", output, e)
 	}
 	if len(projected) != 3 {
 		t.Fatalf("files=%d", len(projected))
@@ -166,6 +166,22 @@ func TestProjectPackagesOwnsAndEmitsPrivateHelpers(t *testing.T) {
 	}
 	if !foundPrivate {
 		t.Fatalf("private membership missing: %#v", first.Packages)
+	}
+	badMember := clonePackageMetadata(first.Packages)
+	badMember[0].Members = append(badMember[0].Members, goprovider.PackageFunctionMetadata{ID: "ffffffffffffffffffffffffffffffff", Name: "forged", Result: badMember[0].Members[0].Result})
+	if output, projectErr := ProjectPackages([]byte(first.CanonicalG1), badMember); projectErr == nil || !strings.HasPrefix(projectErr.Error(), "go_projection.function_not_program_member:") || output != nil {
+		t.Fatalf("member forgery result=%#v error=%v", output, projectErr)
+	}
+	badExport := clonePackageMetadata(first.Packages)
+	for i := range badExport {
+		for j := range badExport[i].Members {
+			if badExport[i].Members[j].Name == "normalize" {
+				badExport[i].Members[j].Exported = true
+			}
+		}
+	}
+	if output, projectErr := ProjectPackages([]byte(first.CanonicalG1), badExport); projectErr == nil || !strings.HasPrefix(projectErr.Error(), "go_projection.export_missing:") || output != nil {
+		t.Fatalf("export forgery result=%#v error=%v", output, projectErr)
 	}
 	projected, err := ProjectPackages([]byte(first.CanonicalG1), first.Packages)
 	if err != nil {
