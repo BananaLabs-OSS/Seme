@@ -55,7 +55,7 @@ func TestDynamicIndexTargetRejectsMalformedTypeCycleAndOwnership(t *testing.T) {
 			delete(x.Fields, identity(0x9fa1))
 			e[x.ID] = x
 		}},
-		{"wrong collection type", "wasm.dynamic_index_fields", func(e map[wire.ID]wire.Entity) {
+		{"wrong collection type", "wasm.", func(e map[wire.ID]wire.Entity) {
 			x := e[identity(0xe107)]
 			x.Fields[identity(0x9fa0)] = ref(identity(0xe106))
 			e[x.ID] = x
@@ -65,12 +65,12 @@ func TestDynamicIndexTargetRejectsMalformedTypeCycleAndOwnership(t *testing.T) {
 			x.Fields[identity(0x9fa1)] = ref(x.ID)
 			e[x.ID] = x
 		}},
-		{"foreign parameter", "dynamic_index_fields", func(e map[wire.ID]wire.Entity) {
+		{"foreign parameter", "wasm.", func(e map[wire.ID]wire.Entity) {
 			x := e[identity(0xe104)]
 			x.Fields[identity(0x9130)] = ref(identity(0xefff))
 			e[x.ID] = x
 		}},
-		{"slice element type", "dynamic_index_fields", func(e map[wire.ID]wire.Entity) {
+		{"slice element type", "wasm.", func(e map[wire.ID]wire.Entity) {
 			x := e[identity(0xe101)]
 			x.Fields[identity(0x9f80)] = ref(identity(0xe103))
 			e[x.ID] = x

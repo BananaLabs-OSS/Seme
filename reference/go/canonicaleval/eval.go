@@ -767,6 +767,43 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.dynamic_index")
 		}
 		return base.Items[raw.Uint64()], nil
+	case id(0x90f6):
+		binding, er := refField(0x9f60)
+		value, exists := env[binding]
+		if er != nil || !exists || g.Entities[binding].Schema != id(0x90f5) {
+			return Value{}, fmt.Errorf("canonicaleval.iteration_read")
+		}
+		return value, nil
+	case id(0x90f7):
+		collectionID, ce := refField(0x9f70)
+		initialID, ie := refField(0x9f71)
+		accumulatorID, ae := refField(0x9f72)
+		elementID, ee := refField(0x9f73)
+		bodyID, be := refField(0x9f74)
+		if ce != nil || ie != nil || ae != nil || ee != nil || be != nil || g.Entities[accumulatorID].Schema != id(0x90f5) || g.Entities[elementID].Schema != id(0x90f5) {
+			return Value{}, fmt.Errorf("canonicaleval.fold_fields")
+		}
+		collection, er := eval(g, collectionID, env, budget-1)
+		if er != nil {
+			return Value{}, fmt.Errorf("canonicaleval.fold_collection:%w", er)
+		}
+		if (collection.Kind != "slice" && collection.Kind != "array") || len(collection.Items) > 512 {
+			return Value{}, fmt.Errorf("canonicaleval.fold_collection")
+		}
+		accumulator, er := eval(g, initialID, env, budget-1)
+		if er != nil {
+			return Value{}, fmt.Errorf("canonicaleval.fold_initial:%w", er)
+		}
+		for _, element := range collection.Items {
+			scoped := cloneEnv(env)
+			scoped[accumulatorID] = accumulator
+			scoped[elementID] = element
+			accumulator, er = eval(g, bodyID, scoped, budget-1)
+			if er != nil {
+				return Value{}, fmt.Errorf("canonicaleval.fold_body:%w", er)
+			}
+		}
+		return accumulator, nil
 	case id(0x90f9):
 		baseID, be := refField(0x9f90)
 		if be != nil {
@@ -777,6 +814,34 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.length")
 		}
 		return Value{Kind: "i64", I64: fmt.Sprint(len(base.Items))}, nil
+	case id(0x90f7):
+		collectionID, ce := refField(0x9f70)
+		initialID, ie := refField(0x9f71)
+		accumulatorID, ae := refField(0x9f72)
+		elementID, ee := refField(0x9f73)
+		bodyID, be := refField(0x9f74)
+		accumulatorEntity, accumulatorOK := g.Entities[accumulatorID]
+		elementEntity, elementOK := g.Entities[elementID]
+		if ce != nil || ie != nil || ae != nil || ee != nil || be != nil || !accumulatorOK || !elementOK || accumulatorEntity.Schema != id(0x90f5) || elementEntity.Schema != id(0x90f5) || accumulatorID == elementID {
+			return Value{}, fmt.Errorf("canonicaleval.fold_fields")
+		}
+		collection, err := eval(g, collectionID, env, budget-1)
+		if err != nil || (collection.Kind != "slice" && collection.Kind != "array") || len(collection.Items) > 512 {
+			return Value{}, fmt.Errorf("canonicaleval.fold_collection")
+		}
+		accumulator, err := eval(g, initialID, env, budget-1)
+		if err != nil {
+			return Value{}, err
+		}
+		for _, element := range collection.Items {
+			next := cloneEnv(env)
+			next[accumulatorID], next[elementID] = accumulator, element
+			accumulator, err = eval(g, bodyID, next, budget-1)
+			if err != nil {
+				return Value{}, err
+			}
+		}
+		return accumulator, nil
 	case id(0xa068):
 		typeID, te := refField(0xa0680)
 		elements, ee := field(e, 0xa0681)

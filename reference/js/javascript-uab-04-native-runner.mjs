@@ -18,7 +18,7 @@ for (const item of vectors.valid) {
 let malformed = 0;
 for (const item of vectors.malformed) {
   try {
-    if (item.category === "index-kind") program.Evaluate(item.values.map(BigInt), Number(item.index), BigInt(item.replacement), BigInt(item.appended), BigInt(item.removeIndex), BigInt(item.keepKey), BigInt(item.removeKey));
+    if (item.category === "collection-kind") program.Evaluate("not-a-slice", BigInt(item.index), BigInt(item.replacement), BigInt(item.appended), BigInt(item.removeIndex), BigInt(item.keepKey), BigInt(item.removeKey));
     else invoke(item);
   } catch { malformed += 1; }
 }
