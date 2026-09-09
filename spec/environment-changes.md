@@ -319,3 +319,7 @@ Wasm, and Pulp runs plus all caches and copied Pulp sources lived in an
 automatically removed directory under `/tmp`. No software, dependency, global
 setting, SSH setting, or persistent environment configuration was installed
 or changed.
+
+The detached projected-tree materializer added immediately afterward used the
+same existing Go toolchain with a disposable `/tmp` `GOCACHE`; it installed or
+changed nothing outside repository source and temporary test directories.
