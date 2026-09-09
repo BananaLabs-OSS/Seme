@@ -166,7 +166,7 @@ and use the same provider, patch, target-contract, and conformance boundaries.
 
 ## 7. Useful Project Bridge v1
 
-Status: defined at 0/36; every project-level cell is initially unclaimed.
+Status: 1/36 cells (2.8%); Go UPB-01 passes all seven evidence classes.
 
 The completed UAB-v1 proves a bounded application semantic vocabulary. It does
 not by itself prove that Seme can preserve an ordinary project's source closure,
@@ -178,12 +178,14 @@ cell.
 UPB work now has neutral Project Contract v1 semantic snapshots and Project
 Contract v2 detached source inventories, an immutable contract catalog,
 composed instance validators, deterministic five-class Go discovery, a
-digest-addressed byte bundle, and bounded Go Project Build/UPB-01 foundation
-gates. These are foundations; the score remains 0/36 until the Go proof adds a
-true semantic multi-package projection, independent fidelity evidence, and the
-complete atomic adversary set. A downstream product may maintain an external pinned consumer
+digest-addressed byte bundle, a checked fidelity record, and a true bounded
+multi-package Go projector. Go UPB-01 regenerates tracked packages from
+canonical construction plus ownership extracted from the validated Project,
+restores nonsemantic regions from the detached bundle, passes native and target
+behavior, and re-lifts byte-identically. Its mapped gate establishes the first
+complete cell. A downstream product may maintain an external pinned consumer
 harness, but its source, names, architecture, and special cases do not enter
 Seme. In particular, Workbench is a possible later consumer, not the profile's
 fixture or success criterion. The empty baseline is validated by
-`../scripts/check-upb-v1-scorecard.sh`; shape validation is not execution
-evidence.
+`../scripts/check-upb-v1-scorecard.sh`; mapped claimed gates execute through
+`../scripts/check-upb-v1-claimed.sh`.

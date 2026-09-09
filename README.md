@@ -303,7 +303,8 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-starts at 0/36: no project-level cell is claimed yet. It measures complete
+is now 1/36 (2.8%): bounded Go UPB-01 is the first claimed project-level cell.
+The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
 seven evidence classes. Its shape-only baseline is reported by
@@ -319,15 +320,17 @@ comment/filename-only edits reproduce byte-identical artifacts; a dependency
 behavior edit changes them. Run `./scripts/check-go-project-build-v1.sh`. This
 is supporting evidence, not a completed seven-class UPB cell.
 
-Project Contract v2 now adds a separate canonical SourceInventory bound to the
-semantic ProjectSnapshot. The Go UPB-01 foundation discovers every file into
+Project Contract v2 adds a separate canonical SourceInventory bound to the
+semantic ProjectSnapshot. Go UPB-01 discovers every file into
 tracked, ignored, generated, vendored, or opaque classes; rejects unsafe paths
 and drift; emits and validates the inventory; captures detached digest-addressed
 bytes; preserves nonsemantic regions; and repeats the existing native,
 canonical, Wasm, and Pulp behavior proof. Run
-`./scripts/check-go-upb-01.sh`. The score remains 0/36 because a genuine
-semantic multi-package Go projection, independent fidelity record, and full
-atomic adversary set are still required.
+`./scripts/check-go-upb-01.sh`. Its canonical multi-package projector preserves
+package ownership and duplicate names, regenerates tracked Go, restores all
+other regions from the detached bundle, passes native tests, and re-lifts
+byte-identically. Checked fidelity and atomic adversary evidence complete all
+seven evidence classes for this bounded cell.
 
 UAB-01 is complete in all three language columns: native multi-source packages,
 typed named functions, parameters, and calls lift directly to canonical Seme,

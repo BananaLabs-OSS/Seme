@@ -46,9 +46,10 @@ func TestPublishProjectedRejectsSetsAndReclassificationWithoutPublication(t *tes
 		t.Fatal(err)
 	}
 	tests := map[string]map[string][]byte{
-		"missing": {},
-		"extra":   {"main.go": []byte("package main\n"), "extra.go": []byte("package main\n")},
-		"class":   {"main.go": []byte("// Code generated tool\npackage main\n")},
+		"missing":   {},
+		"collision": {"NOTICE": []byte("package main\n")},
+		"traversal": {"../escape.go": []byte("package main\n")},
+		"class":     {"projected.go": []byte("// Code generated tool\npackage main\n")},
 	}
 	for name, projected := range tests {
 		t.Run(name, func(t *testing.T) {

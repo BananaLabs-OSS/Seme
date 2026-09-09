@@ -7,11 +7,15 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"seme.local/reference/contractcatalog"
+	"seme.local/reference/goprojector"
 	"seme.local/reference/projectbundle"
+	"seme.local/reference/projectmetadata"
 	"seme.local/reference/projectroundtrip"
 	"seme.local/reference/projectsource"
+	"seme.local/reference/resolutionfidelity"
 	"seme.local/reference/sourceinventory"
 )
 
@@ -22,14 +26,16 @@ func main() {
 	}
 }
 func run() error {
-	var root, project, executionContract, packageContract, projectContract, out, copyTo string
+	var root, project, g1, moduleRoot, executionContract, packageContract, projectContract, out, copyTo string
 	flag.StringVar(&root, "root", "", "project root")
 	flag.StringVar(&project, "project", "", "validated semantic project")
+	flag.StringVar(&g1, "g1", "", "validated canonical construction graph used for projection")
+	flag.StringVar(&moduleRoot, "module", "example.test/go-project-build-v1", "native module path")
 	flag.StringVar(&executionContract, "execution-contract", "", "Execution v35 contract")
 	flag.StringVar(&packageContract, "package-contract", "", "Package v1 contract")
 	flag.StringVar(&projectContract, "project-contract", "", "Project v2 contract")
 	flag.StringVar(&out, "out", "", "inventory output")
-	flag.StringVar(&copyTo, "copy", "", "optional exact preserved-source destination")
+	flag.StringVar(&copyTo, "project-to", "", "optional semantic projection destination")
 	flag.Parse()
 	for _, required := range []struct{ name, value string }{{"root", root}, {"project", project}, {"execution-contract", executionContract}, {"package-contract", packageContract}, {"project-contract", projectContract}, {"out", out}} {
 		if required.value == "" {
@@ -39,7 +45,11 @@ func run() error {
 	if _, e := strictDirectory(root); e != nil {
 		return fmt.Errorf("root:%w", e)
 	}
+	projectedPublished := false
 	if copyTo != "" {
+		if g1 == "" || moduleRoot == "" {
+			return fmt.Errorf("projection_input_missing")
+		}
 		if !filepath.IsAbs(copyTo) {
 			return fmt.Errorf("copy_not_absolute")
 		}
@@ -84,7 +94,7 @@ func run() error {
 		return e
 	}
 	policy := projectsource.Policy{TrackedExtensions: []string{".go"}, IgnoredPrefixes: []string{".seme-cache/"}, IgnoredSuffixes: []string{"_test.go"}, VendoredPrefixes: []string{"vendor/"}, GeneratedHeader: []byte("// Code generated "), MaxFiles: 128, MaxFileBytes: 1 << 20, MaxTotalBytes: 8 << 20}
-	toolchain := projectsource.Toolchain{Language: "go", Toolchain: "go1.25.6", Profile: "upb-01-bounded-v1", SemanticRevision: "core-execution-v35"}
+	toolchain := projectsource.Toolchain{Language: "go", Toolchain: "go1.25.6-native/go1.26.0-provider", Profile: "linux-amd64/upb-01-bounded-v1", SemanticRevision: "go-upb01-policy-v1+core-execution-v35"}
 	snapshot, e := projectsource.Discover(root, "example.test/go-project-build-v1", toolchain, policy)
 	if e != nil {
 		return e
@@ -105,6 +115,13 @@ func run() error {
 	if e = sourceinventory.Validate(contracts.Project(), semantic, inventory); e != nil {
 		return e
 	}
+	fidelity, e := resolutionfidelity.Build(snapshot, "seme.uab/v1-go")
+	if e != nil {
+		return e
+	}
+	if e = resolutionfidelity.Validate(snapshot, "seme.uab/v1-go", fidelity); e != nil {
+		return e
+	}
 	bundle, e := projectbundle.Capture(root, snapshot, policy)
 	if e != nil {
 		return e
@@ -113,11 +130,50 @@ func run() error {
 		return e
 	}
 	if copyTo != "" {
-		if e = projectroundtrip.CopyVerified(root, copyTo, snapshot, policy); e != nil {
+		construction, readErr := readStrict(g1)
+		if readErr != nil {
+			return readErr
+		}
+		metadata, metadataErr := projectmetadata.Extract(semantic)
+		if metadataErr != nil {
+			return metadataErr
+		}
+		packages, projectionErr := goprojector.ProjectPackages(construction, metadata)
+		if projectionErr != nil {
+			return projectionErr
+		}
+		projected := map[string][]byte{}
+		for packagePath, data := range packages {
+			relative := ""
+			if packagePath != moduleRoot {
+				if !strings.HasPrefix(packagePath, moduleRoot+"/") {
+					return fmt.Errorf("projection_package_outside_module:%s", packagePath)
+				}
+				relative = strings.TrimPrefix(packagePath, moduleRoot+"/")
+			}
+			path := "seme_projected.go"
+			if relative != "" {
+				path = relative + "/seme_projected.go"
+			}
+			if _, duplicate := projected[path]; duplicate {
+				return fmt.Errorf("projection_path_duplicate:%s", path)
+			}
+			projected[path] = data
+		}
+		if _, e = projectroundtrip.PublishProjected(copyTo, snapshot, bundle, projected, policy); e != nil {
 			return e
 		}
+		projectedPublished = true
 	}
-	return writeAtomic(out, inventory)
+	if e = writeAtomic(out, inventory); e != nil {
+		if projectedPublished {
+			if rollbackErr := os.RemoveAll(copyTo); rollbackErr != nil {
+				return fmt.Errorf("inventory_publish:%v; projection_rollback:%v", e, rollbackErr)
+			}
+		}
+		return e
+	}
+	return nil
 }
 func writeAtomic(path string, data []byte) (err error) {
 	absolute, err := filepath.Abs(path)
@@ -150,7 +206,8 @@ func writeAtomic(path string, data []byte) (err error) {
 	if err = os.Link(name, absolute); err != nil {
 		return err
 	}
-	return os.Remove(name)
+	_ = os.Remove(name)
+	return nil
 }
 
 func strictDirectory(path string) (string, error) {
