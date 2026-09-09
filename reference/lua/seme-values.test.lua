@@ -42,4 +42,16 @@ assert(Seme.kind(Seme.lookup_zero(updated, Seme.text("missing"))) == "i64")
 assert(Seme.kind(Seme.lookup_zero(Seme.empty_map("text"), Seme.text("missing"))) == "text")
 assert(Seme.kind(Seme.lookup_zero(Seme.empty_map("bytes"), Seme.text("missing"))) == "bytes")
 assert(not pcall(Seme.lookup_zero, Seme.empty_map(), Seme.text("missing")))
+local function check(value)
+  return Seme.match_option(value, false, function(some)
+    return Seme.match_result(some,
+      function(ok) return Seme.bytes_equal(ok, Seme.bytes_literal("ok")) end,
+      function(err) return Seme.text_equal(err, "bad") end)
+  end)
+end
+assert(check(Seme.none()) == false)
+assert(check(Seme.some(Seme.ok(Seme.bytes("ok")))) == true)
+assert(check(Seme.some(Seme.ok(Seme.bytes("no")))) == false)
+assert(check(Seme.some(Seme.err(Seme.text("bad")))) == true)
+assert(check(Seme.some(Seme.err(Seme.text("other")))) == false)
 print("Lua compound adapter foundation: ok")

@@ -178,5 +178,27 @@ function Seme.lookup_zero(map, key)
   if item.value_kind == "bytes" then return Seme.bytes("") end
   error("seme.map_zero_unsupported", 2)
 end
+function Seme.bytes_literal(value) return Seme.bytes(value) end
+function Seme.bytes_equal(left, right)
+  return unpack_value(left, "bytes") == unpack_value(right, "bytes")
+end
+function Seme.text_equal(left, right)
+  local left_value = storage[left] and unpack_value(left, "text") or left
+  local right_value = storage[right] and unpack_value(right, "text") or right
+  if type(left_value) ~= "string" or type(right_value) ~= "string" then error("seme.expected_text", 2) end
+  return left_value == right_value
+end
+function Seme.match_option(option, none_value, some)
+  local item = unpack_value(option, "option")
+  if not item.some then return none_value end
+  if type(some) ~= "function" then error("seme.expected_match_callback", 2) end
+  return some(item.value)
+end
+function Seme.match_result(result, ok, error_)
+  local item = unpack_value(result, "result")
+  local callback = item.ok and ok or error_
+  if type(callback) ~= "function" then error("seme.expected_match_callback", 2) end
+  return callback(item.value)
+end
 
 return Seme

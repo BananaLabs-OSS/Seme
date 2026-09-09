@@ -9,6 +9,10 @@ const schema = {
   program: "00000000000000000000000000009015",
   boolType: "00000000000000000000000000009020",
   stringType: "00000000000000000000000000009040",
+  bytesType: "00000000000000000000000000009041",
+  resultType: "00000000000000000000000000009042",
+  resultOk: "00000000000000000000000000009043",
+  resultError: "00000000000000000000000000009044",
   stringLiteral: "00000000000000000000000000009050",
   integerLiteral: "00000000000000000000000000009070",
   block: "00000000000000000000000000009080",
@@ -75,6 +79,15 @@ const schema = {
   emptyMap: "0000000000000000000000000000a041",
   mapLookup: "0000000000000000000000000000a042",
   mapUpdate: "0000000000000000000000000000a043",
+  optionType: "0000000000000000000000000000a050",
+  optionNone: "0000000000000000000000000000a051",
+  optionSome: "0000000000000000000000000000a052",
+  bytesLiteral: "0000000000000000000000000000a064",
+  bytesEqual: "0000000000000000000000000000a065",
+  variantBinding: "0000000000000000000000000000a060",
+  variantBindingRead: "0000000000000000000000000000a061",
+  resultMatch: "0000000000000000000000000000a062",
+  optionMatch: "0000000000000000000000000000a063",
 };
 
 export function projectJavaScript(canonicalG1) {
@@ -323,6 +336,29 @@ function projectExpression(id, context) {
 		const value = BigInt.asIntN(64, unsigned(field(expression, 0x9700)));
 		return `${value}n`;
 	}
+	if (expression.schema === schema.bytesLiteral) return `Seme.bytes([${byteValues(field(expression, 0xa0640)).join(", ")}])`;
+	if (expression.schema === schema.bytesEqual) return `Seme.bytesEqual(${projectExpression(reference(field(expression, 0xa0650)), context)}, ${projectExpression(reference(field(expression, 0xa0651)), context)})`;
+	if (expression.schema === schema.optionNone) return "Seme.none()";
+	if (expression.schema === schema.optionSome) return `Seme.some(${projectExpression(reference(field(expression, 0xa0521)), context)})`;
+	if (expression.schema === schema.resultOk) return `Seme.ok(${projectExpression(reference(field(expression, 0x9411)), context)})`;
+	if (expression.schema === schema.resultError) return `Seme.error(${projectExpression(reference(field(expression, 0x9421)), context)})`;
+	if (expression.schema === schema.variantBindingRead) {
+		const binding = context.variants?.get(reference(field(expression, 0xa0610)));
+		if (!binding) fail("javascript_projection.variant_binding_scope");
+		return binding.name;
+	}
+	if (expression.schema === schema.optionMatch) {
+		const binding = required(context.graph, reference(field(expression, 0xa0632)), schema.variantBinding);
+		const name = text(field(binding, 0xa0600));
+		if (!/^[A-Za-z_$][\w$]*$/.test(name)) fail("javascript_projection.variant_binding_name");
+		return `Seme.matchOption(${projectExpression(reference(field(expression, 0xa0630)), context)}, () => ${projectMatchBlock(reference(field(expression, 0xa0631)), context)}, (${name}) => ${projectMatchBlock(reference(field(expression, 0xa0633)), { ...context, variants: new Map([...(context.variants || []), [binding.id, { name }]]) })})`;
+	}
+	if (expression.schema === schema.resultMatch) {
+		const ok = required(context.graph, reference(field(expression, 0xa0621)), schema.variantBinding), error = required(context.graph, reference(field(expression, 0xa0623)), schema.variantBinding);
+		const okName = text(field(ok, 0xa0600)), errorName = text(field(error, 0xa0600));
+		if (![okName, errorName].every((name) => /^[A-Za-z_$][\w$]*$/.test(name)) || okName === errorName) fail("javascript_projection.variant_binding_name");
+		return `Seme.matchResult(${projectExpression(reference(field(expression, 0xa0620)), context)}, (${okName}) => ${projectMatchBlock(reference(field(expression, 0xa0622)), { ...context, variants: new Map([...(context.variants || []), [ok.id, { name: okName }]]) })}, (${errorName}) => ${projectMatchBlock(reference(field(expression, 0xa0624)), { ...context, variants: new Map([...(context.variants || []), [error.id, { name: errorName }]]) })})`;
+	}
 	if (expression.schema === schema.fold) {
 		const accumulatorID = reference(field(expression, 0x9f72));
 		const elementID = reference(field(expression, 0x9f73));
@@ -483,11 +519,24 @@ function projectIndexExpression(id, context) {
 	return `Number(${projectExpression(id, context)})`;
 }
 
+function projectMatchBlock(id, context) {
+  const block = required(context.graph, id, schema.block);
+  const statements = references(field(block, 0x9800));
+  if (statements.length !== 1) fail("javascript_projection.match_block_shape");
+  const returned = required(context.graph, statements[0], schema.returned);
+  const values = references(field(returned, 0x9810));
+  if (values.length !== 1) fail("javascript_projection.match_block_shape");
+  return projectExpression(values[0], context);
+}
+
 function typeName(id, graph) {
   const type = required(graph, id);
   if (type.schema === schema.integerType) return "bigint";
   if (type.schema === schema.stringType) return "string";
   if (type.schema === schema.boolType) return "boolean";
+  if (type.schema === schema.bytesType) return "Uint8Array";
+  if (type.schema === schema.optionType) return `Seme.Option<${typeName(reference(field(type, 0xa0500)), graph)}>`;
+  if (type.schema === schema.resultType) return `Seme.Result<${typeName(reference(field(type, 0x9400)), graph)},${typeName(reference(field(type, 0x9401)), graph)}>`;
   if (type.schema === schema.recordType) return text(field(type, 0x9300));
   if (type.schema === schema.interfaceType) return text(field(type, 0xa0100));
   if (type.schema === schema.functionType) return `function(${references(field(type, 0xa0200)).map((parameter) => typeName(parameter, graph)).join(", ")}): ${typeName(reference(field(type, 0xa0201)), graph)}`;
@@ -569,5 +618,10 @@ function text(value) {
   } catch {
     fail("javascript_projection.invalid_utf8");
   }
+}
+function byteValues(value) {
+  const match = /^by ([-0-9a-f]*)$/.exec(atom(value));
+  if (!match || (match[1] !== "-" && (match[1].length % 2 !== 0 || !/^[0-9a-f]*$/.test(match[1])))) fail("javascript_projection.invalid_bytes");
+  return [...Buffer.from(match[1] === "-" ? "" : match[1], "hex")];
 }
 function fail(code) { throw new Error(code); }

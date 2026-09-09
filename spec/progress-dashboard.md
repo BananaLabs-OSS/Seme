@@ -12,7 +12,7 @@ Percentages answer different questions and must not be conflated:
 | Bounded Go/JavaScript semantic bridge | about 82% | Estimate for the deliberately supported, tested language subset—not either complete language. |
 | Useful small-application subset | about 75% | Estimate against the semantics needed for modest deterministic applications. |
 | Useful Application Bridge Profile v1 | 3/36 cells (8.33%) | UAB-01 passes all five evidence classes independently for Go, JavaScript, and Lua. The other 33 cells remain unclaimed. |
-| UAB-02 shared foundation | in progress | Core v31 Option and v32 total variant matching/bytes semantics are implemented; a bounded nested composite Wasm/Pulp reactor passes. Full multi-type language-cell gates remain incomplete. |
+| UAB-02 shared foundation | in progress | Go and JavaScript bridge the required families but their collection evidence lacks directly shared cross-path vectors. Lua structurally bridges all 10 families and has exact target parity for bytes, Result, and Option. |
 | Broad Go/JavaScript ecosystem compatibility | under 5% | Real packages depend on much larger language, runtime, standard-library, build, and foreign-interface surfaces. |
 | Universal-language vision | about 2% | Only Go and JavaScript have bounded adapters; universal multi-runtime interoperability remains a long-horizon goal. |
 

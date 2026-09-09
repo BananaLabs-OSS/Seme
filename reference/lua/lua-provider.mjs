@@ -31,6 +31,15 @@ const schema = {
   emptyMap: "0000000000000000000000000000a041",
   mapLookup: "0000000000000000000000000000a042",
   mapUpdate: "0000000000000000000000000000a043",
+  variantBinding: "0000000000000000000000000000a060",
+  variantRead: "0000000000000000000000000000a061",
+  resultMatch: "0000000000000000000000000000a062",
+  optionMatch: "0000000000000000000000000000a063",
+  bytesLiteral: "0000000000000000000000000000a064",
+  bytesEqual: "0000000000000000000000000000a065",
+  stringLiteral: "00000000000000000000000000009050",
+  stringEqual: "000000000000000000000000000090c2",
+  boolLiteral: "000000000000000000000000000090b0",
 };
 
 /**
@@ -156,6 +165,8 @@ function splitGenericArguments(value, location) {
 }
 
 function parseExpression(text, file, line) {
+  const composite = /^Seme\.match_option\(([A-Za-z_][A-Za-z0-9_]*), false, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.match_result\(\2, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.bytes_equal\(\3, Seme\.bytes_literal\("([^"]*)"\)\) end, function\(([A-Za-z_][A-Za-z0-9_]*)\) return Seme\.text_equal\(\5, "([^"]*)"\) end\) end\)$/.exec(text);
+  if (composite) return { kind: "composite_match", value: composite[1], some: composite[2], ok: composite[3], bytes: composite[4], error: composite[5], text: composite[6], location: { file, line, column: 1 } };
   const field = /^Seme\.field\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*"([A-Za-z_][A-Za-z0-9_]*)"\s*\)$/.exec(text);
   if (field) return { kind: "field", base: field[1], field: field[2], location: { file, line, column: 1 } };
   const array = /^Seme\.array\s*\((.*)\)$/.exec(text);
@@ -212,6 +223,7 @@ function emitExpression(expression, context, path) {
     return id;
   }
   if (["array", "length", "index", "empty_map", "lookup_zero", "map_update"].includes(expression.kind)) return emitCollectionExpression(expression, context, path);
+  if (expression.kind === "composite_match") return emitCompositeMatch(expression, context, path);
   const callee = context.descriptionsByName.get(expression.name);
   if (!callee) fail("lua.unknown_call", expression.location);
   if (callee.parameters.length !== expression.arguments.length) fail("lua.call_arity", expression.location);
@@ -226,6 +238,35 @@ function emitExpression(expression, context, path) {
   const id = stableID("execution", context.description.id, "expression", path, "call");
   context.additions.push(graphEntity(id, entity(id, schema.call, [[0x9600, ref(callee.id)], [0x9601, refs(arguments_)]])));
   return id;
+}
+
+function emitCompositeMatch(expression, context, path) {
+  const expected = "option:result:bytes:text";
+  if (context.description.resultType !== "bool") fail("lua.match_result_type", expression.location);
+  const value = parameterRead(expression.value, expected, context, `${path}.value`, expression.location);
+  const make = (suffix, schemaID, fields) => { const id = stableID("execution", context.description.id, "expression", path, suffix); context.additions.push(graphEntity(id, entity(id, schemaID, fields))); return id; };
+  const returnedBlock = (suffix, expressionID) => {
+    const returned = make(`${suffix}.return`, schema.returned, [[0x9810, refs([expressionID])]]);
+    return make(`${suffix}.block`, schema.block, [[0x9800, refs([returned])]]);
+  };
+  const noneLiteral = make("none.false", schema.boolLiteral, [[0x9b00, "fa"]]);
+  const noneBlock = returnedBlock("none", noneLiteral);
+  const resultType = typeID("result:bytes:text");
+  const someBinding = make("some.binding", schema.variantBinding, [[0xa0600, bytes(expression.some)], [0xa0601, ref(resultType)]]);
+  const someRead = make("some.read", schema.variantRead, [[0xa0610, ref(someBinding)]]);
+  const okBinding = make("ok.binding", schema.variantBinding, [[0xa0600, bytes(expression.ok)], [0xa0601, ref(ids.bytes)]]);
+  const errorBinding = make("error.binding", schema.variantBinding, [[0xa0600, bytes(expression.error)], [0xa0601, ref(ids.text)]]);
+  const okRead = make("ok.read", schema.variantRead, [[0xa0610, ref(okBinding)]]);
+  const errorRead = make("error.read", schema.variantRead, [[0xa0610, ref(errorBinding)]]);
+  const bytesLiteral = make("ok.literal", schema.bytesLiteral, [[0xa0640, bytes(expression.bytes)]]);
+  const textLiteral = make("error.literal", schema.stringLiteral, [[0x9500, bytes(expression.text)]]);
+  const bytesEqual = make("ok.equal", schema.bytesEqual, [[0xa0650, ref(okRead)], [0xa0651, ref(bytesLiteral)]]);
+  const textEqual = make("error.equal", schema.stringEqual, [[0x9c20, ref(errorRead)], [0x9c21, ref(textLiteral)]]);
+  const okBlock = returnedBlock("ok", bytesEqual);
+  const errorBlock = returnedBlock("error", textEqual);
+  const resultMatch = make("result.match", schema.resultMatch, [[0xa0620, ref(someRead)], [0xa0621, ref(okBinding)], [0xa0622, ref(okBlock)], [0xa0623, ref(errorBinding)], [0xa0624, ref(errorBlock)]]);
+  const someBlock = returnedBlock("some", resultMatch);
+  return make("option.match", schema.optionMatch, [[0xa0630, ref(value)], [0xa0631, ref(noneBlock)], [0xa0632, ref(someBinding)], [0xa0633, ref(someBlock)]]);
 }
 
 function parameterRead(name, expected, context, path, location) {

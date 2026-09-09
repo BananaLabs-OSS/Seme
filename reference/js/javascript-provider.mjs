@@ -5,6 +5,7 @@ const ids = {
   i64: stableID("execution", "type", "i64"),
   bool: stableID("execution", "type", "bool"),
   string: stableID("execution", "type", "string"),
+  bytes: stableID("execution", "type", "bytes"),
 };
 
 export function liftJavaScript({ source, packagePath, revision, moduleG1, entryName }) {
@@ -39,6 +40,7 @@ export function liftJavaScript({ source, packagePath, revision, moduleG1, entryN
     graphEntity(ids.i64, entity(ids.i64, "00000000000000000000000000009010", [[0x9100, "uu 64"], [0x9101, "tr"], [0x9102, "uu 0"]])),
     graphEntity(ids.bool, entity(ids.bool, "00000000000000000000000000009020", [])),
     graphEntity(ids.string, entity(ids.string, "00000000000000000000000000009040", [])),
+    graphEntity(ids.bytes, entity(ids.bytes, "00000000000000000000000000009041", [])),
   ];
   for (const interface_ of [...interfacesByName.values()].sort((left, right) => left.id.localeCompare(right.id))) {
     for (const requirement of interface_.requirements) {
@@ -215,6 +217,12 @@ function readSignature(comments, fn) {
 // comment to precede the declaration is sufficient for this one-declaration profile.
 function sourceGapIsWhitespace(_end, _start, _fn) { return true; }
 function semanticType(type) {
+  type = type.replace(/\s+/g, "");
+  if (type === "Uint8Array") return "bytes";
+  const option = /^Seme\.Option<(.+)>$/.exec(type);
+  if (option) return `option:${semanticType(option[1])}`;
+  const result = /^Seme\.Result<(.+),(.+)>$/.exec(type);
+  if (result) return `result:${semanticType(result[1])}:${semanticType(result[2])}`;
   const function_ = /^function\(([^)]*)\)\s*:\s*(bigint|boolean|string)$/.exec(type);
   if (function_) {
     const parameters = function_[1].trim() === "" ? [] : function_[1].split(",").map((item) => semanticType(item.trim()));
@@ -277,7 +285,7 @@ function readRecords(comments, packagePath) {
   for (const comment of comments) {
     const declaration = comment.value.match(/@typedef\s+\{Object\}\s+([A-Za-z_$][\w$]*)/);
     if (!declaration) continue;
-    const fields = [...comment.value.matchAll(/@property\s+\{(string|boolean|bigint)\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
+    const fields = [...comment.value.matchAll(/@property\s+\{([^}]+)\}\s+([A-Za-z_$][\w$]*)/g)].map((match) => ({ type: semanticType(match[1]), name: match[2] }));
     if (!fields.length || records.has(declaration[1])) fail("javascript.invalid_record_typedef");
     records.set(declaration[1], { name: declaration[1], id: stableID("execution", "record", packagePath, declaration[1]), fields });
   }
@@ -286,6 +294,20 @@ function readRecords(comments, packagePath) {
 
 function typeID(type, context) {
   if (ids[type]) return ids[type];
+	if (type.startsWith("option:")) {
+		const valueType = type.slice("option:".length);
+		const valueID = typeID(valueType, context);
+		const id = stableID("execution", "type", "option", valueID);
+		if (context.entities && !context.entities.some((item) => item.id === id)) context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a050", [[0xa0500, ref(valueID)]])));
+		return id;
+	}
+	if (type.startsWith("result:")) {
+		const [okType, errorType] = splitCompositeType(type.slice("result:".length));
+		const okID = typeID(okType, context), errorID = typeID(errorType, context);
+		const id = stableID("execution", "type", "result", okID, errorID);
+		if (context.entities && !context.entities.some((item) => item.id === id)) context.entities.push(graphEntity(id, entity(id, "00000000000000000000000000009042", [[0x9400, ref(okID)], [0x9401, ref(errorID)]])));
+		return id;
+	}
 	if (type === "map:i64:i64") {
 		const id = stableID("execution", "type", "map", "i64", "i64");
 		if (context.entities && !context.entities.some((item) => item.id === id)) context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a040", [[0xa0400, ref(ids.i64)], [0xa0401, ref(ids.i64)]])));
@@ -316,6 +338,18 @@ function typeID(type, context) {
   if (interface_) return interface_.id;
   if (!record) fail("javascript.unknown_type");
   return record.id;
+}
+
+function splitCompositeType(value) {
+  let depth = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    if (value[index] === ":" && depth === 0) return [value.slice(0, index), value.slice(index + 1)];
+    if (value.startsWith("option:", index) || value.startsWith("result:", index)) depth += 1;
+  }
+  // UAB-v1's JavaScript constructor profile deliberately admits scalar arms.
+  const parts = value.split(":");
+  if (parts.length === 2) return parts;
+  fail("javascript.nested_result_profile");
 }
 
 function emitBlock(statements, path, context, resultType, requireReturn = true) {
@@ -485,6 +519,61 @@ function emitReturn(statement, path, statementPath, context, resultType) {
 }
 
 function emitExpression(node, owner, path, context, expected) {
+	if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && !node.callee.computed && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme") {
+		const operation = node.callee.property.name;
+		const id = expressionID(owner, path, operation);
+		if (operation === "bytesEqual" && expected === "bool" && node.arguments.length === 2) {
+			const left = emitExpression(node.arguments[0], owner, `${path}.left`, context, "bytes"), right = emitExpression(node.arguments[1], owner, `${path}.right`, context, "bytes");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a065", [[0xa0650, ref(left.id)], [0xa0651, ref(right.id)]])));
+			return { id, type: expected };
+		}
+		if ((operation === "matchOption" || operation === "matchResult") && node.arguments.length === 3) {
+			const valueType = inferExpressionType(node.arguments[0], context);
+			const option = operation === "matchOption";
+			if (!(option ? valueType.startsWith("option:") : valueType.startsWith("result:"))) fail("javascript.match_value_type", node.loc.start);
+			const value = emitExpression(node.arguments[0], owner, `${path}.value`, context, valueType);
+			const arm = (callback, label, payloadType, allowZero) => {
+				if (callback.type !== "ArrowFunctionExpression" || callback.async || callback.params.length !== (allowZero ? 0 : 1) || (!allowZero && callback.params[0].type !== "Identifier")) fail("javascript.match_arm_shape", callback.loc.start);
+				let armContext = context, bindingID;
+				if (!allowZero) {
+					bindingID = expressionID(owner, path, `${label}-binding`);
+					context.entities.push(graphEntity(bindingID, entity(bindingID, "0000000000000000000000000000a060", [[0xa0600, bytes(callback.params[0].name)], [0xa0601, ref(typeID(payloadType, context))]])));
+					armContext = { ...context, variants: new Map([...(context.variants || []), [callback.params[0].name, { id: bindingID, type: payloadType }]]) };
+				}
+				const bodyNode = callback.body.type === "BlockStatement" && callback.body.body.length === 1 && callback.body.body[0].type === "ReturnStatement" ? callback.body.body[0].argument : callback.body;
+				if (!bodyNode || bodyNode.type === "BlockStatement") fail("javascript.match_arm_shape", callback.loc.start);
+				const expression = emitExpression(bodyNode, owner, `${path}.${label}.value`, armContext, expected);
+				const returnedID = expressionID(owner, path, `${label}-return`), blockID = expressionID(owner, path, `${label}-block`);
+				context.entities.push(graphEntity(returnedID, entity(returnedID, "00000000000000000000000000009081", [[0x9810, refs([expression.id])]])));
+				context.entities.push(graphEntity(blockID, entity(blockID, "00000000000000000000000000009080", [[0x9800, refs([returnedID])]])));
+				return { bindingID, blockID };
+			};
+			if (option) {
+				const none = arm(node.arguments[1], "none", undefined, true), some = arm(node.arguments[2], "some", valueType.slice(7), false);
+				context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a063", [[0xa0630, ref(value.id)], [0xa0631, ref(none.blockID)], [0xa0632, ref(some.bindingID)], [0xa0633, ref(some.blockID)]])));
+			} else {
+				const [okType, errorType] = splitCompositeType(valueType.slice(7));
+				const ok = arm(node.arguments[1], "ok", okType, false), error = arm(node.arguments[2], "error", errorType, false);
+				context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a062", [[0xa0620, ref(value.id)], [0xa0621, ref(ok.bindingID)], [0xa0622, ref(ok.blockID)], [0xa0623, ref(error.bindingID)], [0xa0624, ref(error.blockID)]])));
+			}
+			return { id, type: expected };
+		}
+		if (operation === "bytes" && expected === "bytes" && node.arguments.length === 1 && node.arguments[0].type === "ArrayExpression" && node.arguments[0].elements.every((item) => item?.type === "Literal" && Number.isInteger(item.value) && item.value >= 0 && item.value <= 255)) {
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a064", [[0xa0640, rawBytes(node.arguments[0].elements.map((item) => item.value))]])));
+			return { id, type: expected };
+		}
+		if (operation === "none" && expected.startsWith("option:") && node.arguments.length === 0) {
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a051", [[0xa0510, ref(typeID(expected, context))]])));
+			return { id, type: expected };
+		}
+		const constructor = operation === "some" ? ["option:", "0000000000000000000000000000a052", 0xa0520, 0xa0521, expected.slice(7)] : operation === "ok" ? ["result:", "00000000000000000000000000009043", 0x9410, 0x9411, splitCompositeType(expected.slice(7))[0]] : operation === "error" ? ["result:", "00000000000000000000000000009044", 0x9420, 0x9421, splitCompositeType(expected.slice(7))[1]] : undefined;
+		if (constructor && expected.startsWith(constructor[0]) && node.arguments.length === 1) {
+			const value = emitExpression(node.arguments[0], owner, `${path}.value`, context, constructor[4]);
+			context.entities.push(graphEntity(id, entity(id, constructor[1], [[constructor[2], ref(typeID(expected, context))], [constructor[3], ref(value.id)]])));
+			return { id, type: expected };
+		}
+		fail("javascript.seme_constructor_type", node.loc.start);
+	}
 	if (node.type === "NewExpression" && node.callee.type === "Identifier" && node.callee.name === "Map" && node.arguments.length === 0 && expected === "map:i64:i64") {
 		const id = expressionID(owner, path, "empty-map");
 		context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a041", [[0xa0410, ref(typeID(expected, context))]])));
@@ -724,7 +813,14 @@ function emitExpression(node, owner, path, context, expected) {
 		context.entities.push(graphEntity(id, entity(id, "000000000000000000000000000090f4", [[0x9f40, ref(constructID)], [0x9f41, ref(index.id)]])));
 		return { id, type: "i64" };
 	}
-  if (node.type === "Identifier") {
+	if (node.type === "Identifier") {
+		const variant = context.variants?.get(node.name);
+		if (variant) {
+			if (variant.type !== expected) fail("javascript.variant_binding_type", node.loc.start);
+			const id = expressionID(owner, path, "variant-binding-read");
+			context.entities.push(graphEntity(id, entity(id, "0000000000000000000000000000a061", [[0xa0610, ref(variant.id)]])));
+			return { id, type: expected };
+		}
 	const iterationBinding = context.iterationBindings?.get(node.name);
 	if (iterationBinding) {
 		if (iterationBinding.type !== expected) fail("javascript.iteration_binding_type", node.loc.start);
@@ -901,10 +997,13 @@ function dynamicIndexExpression(node, owner, path, context) {
 }
 
 function inferExpressionType(node, context) {
+  if (node.type === "CallExpression" && node.callee.type === "MemberExpression" && node.callee.object.type === "Identifier" && node.callee.object.name === "Seme") fail("javascript.constructor_requires_boundary_type", node.loc.start);
   if (node.type === "NewExpression" && node.callee.type === "Identifier" && node.callee.name === "Map") return "map:i64:i64";
   if (node.type === "LogicalExpression" && node.operator === "??") return inferExpressionType(node.right, context);
   if (node.type === "ThisExpression" && context.receiver) return context.receiver.type;
   if (node.type === "Identifier") {
+	const variant = context.variants?.get(node.name);
+	if (variant) return variant.type;
     const parameter = context.parameterNames.indexOf(node.name);
     if (parameter >= 0) return context.parameterTypes[parameter];
     const local = context.locals.get(node.name);
@@ -1017,6 +1116,7 @@ function stableID(...parts) {
 }
 function graphEntity(id, text) { return { id, text }; }
 function bytes(value) { return `by ${Buffer.from(value, "utf8").toString("hex") || "-"}`; }
+function rawBytes(value) { return `by ${Buffer.from(value).toString("hex") || "-"}`; }
 function ref(value) { return `rf ${value}`; }
 function refs(values) { return `li ${values.length}${values.map((value) => `\nrf ${value}`).join("")}`; }
 function entity(id, schema, fields) {
