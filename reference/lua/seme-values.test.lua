@@ -92,4 +92,10 @@ local success = Seme.increment_positive(Seme.i64("4"))
 assert(Seme.result_is_ok(success) and Seme.i64_decimal(Seme.result_value(success)) == "5")
 local propagated = Seme.increment_positive(Seme.i64("-7"))
 assert(not Seme.result_is_ok(propagated) and Seme.i64_decimal(Seme.result_value(propagated)) == "99")
+local observations = {}
+_G.Seme_observability_log = function(value) table.insert(observations, value) end
+Seme.observe(true); Seme.observe(false)
+assert(observations[1] == true and observations[2] == false)
+_G.Seme_observability_log = nil
+assert(not pcall(Seme.observe, true))
 print("Lua compound adapter foundation: ok")

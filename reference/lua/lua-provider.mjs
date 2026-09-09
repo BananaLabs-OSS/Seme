@@ -59,6 +59,7 @@ const schema = {
   assignPlace: "000000000000000000000000000090e3",
   whileStatement: "000000000000000000000000000090e4",
   whenStatement: "000000000000000000000000000090f0",
+  effectInvoke:"000000000000000000000000000090f1", effect:"00000000000000000000000000000015", capability:"00000000000000000000000000000016",
   branch: "000000000000000000000000000090c0",
   recordConstruct: "00000000000000000000000000009033",
   receiverBinding: "0000000000000000000000000000a000",
@@ -214,6 +215,7 @@ function emitControlBlock(statements, context, path, requireReturn = false) {
       const value = emitControlExpression(statement.expression, context.description.resultType, context, `${statementPath}.value`);
       const id = stableID("execution", context.description.id, statementPath, "return"); context.additions.push(graphEntity(id, entity(id, schema.returned, [[0x9810, refs([value])]]))); emitted.push(id); terminal = true; continue;
     }
+    if(statement.kind==="effect"){const symbol=context.symbols.get(statement.name);if(!symbol||symbol.type!=="bool")fail("lua.effect_argument_type",statement.location);const argument=emitControlExpression({kind:"identifier",name:statement.name,location:statement.location},"bool",context,`${statementPath}.argument`),capability=stableID("capability","observability.log"),effect=stableID("effect","observability.log"),id=stableID("execution",context.description.id,statementPath,"effect-invoke");if(!context.additions.some((item)=>item.id===capability))context.additions.push(graphEntity(capability,entity(capability,schema.capability,[[0x160,bytes("observability.log")]])),graphEntity(effect,entity(effect,schema.effect,[[0x150,bytes("observability.log")],[0x151,ref(capability)]])));context.additions.push(graphEntity(id,entity(id,schema.effectInvoke,[[0x9f10,ref(effect)],[0x9f11,refs([argument])]])));emitted.push(id);continue;}
     if (statement.kind === "while" || statement.kind === "when") {
       const condition = emitControlExpression(statement.condition, "bool", context, `${statementPath}.condition`);
       const childContext = { ...context, symbols: new Map(context.symbols) };
@@ -354,6 +356,7 @@ function parseControlBlock(lines, file, start = 0, nested = false) {
     if (match) { const child = parseControlBlock(lines, file, index + 1, true); statements.push({ kind: "when", condition: parseExpression(match[1], file, lines[index].line), body: child.statements, location }); index = child.next; continue; }
     match = /^return\s+(.+)$/.exec(text);
     if (match) { statements.push({ kind: "return", expression: parseExpression(match[1], file, lines[index].line), location }); index += 1; continue; }
+    match=/^Seme\.observe\(\s*([A-Za-z_]\w*)\s*\)$/.exec(text);if(match){statements.push({kind:"effect",name:match[1],location});index+=1;continue;}
     fail("lua.unsupported_statement", location);
   }
   if (nested) fail("lua.unclosed_block", { file, line: lines.at(-1)?.line ?? 1, column: 1 });

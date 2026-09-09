@@ -5,17 +5,17 @@
     "go": {
       "UAB-01": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-02": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-03": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-04": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"],
       "UAB-05": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-06": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-07": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-08": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"],
-      "UAB-09": [], "UAB-10": [], "UAB-11": [], "UAB-12": []
+      "UAB-09": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-10": [], "UAB-11": [], "UAB-12": []
     },
     "javascript": {
       "UAB-01": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-02": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-03": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-04": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"],
       "UAB-05": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-06": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-07": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-08": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"],
-      "UAB-09": [], "UAB-10": [], "UAB-11": [], "UAB-12": []
+      "UAB-09": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-10": [], "UAB-11": [], "UAB-12": []
     },
     "lua": {
       "UAB-01": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-02": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-03": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-04": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"],
       "UAB-05": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-06": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-07": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-08": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"],
-      "UAB-09": [], "UAB-10": [], "UAB-11": [], "UAB-12": []
+      "UAB-09": ["lift", "native_parity", "target_parity", "projection_round_trip", "rejection"], "UAB-10": [], "UAB-11": [], "UAB-12": []
     }
   }
 }

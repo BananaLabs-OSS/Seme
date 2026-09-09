@@ -364,5 +364,11 @@ end
 function Seme.increment_positive(value)
   return Seme.match_result(Seme.check_positive(value), function(accepted) return Seme.ok(Seme.add(accepted, Seme.i64("1"))) end, function(error_) return Seme.err(error_) end)
 end
+function Seme.observe(value)
+  value = Seme.boolean(value)
+  local capability = rawget(_G, "Seme_observability_log")
+  if type(capability) ~= "function" then error("seme.capability_absent", 2) end
+  capability(value)
+end
 
 return Seme
