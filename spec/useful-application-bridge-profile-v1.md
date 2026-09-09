@@ -174,15 +174,15 @@ selected shapes. A direct bounded Lua provider and projector now cover the
 UAB-01 Boolean function/call slice without using either language as an
 intermediate representation.
 
-The repository currently justifies 34/36 UAB-v1 cells: UAB-01 through UAB-10
-pass all five evidence classes independently for Go, JavaScript, and Lua, and
-UAB-11 passes all five evidence classes for all three languages. Go also passes
-UAB-12. JavaScript and Lua UAB-12 remain unclaimed because:
+The repository justifies all 36/36 UAB-v1 cells. UAB-01 through UAB-11 pass
+all five evidence classes independently for Go, JavaScript, and Lua. UAB-12
+selects one canonical application, projects it to all three languages, runs
+all 2,048 generated observations natively and through the canonical, Wasm,
+and pinned-Pulp realizations, and requires every projection to re-lift to the
+same canonical bytes. The scope remains bounded because:
 
 - the Core checkpoint sequence and both cumulative architectural composition
   gates are complete, establishing the prerequisite for this profile;
-- their projections have not yet re-lifted to the selected shared canonical
-  UAB-12 application with complete native and target evidence; and
 - every language bridge remains deliberately bounded to the capabilities
   evidenced by this profile rather than claiming its full ecosystem.
 

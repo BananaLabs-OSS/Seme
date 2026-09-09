@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { parseProtocolDeclarations, stripProtocolDeclarations } from "./lua-protocol-parser.mjs";
+import { projectLua } from "./lua-projector.mjs";
 
 const schema = {
   i64Type: "00000000000000000000000000009010",
@@ -51,6 +52,7 @@ const schema = {
   boolLiteral: "000000000000000000000000000090b0",
   integerAdd: "00000000000000000000000000009014",
   integerMultiply: "00000000000000000000000000009090",
+  integerSubtract:"000000000000000000000000000090a0",
   stringConcat: "000000000000000000000000000090c3",
   integerLessEqual: "00000000000000000000000000009021",
   booleanAnd: "000000000000000000000000000090b1",
@@ -86,6 +88,8 @@ const schema = {
 export function liftLua({ sources, packagePath, revision, moduleG1, entryName }) {
   if (!Array.isArray(sources) || sources.length === 0) fail("lua.requires_sources");
   if (!packagePath || !Number.isSafeInteger(revision) || revision < 1) fail("lua.invalid_snapshot");
+  const projected = verifyProjectionEnvelope(sources);
+  if (projected) return projected;
   const records = parseRecords(sources, packagePath);
   const protocolUnits = sources.map(({ name, source }) => parseProtocolDeclarations(source, name));
   const protocolBindings = new Map(), implementationBindings = new Map();
@@ -93,7 +97,8 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
     for (const [name, value] of unit.protocols) { if (protocolBindings.has(name)) fail("lua.duplicate_protocol_binding"); protocolBindings.set(name, value); }
     for (const [name, value] of unit.implementations) { if (implementationBindings.has(name)) fail("lua.duplicate_implementation_binding"); implementationBindings.set(name, value); }
   }
-  const declarations = sources.flatMap(({ name, source }) => parseSource(stripProtocolDeclarations(source), name, records));
+  const protocolTypes=new Map([...protocolBindings.values()].map(item=>[item.name,{id:stableID("execution","interface",packagePath,item.name),name:item.name}]));
+  const declarations = sources.flatMap(({ name, source }) => parseSource(stripProtocolDeclarations(source), name, records,protocolTypes));
   const byName = new Map();
   for (const declaration of declarations) {
     if (byName.has(declaration.name)) fail("lua.duplicate_function", declaration.location);
@@ -146,8 +151,8 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
       if (implementation.concreteKind !== (receiverType.startsWith("record:") ? "record" : receiverType)) fail("lua.implementation_concrete_kind");
       concreteID ??= typeID(receiverType);
       if (concreteID !== typeID(receiverType)) fail("lua.implementation_receiver_kind");
-      const receiverID = stableID("execution", "receiver", packagePath, implementation.binding);
-      if (!additions.some((item) => item.id === receiverID)) additions.push(graphEntity(receiverID, entity(receiverID, schema.receiverBinding, [[0xa0000, bytes(prefix || "self")], [0xa0001, ref(concreteID)]])));
+      const receiverID = implementation.receiverID??stableID("execution", "receiver", packagePath, implementation.binding);
+      if (!additions.some((item) => item.id === receiverID)) additions.push(graphEntity(receiverID, entity(receiverID, schema.receiverBinding, [[0xa0000, bytes(implementation.receiverName??(prefix || "self"))], [0xa0001, ref(concreteID)]])));
       const parameter = description.parameters[1], parameterID = stableID("execution", description.id, "parameter", "0");
       additions.push(graphEntity(parameterID, entity(parameterID, schema.parameter, [[0x9120, bytes(parameter.name)], [0x9121, ref(ids.i64)], [0x9122, "uu 0"]])));
       const methodContext = { description: { ...description, parameters: [parameter] }, parameterIDs: [parameterID], descriptionsByName, additions, records, receiver: { id: receiverID, name: description.parameters[0].name, type: receiverType } };
@@ -157,7 +162,7 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
       additions.push(graphEntity(description.id, entity(description.id, schema.method, [[0xa0020, bytes(requirement.name)], [0xa0021, ref(receiverID)], [0xa0022, refs([parameterID])], [0xa0023, ref(ids.i64)], [0xa0024, ref(blockID)]])));
       methodIDs.push(description.id);
     }
-    const witnessID = stableID("execution", "witness", packagePath, implementation.binding);
+    const witnessID = implementation.witnessID??stableID("execution", "witness", packagePath, implementation.binding);
     additions.push(graphEntity(witnessID, entity(witnessID, schema.satisfactionWitness, [[0xa0120, ref(concreteID)], [0xa0121, ref(protocol.id)], [0xa0122, refs(methodIDs)]])));
     implementations.set(implementation.binding, { ...implementation, protocol, prefix, concreteID, witnessID });
   }
@@ -170,7 +175,7 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
       ])));
       return id;
     });
-    const context = { description, parameterIDs, descriptionsByName, additions, records };
+    const context = { description, parameterIDs, descriptionsByName, additions, records, implementations };
     let blockID;
     if (description.statements) blockID = emitControlBlock(description.statements, { ...context, symbols: new Map(description.parameters.map((p, i) => [p.name, { kind: "parameter", type: p.type, id: parameterIDs[i] }])) }, "body", true);
     else if (description.expression.kind === "protocol_dispatch" || description.expression.kind === "protocol_dispatch_value") blockID = emitProtocolDispatch(description.expression, { ...context, implementations }, "body");
@@ -198,6 +203,25 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
   return compose(moduleG1, stableID("session-revision", packagePath, String(revision)), additions);
 }
 
+function verifyProjectionEnvelope(sources) {
+  const marked = sources.filter(({ source }) => /^-- seme:(?:projection-v1|graph) /m.test(source));
+  if (marked.length === 0) return null;
+  if (sources.length !== 1 || marked.length !== 1) fail("lua_projection.envelope_source_count");
+  const source = marked[0].source;
+  const digests = [...source.matchAll(/^-- seme:projection-v1 ([^\s]+)\s*$/gm)].map((match) => match[1]);
+  const chunks = [...source.matchAll(/^-- seme:graph ([^\s]+)\s*$/gm)].map((match) => match[1]);
+  if (digests.length !== 1 || chunks.length === 0) fail("lua_projection.envelope_incomplete");
+  let graph;
+  try { graph = Buffer.from(chunks.join(""), "base64url").toString("utf8"); }
+  catch { fail("lua_projection.envelope_encoding"); }
+  if (crypto.createHash("sha256").update(graph).digest("hex") !== digests[0]) fail("lua_projection.envelope_digest");
+  let reprojected;
+  try { reprojected = projectLua(graph); }
+  catch { fail("lua_projection.envelope_graph"); }
+  if (reprojected !== source) fail("lua_projection.envelope_source_mismatch");
+  return graph;
+}
+
 function emitControlBlock(statements, context, path, requireReturn = false) {
   const emitted = []; let terminal = false;
   for (let index = 0; index < statements.length; index += 1) {
@@ -219,10 +243,12 @@ function emitControlBlock(statements, context, path, requireReturn = false) {
       const declaration = stableID("execution", context.description.id, statementPath, "declare");
       context.additions.push(graphEntity(place, entity(place, schema.mutablePlace, [[0x9e00, bytes(statement.name)], [0x9e01, ref(typeID(type))], [0x9e02, ref(initializer)]])));
       context.additions.push(graphEntity(declaration, entity(declaration, schema.declarePlace, [[0x9e10, ref(place)]])));
-      context.symbols.set(statement.name, { kind: "place", type, id: place, closureKind:statement.expression.kind==="mutable_closure"?"mutable":statement.expression.kind==="immutable_closure"?"immutable":undefined, closureCapturePlace:statement.expression.kind==="mutable_closure"?context.symbols.get(statement.expression.capture)?.id:undefined }); emitted.push(declaration); continue;
+      const returnedClosure=statement.expression.kind==="raw_call"?context.descriptionsByName.get(statement.expression.name)?.expression:null;
+      context.symbols.set(statement.name, { kind: "place", type, id: place, closureKind:statement.expression.kind==="mutable_closure"?"mutable":statement.expression.kind==="immutable_closure"?"immutable":returnedClosure?.kind==="canonical_closure"?(returnedClosure.mutable?"mutable":"immutable"):undefined, closureCapturePlace:statement.expression.kind==="mutable_closure"?context.symbols.get(statement.expression.capture)?.id:undefined }); emitted.push(declaration); continue;
     }
     if (statement.kind === "assign") {
       const symbol = context.symbols.get(statement.name); if (!symbol || symbol.kind !== "place") fail("lua.assignment_scope", statement.location);
+      if(statement.expression.kind==="raw_call") {const callee=context.symbols.get(statement.expression.name);if(callee?.type==="function:i64:i64"){const expanded=emitMutableClosureCall(statement.expression,callee,context,statementPath,null,symbol.id);emitted.push(...expanded.statements);continue;}}
       const value = emitControlExpression(statement.expression, symbol.type, context, `${statementPath}.value`);
       const id = stableID("execution", context.description.id, statementPath, "assign"); context.additions.push(graphEntity(id, entity(id, schema.assignPlace, [[0x9e30, ref(symbol.id)], [0x9e31, ref(value)]]))); emitted.push(id); continue;
     }
@@ -248,12 +274,18 @@ function emitControlBlock(statements, context, path, requireReturn = false) {
       context.additions.push(graphEntity(returned, entity(returned, schema.returned, [[0x9810, refs([match])]])));
       emitted.push(returned); terminal = true; continue;
     }
+    if(statement.kind==="return_result_match_block"){
+      const resultType=controlExpressionType(statement.value,context);if(!resultType.startsWith("result:"))fail("lua.result_match_value_type",statement.location);const[okType,errorType]=splitResult(resultType),value=emitControlExpression(statement.value,resultType,context,`${statementPath}.value`),okBinding=stableID("execution",context.description.id,statementPath,"ok-binding"),errorBinding=stableID("execution",context.description.id,statementPath,"error-binding");context.additions.push(graphEntity(okBinding,entity(okBinding,schema.variantBinding,[[0xa0600,bytes(statement.okBinding)],[0xa0601,ref(typeID(okType))]])),graphEntity(errorBinding,entity(errorBinding,schema.variantBinding,[[0xa0600,bytes(statement.errorBinding)],[0xa0601,ref(typeID(errorType))]])));const okContext={...context,symbols:new Map(context.symbols)};okContext.symbols.set(statement.okBinding,{kind:"variant",type:okType,id:okBinding});const errorContext={...context,symbols:new Map(context.symbols)};errorContext.symbols.set(statement.errorBinding,{kind:"variant",type:errorType,id:errorBinding});const okBlock=emitControlBlock(statement.okBody,okContext,`${statementPath}.ok`,true),errorBlock=emitControlBlock(statement.errorBody,errorContext,`${statementPath}.error`,true),match=stableID("execution",context.description.id,statementPath,"result-match"),returned=stableID("execution",context.description.id,statementPath,"return");context.additions.push(graphEntity(match,entity(match,schema.resultMatch,[[0xa0620,ref(value)],[0xa0621,ref(okBinding)],[0xa0622,ref(okBlock)],[0xa0623,ref(errorBinding)],[0xa0624,ref(errorBlock)]])),graphEntity(returned,entity(returned,schema.returned,[[0x9810,refs([match])]])));emitted.push(returned);terminal=true;continue;
+    }
     if(statement.kind==="effect"){const argument=emitControlExpression(statement.expression,"bool",context,`${statementPath}.argument`),capability=stableID("capability","observability.log"),effect=stableID("effect","observability.log"),id=stableID("execution",context.description.id,statementPath,"effect-invoke");if(!context.additions.some((item)=>item.id===capability))context.additions.push(graphEntity(capability,entity(capability,schema.capability,[[0x160,bytes("observability.log")]])),graphEntity(effect,entity(effect,schema.effect,[[0x150,bytes("observability.log")],[0x151,ref(capability)]])));context.additions.push(graphEntity(id,entity(id,schema.effectInvoke,[[0x9f10,ref(effect)],[0x9f11,refs([argument])]])));emitted.push(id);continue;}
     if(statement.kind==="call_statement"){
       const callee=context.symbols.get(statement.expression.name);
-      if(!callee||callee.closureKind!=="mutable")fail("lua.call_statement_profile",statement.location);
+      if(!callee||callee.type!=="function:i64:i64")fail("lua.call_statement_profile",statement.location);
       const expanded=emitMutableClosureCall(statement.expression,callee,context,statementPath,null);
       emitted.push(...expanded.statements);continue;
+    }
+    if(statement.kind==="if_else"){
+      const terminating=controlStatementsTerminate(statement.whenTrue)&&controlStatementsTerminate(statement.whenFalse),condition=emitControlExpression(statement.condition,"bool",context,`${statementPath}.condition`),trueBlock=emitControlBlock(statement.whenTrue,{...context,symbols:new Map(context.symbols)},`${statementPath}.true`,terminating),falseBlock=emitControlBlock(statement.whenFalse,{...context,symbols:new Map(context.symbols)},`${statementPath}.false`,terminating),id=stableID("execution",context.description.id,statementPath,"branch");context.additions.push(graphEntity(id,entity(id,schema.branch,[[0x9c00,ref(condition)],[0x9c01,ref(trueBlock)],[0x9c02,ref(falseBlock)]])));emitted.push(id);terminal=terminating;continue;
     }
     if (statement.kind === "while" || statement.kind === "when") {
       const condition = emitControlExpression(statement.condition, "bool", context, `${statementPath}.condition`);
@@ -267,6 +299,7 @@ function emitControlBlock(statements, context, path, requireReturn = false) {
   if (requireReturn && !terminal) fail("lua.requires_return", context.description.location);
   const block = stableID("execution", context.description.id, path, "block"); context.additions.push(graphEntity(block, entity(block, schema.block, [[0x9800, refs(emitted)]]))); return block;
 }
+function controlStatementsTerminate(statements){const last=statements.at(-1);return!!last&&(["return","return_option_match_block","return_result_match_block"].includes(last.kind)||(last.kind==="if_else"&&controlStatementsTerminate(last.whenTrue)&&controlStatementsTerminate(last.whenFalse)));}
 
 function emitProtocolDispatch(expression, context, path) {
   const whenFalse = context.implementations.get(expression.whenFalse), whenTrue = context.implementations.get(expression.whenTrue);
@@ -322,14 +355,17 @@ function controlExpressionType(expression, context) {
   if(expression.kind==="ok"||expression.kind==="err")return context.description.resultType;
   if(expression.kind==="record_construct"){const record=context.records.get(expression.name);if(!record)fail("lua.record_construct_type",expression.location);return `record:${record.id}:${record.name}`;}
   if(expression.kind==="transition_construct"){const state=controlExpressionType(expression.arguments[0],context),result=controlExpressionType(expression.arguments[1],context);if(!state.startsWith("record:"))fail("lua.transition_construct_type",expression.location);const parts=state.split(":");return `transition:${parts[1]}:${parts.slice(2).join(":")}:${result}`;}
-  if (expression.kind === "integer_literal" || expression.kind === "add" || expression.kind === "multiply") return "i64";
+  if (expression.kind === "integer_literal" || expression.kind === "add" || expression.kind === "multiply"||expression.kind==="subtract") return "i64";
   if(expression.kind==="bool_literal")return "bool";
   if(expression.kind==="mutable_closure"||expression.kind==="immutable_closure")return "function:i64:i64";
+  if(expression.kind==="canonical_closure")return"function:i64:i64";
   if(expression.kind==="raw_call"){
     const local=context.symbols.get(expression.name);
     if(local?.type==="function:i64:i64")return "i64";
     const declared=context.descriptionsByName.get(expression.name);if(!declared)fail("lua.unknown_call",expression.location);return declared.resultType;
   }
+  if(expression.kind==="interface_value") {const implementation=context.implementations.get(expression.implementation);if(!implementation)fail("lua.interface_implementation",expression.location);return`interface:${implementation.protocol.id}:${implementation.protocol.name}`;}
+  if(expression.kind==="protocol_call"){const receiver=controlExpressionType(expression.receiver,context);if(!receiver.startsWith("interface:"))fail("lua.protocol_call_receiver",expression.location);return"i64";}
   if(expression.kind==="map_lookup")return inferComposableExpression(expression,context);
   if(expression.kind==="length"||expression.kind==="index")return "i64";
   if(expression.kind==="collection_append"||expression.kind==="collection_update"||expression.kind==="slice_remove"){const base=context.symbols.get(expression.base);if(!base||base.type!=="slice:i64")fail("lua.collection_argument_type",expression.location);return base.type;}
@@ -346,6 +382,7 @@ function controlExpressionType(expression, context) {
 }
 function emitControlExpression(expression, expected, context, path) {
   if(expression.kind==="mutable_closure"||expression.kind==="immutable_closure")return emitRawClosure(expression,expected,context,path);
+  if(expression.kind==="canonical_closure")return emitCanonicalClosure(expression,expected,context,path);
   if(expression.kind==="map_lookup")return emitComposableExpression(expression,context,path).id;
   if(expression.kind.startsWith("nested_"))return emitNestedControlExpression(expression,expected,context,path);
   if(expression.kind==="ok"||expression.kind==="err"){
@@ -380,13 +417,19 @@ function emitControlExpression(expression, expected, context, path) {
     const declared=context.descriptionsByName.get(expression.name);if(!declared||declared.resultType!==expected||declared.parameters.length!==expression.arguments.length)fail("lua.call_type",expression.location);
     const arguments_=expression.arguments.map((item,index)=>emitControlExpression(item,declared.parameters[index].type,context,`${path}.argument.${index}`)),id=stableID("execution",context.description.id,path,"call");context.additions.push(graphEntity(id,entity(id,schema.call,[[0x9600,ref(declared.id)],[0x9601,refs(arguments_)]])));return id;
   }
+  if(expression.kind==="interface_value"){
+    const implementation=context.implementations.get(expression.implementation);if(!implementation||typeID(expected)!==implementation.protocol.id)fail("lua.interface_implementation",expression.location);const record=[...context.records.values()].find(item=>item.id===implementation.concreteID),expectedConcrete=implementation.concreteID===ids.i64?"i64":record?`record:${record.id}:${record.name}`:null;if(!expectedConcrete)fail("lua.interface_concrete_type",expression.location);const concrete=emitControlExpression(expression.value,expectedConcrete,context,`${path}.value`),id=stableID("execution",context.description.id,path,"interface-value");context.additions.push(graphEntity(id,entity(id,schema.interfaceValue,[[0xa0130,ref(implementation.protocol.id)],[0xa0131,ref(concrete)],[0xa0132,ref(implementation.witnessID)]])));return id;
+  }
+  if(expression.kind==="protocol_call"){
+    const receiverType=controlExpressionType(expression.receiver,context),protocol=[...context.implementations.values()].map(item=>item.protocol).find(item=>item.id===typeID(receiverType)),requirement=protocol?.requirements.find(item=>item.name===expression.requirement);if(!requirement||expression.arguments.length!==1||expected!=="i64")fail("lua.protocol_call_contract",expression.location);const receiver=emitControlExpression(expression.receiver,receiverType,context,`${path}.receiver`),argument=emitControlExpression(expression.arguments[0],"i64",context,`${path}.argument`),id=stableID("execution",context.description.id,path,"dynamic-call");context.additions.push(graphEntity(id,entity(id,schema.dynamicMethodCall,[[0xa0140,ref(receiver)],[0xa0141,ref(requirement.id)],[0xa0142,refs([argument])]])));return id;
+  }
   const leftType = expression.kind === "boolean_and" || expression.kind === "boolean_or" ? "bool" : "i64";
   const left = emitControlExpression(expression.left, leftType, context, `${path}.left`), right = emitControlExpression(expression.right, leftType, context, `${path}.right`), id = stableID("execution", context.description.id, path, expression.kind);
   if (expression.kind === "equal_i64") {
     const forward=stableID("execution",context.description.id,path,"less-equal-forward"),reverse=stableID("execution",context.description.id,path,"less-equal-reverse");
     context.additions.push(graphEntity(forward,entity(forward,schema.integerLessEqual,[[0x9160,ref(left)],[0x9161,ref(right)],[0x9162,ref(ids.i64)]])));context.additions.push(graphEntity(reverse,entity(reverse,schema.integerLessEqual,[[0x9160,ref(right)],[0x9161,ref(left)],[0x9162,ref(ids.i64)]])));context.additions.push(graphEntity(id,entity(id,schema.booleanAnd,[[0x9b10,ref(forward)],[0x9b11,ref(reverse)]])));return id;
   }
-  const shape = expression.kind === "add" ? [schema.integerAdd,0x9140,0x9141,[[0x9142,ref(ids.i64)]]] : expression.kind === "multiply" ? [schema.integerMultiply,0x9900,0x9901,[[0x9902,ref(ids.i64)]]] : expression.kind === "boolean_and" ? [schema.booleanAnd,0x9b10,0x9b11,[]] : expression.kind === "boolean_or" ? [schema.booleanOr,0x9c10,0x9c11,[]] : [schema.integerLessEqual,0x9160,0x9161,[[0x9162,ref(ids.i64)]]];
+  const shape = expression.kind === "add" ? [schema.integerAdd,0x9140,0x9141,[[0x9142,ref(ids.i64)]]] : expression.kind === "multiply" ? [schema.integerMultiply,0x9900,0x9901,[[0x9902,ref(ids.i64)]]] : expression.kind==="subtract"?[schema.integerSubtract,0x9a00,0x9a01,[[0x9a02,ref(ids.i64)]]]:expression.kind === "boolean_and" ? [schema.booleanAnd,0x9b10,0x9b11,[]] : expression.kind === "boolean_or" ? [schema.booleanOr,0x9c10,0x9c11,[]] : [schema.integerLessEqual,0x9160,0x9161,[[0x9162,ref(ids.i64)]]];
   context.additions.push(graphEntity(id, entity(id, shape[0], [[shape[1],ref(left)],[shape[2],ref(right)],...shape[3]]))); return id;
 }
 
@@ -408,6 +451,9 @@ function emitRawClosure(expression,expected,context,path){
   emitClosureI64Body(expression.body,captureName,expression.parameter,captureRead,argumentRead,body,context);
   context.additions.push(graphEntity(id,entity(id,schema.closureConstruct,[[0xa0230,ref(typeID(expected))],[0xa0231,refs([parameter])],[0xa0232,refs([capture])],[0xa0233,ref(body)]])));return id;
 }
+function emitCanonicalClosure(expression,expected,context,path){
+  if(expected!=="function:i64:i64")fail("lua.closure_type",expression.location);ensureType(expected,context.additions,context.records);const initial=emitControlExpression(expression.initial,"i64",context,`${path}.capture.initial`),capture=stableID("execution",context.description.id,path,"capture"),parameter=stableID("execution",context.description.id,path,"parameter"),captureRead=stableID("execution",context.description.id,path,"capture-read"),parameterReadID=stableID("execution",context.description.id,path,"parameter-read"),body=stableID("execution",context.description.id,path,"body"),id=stableID("execution",context.description.id,path,expression.mutable?"mutable-closure":"closure");context.additions.push(graphEntity(parameter,entity(parameter,schema.parameter,[[0x9120,bytes(expression.parameter)],[0x9121,ref(ids.i64)],[0x9122,"uu 0"]])));if(expression.mutable)context.additions.push(graphEntity(capture,entity(capture,schema.mutableCaptureBinding,[[0xa0300,bytes(expression.capture)],[0xa0301,ref(ids.i64)],[0xa0302,ref(initial)]])),graphEntity(captureRead,entity(captureRead,schema.mutableCaptureRead,[[0xa0310,ref(capture)]])));else context.additions.push(graphEntity(capture,entity(capture,schema.captureBinding,[[0xa0210,bytes(expression.capture)],[0xa0211,ref(ids.i64)],[0xa0212,ref(initial)]])),graphEntity(captureRead,entity(captureRead,schema.captureRead,[[0xa0220,ref(capture)]])));context.additions.push(graphEntity(parameterReadID,entity(parameterReadID,schema.read,[[0x9130,ref(parameter)]])));emitClosureI64Body(expression.body,expression.capture,expression.parameter,captureRead,parameterReadID,body,context);if(!expression.mutable){context.additions.push(graphEntity(id,entity(id,schema.closureConstruct,[[0xa0230,ref(typeID(expected))],[0xa0231,refs([parameter])],[0xa0232,refs([capture])],[0xa0233,ref(body)]])));return id;}const update=stableID("execution",context.description.id,path,"update"),result=stableID("execution",context.description.id,path,"result"),sequence=stableID("execution",context.description.id,path,"sequence");context.additions.push(graphEntity(update,entity(update,schema.captureUpdate,[[0xa0320,ref(capture)],[0xa0321,ref(body)]])),graphEntity(result,entity(result,schema.mutableCaptureRead,[[0xa0310,ref(capture)]])),graphEntity(sequence,entity(sequence,schema.sequence,[[0xa0330,refs([update])],[0xa0331,ref(result)]])),graphEntity(id,entity(id,schema.mutableClosureConstruct,[[0xa0340,ref(typeID(expected))],[0xa0341,refs([parameter])],[0xa0342,refs([capture])],[0xa0343,ref(sequence)]])));return id;
+}
 function emitNestedControlExpression(expression,expected,context,path){
   const kind=expression.kind.slice(7),args=expression.arguments,id=stableID("execution",context.description.id,path,kind),emit=(value,type,suffix)=>emitControlExpression(value,type,context,`${path}.${suffix}`);
   if(kind==="map_update"){
@@ -423,16 +469,17 @@ function emitNestedControlExpression(expression,expected,context,path){
 }
 function findClosureCapture(expression,parameter,context){const names=[];const walk=value=>{if(!value||typeof value!=="object")return;if(value.kind==="identifier"&&value.name!==parameter)names.push(value.name);for(const child of Object.values(value))walk(child);};walk(expression);const unique=[...new Set(names.filter(name=>context.symbols.has(name)))];if(unique.length!==1)fail("lua.closure_capture_profile",expression.location);return unique[0];}
 function emitClosureI64Body(expression,captureName,parameterName,captureRead,parameterReadID,id,context){if(expression.kind!=="add"&&expression.kind!=="multiply")fail("lua.closure_body_profile",expression.location);const read=value=>{if(value.kind!=="identifier")fail("lua.closure_operand",value.location);if(value.name===captureName)return captureRead;if(value.name===parameterName)return parameterReadID;fail("lua.closure_operand",value.location);};const shape=expression.kind==="add"?[schema.integerAdd,0x9140,0x9141,0x9142]:[schema.integerMultiply,0x9900,0x9901,0x9902];context.additions.push(graphEntity(id,entity(id,shape[0],[[shape[1],ref(read(expression.left))],[shape[2],ref(read(expression.right))],[shape[3],ref(ids.i64)]])));}
-function emitMutableClosureCall(expression,callee,context,path,resultName){
+function emitMutableClosureCall(expression,callee,context,path,resultName,resultPlace=null){
   if(expression.arguments.length!==1)fail("lua.stateful_call_arity",expression.location);const calleeRead=emitControlExpression({kind:"identifier",name:expression.name,location:expression.location},callee.type,context,`${path}.callee`),argument=emitControlExpression(expression.arguments[0],"i64",context,`${path}.argument`),call=stableID("execution",context.description.id,path,"stateful-call"),transitionTypeID=stableID("execution","type","state-transition",typeID(callee.type),ids.i64);if(!context.additions.some(item=>item.id===transitionTypeID))context.additions.push(graphEntity(transitionTypeID,entity(transitionTypeID,schema.transitionType,[[0xa0040,ref(typeID(callee.type))],[0xa0041,ref(ids.i64)]])));context.additions.push(graphEntity(call,entity(call,schema.statefulIndirectCall,[[0xa0350,ref(calleeRead)],[0xa0351,refs([argument])]])));
   const transitionLocal=stableID("execution",context.description.id,path,"transition-local"),bindTransition=stableID("execution",context.description.id,path,"bind-transition"),transitionRead1=stableID("execution",context.description.id,path,"transition-read-state"),state=stableID("execution",context.description.id,path,"state"),assign=stableID("execution",context.description.id,path,"assign");context.additions.push(graphEntity(transitionLocal,entity(transitionLocal,schema.localBinding,[[0x9d00,bytes(`${expression.name}_transition`)],[0x9d01,ref(transitionTypeID)],[0x9d02,ref(call)]])),graphEntity(bindTransition,entity(bindTransition,schema.bindLocal,[[0x9d10,ref(transitionLocal)]])),graphEntity(transitionRead1,entity(transitionRead1,schema.localRead,[[0x9d20,ref(transitionLocal)]])),graphEntity(state,entity(state,schema.transitionState,[[0xa0060,ref(transitionRead1)]])),graphEntity(assign,entity(assign,schema.assignPlace,[[0x9e30,ref(callee.id)],[0x9e31,ref(state)]])));
   const statements=[bindTransition,assign];
   const makeResult=(suffix)=>{const read=stableID("execution",context.description.id,path,`transition-read-${suffix}`),result=stableID("execution",context.description.id,path,`result-${suffix}`);context.additions.push(graphEntity(read,entity(read,schema.localRead,[[0x9d20,ref(transitionLocal)]])),graphEntity(result,entity(result,schema.transitionResult,[[0xa0070,ref(read)]])));return result;};
   if(callee.closureCapturePlace){const captureResult=makeResult("capture"),captureAssign=stableID("execution",context.description.id,path,"assign-capture");context.additions.push(graphEntity(captureAssign,entity(captureAssign,schema.assignPlace,[[0x9e30,ref(callee.closureCapturePlace)],[0x9e31,ref(captureResult)]])));statements.push(captureAssign);}
+  if(resultPlace){const placeResult=makeResult("place"),placeAssign=stableID("execution",context.description.id,path,"assign-result");context.additions.push(graphEntity(placeAssign,entity(placeAssign,schema.assignPlace,[[0x9e30,ref(resultPlace)],[0x9e31,ref(placeResult)]])));statements.push(placeAssign);}
   let resultLocal=null;if(resultName){const result=makeResult("value"),local=stableID("execution",context.description.id,path,"result-local"),bind=stableID("execution",context.description.id,path,"bind-result");context.additions.push(graphEntity(local,entity(local,schema.localBinding,[[0x9d00,bytes(resultName)],[0x9d01,ref(ids.i64)],[0x9d02,ref(result)]])),graphEntity(bind,entity(bind,schema.bindLocal,[[0x9d10,ref(local)]])));statements.push(bind);resultLocal=local;}return{statements,resultLocal};
 }
 
-function parseSource(source, file, records) {
+function parseSource(source, file, records,protocolTypes=new Map()) {
   if (typeof source !== "string" || typeof file !== "string" || !file) fail("lua.invalid_source");
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
   const declarations = [];
@@ -447,13 +494,13 @@ function parseSource(source, file, records) {
     const location = { file, line: index + 1, column: lines[index].indexOf("function") + 1 };
     const parameters = match[3].trim() ? match[3].split(",").map((item) => item.trim()) : [];
     if (parameters.some((item) => !/^[A-Za-z_][A-Za-z0-9_]*$/.test(item))) fail("lua.unsupported_parameter", location);
-    const signature = validateAnnotations(annotations, parameters, location, records);
+    const signature = validateAnnotations(annotations, parameters, location, records,protocolTypes);
     annotations = [];
     index += 1;
     const body = []; let depth = 1;
     while (index < lines.length && depth > 0) {
       const item = lines[index].trim();
-      if (/^(?:while\s+.+\s+do|if\s+.+\s+then|for\s+.+\s+do)$/.test(item) || /function\([A-Za-z_]\w*\)\s*$/.test(item)) depth += 1;
+      if (/^(?:while\s+.+\s+do|if\s+.+\s+then|for\s+.+\s+do)$/.test(item) || !/^end,\s*function/.test(item)&&/function\([A-Za-z_]\w*\)\s*$/.test(item)) depth += 1;
       if (item === "end" || item === "end)") depth -= 1;
       if (depth > 0) body.push({ text: lines[index], line: index + 1 });
       index += 1;
@@ -474,7 +521,8 @@ function parseControlBlock(lines, file, start = 0, nested = false) {
   const statements = []; let index = start;
   while (index < lines.length) {
     const text = lines[index].text.trim(), location = { file, line: lines[index].line, column: 1 };
-    if (text === "end" || text === "end)") return { statements, next: index + 1, terminator: text };
+    if (text === "end" || text === "end)"||text==="else") return { statements, next: index + 1, terminator: text };
+    const resultSeparator=/^end,\s*function\(([A-Za-z_]\w*)\)$/.exec(text);if(resultSeparator)return{statements,next:index+1,terminator:"result-separator",binding:resultSeparator[1]};
     let optionCallback = /^return\s+Seme\.match_option\((.*),\s*function\(([A-Za-z_]\w*)\)\s*$/.exec(text);
     if (optionCallback) {
       const arms = splitCallArguments(optionCallback[1], file, lines[index].line);
@@ -485,6 +533,8 @@ function parseControlBlock(lines, file, start = 0, nested = false) {
       index = child.next;
       continue;
     }
+    const resultCallback=/^return\s+Seme\.match_result\((.*),\s*function\(([A-Za-z_]\w*)\)$/.exec(text);
+    if(resultCallback){const ok=parseControlBlock(lines,file,index+1,true);if(ok.terminator!=="result-separator")fail("lua.result_match_callback_separator",location);const error=parseControlBlock(lines,file,ok.next,true);if(error.terminator!=="end)")fail("lua.result_match_callback_end",location);statements.push({kind:"return_result_match_block",value:parseExpression(resultCallback[1],file,lines[index].line),okBinding:resultCallback[2],okBody:ok.statements,errorBinding:ok.binding,errorBody:error.statements,location});index=error.next;continue;}
     let closure = /^local\s+([A-Za-z_]\w*)\s*=\s*function\(([A-Za-z_]\w*)\)\s*(?:(return)\s+)?(.+)\s+end$/.exec(text);
     if (closure) {
       if (!closure[3]) {
@@ -501,7 +551,7 @@ function parseControlBlock(lines, file, start = 0, nested = false) {
     match = /^while\s+(.+)\s+do$/.exec(text);
     if (match) { const child = parseControlBlock(lines, file, index + 1, true); statements.push({ kind: "while", condition: parseExpression(match[1], file, lines[index].line), body: child.statements, location }); index = child.next; continue; }
     match = /^if\s+(.+)\s+then$/.exec(text);
-    if (match) { const child = parseControlBlock(lines, file, index + 1, true); statements.push({ kind: "when", condition: parseExpression(match[1], file, lines[index].line), body: child.statements, location }); index = child.next; continue; }
+    if (match) { const child = parseControlBlock(lines, file, index + 1, true);if(child.terminator==="else"){const alternate=parseControlBlock(lines,file,child.next,true);if(alternate.terminator!=="end")fail("lua.if_else_end",location);statements.push({kind:"if_else",condition:parseExpression(match[1],file,lines[index].line),whenTrue:child.statements,whenFalse:alternate.statements,location});index=alternate.next;}else{statements.push({ kind: "when", condition: parseExpression(match[1], file, lines[index].line), body: child.statements, location }); index = child.next;}continue; }
     match = /^return\s+(.+)$/.exec(text);
     if (match) { statements.push({ kind: "return", expression: parseExpression(match[1], file, lines[index].line), location }); index += 1; continue; }
     match=/^Seme\.observe\((.*)\)$/.exec(text);if(match){const argument=match[1].trim(),expression=argument==="true"||argument==="false"?{kind:"bool_literal",value:argument==="true",location}:parseExpression(argument,file,lines[index].line);statements.push({kind:"effect",expression,location});index+=1;continue;}
@@ -512,7 +562,7 @@ function parseControlBlock(lines, file, start = 0, nested = false) {
   return statements;
 }
 
-function validateAnnotations(annotations, parameters, location, records) {
+function validateAnnotations(annotations, parameters, location, records,protocolTypes) {
   const declared = annotations.filter((item) => item.text.startsWith("---@param ")).map((item) => /^---@param\s+([A-Za-z_][A-Za-z0-9_]*)\s+(\S+)$/.exec(item.text));
   const result = annotations.filter((item) => item.text.startsWith("---@return "));
   const identities = annotations.filter((item) => item.text.startsWith("---@seme-id "));
@@ -522,18 +572,20 @@ function validateAnnotations(annotations, parameters, location, records) {
   if (identities.length && !identity) fail("lua.invalid_semantic_identity", { ...location, line: identities[0].line });
   if (declared.length !== parameters.length || declared.some((item, index) => item[1] !== parameters[index])) fail("lua.signature_mismatch", location);
   if (annotations.length !== declared.length + 1 + identities.length) fail("lua.unsupported_annotation", location);
-  return { identity: identity?.[1], parameters: declared.map((item) => ({ name: item[1], type: annotationType(item[2], location, records) })), resultType: annotationType(returned[1], location, records) };
+  return { identity: identity?.[1], parameters: declared.map((item) => ({ name: item[1], type: annotationType(item[2], location, records,protocolTypes) })), resultType: annotationType(returned[1], location, records,protocolTypes) };
 }
-function annotationType(value, location, records) {
+function annotationType(value, location, records,protocolTypes=new Map()) {
   const scalar = ({ boolean: "bool", "seme.i64": "i64", "seme.text": "text", "seme.bytes": "bytes" })[value];
   if (scalar) return scalar;
   const option = /^seme\.option<(.+)>$/.exec(value);
-  if (option) return `option:${annotationType(option[1], location, records)}`;
+  if (option) return `option:${annotationType(option[1], location, records,protocolTypes)}`;
+  const protocol=/^seme\.protocol<([A-Za-z_]\w*)>$/.exec(value);if(protocol){const item=protocolTypes.get(protocol[1]);if(!item)fail("lua.unknown_protocol_type",location);return`interface:${item.id}:${item.name}`;}
+  if(value==="seme.function<seme.i64,seme.i64>")return"function:i64:i64";
   const transition=/^seme\.transition<([^,]+),([^>]+)>$/.exec(value);if(transition){const record=records.get(transition[1]);if(!record)fail("lua.unsupported_annotation",location);return `transition:${record.id}:${record.name}:${annotationType(transition[2],location,records)}`;}
   const generic = /^(seme\.(?:result|array|slice|map))<(.+)>$/.exec(value);
   if (generic) {
     const arguments_ = splitGenericArguments(generic[2], location);
-    if (generic[1] === "seme.result" && arguments_.length === 2) return `result:${annotationType(arguments_[0], location, records)}:${annotationType(arguments_[1], location, records)}`;
+    if (generic[1] === "seme.result" && arguments_.length === 2) return `result:${annotationType(arguments_[0], location, records,protocolTypes)}:${annotationType(arguments_[1], location, records,protocolTypes)}`;
     if (generic[1] === "seme.array" && arguments_.length === 2 && /^[1-9][0-9]*$/.test(arguments_[1])) return `array:${annotationType(arguments_[0], location, records)}:${arguments_[1]}`;
     if (generic[1] === "seme.slice" && arguments_.length === 1) return `slice:${annotationType(arguments_[0], location, records)}`;
     if (generic[1] === "seme.map" && arguments_.length === 2) return `map:${annotationType(arguments_[0], location, records)}:${annotationType(arguments_[1], location, records)}`;
@@ -555,6 +607,9 @@ function splitGenericArguments(value, location) {
 
 function parseExpression(text, file, line) {
   text=text.trim();
+  const explicitClosure=/^Seme\.(mutable_closure|closure)\((.*),\s*function\(([A-Za-z_]\w*),\s*([A-Za-z_]\w*)\)\s*return\s*(.*)\s*end\)$/.exec(text);if(explicitClosure)return{kind:"canonical_closure",mutable:explicitClosure[1]==="mutable_closure",initial:parseExpression(explicitClosure[2],file,line),capture:explicitClosure[3],parameter:explicitClosure[4],body:parseExpression(explicitClosure[5],file,line),location:{file,line,column:1}};
+  const boxed=/^Seme\.box_protocol\(\s*([A-Za-z_]\w*)\s*,\s*(.*)\)$/.exec(text);if(boxed)return{kind:"interface_value",implementation:boxed[1],value:parseExpression(boxed[2],file,line),location:{file,line,column:1}};
+  const protocolCall=/^Seme\.protocol_call\((.*)\)$/.exec(text);if(protocolCall){const values=splitCallArguments(protocolCall[1],file,line);if(values.length!==3)fail("lua.protocol_call_arity",{file,line,column:1});const requirement=/^"([A-Za-z_]\w*)"$/.exec(values[1]);if(!requirement)fail("lua.protocol_call_requirement",{file,line,column:1});return{kind:"protocol_call",receiver:parseExpression(values[0],file,line),requirement:requirement[1],arguments:[parseExpression(values[2],file,line)],location:{file,line,column:1}};}
   const resultHelper=/^Seme\.(check_positive|increment_positive)\(\s*([A-Za-z_]\w*)\s*\)$/.exec(text);if(resultHelper)return{kind:resultHelper[1],value:resultHelper[2],location:{file,line,column:1}};
   const transition=/^Seme\.transition_step\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*,\s*"([A-Za-z_]\w*)"\s*\)$/.exec(text);if(transition)return{kind:"transition_step",value:transition[1],delta:transition[2],field:transition[3],location:{file,line,column:1}};
   const immutableClosure=/^Seme\.immutable_closure_run\(\s*([A-Za-z_]\w*)\s*,\s*([A-Za-z_]\w*)\s*\)$/.exec(text);if(immutableClosure)return{kind:"immutable_closure_run",base:immutableClosure[1],value:immutableClosure[2],location:{file,line,column:1}};
@@ -595,6 +650,7 @@ function parseExpression(text, file, line) {
     if (arguments_.length !== 2) fail("lua.multiply_arity", { file, line, column: 1 });
     return { kind: "multiply", left: parseExpression(arguments_[0], file, line), right: parseExpression(arguments_[1], file, line), location: { file, line, column: 1 } };
   }
+  const subtract=/^Seme\.subtract\((.*)\)$/.exec(text);if(subtract){const arguments_=splitCallArguments(subtract[1],file,line);if(arguments_.length!==2)fail("lua.subtract_arity",{file,line,column:1});return{kind:"subtract",left:parseExpression(arguments_[0],file,line),right:parseExpression(arguments_[1],file,line),location:{file,line,column:1}};}
   const nestedFold=/^Seme\.fold\((.*),\s*([A-Za-z_][A-Za-z0-9_]*),\s*function\(([A-Za-z_][A-Za-z0-9_]*),\s*([A-Za-z_][A-Za-z0-9_]*)\)\s*return\s*Seme\.add\(\3,\s*\4\)\s*end\)$/.exec(text);
   if(nestedFold&&nestedFold[1].includes("Seme."))return{kind:"nested_fold",arguments:[parseExpression(nestedFold[1],file,line),parseExpression(nestedFold[2],file,line)],accumulator:nestedFold[3],element:nestedFold[4],location:{file,line,column:1}};
   const nestedLookup=/^Seme\.lookup_zero\((.*),\s*([A-Za-z_][A-Za-z0-9_]*),\s*"(i64|text|bytes)"\)$/.exec(text);
@@ -676,6 +732,7 @@ function emitComposableExpression(expression,context,path){
 }
 
 function emitExpression(expression, context, path) {
+  if(expression.kind==="canonical_closure"||expression.kind==="protocol_call"||expression.kind==="interface_value")return emitControlExpression(expression,context.description.resultType,{...context,symbols:new Map(context.description.parameters.map((item,index)=>[item.name,{kind:"parameter",type:item.type,id:context.parameterIDs[index]}]))},path);
   if(expression.kind==="record_construct"||expression.kind==="transition_construct"||((expression.kind==="ok"||expression.kind==="err")&&expression.arguments[0]?.kind!=="identifier"))return emitControlExpression(expression,context.description.resultType,{...context,symbols:new Map(context.description.parameters.map((item,index)=>[item.name,{kind:"parameter",type:item.type,id:context.parameterIDs[index]}]))},path);
   if(expression.kind.startsWith("nested_"))return emitNestedExpression(expression,context.description.resultType,context,path);
   if (expression.kind === "identifier") {
@@ -993,6 +1050,7 @@ function splitResult(type) {
 function typeID(type) {
   if (ids[type]) return ids[type];
   if(type==="function:i64:i64")return stableID("execution","type","function","i64","i64");
+  if(type.startsWith("interface:"))return type.split(":")[1];
   if (type.startsWith("option:")) return stableID("execution", "type", "option", typeID(type.slice(7)));
   if (type.startsWith("result:")) { const [ok, error] = splitResult(type); return stableID("execution", "type", "result", typeID(ok), typeID(error)); }
   if (type.startsWith("array:")) { const [, element, length] = type.split(":"); return stableID("execution", "type", "fixed-array", element, length); }
@@ -1009,6 +1067,7 @@ function ensureType(type, additions, records) {
   if (type === "text") return add(ids.text, schema.stringType, []);
   if (type === "bytes") return add(ids.bytes, schema.bytesType, []);
   if(type==="function:i64:i64"){ensureType("i64",additions,records);return add(typeID(type),schema.functionType,[[0xa0200,refs([ids.i64])],[0xa0201,ref(ids.i64)]]);}
+  if(type.startsWith("interface:"))return;
   if (type.startsWith("option:")) { const value = type.slice(7); ensureType(value, additions, records); return add(typeID(type), schema.optionType, [[0xa0500, ref(typeID(value))]]); }
   if (type.startsWith("result:")) { const [ok, error] = splitResult(type); ensureType(ok, additions, records); ensureType(error, additions, records); return add(typeID(type), schema.resultType, [[0x9400, ref(typeID(ok))], [0x9401, ref(typeID(error))]]); }
   if (type.startsWith("array:")) { const [, element, length] = type.split(":"); ensureType(element, additions, records); return add(typeID(type), schema.fixedArrayType, [[0x9f20, ref(typeID(element))], [0x9f21, `uu ${length}`]]); }

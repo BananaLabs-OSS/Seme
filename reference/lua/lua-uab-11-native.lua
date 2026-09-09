@@ -1,7 +1,7 @@
 local adapter, policy, application, corpus_path = assert(arg[1]), assert(arg[2]), assert(arg[3]), assert(arg[4])
 local Seme = dofile(adapter)
 _G.Seme = Seme
-assert(loadfile(policy))()
+if policy ~= "-" then assert(loadfile(policy))() end
 assert(loadfile(application))()
 
 local function i64(value) return Seme.i64(tostring(value)) end
