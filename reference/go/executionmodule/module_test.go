@@ -414,7 +414,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(33); err == nil {
+	if _, err := Declarations(34); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }

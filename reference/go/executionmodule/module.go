@@ -24,7 +24,7 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 32 {
+	if version < 2 || version > 33 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -217,6 +217,12 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0xa063, "OptionMatch", []Field{field(0xa0630, "option_match.value", 5, 0, 0), field(0xa0631, "option_match.none_body", 5, 0x9080, 0), field(0xa0632, "option_match.some_binding", 5, 0xa060, 0), field(0xa0633, "option_match.some_body", 5, 0x9080, 0)}},
 			Schema{0xa064, "BytesLiteral", []Field{field(0xa0640, "bytes_literal.value", 4, 0, 0)}},
 			Schema{0xa065, "BytesEqual", []Field{field(0xa0650, "bytes_equal.left", 5, 0, 0), field(0xa0651, "bytes_equal.right", 5, 0, 0)}},
+		)
+	}
+	if version >= 33 {
+		schemas = append(schemas,
+			Schema{0xa066, "SliceRemove", []Field{field(0xa0660, "slice_remove.slice", 5, 0, 0), field(0xa0661, "slice_remove.index", 5, 0, 0)}},
+			Schema{0xa067, "MapRemove", []Field{field(0xa0670, "map_remove.map", 5, 0, 0), field(0xa0671, "map_remove.key", 5, 0, 0)}},
 		)
 	}
 	return schemas, nil
