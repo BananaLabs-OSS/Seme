@@ -23,8 +23,16 @@ func field(id uint64, name string, kind, schema, card uint64) Field {
 	return Field{id, name, kind, schema, card}
 }
 
+// ValidateSliceConstructElementCount enforces the language-neutral v34 bound.
+func ValidateSliceConstructElementCount(count int) error {
+	if count < 0 || count > 512 {
+		return fmt.Errorf("slice construct element count %d outside 0..512", count)
+	}
+	return nil
+}
+
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 33 {
+	if version < 2 || version > 34 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -223,6 +231,11 @@ func Declarations(version int) ([]Schema, error) {
 		schemas = append(schemas,
 			Schema{0xa066, "SliceRemove", []Field{field(0xa0660, "slice_remove.slice", 5, 0, 0), field(0xa0661, "slice_remove.index", 5, 0, 0)}},
 			Schema{0xa067, "MapRemove", []Field{field(0xa0670, "map_remove.map", 5, 0, 0), field(0xa0671, "map_remove.key", 5, 0, 0)}},
+		)
+	}
+	if version >= 34 {
+		schemas = append(schemas,
+			Schema{0xa068, "SliceConstruct", []Field{field(0xa0680, "slice_construct.type", 5, 0x90f8, 0), field(0xa0681, "slice_construct.elements", 5, 0, 2)}},
 		)
 	}
 	return schemas, nil
