@@ -100,6 +100,9 @@ func certifyPureFunction(graph wire.Envelope) ([]byte, PureABI, error) {
 	if entry, entryErr := field(programs[0], 0x9151); entryErr == nil && entry.Tag == 6 {
 		if function, ok := graph.Entities[entry.Reference]; ok && function.Schema == identity(0x9011) {
 			result, _ := field(function, 0x9112)
+			if graph.Entities[result.Reference].Schema == identity(0x9042) {
+				return certifyComposedPureFunction(graph, programs[0], function)
+			}
 			parameters, _ := field(function, 0x9111)
 			variableTransition := false
 			if graph.Entities[result.Reference].Schema == identity(0xa004) && parameters.Tag == 7 {

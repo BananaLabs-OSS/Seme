@@ -260,6 +260,48 @@ func analyzeTaggedArm(node ast.Expr, source *ast.Ident, field, binding string, s
 			return &goExpression{kind: goVariantRead, text: binding}, true
 		}
 	}
+	if literal, ok := ast.Unparen(node).(*ast.CompositeLit); ok {
+		if _, _, result := goResultTypes(info.TypeOf(literal)); result {
+			fields, err := keyedCompositeFields(literal)
+			if err != nil {
+				return nil, false
+			}
+			tag, tagOK := fields["Ok"].(*ast.Ident)
+			selected, kind := "Error", goResultError
+			if tagOK && tag.Name == "true" {
+				selected, kind = "Value", goResultOk
+			} else if !tagOK || tag.Name != "false" {
+				return nil, false
+			}
+			valueNode, exists := fields[selected]
+			if !exists || len(fields) != 2 {
+				return nil, false
+			}
+			value, ok := analyzeTaggedPayloadExpression(valueNode, source, field, binding, signature, info, functions, records)
+			if !ok {
+				return nil, false
+			}
+			return &goExpression{kind: kind, typeID: goSemanticTypeIdentity(info.TypeOf(literal)), left: value}, true
+		}
+	}
+	value, err := analyzeGoExpressionWithProgram(node, signature, info, nil, functions, records, nil)
+	return value, err == nil
+}
+
+func analyzeTaggedPayloadExpression(node ast.Expr, source *ast.Ident, field, binding string, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goExpression, bool) {
+	if selector, ok := ast.Unparen(node).(*ast.SelectorExpr); ok {
+		base, baseOK := ast.Unparen(selector.X).(*ast.Ident)
+		if baseOK && info.Uses[base] == info.Uses[source] && selector.Sel.Name == field {
+			return &goExpression{kind: goVariantRead, text: binding}, true
+		}
+	}
+	if binary, ok := ast.Unparen(node).(*ast.BinaryExpr); ok && binary.Op == token.ADD {
+		left, leftOK := analyzeTaggedPayloadExpression(binary.X, source, field, binding, signature, info, functions, records)
+		right, rightOK := analyzeTaggedPayloadExpression(binary.Y, source, field, binding, signature, info, functions, records)
+		if leftOK && rightOK {
+			return &goExpression{kind: goIntegerAdd, left: left, right: right}, true
+		}
+	}
 	value, err := analyzeGoExpressionWithProgram(node, signature, info, nil, functions, records, nil)
 	return value, err == nil
 }

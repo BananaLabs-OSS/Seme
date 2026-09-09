@@ -1,0 +1,6 @@
+{"valid":[
+  {"name":"success","value":"4","variant":"ok","payload":"5"},
+  {"name":"zero-error","value":"0","variant":"error","payload":"99"},
+  {"name":"negative-error","value":"-7","variant":"error","payload":"99"},
+  {"name":"success-wrap","value":"9223372036854775807","variant":"ok","payload":"-9223372036854775808"}
+]}
