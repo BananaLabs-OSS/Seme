@@ -326,6 +326,10 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 		t, err := field(e, 0xa0410)
 		return t.Reference, err == nil && t.Tag == 6
 	}
+	if e.Schema == id(0xa068) {
+		t, err := field(e, 0xa0680)
+		return t.Reference, err == nil && t.Tag == 6
+	}
 	return wire.ID{}, false
 }
 
@@ -773,6 +777,28 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.length")
 		}
 		return Value{Kind: "i64", I64: fmt.Sprint(len(base.Items))}, nil
+	case id(0xa068):
+		typeID, te := refField(0xa0680)
+		elements, ee := field(e, 0xa0681)
+		if te != nil || ee != nil || elements.Tag != 7 || len(elements.List) > 512 {
+			return Value{}, fmt.Errorf("canonicaleval.slice_construct_fields")
+		}
+		items := make([]Value, len(elements.List))
+		for index, element := range elements.List {
+			if element.Tag != 6 {
+				return Value{}, fmt.Errorf("canonicaleval.slice_construct_element")
+			}
+			value, err := eval(g, element.Reference, env, budget-1)
+			if err != nil {
+				return Value{}, err
+			}
+			items[index] = value
+		}
+		result := Value{Kind: "slice", Items: items}
+		if validateValue(g, typeID, result, budget-1) != nil {
+			return Value{}, fmt.Errorf("canonicaleval.slice_construct_type")
+		}
+		return result, nil
 	case id(0x90fb), id(0x90fc), id(0xa066):
 		collectionField, indexField, valueField := uint64(0x9fb0), uint64(0), uint64(0x9fb1)
 		if e.Schema == id(0x90fc) {

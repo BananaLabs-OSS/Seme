@@ -15,7 +15,7 @@ func TestImmutableCollectionOperations(t *testing.T) {
 		expression wire.ID
 		want       []string
 	}{
-		{"append", x["append"], []string{"1", "2", "3"}}, {"update", x["update"], []string{"1", "9"}}, {"remove", x["remove"], []string{"2"}},
+		{"construct", x["construct"], []string{"2", "1", "3"}}, {"empty-construct", x["emptyConstruct"], []string{}}, {"append", x["append"], []string{"1", "2", "3"}}, {"update", x["update"], []string{"1", "9"}}, {"remove", x["remove"], []string{"2"}},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -31,7 +31,9 @@ func TestImmutableCollectionOperations(t *testing.T) {
 					t.Fatalf("%#v", got)
 				}
 			}
-			got.Items[0].I64 = "77"
+			if len(got.Items) > 0 {
+				got.Items[0].I64 = "77"
+			}
 			if env[x["sliceParam"]].Items[0].I64 != "1" {
 				t.Fatal("aliased input")
 			}
@@ -123,6 +125,29 @@ func TestCollectionOperationBoundsAndMalformedGraphs(t *testing.T) {
 	if got, err := eval(g, x["append"], cloneEnv(env), 64); err != nil || len(got.Items) != 3 {
 		t.Fatalf("baseline corrupted after mutations: %#v %v", got, err)
 	}
+	for _, test := range []struct {
+		name string
+		edit func(*wire.Entity)
+	}{{"construct-type-tag", func(e *wire.Entity) { e.Fields[id(0xa0680)] = wire.Value{Tag: 1} }}, {"construct-list-tag", func(e *wire.Entity) { e.Fields[id(0xa0681)] = wire.Value{Tag: 1} }}, {"construct-element-tag", func(e *wire.Entity) { e.Fields[id(0xa0681)] = wire.Value{Tag: 7, List: []wire.Value{{Tag: 1}}} }}, {"construct-missing-ref", func(e *wire.Entity) {
+		e.Fields[id(0xa0681)] = wire.Value{Tag: 7, List: []wire.Value{{Tag: 6, Reference: id(0xffff)}}}
+	}}} {
+		t.Run(test.name, func(t *testing.T) {
+			h := cloneEnvelope(g)
+			e := h.Entities[x["construct"]]
+			test.edit(&e)
+			h.Entities[e.ID] = e
+			if _, err := eval(h, e.ID, cloneEnv(env), 64); err == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+	huge := cloneEnvelope(g)
+	e := huge.Entities[x["construct"]]
+	e.Fields[id(0xa0681)] = wire.Value{Tag: 7, List: make([]wire.Value, 513)}
+	huge.Entities[e.ID] = e
+	if _, err := eval(huge, e.ID, cloneEnv(env), 64); err == nil {
+		t.Fatal("513 element construct accepted")
+	}
 	if _, err := eval(g, x["append"], cloneEnv(env), 1); err == nil || !strings.Contains(err.Error(), "budget") {
 		t.Fatalf("budget: %v", err)
 	}
@@ -198,6 +223,12 @@ func collectionOperationGraph() (wire.Envelope, map[wire.ID]Value, map[string]wi
 	add("mapUpdate", 0xa043, map[uint64]wire.ID{0xa0430: mr, 0xa0431: id(0xb101), 0xa0432: id(0xb109)})
 	add("mapRemove", 0xa067, map[uint64]wire.ID{0xa0670: mr, 0xa0671: id(0xb102)})
 	add("mapMissing", 0xa067, map[uint64]wire.ID{0xa0670: mr, 0xa0671: id(0xb103)})
+	construct := id(0xb300)
+	g.Entities[construct] = wire.Entity{ID: construct, Schema: id(0xa068), Fields: map[wire.ID]wire.Value{id(0xa0680): {Tag: 6, Reference: sliceT}, id(0xa0681): {Tag: 7, List: []wire.Value{{Tag: 6, Reference: id(0xb102)}, {Tag: 6, Reference: id(0xb101)}, {Tag: 6, Reference: id(0xb103)}}}}}
+	x["construct"] = construct
+	emptyConstruct := id(0xb301)
+	g.Entities[emptyConstruct] = wire.Entity{ID: emptyConstruct, Schema: id(0xa068), Fields: map[wire.ID]wire.Value{id(0xa0680): {Tag: 6, Reference: sliceT}, id(0xa0681): {Tag: 7}}}
+	x["emptyConstruct"] = emptyConstruct
 	env := map[wire.ID]Value{sp: {Kind: "slice", Items: []Value{{Kind: "i64", I64: "1"}, {Kind: "i64", I64: "2"}}}, mp: {Kind: "map", ValueType: "i64", Entries: []Entry{{Key: Value{Kind: "i64", I64: "1"}, Value: Value{Kind: "i64", I64: "4"}}, {Key: Value{Kind: "i64", I64: "2"}, Value: Value{Kind: "i64", I64: "5"}}}}}
 	return g, env, x
 }
