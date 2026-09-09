@@ -12,6 +12,7 @@ Percentages answer different questions and must not be conflated:
 | Bounded Go/JavaScript semantic bridge | about 82% | Estimate for the deliberately supported, tested language subset—not either complete language. |
 | Useful small-application subset | about 75% | Estimate against the semantics needed for modest deterministic applications. |
 | Useful Application Bridge Profile v1 | 36/36 cells (100%) | UAB-01 through UAB-11 pass all five evidence classes independently for Go, JavaScript, and Lua. UAB-12 projects one shared application into all three languages, requires byte-identical re-lift, and passes 2,048 observations through native, canonical, Wasm, and pinned-Pulp realizations. This is 100% of the frozen bounded profile, not complete language support. |
+| Useful Project Bridge Profile v1 | 0/36 cells (0%) | The project-level denominator is frozen as 12 capabilities × 3 languages with seven evidence classes per cell. All cells are explicitly unclaimed; the existing UAB score does not automatically satisfy project discovery, dependencies, resources, services, build placement, or reconciliation. |
 | UAB-02 exact value bridge | complete | All three languages pass shared scalar, aggregate-collection, and tagged-composite observations through original and projected native source, structural canonical evaluation, standalone Wasm, and pinned Pulp, with representation-appropriate rejection evidence. |
 | UAB-03 compositional control flow | complete | All three languages pass shared locals, mutation, modular arithmetic, comparison, hazardous short-circuit, conditional, loop, and early-return observations through all five evidence paths. |
 | UAB-04 collection operations | Go/JavaScript/Lua complete | All three languages pass construction, length, checked indexing, traversal, immutable update/append/removal, and map lookup/insert/removal through original/projected native code, canonical evaluation, standalone Wasm, and pinned Pulp with direct rejection evidence. |
@@ -26,3 +27,5 @@ The checkpoint percentage measures delivery against a finite internal roadmap.
 It is not a claim that Seme supports the same percentage of Go, JavaScript, or
 all programming languages. Practical percentages should move only when real
 programs, runtime contracts, and adversarial acceptance gates justify them.
+The UAB-v1 and UPB-v1 percentages have different denominators and must never be
+combined into one compatibility percentage.

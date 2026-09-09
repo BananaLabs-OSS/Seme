@@ -1,19 +1,24 @@
 # Go Incremental Session v1
 
 The Go incremental session is an editor-facing provider service over complete
-in-memory package snapshots. It does not read or write project files.
+in-memory package or bounded module snapshots. It does not read or write
+project files.
 
 Each request contains:
 
 - a strictly increasing unsigned client revision;
+- an optional module path used to identify sibling local packages;
 - a stable package path;
+- an optional named entry declaration; and
 - a complete map of document paths to in-memory content.
 
-The session deterministically hashes paths and contents, parses every non-test
-Go document, type-checks the package with the native Go checker, and lifts each
-supported package function through the existing compositional expression and
-structured-body lifter. Source mappings connect stable semantic function
-identities to document byte ranges and line/column locations.
+The session deterministically hashes paths and contents, groups every non-test
+Go document by its package directory, and type-checks the requested package and
+its bounded sibling local-package closure with the native Go checker. Standard
+packages still resolve through the installed toolchain. It lifts supported
+declarations through the existing compositional expression and structured-body
+lifter. Source mappings connect stable semantic identities to document byte
+ranges and line/column locations.
 
 Results use three dispositions:
 
@@ -31,13 +36,22 @@ Unsupported but well-typed declarations produce located warnings; supported
 declarations may still form a valid canonical subset. Unsupported source is not
 inserted into the canonical graph or rewritten.
 
-The bounded v1 lift accepts package functions with `int64`, `bool`, and
-`string` parameters, one result of one of those types, a v13 total-return
-conditional body, and the current compositional expression vocabulary.
-Fallthrough after a terminal `if` is normalized to an explicit canonical else
-block. It does not yet resolve sibling in-memory packages, imported module
-dependencies, methods, locals, effects, multiple returns, or build-tag
-variants.
+The current bounded lift includes sibling local-package calls, named functions
+and supported value-receiver methods, lexical locals and places, structured
+control, supported records and collections, closures and bounded dispatch,
+explicit transitions and fallibility, and declared observation effects from
+the v35 application vocabulary. Fallthrough after a terminal `if` is
+normalized to an explicit canonical else block. Support is still determined
+per declaration; unsupported but well-typed declarations remain diagnosed and
+omitted rather than guessed.
+
+This is not a general Go project loader. It does not resolve arbitrary external
+dependency ecosystems from the in-memory snapshot, evaluate build tags or
+platform/file variants, reproduce `go generate`, cgo, assembly, plugins,
+reflection, goroutine/channel semantics, or arbitrary standard-library and
+runtime behavior. Multiple-result shapes outside the explicitly supported
+Result/Option conventions also remain unsupported. The bounded local closure
+must not be described as general module compatibility.
 
 When supplied the v14 execution module, a live snapshot containing text
 parameters or a text result lowers through the exact variable-width

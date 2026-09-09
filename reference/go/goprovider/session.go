@@ -105,14 +105,15 @@ func cloneSources(sources []SourceIdentity) []SourceIdentity {
 }
 
 type sessionFunction struct {
-	id, name   string
-	fn         *ast.FuncDecl
-	sig        *types.Signature
-	info       *types.Info
-	file       string
-	fset       *token.FileSet
-	method     bool
-	receiverID string
+	id, name    string
+	packagePath string
+	fn          *ast.FuncDecl
+	sig         *types.Signature
+	info        *types.Info
+	file        string
+	fset        *token.FileSet
+	method      bool
+	receiverID  string
 }
 
 type checkedSessionPackage struct {
@@ -326,7 +327,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 					}
 				}
 				functions = append(functions, sessionFunction{
-					id: declarationID, name: fn.Name.Name,
+					id: declarationID, name: fn.Name.Name, packagePath: unit.path,
 					fn: fn, sig: signature, info: unit.info, file: filepath.ToSlash(position.Filename), fset: unit.fset, method: fn.Recv != nil,
 					receiverID: unit.receiverIDs[object],
 				})
@@ -523,11 +524,17 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 		}
 		return "", nil, sortedDiagnostics(diagnostics)
 	}
-	entryID := functionIDs[0]
+	entryID := ""
+	for _, function := range functions {
+		if !function.method && function.packagePath == snapshot.PackagePath && supportedFunctions[function.id] {
+			entryID = function.id
+			break
+		}
+	}
 	if snapshot.Entry != "" {
 		entryID = ""
 		for _, function := range functions {
-			if function.name == snapshot.Entry {
+			if function.packagePath == snapshot.PackagePath && function.name == snapshot.Entry {
 				for _, supported := range functionIDs {
 					if supported == function.id {
 						entryID = supported
@@ -535,10 +542,10 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 				}
 			}
 		}
-		if entryID == "" {
-			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.entry_missing", Message: "requested entry function is not supported", Severity: "error"})
-			return "", nil, sortedDiagnostics(diagnostics)
-		}
+	}
+	if entryID == "" {
+		diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.entry_missing", Message: "requested root-package entry function is not supported", Severity: "error"})
+		return "", nil, sortedDiagnostics(diagnostics)
 	}
 	programID := stableID("session-program", snapshot.PackagePath)
 	instances = append(instances, graphEntity{programID, entity(programID, "00000000000000000000000000009015", []graphField{

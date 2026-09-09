@@ -301,6 +301,16 @@ and one shared cumulative application. Broad language, runtime, standard
 library, tooling, and third-party package compatibility remain separately
 versioned conformance tracks.
 
+That bounded application profile is complete at 36/36. The separate
+[`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
+starts at 0/36: no project-level cell is claimed yet. It measures complete
+project snapshots, package and dependency closures, resources, configuration,
+service boundaries, build placement, and project-scale reconciliation using
+seven evidence classes. Its shape-only baseline is reported by
+`./scripts/check-upb-v1-scorecard.sh`; a future score may advance only through
+authoritative project gates. Downstream products, including Workbench, remain
+external consumers and cannot add product-specific behavior to Seme.
+
 UAB-01 is complete in all three language columns: native multi-source packages,
 typed named functions, parameters, and calls lift directly to canonical Seme,
 project back to their own ecosystem, re-lift identically, and agree with the
@@ -391,9 +401,12 @@ provider-neutral incremental editing boundary: document identity, monotonic
 client revisions, content digests, diagnostics, semantic source mappings, and
 retention of the last valid canonical revision while an edit is incomplete.
 The bounded [`Go incremental session v1`](spec/go-incremental-session-v1.md)
-parses and type-checks complete in-memory package snapshots, compositionally
-lifts supported functions, rejects stale revisions, and executes the resulting
-canonical graph. Run `./scripts/check-language-service-v1.sh` and
+parses and type-checks complete in-memory module snapshots, including a bounded
+closure of sibling local packages. It compositionally lifts supported
+functions, methods, locals, and declared effects, rejects stale revisions, and
+executes the resulting canonical graph. This remains a bounded source closure,
+not general dependency or build-variant support. Run
+`./scripts/check-language-service-v1.sh` and
 `./scripts/check-go-session-v1.sh`.
 
 [`Language service JSON-lines v1`](spec/language-service-jsonl-v1.md) exposes
