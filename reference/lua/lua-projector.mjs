@@ -51,7 +51,7 @@ const schema = {
   receiverBinding: "0000000000000000000000000000a000", receiverRead: "0000000000000000000000000000a001", method: "0000000000000000000000000000a002",
   interfaceType: "0000000000000000000000000000a010", methodRequirement: "0000000000000000000000000000a011", satisfactionWitness: "0000000000000000000000000000a012", interfaceValue: "0000000000000000000000000000a013", dynamicMethodCall: "0000000000000000000000000000a014",
   localBinding:"000000000000000000000000000090d0",bindLocal:"000000000000000000000000000090d1",localRead:"000000000000000000000000000090d2",
-  transitionType:"0000000000000000000000000000a004",transitionState:"0000000000000000000000000000a006",transitionResult:"0000000000000000000000000000a007",
+  transitionType:"0000000000000000000000000000a004",stateTransition:"0000000000000000000000000000a005",transitionState:"0000000000000000000000000000a006",transitionResult:"0000000000000000000000000000a007",
   functionType:"0000000000000000000000000000a020",captureBinding:"0000000000000000000000000000a021",captureRead:"0000000000000000000000000000a022",closureConstruct:"0000000000000000000000000000a023",indirectCall:"0000000000000000000000000000a024",
   mutableCaptureBinding:"0000000000000000000000000000a030",mutableCaptureRead:"0000000000000000000000000000a031",captureUpdate:"0000000000000000000000000000a032",sequence:"0000000000000000000000000000a033",mutableClosureConstruct:"0000000000000000000000000000a034",statefulIndirectCall:"0000000000000000000000000000a035",
 };
@@ -85,6 +85,7 @@ export function projectLua(canonicalG1) {
     if (item.schema === schema.sliceType) name = `seme.slice<${resolveType(reference(field(item, 0x9f80)), visiting)}>`;
     if (item.schema === schema.mapType) name = `seme.map<${resolveType(reference(field(item, 0xa0400)), visiting)},${resolveType(reference(field(item, 0xa0401)), visiting)}>`;
     if (item.schema === schema.recordType) name = text(field(item, 0x9300));
+    if(item.schema===schema.transitionType)name=`seme.transition<${resolveType(reference(field(item,0xa0040)),visiting)},${resolveType(reference(field(item,0xa0041)),visiting)}>`;
     if (!name) fail("lua_projection.unsupported_type");
     types.set(id, name); visiting.delete(id); return name;
   };
@@ -147,6 +148,7 @@ function projectFunction(id, exported, context) {
   const local = { ...context, parameters: new Map(parameters.map((item) => [item.id, item])), places: new Map() };
   const closureKind=reachableSchema(reference(field(fn,0x9113)),context.graph,schema.mutableClosureConstruct)?"mutable":reachableSchema(reference(field(fn,0x9113)),context.graph,schema.closureConstruct)?"immutable":null;
   if(closureKind){const expected=closureKind==="immutable"?2:3;if(parameters.length!==expected||parameters.some((item)=>item.type!=="seme.i64")||resultType!=="seme.i64")fail("lua_projection.closure_signature");const call=closureKind==="immutable"?`Seme.immutable_closure_run(${parameters.map((item)=>item.name).join(", ")})`:`Seme.mutable_closure_run(${parameters.map((item)=>item.name).join(", ")})`;return `${parameters.map((item)=>`---@param ${item.name} ${item.type}`).join("\n")}\n---@return seme.i64\n${exported?"":"local "}function ${context.names.get(id)}(${parameters.map((item)=>item.name).join(", ")})\n  return ${call}\nend`;}
+  if(reachableSchema(reference(field(fn,0x9113)),context.graph,schema.stateTransition)){if(parameters.length!==2||parameters[1].type!=="seme.i64"||!resultType.startsWith("seme.transition<"))fail("lua_projection.transition_signature");const transition=[...context.graph.values()].find((item)=>item.schema===schema.stateTransition),type=required(context.graph,reference(field(transition,0xa0050)),schema.transitionType),record=required(context.graph,reference(field(type,0xa0040)),schema.recordType),member=required(context.graph,references(field(record,0x9301))[0],schema.recordField);if(parameters[0].type!==text(field(record,0x9300)))fail("lua_projection.transition_state_parameter");return `${parameters.map((item)=>`---@param ${item.name} ${item.type}`).join("\n")}\n---@return ${resultType}\n${exported?"":"local "}function ${context.names.get(id)}(${parameters.map((item)=>item.name).join(", ")})\n  return Seme.transition_step(${parameters[0].name}, ${parameters[1].name}, ${JSON.stringify(text(field(member,0x9310)))})\nend`;}
   if (statements.length !== 1 || required(context.graph, statements[0]).schema !== schema.returned) {
     const body=projectControlBlock(reference(field(fn,0x9113)),local,1);
     return `${parameters.map((item) => `---@param ${item.name} ${item.type}`).join("\n")}${parameters.length ? "\n" : ""}---@return ${resultType}\n${exported ? "" : "local "}function ${context.names.get(id)}(${parameters.map((item) => item.name).join(", ")})\n${body}\nend`;

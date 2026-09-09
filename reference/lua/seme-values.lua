@@ -349,4 +349,13 @@ function Seme.mutable_closure_run(start, first, second)
   return closure(second)
 end
 
+function Seme.transition_step(counter, delta, field_name)
+  if type(field_name) ~= "string" or not field_name:match("^[A-Za-z_][A-Za-z0-9_]*$") then error("seme.invalid_transition_field") end
+  local value = Seme.record_get(counter, field_name)
+  local transition = { state = Seme.record("Counter", { field_name }, { [field_name] = Seme.add(value, delta) }), result = value }
+  return freeze("transition", transition)
+end
+function Seme.transition_state(value) return unpack_value(value, "transition").state end
+function Seme.transition_result(value) return unpack_value(value, "transition").result end
+
 return Seme

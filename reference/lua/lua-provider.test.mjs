@@ -203,4 +203,6 @@ test("lifts explicit Lua immutable and mutable closure adapters and projects byt
 
 test("rejects raw Lua closures outside the explicit neutral adapter",()=>{const source=`---@param base seme.i64\n---@return seme.i64\nfunction Bad(base)\n return (function(value) return Seme.add(base, value) end)(base)\nend`;assert.throws(()=>liftLua({sources:[{name:"raw-closure.lua",source}],moduleG1:fs.readFileSync(new URL("../../modules/execution/v29/module.g1",import.meta.url),"utf8"),packagePath:"bad",revision:1,entryName:"Bad"}),/lua\.unsupported_expression:raw-closure\.lua:4:1/);});
 
+test("lifts sealed typed Lua transitions and preserves state/result distinction",()=>{const source=fs.readFileSync(new URL("../../fixtures/lua-uab-07/program.lua",import.meta.url),"utf8"),module=fs.readFileSync(new URL("../../modules/execution/v27/module.g1",import.meta.url),"utf8"),options={sources:[{name:"program.lua",source}],moduleG1:module,packagePath:"example.test/lua-uab-07",revision:1,entryName:"Step"},canonical=liftLua(options),projected=projectLua(canonical);for(const suffix of [0xa004,0xa005])assert.match(canonical,new RegExp(schemaID(suffix)));assert.match(projected,/Seme\.transition_step/);assert.equal(liftLua({...options,sources:[{name:"projected.lua",source:projected}]}),canonical);});
+
 function schemaID(suffix) { return suffix.toString(16).padStart(32, "0"); }
