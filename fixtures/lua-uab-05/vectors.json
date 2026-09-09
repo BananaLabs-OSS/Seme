@@ -1,0 +1,8 @@
+{
+  "valid": [
+    {"name":"offset","use_double":false,"amount":"4","value":"3","result":"7"},
+    {"name":"double-offset","use_double":true,"amount":"4","value":"3","result":"11"},
+    {"name":"negative","use_double":true,"amount":"-2","value":"3","result":"-1"},
+    {"name":"wrap","use_double":false,"amount":"1","value":"9223372036854775807","result":"-9223372036854775808"}
+  ]
+}
