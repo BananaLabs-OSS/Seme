@@ -26,13 +26,12 @@ type Entry struct {
 	Metadata                                                                                []Metadata
 }
 type Closure struct {
-	Root         string
 	Requirements []Requirement
 	Entries      []Entry
 }
 
 func Validate(c Closure) error {
-	if c.Root == "" || len(c.Requirements) == 0 || len(c.Entries) == 0 {
+	if len(c.Requirements) == 0 || len(c.Entries) == 0 {
 		return fmt.Errorf("dependency_resolution.shape")
 	}
 	seen := map[string]bool{}
