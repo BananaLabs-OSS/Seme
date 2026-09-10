@@ -14,11 +14,12 @@ nondecreasing value in the closed range `0..4102444800000`. Clock values are
 explicit replayable inputs. Calls to ambient Go time, WASI clocks, sleep,
 calendar, timezone, or scheduler services are outside this claim.
 
-The random source is a pure versioned state transition. Its seed is an
-explicit nonzero signed i64 bit pattern, its draw count is bounded by the
+The random source is a pure versioned state transition. Its initial seed is an
+explicit positive signed i64 value, its draw count is bounded by the
 transport's 256 accepted-command limit, and one draw computes
 `state = state * 48271 + 1` with Execution's signed-i64 modular arithmetic.
-The resulting full i64 bit pattern is the draw. This does not claim host
+After the initial seed, state and draw may be any signed i64 value, including
+zero or negative values after modular overflow. This does not claim host
 entropy, cryptographic randomness, ranges, distributions, or another PRNG.
 
 Each newly accepted ordered command consumes exactly one valid clock sample
