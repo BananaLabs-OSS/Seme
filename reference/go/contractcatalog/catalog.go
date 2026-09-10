@@ -37,14 +37,15 @@ var (
 	projectRevV8           = mustID("0000000000000000000000000000e00a")
 	projectRevV9           = mustID("0000000000000000000000000000e00b")
 	projectRevV10          = mustID("0000000000000000000000000000e00e")
+	projectRevV11          = mustID("0000000000000000000000000000e030")
 	resourceModule         = mustID("00000000000000000000000000006000")
 	resourceRev            = mustID("00000000000000000000000000006001")
 	durableStateModule     = mustID("00000000000000000000000000008000")
 	durableStateRev        = mustID("00000000000000000000000000008001")
 	presentationModule     = mustID("00000000000000000000000000001000")
 	presentationRev        = mustID("00000000000000000000000000001001")
-	orderedTransportModule = mustID("00000000000000000000000000002000")
-	orderedTransportRev    = mustID("00000000000000000000000000002001")
+	orderedTransportModule = mustID("00000000000000000000000000010000")
+	orderedTransportRev    = mustID("00000000000000000000000000010001")
 	dependencyModule       = mustID("0000000000000000000000000000f000")
 	dependencyRev          = mustID("0000000000000000000000000000f001")
 	configurationModule    = mustID("00000000000000000000000000004000")
@@ -94,7 +95,7 @@ func ResolveSourcePresentationContract(source []byte) (Contract, error) {
 // ResolveOrderedTransportContract authenticates the exact project-neutral
 // Ordered Transport Contract v1. Network protocols are deliberately absent.
 func ResolveOrderedTransportContract(source []byte) (Contract, error) {
-	return Resolve(source, Expectation{Pin: Pin{orderedTransportModule, orderedTransportRev}, ModuleVersion: 1, RequiredExports: ids("2010", "2011", "2012", "2013", "2014", "2015", "2016", "2017", "2018", "2019", "201a", "201b", "201c", "201d", "201e", "201f", "2020", "2021", "2022", "2023", "2024", "2025"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("0d8c67d52ade0ec0bae1d029620966fe53dcb0ee2ef816ed759dacb26603cfe8")})
+	return Resolve(source, Expectation{Pin: Pin{orderedTransportModule, orderedTransportRev}, ModuleVersion: 1, RequiredExports: ids("10100", "10101", "10102", "10103", "10104", "10105", "10106", "10107", "10108", "10109", "1010a", "1010b", "1010c", "1010d", "1010e", "1010f", "10110", "10111", "10112", "10113", "10114", "10115"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("4b4fce8d532b4891a11912585c486b66b452b95fc7511b5889e90d829cca7cca")})
 }
 
 // Resolve accepts only the one canonical byte representation described by e.
@@ -313,6 +314,41 @@ type ProjectContractSetV9 struct {
 type ProjectContractSetV10 struct {
 	execution, packages, dependency, foundation, configuration, resource, durableState, presentation, project Contract
 	validated                                                                                                 bool
+}
+
+// ProjectContractSetV11 adds one independently authenticated neutral Ordered
+// Transport v1 authority without weakening the complete Project-v10 chain.
+type ProjectContractSetV11 struct {
+	execution, packages, dependency, foundation, configuration, resource, durableState, presentation, orderedTransport, project Contract
+	validated                                                                                                                   bool
+}
+
+func (s ProjectContractSetV11) Validated() bool            { return s.validated }
+func (s ProjectContractSetV11) Execution() Contract        { return s.execution }
+func (s ProjectContractSetV11) Package() Contract          { return s.packages }
+func (s ProjectContractSetV11) Dependency() Contract       { return s.dependency }
+func (s ProjectContractSetV11) Foundation() Contract       { return s.foundation }
+func (s ProjectContractSetV11) Configuration() Contract    { return s.configuration }
+func (s ProjectContractSetV11) Resource() Contract         { return s.resource }
+func (s ProjectContractSetV11) DurableState() Contract     { return s.durableState }
+func (s ProjectContractSetV11) Presentation() Contract     { return s.presentation }
+func (s ProjectContractSetV11) OrderedTransport() Contract { return s.orderedTransport }
+func (s ProjectContractSetV11) Project() Contract          { return s.project }
+
+func ResolveProjectContractSetV11(foundation, execution, packages, dependency, configuration, resource, durableState, presentation, orderedTransport, projectV9, projectV10, project []byte) (ProjectContractSetV11, error) {
+	v10, err := ResolveProjectContractSetV10(foundation, execution, packages, dependency, configuration, resource, durableState, presentation, projectV9, projectV10)
+	if err != nil {
+		return ProjectContractSetV11{}, err
+	}
+	t, err := ResolveOrderedTransportContract(orderedTransport)
+	if err != nil {
+		return ProjectContractSetV11{}, fmt.Errorf("ordered_transport:%w", err)
+	}
+	p, err := Resolve(project, Expectation{Pin: Pin{projectModule, projectRevV11}, Parents: []wire.ID{projectRevV10}, ModuleVersion: 11, RequiredExports: ids("e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e020", "e021", "e022", "e023", "e024", "e025", "e026", "e253", "e261"), Imports: []Pin{{orderedTransportModule, orderedTransportRev}, {presentationModule, presentationRev}, {packageModule, packageRevV4}, {executionModule, executionRevV36}, {dependencyModule, dependencyRev}, {configurationModule, configurationRevV3}, {foundationModule, foundationRev}, {resourceModule, resourceRev}, {durableStateModule, durableStateRev}}, Digest: mustDigest("be10f2e3bfccc759851b489f8cb297266de708a217a406526fe5c9cd3269be7e")})
+	if err != nil {
+		return ProjectContractSetV11{}, fmt.Errorf("project:%w", err)
+	}
+	return ProjectContractSetV11{v10.execution, v10.packages, v10.dependency, v10.foundation, v10.configuration, v10.resource, v10.durableState, v10.presentation, t, p, true}, nil
 }
 
 func (s ProjectContractSetV10) Validated() bool         { return s.validated }
