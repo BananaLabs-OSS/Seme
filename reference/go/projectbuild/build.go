@@ -17,6 +17,7 @@ type Compile func(context.Context, []byte) ([]byte, error)
 
 type Result struct {
 	Artifact     []byte
+	CanonicalG1  []byte
 	SourceDigest string
 	Packages     []goprovider.PackageMetadata
 	Resolution   goprovider.ResolutionManifest
@@ -73,7 +74,7 @@ func Build(ctx context.Context, snapshot goprovider.DocumentSnapshot, contracts 
 		return Result{}, fmt.Errorf("project_build.emit:%w", err)
 	}
 	return Result{
-		Artifact: append([]byte(nil), artifact...), SourceDigest: lifted.ContentDigest,
+		Artifact: append([]byte(nil), artifact...), CanonicalG1: []byte(lifted.CanonicalG1), SourceDigest: lifted.ContentDigest,
 		Packages: clonePackages(lifted.Packages), Resolution: cloneResolution(lifted.Resolution),
 	}, nil
 }
