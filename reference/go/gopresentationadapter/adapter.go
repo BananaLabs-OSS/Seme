@@ -40,14 +40,14 @@ func Resolve(project projectv9instance.Inputs, packages []goprovider.PackageMeta
 			units[p] = x
 		}
 	}
-	bindings := map[wire.ID]map[string]wire.ID{}
+	bindings := map[wire.ID]map[string]map[string]wire.ID{}
 	for _, q := range e.Entities {
 		if q.Schema != id("b021") {
 			continue
 		}
 		owner := q.Fields[id("b210")].Reference
 		if bindings[owner] == nil {
-			bindings[owner] = map[string]wire.ID{}
+			bindings[owner] = map[string]map[string]wire.ID{}
 		}
 		for _, v := range q.Fields[id("b212")].List {
 			b := e.Entities[v.Reference]
@@ -55,13 +55,21 @@ func Resolve(project projectv9instance.Inputs, packages []goprovider.PackageMeta
 				return presentationinstance.Model{}, fmt.Errorf("go_presentation.binding_schema:%s", v.Reference)
 			}
 			requested := string(b.Fields[id("b241")].Bytes)
+			origin := e.Entities[b.Fields[id("b245")].Reference]
+			document := string(origin.Fields[id("b261")].Bytes)
 			if requested == "" {
 				return presentationinstance.Model{}, fmt.Errorf("go_presentation.binding_name:%s", v.Reference)
 			}
-			if bindings[owner][requested] != (wire.ID{}) {
-				return presentationinstance.Model{}, fmt.Errorf("go_presentation.binding_duplicate:%s", requested)
+			if origin.Schema != id("b026") || document == "" {
+				return presentationinstance.Model{}, fmt.Errorf("go_presentation.binding_origin:%s", v.Reference)
 			}
-			bindings[owner][requested] = v.Reference
+			if bindings[owner][document] == nil {
+				bindings[owner][document] = map[string]wire.ID{}
+			}
+			if bindings[owner][document][requested] != (wire.ID{}) {
+				return presentationinstance.Model{}, fmt.Errorf("go_presentation.binding_duplicate:%s:%s", document, requested)
+			}
+			bindings[owner][document][requested] = v.Reference
 		}
 	}
 	var out presentationinstance.Model
@@ -90,7 +98,7 @@ func Resolve(project projectv9instance.Inputs, packages []goprovider.PackageMeta
 			copy(sum[:], digest.Bytes)
 			refs := make([]wire.ID, 0, len(a.ReferencedImports))
 			for _, path := range a.ReferencedImports {
-				x := bindings[owner][path]
+				x := bindings[owner][a.Document][path]
 				if x == (wire.ID{}) {
 					return presentationinstance.Model{}, fmt.Errorf("go_presentation.import:%s:%s", a.Name, path)
 				}
