@@ -367,3 +367,15 @@ the checked Seme bootstrap, and pinned Pulp source at
 Pulp sources, and caches lived only in automatically removed directories under
 `/tmp`. No software or dependency was installed, and no shell, SSH, editor,
 toolchain, global, workstation, or persistent environment setting was changed.
+
+## 2026-09-10 — Go UPB-03 dependency-closure completion
+
+Dependency v1 and Project v4 generation, offline Go dependency resolution,
+applicability validation, reporting, projection, and the seven-evidence gate
+reused the installed Go 1.25.6 and 1.26.0 toolchains, Node 22, the checked Seme
+bootstrap, the repository-local file proxy, and pinned Pulp source at
+`acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. Build caches, clean module caches,
+projected trees, copied Pulp sources, and acceptance artifacts lived only in
+automatically removed directories under `/tmp`. No software or dependency was
+installed, and no shell, SSH, editor, toolchain, global, workstation, network,
+or persistent environment setting was changed.

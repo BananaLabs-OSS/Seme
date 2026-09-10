@@ -1,9 +1,6 @@
-# Go UPB-03 evidence draft
+# Go UPB-03 evidence
 
-The candidate acceptance gate is `scripts/check-go-upb-03.sh`. This document
-does not claim UPB-03 complete; the scorecard and evidence-gate registry remain
-unchanged until the gate and its applicability adversaries are independently
-reviewed.
+The mapped acceptance gate is `scripts/check-go-upb-03.sh`.
 
 The gate exercises seven evidence classes over the bounded offline-dependency
 fixture:

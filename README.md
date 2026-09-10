@@ -303,7 +303,8 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 1/36 (2.8%): bounded Go UPB-01 is the first claimed project-level cell.
+is now 3/36 (8.3%): bounded Go UPB-01 through UPB-03 are the claimed
+project-level cells, placing the Go column at 3/12 (25%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -311,6 +312,14 @@ seven evidence classes. Its shape-only baseline is reported by
 `./scripts/check-upb-v1-scorecard.sh`; a future score may advance only through
 authoritative project gates. Downstream products, including Workbench, remain
 external consumers and cannot add product-specific behavior to Seme.
+
+Go UPB-03 adds a resolved, integrity-pinned local-plus-ecosystem dependency
+closure, authenticates it with Project v4, and proves that it applies to the
+exact canonical package edge and inventoried `go.mod`. Resolution repeats
+offline; native, canonical, standalone Wasm, pinned Pulp, and strict projection
+evidence agree. The ecosystem dependency is intentionally metadata-only in
+this cell—typed calls across that boundary begin at UPB-04. Run
+`./scripts/check-go-upb-03.sh`.
 
 The first bounded foundation is now executable: [`Go Project Build v1`](spec/go-project-build-v1.md)
 lifts a native three-package Go fixture, compiles its canonical G1 with the
