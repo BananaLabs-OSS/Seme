@@ -14,6 +14,19 @@ import (
 // ProjectPackagesRich emits one ordinary Go source file per explicitly owned
 // package. Ownership is validated before any output is returned.
 func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string][]byte, error) {
+	return ProjectPackagesRichWithAliases(g1, ownership, nil)
+}
+
+// AliasPresentation is authenticated source-presentation data supplied by a
+// language adapter. Target is an existing canonical Execution type identity.
+type AliasPresentation struct {
+	Package, Name, Target string
+	Imports               []string
+}
+
+// ProjectPackagesRichWithAliases adds language-level aliases without creating
+// or renaming canonical semantic types.
+func ProjectPackagesRichWithAliases(g1 []byte, ownership RichPackageOwnership, presented []AliasPresentation) (map[string][]byte, error) {
 	plans, err := planRichPackages(g1, ownership)
 	if err != nil {
 		return nil, err
@@ -39,6 +52,28 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 		family[f.Name] = f
 	}
 	aliases := richImportAliases(ownership.Packages)
+	byPackage := map[string][]AliasPresentation{}
+	seenAliases := map[string]bool{}
+	for _, a := range presented {
+		if _, ok := plans[a.Package]; !ok || !identifier(a.Name) || seenAliases[a.Package+"\x00"+a.Name] {
+			return nil, fmt.Errorf("go_projection.alias")
+		}
+		seenAliases[a.Package+"\x00"+a.Name] = true
+		for _, d := range ownership.Declarations {
+			if d.Package == a.Package && d.Name == a.Name {
+				return nil, fmt.Errorf("go_projection.alias_collision:%s", a.Name)
+			}
+		}
+		for _, f := range ownership.Families {
+			if f.Package == a.Package && f.Name == a.Name {
+				return nil, fmt.Errorf("go_projection.alias_collision:%s", a.Name)
+			}
+		}
+		byPackage[a.Package] = append(byPackage[a.Package], a)
+	}
+	for p := range byPackage {
+		sort.Slice(byPackage[p], func(i, j int) bool { return byPackage[p][i].Name < byPackage[p][j].Name })
+	}
 	out := map[string][]byte{}
 	for _, pkg := range ownership.Packages {
 		fset := token.NewFileSet()
@@ -160,6 +195,28 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 		for _, dep := range plans[pkg.Identity].imports {
 			imports[dep] = true
 		}
+		aliasChunks := []string{}
+		graph, parseErr := parse(g1)
+		if parseErr != nil {
+			return nil, parseErr
+		}
+		for _, present := range byPackage[pkg.Identity] {
+			target, ok := graph[present.Target]
+			if !ok || !isTypeSchema(target.schema) {
+				return nil, fmt.Errorf("go_projection.alias_target:%s", present.Name)
+			}
+			name, er := typeNameRelative(graph, present.Target, plans[pkg.Identity].typeNames, plans[pkg.Identity].familyNames)
+			if er != nil {
+				return nil, er
+			}
+			for _, dep := range present.Imports {
+				if dep == pkg.Identity || !contains(pkg.Dependencies, dep) {
+					return nil, fmt.Errorf("go_projection.alias_import:%s:%s", present.Name, dep)
+				}
+				imports[dep] = true
+			}
+			aliasChunks = append(aliasChunks, fmt.Sprintf("type %s = %s", present.Name, name))
+		}
 		var b strings.Builder
 		fmt.Fprintf(&b, "package %s\n\n", pkg.Name)
 		paths := make([]string, 0, len(imports))
@@ -185,6 +242,10 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 			}
 			b.WriteString(")\n\n")
 		}
+		for _, chunk := range aliasChunks {
+			b.WriteString(chunk)
+			b.WriteString("\n\n")
+		}
 		for _, chunk := range chunks {
 			b.WriteString(chunk)
 			b.WriteString("\n\n")
@@ -196,6 +257,14 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 		out[pkg.Identity] = formatted
 	}
 	return out, nil
+}
+
+func isTypeSchema(schema string) bool {
+	switch schema {
+	case sInteger, sBoolean, sRecordType, sString, sBytes, sResultType, sOptionType, sInterfaceType, sFunctionType, sTransitionType, sFixedArrayType, sSliceType, sMapType:
+		return true
+	}
+	return false
 }
 
 func stripSingleFileEnvelope(source []byte) []byte {
