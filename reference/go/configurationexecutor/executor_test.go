@@ -59,6 +59,13 @@ func TestExecuteRejectsUnauthenticatedWithoutOutputs(t *testing.T) {
 	}
 }
 
+func TestExecuteV3RejectsUnauthenticatedWithoutOutputs(t *testing.T) {
+	got, err := ExecuteV3(V3Input{RuntimeInputs: map[string]canonicaleval.Value{"application-state": i64v("1")}})
+	if err == nil || len(got.Outputs) != 0 || len(got.Lifecycle) != 0 {
+		t.Fatalf("got=%#v err=%v", got, err)
+	}
+}
+
 func source(es map[wire.ID]wire.Entity, x wire.ID, kind uint64, typ, arm, target wire.ID) wire.ID {
 	k := id("8" + x.String()[31:])
 	es[k] = entity(k, id("4019"), map[wire.ID]wire.Value{id("4190"): uintv(kind)})

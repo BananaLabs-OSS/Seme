@@ -8,11 +8,23 @@ import (
 
 	"seme.local/reference/canonicaleval"
 	"seme.local/reference/configurationinstance"
+	"seme.local/reference/projectv8instance"
 	"seme.local/reference/wire"
 )
 
 type Input struct {
 	Bound               configurationinstance.BoundInput
+	ConfigurationInputs map[string]canonicaleval.Value
+	RuntimeInputs       map[string]canonicaleval.Value
+	CapabilityGrants    map[string]bool
+}
+
+// V3Input executes only after the complete Project-v8 trust boundary and its
+// embedded Configuration-v3 plan validate under Execution v36 authority.
+// It is intentionally separate from Input so legacy v2 authority can never be
+// mistaken for the configured one-run project.
+type V3Input struct {
+	Project             projectv8instance.Inputs
 	ConfigurationInputs map[string]canonicaleval.Value
 	RuntimeInputs       map[string]canonicaleval.Value
 	CapabilityGrants    map[string]bool
@@ -51,10 +63,26 @@ type unit struct {
 }
 
 func Execute(in Input) (Result, error) {
-	p, err := preflight(in)
+	p, err := preflight(in, nil)
 	if err != nil {
 		return Result{}, err
 	}
+	return execute(p, in.CapabilityGrants)
+}
+
+func ExecuteV3(in V3Input) (Result, error) {
+	if err := projectv8instance.Validate(in.Project); err != nil {
+		return Result{}, fmt.Errorf("configuration_executor.project_v8:%w", err)
+	}
+	legacy := Input{ConfigurationInputs: in.ConfigurationInputs, RuntimeInputs: in.RuntimeInputs, CapabilityGrants: in.CapabilityGrants}
+	p, err := preflight(legacy, &in.Project.Configuration)
+	if err != nil {
+		return Result{}, err
+	}
+	return execute(p, in.CapabilityGrants)
+}
+
+func execute(p plan, capabilityGrants map[string]bool) (Result, error) {
 	observations := []LifecycleObservation{}
 	sequence := uint64(0)
 	observe := func(u unit, from, to string) {
@@ -73,7 +101,7 @@ func Execute(in Input) (Result, error) {
 			}
 			args[i] = value
 		}
-		value, effects, invokeErr := canonicaleval.EvaluateFunctionAuthorized(p.graph, u.callable, args, in.CapabilityGrants)
+		value, effects, invokeErr := canonicaleval.EvaluateFunctionAuthorized(p.graph, u.callable, args, capabilityGrants)
 		if invokeErr != nil || len(effects) != 0 {
 			return Result{Lifecycle: append(observations, LifecycleObservation{Sequence: sequence, Initializer: u.id.String(), From: "initializing", To: "failed"})}, fmt.Errorf("configuration_executor.invoke:%w", coalesce(invokeErr, fmt.Errorf("initializer_effect")))
 		}
@@ -90,11 +118,20 @@ func Execute(in Input) (Result, error) {
 	return Result{Lifecycle: observations, Outputs: outputs}, nil
 }
 
-func preflight(in Input) (plan, error) {
-	if err := configurationinstance.ValidateBound(in.Bound); err != nil {
-		return plan{}, fmt.Errorf("configuration_executor.bound:%w", err)
+func preflight(in Input, v3 *configurationinstance.V3Input) (plan, error) {
+	var artifact []byte
+	if v3 != nil {
+		if err := configurationinstance.ValidateV3(*v3); err != nil {
+			return plan{}, fmt.Errorf("configuration_executor.configuration_v3:%w", err)
+		}
+		artifact = v3.Artifact
+	} else {
+		if err := configurationinstance.ValidateBound(in.Bound); err != nil {
+			return plan{}, fmt.Errorf("configuration_executor.bound:%w", err)
+		}
+		artifact = in.Bound.Artifact
 	}
-	g, err := wire.Decode(in.Bound.Artifact)
+	g, err := wire.Decode(artifact)
 	if err != nil {
 		return plan{}, err
 	}
