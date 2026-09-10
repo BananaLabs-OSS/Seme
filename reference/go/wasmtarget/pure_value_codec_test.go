@@ -2,11 +2,60 @@ package wasmtarget
 
 import (
 	"bytes"
+	"encoding/binary"
 	"reflect"
 	"testing"
 
 	"seme.local/reference/canonicaleval"
 )
+
+func TestPureValueCertifiedWholeMessageCapacity(t *testing.T) {
+	layout := PureValueLayout{Contract: "seme.pure-value-abi/v1", Type: "bytes", FixedSize: 8, VariablePayload: true, MaximumPayload: PureValueMaximumMessageSize - 8, Encoding: "bytes"}
+	if got, err := MaximumPureValueEncodedSize(layout); err != nil || got != PureValueMaximumMessageSize {
+		t.Fatalf("maximum = %d, %v", got, err)
+	}
+	exact := make([]byte, PureValueMaximumMessageSize)
+	binary.LittleEndian.PutUint32(exact[0:4], 8)
+	binary.LittleEndian.PutUint32(exact[4:8], uint32(PureValueMaximumMessageSize-8))
+	if err := ValidatePureValueBytes(layout, exact); err != nil {
+		t.Fatalf("exact maximum rejected: %v", err)
+	}
+	if err := ValidatePureValueBytes(layout, append(exact, 0)); err == nil {
+		t.Fatal("maximum plus one accepted")
+	}
+	over := layout
+	over.MaximumPayload++
+	if _, err := MaximumPureValueEncodedSize(over); err == nil {
+		t.Fatal("over-ceiling layout accepted")
+	}
+	over.FixedSize = ^uint64(0)
+	if _, err := MaximumPureValueEncodedSize(over); err == nil {
+		t.Fatal("overflowing layout accepted")
+	}
+}
+
+func TestPureValueMultipleVariableRangesAreExactlyContiguous(t *testing.T) {
+	child := PureValueLayout{Contract: "seme.pure-value-abi/v1", Type: "bytes", FixedSize: 8, VariablePayload: true, MaximumPayload: 16, Encoding: "bytes"}
+	layout := PureValueLayout{Contract: "seme.pure-value-abi/v1", Type: "record", FixedSize: 16, VariablePayload: true, MaximumPayload: 32, Encoding: "record", Fields: []PureValueFieldLayout{{Name: "A", Offset: 0, Value: child}, {Name: "B", Offset: 8, Value: child}}}
+	value := canonicaleval.Value{Kind: "record", Fields: map[string]canonicaleval.Value{"A": {Kind: "bytes", Bytes: "010203"}, "B": {Kind: "bytes", Bytes: "0405"}}}
+	encoded, err := EncodePureValue(layout, value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidatePureValueBytes(layout, encoded); err != nil {
+		t.Fatal(err)
+	}
+	gap := append([]byte(nil), encoded...)
+	binary.LittleEndian.PutUint32(gap[8:12], binary.LittleEndian.Uint32(gap[8:12])+1)
+	if err := ValidatePureValueBytes(layout, gap); err == nil {
+		t.Fatal("payload gap accepted")
+	}
+	overlap := append([]byte(nil), encoded...)
+	binary.LittleEndian.PutUint32(overlap[8:12], binary.LittleEndian.Uint32(overlap[0:4]))
+	if err := ValidatePureValueBytes(layout, overlap); err == nil {
+		t.Fatal("overlapping payload ranges accepted")
+	}
+}
 
 func TestEncodePureValueCumulativeStateResult(t *testing.T) {
 	i64 := PureValueLayout{Contract: "seme.pure-value-abi/v1", Type: "i64", FixedSize: 8, Encoding: "little-endian-twos-complement-i64-modular"}

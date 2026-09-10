@@ -67,11 +67,17 @@ func CertifyPureApplicationBoundary(graph wire.Envelope) (PureApplicationBoundar
 		out.Parameters = append(out.Parameters, layout)
 	}
 	out.Request = aggregateApplicationRequest(out.Parameters)
+	if _, err := MaximumPureValueEncodedSize(out.Request); err != nil {
+		return PureApplicationBoundary{}, fmt.Errorf("wasm.application_request_capacity:%w", err)
+	}
 	resultLayout, err := CertifyPureValueLayout(graph, result.Reference)
 	if err != nil {
 		return PureApplicationBoundary{}, fmt.Errorf("wasm.application_result_layout:%w", err)
 	}
 	out.Result = resultLayout
+	if _, err := MaximumPureValueEncodedSize(out.Result); err != nil {
+		return PureApplicationBoundary{}, fmt.Errorf("wasm.application_result_capacity:%w", err)
+	}
 	capabilities := map[string]bool{}
 	for _, effect := range bySchema(graph, 0x15) {
 		nameValue, ne := field(effect, 0x150)
