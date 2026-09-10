@@ -54,8 +54,56 @@ func TestEmitV2ExtendsV1WithExactAncestryAndNeutralSources(t *testing.T) {
 			t.Fatalf("language/project-specific contamination %q", bad)
 		}
 	}
-	if err := EmitVersion(&bytes.Buffer{}, 11); err == nil {
+	if err := EmitVersion(&bytes.Buffer{}, 12); err == nil {
 		t.Fatal("accepted unknown version")
+	}
+}
+
+func TestEmitV11BindsExactV10AndTransport(t *testing.T) {
+	var first, second bytes.Buffer
+	if err := EmitVersion(&first, 11); err != nil {
+		t.Fatal(err)
+	}
+	if err := EmitVersion(&second, 11); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.Bytes(), second.Bytes()) {
+		t.Fatal("nondeterministic v11")
+	}
+	for _, want := range []string{RevisionV11ID, "pc 1\n" + RevisionV10ID,
+		"00000000000000000000000000002000", "00000000000000000000000000002001",
+		"0000000000000000000000000000e026", "0000000000000000000000000000e260",
+		"0000000000000000000000000000e261", "0000000000000000000000000000e262",
+	} {
+		if !strings.Contains(first.String(), want) {
+			t.Fatalf("v11 missing %s", want)
+		}
+	}
+	want, err := os.ReadFile("../../../modules/project/v10/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got bytes.Buffer
+	if err = EmitVersion(&got, 10); err != nil || !bytes.Equal(want, got.Bytes()) {
+		t.Fatalf("v10 changed: %v", err)
+	}
+}
+
+func TestEmitV11KeepsEntityIdentitiesSorted(t *testing.T) {
+	var out bytes.Buffer
+	if err := EmitVersion(&out, 11); err != nil {
+		t.Fatal(err)
+	}
+	last := ""
+	for _, line := range strings.Split(out.String(), "\n") {
+		parts := strings.Fields(line)
+		if len(parts) == 0 || parts[0] != "en" {
+			continue
+		}
+		if last != "" && parts[1] <= last {
+			t.Fatalf("entity order %s after %s", parts[1], last)
+		}
+		last = parts[1]
 	}
 }
 
