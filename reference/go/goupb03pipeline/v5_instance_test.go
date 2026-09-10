@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"seme.local/reference/configurationinstance"
+	"seme.local/reference/configurationv2report"
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/packagedetail"
 	"seme.local/reference/packagev3instance"
@@ -159,6 +160,17 @@ func TestPackageV3AndProjectV5InstancesRepeatValidateAndRejectTamper(t *testing.
 	bound.Artifact = boundA
 	if err = configurationinstance.ValidateBound(bound); err != nil {
 		t.Fatal(err)
+	}
+	boundReportA, err := configurationv2report.Inspect(bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundReportB, err := configurationv2report.Inspect(bound)
+	if err != nil || !bytes.Equal(mustJSON(t, boundReportA), mustJSON(t, boundReportB)) {
+		t.Fatal("unstable Configuration v2 report")
+	}
+	if boundReportA.ContractRevision != "00000000000000000000000000004005" || boundReportA.Graph.ID == "" {
+		t.Fatal("incomplete Configuration v2 report")
 	}
 	staleBound, err := wire.Decode(boundA)
 	if err != nil {
