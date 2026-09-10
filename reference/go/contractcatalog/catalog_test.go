@@ -527,3 +527,56 @@ func TestResolveProjectContractSetV11ExactCumulativePins(t *testing.T) {
 		t.Fatal("accepted tampered Project-v11")
 	}
 }
+
+func TestResolveProjectContractSetV12ExactCumulativePins(t *testing.T) {
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	inputs := [][]byte{
+		read("../../../modules/foundation/v1/module.seme"),
+		read("../../../modules/execution/v36/module.seme"),
+		read("../../../modules/package/v4/module.seme"),
+		read("../../../modules/dependency/v1/module.seme"),
+		read("../../../modules/configuration/v3/module.seme"),
+		read("../../../modules/resource/v1/module.seme"),
+		read("../../../modules/durable-state/v1/module.seme"),
+		read("../../../modules/source-presentation/v1/module.seme"),
+		read("../../../modules/ordered-transport/v1/module.seme"),
+		read("../../../modules/controlled-effects/v1/module.seme"),
+		read("../../../modules/project/v9/module.seme"),
+		read("../../../modules/project/v10/module.seme"),
+		read("../../../modules/project/v11/module.seme"),
+		read("../../../modules/project/v12/module.seme"),
+	}
+	resolve := func(values [][]byte) (ProjectContractSetV12, error) {
+		return ResolveProjectContractSetV12(values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8], values[9], values[10], values[11], values[12], values[13])
+	}
+	s, err := resolve(inputs)
+	if err != nil || !s.Validated() {
+		t.Fatalf("resolve: %v", err)
+	}
+	if s.Project().Pin() != (Pin{projectModule, projectRevV12}) || s.ControlledEffects().Pin() != (Pin{controlledEffectsModule, controlledEffectsRev}) || s.OrderedTransport().Pin() != (Pin{orderedTransportModule, orderedTransportRev}) {
+		t.Fatal("cumulative pins")
+	}
+
+	wrongEffects := append([][]byte(nil), inputs...)
+	wrongEffects[9] = inputs[8]
+	if got, err := resolve(wrongEffects); err == nil || got.Validated() {
+		t.Fatal("accepted substituted controlled-effects contract")
+	}
+	wrongParent := append([][]byte(nil), inputs...)
+	wrongParent[12] = inputs[11]
+	if got, err := resolve(wrongParent); err == nil || got.Validated() {
+		t.Fatal("accepted substituted Project-v11 parent")
+	}
+	tampered := append([][]byte(nil), inputs...)
+	tampered[13] = append([]byte(nil), inputs[13]...)
+	tampered[13][len(tampered[13])-1] ^= 1
+	if got, err := resolve(tampered); err == nil || got.Validated() {
+		t.Fatal("accepted tampered Project-v12")
+	}
+}
