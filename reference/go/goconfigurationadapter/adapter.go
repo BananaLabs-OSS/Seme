@@ -22,8 +22,10 @@ import (
 type Compile func(context.Context, []byte) ([]byte, error)
 
 type Input struct {
-	Session   goprovider.SessionResult
-	Compile   Compile
+	Session     goprovider.SessionResult
+	CanonicalG1 []byte
+	Packages    []goprovider.PackageMetadata
+	Compile     Compile
 	Contracts contractcatalog.ProjectContractSetV5
 	PackageV2 []byte
 	PackageV3 []byte
@@ -168,10 +170,15 @@ func Resolve(ctx context.Context, in Input) (Plan, error) {
 }
 
 func authenticate(ctx context.Context, in Input) (evidence, error) {
-	if !in.Session.Accepted || !in.Session.Valid || in.Session.Disposition != "accepted-valid" || in.Session.Revision == 0 || in.Session.LastValidRevision != in.Session.Revision || in.Compile == nil {
+	construction, packages := []byte(in.Session.CanonicalG1), in.Session.Packages
+	if len(in.CanonicalG1) != 0 {
+		if len(construction) != 0 || len(in.Packages) == 0 { return evidence{}, fmt.Errorf("go_configuration.run_ambiguous") }
+		construction, packages = in.CanonicalG1, in.Packages
+	} else if !in.Session.Accepted || !in.Session.Valid || in.Session.Disposition != "accepted-valid" || in.Session.Revision == 0 || in.Session.LastValidRevision != in.Session.Revision {
 		return evidence{}, fmt.Errorf("go_configuration.run")
 	}
-	compiled, err := in.Compile(ctx, []byte(in.Session.CanonicalG1))
+	if len(construction)==0 || in.Compile==nil { return evidence{}, fmt.Errorf("go_configuration.run") }
+	compiled, err := in.Compile(ctx, construction)
 	if err != nil {
 		return evidence{}, fmt.Errorf("go_configuration.compile:%w", err)
 	}
@@ -201,7 +208,7 @@ func authenticate(ctx context.Context, in Input) (evidence, error) {
 			detailOwner[member.Fields[id("b220")].Reference] = q.ID
 		}
 	}
-	for _, pm := range in.Session.Packages {
+	for _, pm := range packages {
 		for _, fm := range pm.Functions {
 			fid, er := wire.ParseID(fm.ID)
 			if er != nil {
