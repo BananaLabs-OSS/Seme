@@ -35,6 +35,9 @@ var (
 	projectRevV6        = mustID("0000000000000000000000000000e008")
 	projectRevV7        = mustID("0000000000000000000000000000e009")
 	projectRevV8        = mustID("0000000000000000000000000000e00a")
+	projectRevV9        = mustID("0000000000000000000000000000e00b")
+	resourceModule      = mustID("00000000000000000000000000006000")
+	resourceRev         = mustID("00000000000000000000000000006001")
 	dependencyModule    = mustID("0000000000000000000000000000f000")
 	dependencyRev       = mustID("0000000000000000000000000000f001")
 	configurationModule = mustID("00000000000000000000000000004000")
@@ -66,6 +69,10 @@ type Contract struct {
 // ResolveDependencyContract authenticates the exact Dependency Contract v1.
 func ResolveDependencyContract(source []byte) (Contract, error) {
 	return Resolve(source, Expectation{Pin: Pin{dependencyModule, dependencyRev}, ModuleVersion: 1, RequiredExports: ids("f010", "f011", "f012", "f013", "f014", "f015", "f016", "f017"), Digest: mustDigest("167cc9a93239db97075d064f0f008edae194bc79e8e9391e2e97958b345be024")})
+}
+
+func ResolveResourceContract(source []byte) (Contract, error) {
+	return Resolve(source, Expectation{Pin: Pin{resourceModule, resourceRev}, ModuleVersion: 1, RequiredExports: ids("6010", "6011", "6012", "6013"), Imports: []Pin{{packageModule, packageRevV4}}, Digest: mustDigest("d34fd3c9f089f80011c729ce743c8888e6d0e19b1ed97c66bf68befe9dec6792")})
 }
 
 // Resolve accepts only the one canonical byte representation described by e.
@@ -260,6 +267,54 @@ type ProjectContractSetV7 struct {
 type ProjectContractSetV8 struct {
 	execution, packages, dependency, foundation, configuration, project Contract
 	validated                                                           bool
+}
+
+type ProjectContractSetV9 struct {
+	execution, packages, dependency, foundation, configuration, resource, project Contract
+	validated                                                                     bool
+}
+
+func (s ProjectContractSetV9) Validated() bool         { return s.validated }
+func (s ProjectContractSetV9) Execution() Contract     { return s.execution }
+func (s ProjectContractSetV9) Package() Contract       { return s.packages }
+func (s ProjectContractSetV9) Dependency() Contract    { return s.dependency }
+func (s ProjectContractSetV9) Foundation() Contract    { return s.foundation }
+func (s ProjectContractSetV9) Configuration() Contract { return s.configuration }
+func (s ProjectContractSetV9) Resource() Contract      { return s.resource }
+func (s ProjectContractSetV9) Project() Contract       { return s.project }
+
+func ResolveProjectContractSetV9(foundation, execution, packages, dependency, configuration, resource, project []byte) (ProjectContractSetV9, error) {
+	// Resolve each exact authority independently; v9 cannot be substituted for
+	// v8 in the established resolver because immutable revision pins differ.
+	f, err := Resolve(foundation, Expectation{Pin: Pin{foundationModule, foundationRev}, ModuleVersion: 1, RequiredExports: ids("16"), Digest: mustDigest("bbb42f8d71f8c537713a478514f74f79cef60ba370b1a2e10525f631d922dd5d")})
+	if err != nil {
+		return ProjectContractSetV9{}, fmt.Errorf("foundation:%w", err)
+	}
+	x, err := Resolve(execution, Expectation{Pin: Pin{executionModule, executionRevV36}, ModuleVersion: 36, RequiredExports: ids("9015", "a069"), Digest: mustDigest("2315477d7c0d248ce167aeada313654d25c056be1d8c851e43bd9c225ff07450")})
+	if err != nil {
+		return ProjectContractSetV9{}, fmt.Errorf("execution:%w", err)
+	}
+	p, err := Resolve(packages, Expectation{Pin: Pin{packageModule, packageRevV4}, ModuleVersion: 4, RequiredExports: ids("b010", "b011", "b012", "b013", "b014", "b020", "b021", "b022", "b023", "b024", "b025", "b026", "b027", "b028", "b029"), Imports: []Pin{{executionModule, executionRevV36}}, Digest: mustDigest("476a531c390e794c0a699bf85a877b0c4d2f409574758728b140a498dcb00102")})
+	if err != nil {
+		return ProjectContractSetV9{}, fmt.Errorf("package:%w", err)
+	}
+	d, err := ResolveDependencyContract(dependency)
+	if err != nil {
+		return ProjectContractSetV9{}, fmt.Errorf("dependency:%w", err)
+	}
+	c, err := Resolve(configuration, Expectation{Pin: Pin{configurationModule, configurationRevV3}, ModuleVersion: 3, RequiredExports: ids("4010", "4011", "4012", "4013", "4014", "4015", "4016", "4017", "4018", "4019", "401a", "401b", "401c", "401d", "401e", "401f"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("80b62b080d196df5adfbc6c6dd702dfe527d63ac0c82aab52f4829ad29cd5fef")})
+	if err != nil {
+		return ProjectContractSetV9{}, fmt.Errorf("configuration:%w", err)
+	}
+	q, err := ResolveResourceContract(resource)
+	if err != nil {
+		return ProjectContractSetV9{}, fmt.Errorf("resource:%w", err)
+	}
+	r, err := Resolve(project, Expectation{Pin: Pin{projectModule, projectRevV9}, ModuleVersion: 9, RequiredExports: ids("e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e020", "e021", "e022", "e023", "e024"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {dependencyModule, dependencyRev}, {configurationModule, configurationRevV3}, {foundationModule, foundationRev}, {resourceModule, resourceRev}}, Digest: mustDigest("eb6b11e4f3215c403dcb516db898ad3bb313c283c1bc3d979a3de7da6a24a41d")})
+	if err != nil {
+		return ProjectContractSetV9{}, fmt.Errorf("project:%w", err)
+	}
+	return ProjectContractSetV9{x, p, d, f, c, q, r, true}, nil
 }
 
 func (s ProjectContractSetV8) Validated() bool         { return s.validated }

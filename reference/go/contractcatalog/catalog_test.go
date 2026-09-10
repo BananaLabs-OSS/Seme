@@ -262,6 +262,33 @@ func TestResolveProjectContractSetV8AuthenticatesOneExecutionV36Snapshot(t *test
 	}
 }
 
+func TestResolveProjectContractSetV9AuthenticatesResources(t *testing.T) {
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	f := read("../../../modules/foundation/v1/module.seme")
+	e := read("../../../modules/execution/v36/module.seme")
+	p := read("../../../modules/package/v4/module.seme")
+	d := read("../../../modules/dependency/v1/module.seme")
+	c := read("../../../modules/configuration/v3/module.seme")
+	q := read("../../../modules/resource/v1/module.seme")
+	r := read("../../../modules/project/v9/module.seme")
+	set, err := ResolveProjectContractSetV9(f, e, p, d, c, q, r)
+	if err != nil || !set.Validated() || !set.Resource().Validated() {
+		t.Fatalf("v9: %v", err)
+	}
+	if bad, err := ResolveProjectContractSetV9(f, e, p, d, c, read("../../../modules/dependency/v1/module.seme"), r); err == nil || bad.Validated() {
+		t.Fatal("accepted resource substitution")
+	}
+	if bad, err := ResolveProjectContractSetV9(f, e, p, d, c, q, read("../../../modules/project/v8/module.seme")); err == nil || bad.Validated() {
+		t.Fatal("accepted project v8")
+	}
+}
+
 func TestResolveProjectContractSetV3RejectsMutations(t *testing.T) {
 	e, _, _ := artifacts(t)
 	p, _ := os.ReadFile("../../../modules/package/v2/module.seme")
