@@ -455,6 +455,15 @@ func validatePureExpression(graph wire.Envelope, id wire.ID, expected string, pa
 			return fmt.Errorf("wasm.pure_integer_comparison_type")
 		}
 		return validatePair(0x9160, 0x9161, "i64")
+	case identity(0xa069):
+		if expected != "bool" {
+			return fmt.Errorf("wasm.pure_boolean_not_type")
+		}
+		value, err := field(expression, 0xa0690)
+		if err != nil || value.Tag != 6 {
+			return fmt.Errorf("wasm.pure_boolean_not_fields")
+		}
+		return validatePureExpression(graph, value.Reference, "bool", parameterTypes, visiting, budget)
 	case identity(0x90b0):
 		literal, err := field(expression, 0x9b00)
 		if expected != "bool" || err != nil || (literal.Tag != 1 && literal.Tag != 2) {

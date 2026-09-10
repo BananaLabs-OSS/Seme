@@ -207,6 +207,8 @@ func validateComposedExpr(graph wire.Envelope, id wire.ID, members map[wire.ID]b
 		refs = []uint64{0x9140, 0x9141}
 	case identity(0x9021):
 		refs = []uint64{0x9160, 0x9161}
+	case identity(0xa069):
+		refs = []uint64{0xa0690}
 	case identity(0x9032):
 		refs = []uint64{0x9320, 0x9321}
 	case identity(0x9033):
@@ -487,6 +489,16 @@ func (l *composedLowerer) expr(id wire.ID, scope composedScope) (composedValue, 
 			return composedValue{}, fmt.Errorf("wasm.composed_compare")
 		}
 		return composedValue{kind: "bool", code: append(append(a.code, b.code...), 0x57)}, nil
+	case identity(0xa069):
+		value, err := field(e, 0xa0690)
+		if err != nil || value.Tag != 6 {
+			return composedValue{}, fmt.Errorf("wasm.composed_boolean_not")
+		}
+		operand, err := l.expr(value.Reference, scope)
+		if err != nil || operand.kind != "bool" {
+			return composedValue{}, fmt.Errorf("wasm.composed_boolean_not")
+		}
+		return composedValue{kind: "bool", code: append(operand.code, 0x45)}, nil
 	case identity(0x9033):
 		typeRef, _ := field(e, 0x9330)
 		values, _ := field(e, 0x9331)

@@ -759,6 +759,18 @@ func (context *stringLowering) lowerBoolean(id wire.ID, visiting map[wire.ID]boo
 		}
 		return append(append(leftCode, rightCode...), 0x10, 0x07), nil
 	}
+	if expression.Schema == identity(0xa069) {
+		*budget--
+		value, err := field(expression, 0xa0690)
+		if err != nil || value.Tag != 6 {
+			return nil, fmt.Errorf("wasm.helper_boolean_not")
+		}
+		code, err := context.lowerBoolean(value.Reference, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		return append(code, 0x45), nil
+	}
 	if expression.Schema == identity(0x90b1) || expression.Schema == identity(0x90c1) {
 		*budget--
 		leftField, rightField := uint64(0x9b10), uint64(0x9b11)
