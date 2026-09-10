@@ -153,6 +153,60 @@ func TestRejectsFunctionOwnedByTwoPackages(t *testing.T) {
 	}
 }
 
+func TestValidatesEffectCapabilityAndUniqueOwnership(t *testing.T) {
+	e := valid()
+	first := id("20000000000000000000000000000000")
+	effect := id("71000000000000000000000000000000")
+	capability := id("72000000000000000000000000000000")
+	e.Entities[capability] = ent(capability, capabilitySchema, map[wire.ID]wire.Value{fid(0x160): bv("observability.log")})
+	e.Entities[effect] = ent(effect, effectSchema, map[wire.ID]wire.Value{fid(0x150): bv("observability.log"), fid(0x151): rv(capability)})
+	q := e.Entities[first]
+	q.Fields[fid(0xb104)] = lv(effect)
+	e.Entities[first] = q
+	r, err := Revision(e, first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q = e.Entities[first]
+	q.Fields[fid(0xb101)] = wire.Value{Tag: 5, Bytes: r}
+	e.Entities[first] = q
+	if err := ValidateEnvelope(e); err != nil {
+		t.Fatal(err)
+	}
+
+	bad := e
+	bad.Entities = cloneEntities(e.Entities)
+	cap := bad.Entities[capability]
+	cap.Fields = map[wire.ID]wire.Value{}
+	bad.Entities[capability] = cap
+	if err := ValidateEnvelope(bad); err == nil || !strings.Contains(err.Error(), "capability_shape") {
+		t.Fatalf("invalid capability accepted: %v", err)
+	}
+
+	second := id("21000000000000000000000000000000")
+	e.Entities[second] = ent(second, packageSchema, map[wire.ID]wire.Value{fid(0xb100): bv("example/other"), fid(0xb101): bv("pending"), fid(0xb102): lv(), fid(0xb103): lv(), fid(0xb104): lv(effect), fid(0xb105): lv(), fid(0xb106): lv()})
+	r, _ = Revision(e, second)
+	q = e.Entities[second]
+	q.Fields[fid(0xb101)] = wire.Value{Tag: 5, Bytes: r}
+	e.Entities[second] = q
+	if err := ValidateEnvelope(e); err == nil || !strings.Contains(err.Error(), "effect_owned_twice") {
+		t.Fatalf("multiply-owned effect accepted: %v", err)
+	}
+}
+
+func cloneEntities(in map[wire.ID]wire.Entity) map[wire.ID]wire.Entity {
+	out := make(map[wire.ID]wire.Entity, len(in))
+	for id, entity := range in {
+		fields := make(map[wire.ID]wire.Value, len(entity.Fields))
+		for field, value := range entity.Fields {
+			fields[field] = value
+		}
+		entity.Fields = fields
+		out[id] = entity
+	}
+	return out
+}
+
 func TestDependencyFirstRevisionAndValidation(t *testing.T) {
 	e := valid()
 	root := id("20000000000000000000000000000000")

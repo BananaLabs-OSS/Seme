@@ -23,6 +23,8 @@ var (
 	fidelitySchema   = id("0000000000000000000000000000b014")
 	functionSchema   = id("00000000000000000000000000009011")
 	parameterSchema  = id("00000000000000000000000000009012")
+	effectSchema     = id("00000000000000000000000000000015")
+	capabilitySchema = id("00000000000000000000000000000016")
 	fImports         = id("00000000000000000000000000000121")
 	fImportModule    = id("00000000000000000000000000000130")
 	fImportRevision  = id("00000000000000000000000000000131")
@@ -73,6 +75,7 @@ func ValidateEnvelope(e wire.Envelope) error {
 		return err
 	}
 	owners := map[wire.ID]wire.ID{}
+	effectOwners := map[wire.ID]wire.ID{}
 	count := 0
 	for pid, p := range e.Entities {
 		if p.Schema != packageSchema {
@@ -99,7 +102,7 @@ func ValidateEnvelope(e wire.Envelope) error {
 			field  uint64
 			schema wire.ID
 			any    bool
-		}{{0xb102, interfaceSchema, false}, {0xb103, dependencySchema, false}, {0xb104, wire.ID{}, true}, {0xb105, runtimeSchema, false}, {0xb106, fidelitySchema, false}}
+		}{{0xb102, interfaceSchema, false}, {0xb103, dependencySchema, false}, {0xb104, effectSchema, false}, {0xb105, runtimeSchema, false}, {0xb106, fidelitySchema, false}}
 		for _, g := range groups {
 			xs, xer := refs(p, fid(g.field))
 			if xer != nil {
@@ -131,6 +134,15 @@ func ValidateEnvelope(e wire.Envelope) error {
 						return at(x, err)
 					}
 				}
+				if g.schema == effectSchema {
+					if prior, yes := effectOwners[x]; yes && prior != pid {
+						return fmt.Errorf("package_instance.effect_owned_twice:%s", x)
+					}
+					effectOwners[x] = pid
+					if err := validateEffect(e, target); err != nil {
+						return at(x, err)
+					}
+				}
 				if g.schema == runtimeSchema {
 					if err := shape(target, runtimeSchema, []uint64{0xb130, 0xb131}, []byte{5, 5}); err != nil {
 						return at(x, err)
@@ -153,6 +165,29 @@ func ValidateEnvelope(e wire.Envelope) error {
 	}
 	if count == 0 {
 		return fmt.Errorf("package_instance.package_missing")
+	}
+	return nil
+}
+
+func validateEffect(e wire.Envelope, x wire.Entity) error {
+	if x.Version != 1 {
+		return fmt.Errorf("effect.version")
+	}
+	if err := shape(x, effectSchema, []uint64{0x150, 0x151}, []byte{5, 6}); err != nil {
+		return fmt.Errorf("effect.shape:%w", err)
+	}
+	name, _ := blob(x, fid(0x150))
+	capability, _ := ref(x, fid(0x151))
+	cap, ok := e.Entities[capability]
+	if len(name) == 0 || !ok || cap.Schema != capabilitySchema || cap.Version != 1 {
+		return fmt.Errorf("effect.capability")
+	}
+	if err := shape(cap, capabilitySchema, []uint64{0x160}, []byte{5}); err != nil {
+		return fmt.Errorf("effect.capability_shape:%w", err)
+	}
+	capName, _ := blob(cap, fid(0x160))
+	if len(capName) == 0 {
+		return fmt.Errorf("effect.capability_name")
 	}
 	return nil
 }

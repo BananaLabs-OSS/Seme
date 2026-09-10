@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"sort"
 
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/goprovider"
@@ -55,8 +56,13 @@ func Build(ctx context.Context, snapshot goprovider.DocumentSnapshot, contracts 
 		Identity: snapshot.ModulePath, RootPackage: snapshot.PackagePath,
 		Execution: execution,
 	}
+	effects, err := deriveEffects(execution, lifted.Packages)
+	if err != nil {
+		return Result{}, err
+	}
 	for _, p := range lifted.Packages {
 		out := projectemitter.Package{Name: p.Name}
+		out.Effects = append([]wire.ID(nil), effects[p.Name]...)
 		for _, dependency := range p.Dependencies {
 			out.Dependencies = append(out.Dependencies, projectemitter.Dependency{Name: dependency, Package: dependency})
 		}
@@ -77,6 +83,175 @@ func Build(ctx context.Context, snapshot goprovider.DocumentSnapshot, contracts 
 		Artifact: append([]byte(nil), artifact...), CanonicalG1: []byte(lifted.CanonicalG1), SourceDigest: lifted.ContentDigest,
 		Packages: clonePackages(lifted.Packages), Resolution: cloneResolution(lifted.Resolution),
 	}, nil
+}
+
+func deriveEffects(execution wire.Envelope, packages []goprovider.PackageMetadata) (map[string][]wire.ID, error) {
+	functionSchema := mustID("00000000000000000000000000009011")
+	methodSchema := mustID("0000000000000000000000000000a002")
+	effectSchema := mustID("00000000000000000000000000000015")
+	invokeSchema := mustID("000000000000000000000000000090f1")
+	invokeEffect := mustID("00000000000000000000000000009f10")
+	reachable, err := executionProgramClosure(execution)
+	if err != nil {
+		return nil, err
+	}
+	type callableOwner struct {
+		packageName string
+		schema      wire.ID
+	}
+	functionOwners := map[wire.ID]callableOwner{}
+	for _, p := range packages {
+		for _, member := range p.Members {
+			function, err := wire.ParseID(member.ID)
+			if err != nil {
+				return nil, fmt.Errorf("project_build.member_identity:%w", err)
+			}
+			if prior, exists := functionOwners[function]; exists && prior.packageName != p.Name {
+				return nil, fmt.Errorf("project_build.function_multiple_owners:%s", function)
+			}
+			functionOwners[function] = callableOwner{packageName: p.Name, schema: functionSchema}
+		}
+		for _, declaration := range p.Supplemental {
+			if declaration.Kind != goprovider.SemanticMethod {
+				continue
+			}
+			function, err := wire.ParseID(declaration.Declaration)
+			if err != nil {
+				return nil, fmt.Errorf("project_build.method_identity:%w", err)
+			}
+			if prior, exists := functionOwners[function]; exists && prior.packageName != p.Name {
+				return nil, fmt.Errorf("project_build.function_multiple_owners:%s", function)
+			}
+			functionOwners[function] = callableOwner{packageName: p.Name, schema: methodSchema}
+		}
+	}
+	result := map[string][]wire.ID{}
+	effectOwner := map[wire.ID]string{}
+	callables := make([]wire.ID, 0, len(functionOwners))
+	for function := range functionOwners {
+		callables = append(callables, function)
+	}
+	sort.Slice(callables, func(i, j int) bool { return bytes.Compare(callables[i][:], callables[j][:]) < 0 })
+	for _, function := range callables {
+		ownership := functionOwners[function]
+		if !reachable[function] {
+			continue
+		}
+		if q, ok := execution.Entities[function]; !ok || q.Schema != ownership.schema {
+			return nil, fmt.Errorf("project_build.member_missing:%s", function)
+		}
+		owner := ownership.packageName
+		seen := map[wire.ID]bool{}
+		queue := []wire.ID{function}
+		for len(queue) > 0 {
+			current := queue[0]
+			queue = queue[1:]
+			if seen[current] {
+				continue
+			}
+			seen[current] = true
+			entity, ok := execution.Entities[current]
+			if !ok {
+				return nil, fmt.Errorf("project_build.effect_reference_missing:%s", current)
+			}
+			if current != function && (entity.Schema == functionSchema || entity.Schema == methodSchema) {
+				continue // A call belongs to the callee's package, not the caller.
+			}
+			if entity.Schema == invokeSchema {
+				value, ok := entity.Fields[invokeEffect]
+				if !ok || value.Tag != 6 {
+					return nil, fmt.Errorf("project_build.effect_invoke_shape:%s", current)
+				}
+				prior, exists := effectOwner[value.Reference]
+				if exists && prior != owner {
+					return nil, fmt.Errorf("project_build.effect_multiple_owners:%s", value.Reference)
+				}
+				if !exists {
+					effectOwner[value.Reference] = owner
+					result[owner] = append(result[owner], value.Reference)
+				}
+			}
+			queue = append(queue, entityReferences(entity)...)
+		}
+	}
+	effects := make([]wire.ID, 0)
+	for identity, entity := range execution.Entities {
+		if entity.Schema == effectSchema && reachable[identity] {
+			effects = append(effects, identity)
+		}
+	}
+	sort.Slice(effects, func(i, j int) bool { return bytes.Compare(effects[i][:], effects[j][:]) < 0 })
+	for _, identity := range effects {
+		if _, ok := effectOwner[identity]; !ok {
+			return nil, fmt.Errorf("project_build.effect_unowned:%s", identity)
+		}
+	}
+	for name := range result {
+		sort.Slice(result[name], func(i, j int) bool { return bytes.Compare(result[name][i][:], result[name][j][:]) < 0 })
+	}
+	return result, nil
+}
+
+func executionProgramClosure(execution wire.Envelope) (map[wire.ID]bool, error) {
+	programSchema := mustID("00000000000000000000000000009015")
+	var program wire.ID
+	for identity, entity := range execution.Entities {
+		if entity.Schema != programSchema {
+			continue
+		}
+		if program != (wire.ID{}) {
+			return nil, fmt.Errorf("project_build.program_count")
+		}
+		program = identity
+	}
+	if program == (wire.ID{}) {
+		return nil, fmt.Errorf("project_build.program_count")
+	}
+	reachable := map[wire.ID]bool{}
+	queue := []wire.ID{program}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if reachable[current] {
+			continue
+		}
+		entity, ok := execution.Entities[current]
+		if !ok {
+			return nil, fmt.Errorf("project_build.program_reference_missing:%s", current)
+		}
+		reachable[current] = true
+		queue = append(queue, entityReferences(entity)...)
+	}
+	return reachable, nil
+}
+
+func entityReferences(entity wire.Entity) []wire.ID {
+	out := []wire.ID{}
+	for _, value := range entity.Fields {
+		collectReferences(value, &out)
+	}
+	sort.Slice(out, func(i, j int) bool { return bytes.Compare(out[i][:], out[j][:]) < 0 })
+	return out
+}
+
+func collectReferences(value wire.Value, out *[]wire.ID) {
+	if value.Tag == 6 {
+		*out = append(*out, value.Reference)
+	}
+	for _, item := range value.List {
+		collectReferences(item, out)
+	}
+	for _, item := range value.Record {
+		collectReferences(item, out)
+	}
+}
+
+func mustID(value string) wire.ID {
+	id, err := wire.ParseID(value)
+	if err != nil {
+		panic(err)
+	}
+	return id
 }
 
 func interfaceFromMetadata(function goprovider.PackageFunctionMetadata) (projectemitter.Interface, error) {
@@ -106,6 +281,12 @@ func clonePackages(in []goprovider.PackageMetadata) []goprovider.PackageMetadata
 		out[i].Dependencies = append([]string(nil), p.Dependencies...)
 		out[i].Members = cloneFunctions(p.Members)
 		out[i].Functions = cloneFunctions(p.Functions)
+		out[i].Supplemental = make([]goprovider.SemanticDeclarationMetadata, len(p.Supplemental))
+		for j, declaration := range p.Supplemental {
+			out[i].Supplemental[j] = declaration
+			out[i].Supplemental[j].ReferencedImports = append([]string(nil), declaration.ReferencedImports...)
+			out[i].Supplemental[j].ImportReferences = append([]goprovider.SemanticImportReference(nil), declaration.ImportReferences...)
+		}
 	}
 	return out
 }
