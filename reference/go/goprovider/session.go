@@ -474,7 +474,13 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 		{stringID, entity(stringID, "00000000000000000000000000009040", nil)},
 		{bytesID, entity(bytesID, "00000000000000000000000000009041", nil)},
 	}
-	records := make(map[*types.Named]goRecordInfo)
+	type recordCandidate struct {
+		named     *types.Named
+		name      string
+		id        string
+		structure *types.Struct
+	}
+	var recordCandidates []recordCandidate
 	for _, unit := range units {
 		for identifier, object := range unit.info.Defs {
 			typeName, ok := object.(*types.TypeName)
@@ -493,41 +499,104 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 			if recordID == "" {
 				recordID = stableID("execution", "record", unit.path, identifier.Name)
 			}
-			record := goRecordInfo{id: recordID, fields: map[*types.Var]string{}}
-			fieldIDs := make([]string, structure.NumFields())
-			var fieldEntities []graphEntity
-			valid := true
-			for index := 0; index < structure.NumFields(); index++ {
-				field := structure.Field(index)
-				typeID := integerID
-				if isBool(field.Type()) {
-					typeID = booleanID
-				} else if isPureString(field.Type()) {
-					typeID = stringID
-				} else if isI64Slice(field.Type()) || isI64Map(field.Type()) || isBytes(field.Type()) {
-					typeID = goSemanticTypeIdentity(field.Type())
-					for _, typeEntity := range goBridgeTypeEntities(field.Type(), integerID, booleanID, stringID) {
-						if !hasGraphEntity(instances, typeEntity.id) {
-							instances = append(instances, typeEntity)
-						}
+			recordCandidates = append(recordCandidates, recordCandidate{named: named, name: identifier.Name, id: recordID, structure: structure})
+		}
+	}
+	sort.Slice(recordCandidates, func(i, j int) bool { return recordCandidates[i].id < recordCandidates[j].id })
+	records := make(map[*types.Named]goRecordInfo)
+	visitingRecords := make(map[*types.Named]bool)
+	invalidRecords := make(map[*types.Named]bool)
+	var buildRecord func(*types.Named, int) (goRecordInfo, bool)
+	findCandidate := func(named *types.Named) (recordCandidate, bool) {
+		origin := named.Origin()
+		for _, candidate := range recordCandidates {
+			if candidate.named == named || candidate.named == origin || sameNamedType(candidate.named, origin) {
+				return candidate, true
+			}
+		}
+		return recordCandidate{}, false
+	}
+	var validateRecord func(*types.Named, map[*types.Named]bool, int) bool
+	validateRecord = func(named *types.Named, visiting map[*types.Named]bool, depth int) bool {
+		candidate, exists := findCandidate(named)
+		if !exists || depth > 32 || visiting[candidate.named] {
+			return false
+		}
+		visiting[candidate.named] = true
+		defer delete(visiting, candidate.named)
+		for index := 0; index < candidate.structure.NumFields(); index++ {
+			fieldType := candidate.structure.Field(index).Type()
+			if isBool(fieldType) || isPureString(fieldType) || isI64Slice(fieldType) || isI64Map(fieldType) || isBytes(fieldType) || isInt64(fieldType) {
+				continue
+			}
+			nested, ok := types.Unalias(fieldType).(*types.Named)
+			if !ok || !validateRecord(nested, visiting, depth+1) {
+				return false
+			}
+		}
+		return true
+	}
+	buildRecord = func(named *types.Named, depth int) (goRecordInfo, bool) {
+		candidate, exists := findCandidate(named)
+		if !exists || depth > 32 || len(records) >= 512 || invalidRecords[candidate.named] || visitingRecords[candidate.named] {
+			return goRecordInfo{}, false
+		}
+		if record, exists := records[candidate.named]; exists {
+			return record, true
+		}
+		visitingRecords[candidate.named] = true
+		defer delete(visitingRecords, candidate.named)
+		record := goRecordInfo{id: candidate.id, fields: map[*types.Var]string{}}
+		fieldIDs := make([]string, candidate.structure.NumFields())
+		var fieldEntities []graphEntity
+		for index := 0; index < candidate.structure.NumFields(); index++ {
+			field := candidate.structure.Field(index)
+			typeID := integerID
+			switch {
+			case isBool(field.Type()):
+				typeID = booleanID
+			case isPureString(field.Type()):
+				typeID = stringID
+			case isI64Slice(field.Type()) || isI64Map(field.Type()) || isBytes(field.Type()):
+				typeID = goSemanticTypeIdentity(field.Type())
+				for _, typeEntity := range goBridgeTypeEntities(field.Type(), integerID, booleanID, stringID) {
+					if !hasGraphEntity(instances, typeEntity.id) {
+						instances = append(instances, typeEntity)
 					}
-				} else if !isInt64(field.Type()) {
-					valid = false
-					break
 				}
-				fieldID := stableID("execution", recordID, "field", strconv.Itoa(index))
-				fieldIDs[index] = fieldID
-				record.fields[field] = fieldID
-				record.ordered = append(record.ordered, field)
-				fieldEntities = append(fieldEntities, graphEntity{fieldID, entity(fieldID, "00000000000000000000000000009031", []graphField{
-					bytesField(0x9310, field.Name()), refField(0x9311, typeID), unsignedField(0x9312, uint64(index)),
-				})})
+			case isInt64(field.Type()):
+			default:
+				nested, ok := types.Unalias(field.Type()).(*types.Named)
+				if !ok {
+					invalidRecords[candidate.named] = true
+					return goRecordInfo{}, false
+				}
+				nestedRecord, ok := buildRecord(nested, depth+1)
+				if !ok {
+					invalidRecords[candidate.named] = true
+					return goRecordInfo{}, false
+				}
+				typeID = nestedRecord.id
 			}
-			if valid {
-				records[named] = record
-				instances = append(instances, fieldEntities...)
-				instances = append(instances, graphEntity{recordID, entity(recordID, "00000000000000000000000000009030", []graphField{bytesField(0x9300, identifier.Name), refsField(0x9301, fieldIDs)})})
-			}
+			fieldID := stableID("execution", candidate.id, "field", strconv.Itoa(index))
+			fieldIDs[index] = fieldID
+			record.fields[field] = fieldID
+			record.ordered = append(record.ordered, field)
+			fieldEntities = append(fieldEntities, graphEntity{fieldID, entity(fieldID, "00000000000000000000000000009031", []graphField{
+				bytesField(0x9310, field.Name()), refField(0x9311, typeID), unsignedField(0x9312, uint64(index)),
+			})})
+		}
+		records[candidate.named] = record
+		records[candidate.named.Origin()] = record
+		instances = append(instances, fieldEntities...)
+		instances = append(instances, graphEntity{candidate.id, entity(candidate.id, "00000000000000000000000000009030", []graphField{bytesField(0x9300, candidate.name), refsField(0x9301, fieldIDs)})})
+		return record, true
+	}
+	for _, candidate := range recordCandidates {
+		if validateRecord(candidate.named, map[*types.Named]bool{}, 1) {
+			buildRecord(candidate.named, 1)
+		} else {
+			invalidRecords[candidate.named] = true
 		}
 	}
 	for _, function := range functions {
@@ -833,8 +902,8 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 			if !hasGraphEntity(instances, parameterTypeID) {
 				instances = append(instances, graphEntity{parameterTypeID, entity(parameterTypeID, "0000000000000000000000000000a020", []graphField{refsField(0xa0200, []string{integerID}), refField(0xa0201, integerID)})})
 			}
-		} else if named, ok := function.sig.Params().At(index).Type().(*types.Named); ok {
-			record, exists := records[named]
+		} else if named, ok := types.Unalias(function.sig.Params().At(index).Type()).(*types.Named); ok {
+			record, exists := findGoRecord(records, named)
 			if !exists {
 				return diagnostic("session.unsupported_parameter_type", "unsupported named parameter type")
 			}
@@ -988,8 +1057,8 @@ func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, 
 	if signature, ok := goFunctionSignature(value); ok && isUnaryI64Function(signature) {
 		return goFunctionTypeID(signature), true
 	}
-	if named, ok := value.(*types.Named); ok {
-		if record, exists := records[named]; exists {
+	if named, ok := types.Unalias(value).(*types.Named); ok {
+		if record, exists := findGoRecord(records, named); exists {
 			return record.id, true
 		}
 	}

@@ -1425,8 +1425,8 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return &goExpression{kind: goEmptyMap, typeID: stableID("execution", "type", "map", "i64", "i64")}, nil
 		}
-		named, ok := info.TypeOf(expression).(*types.Named)
-		record, exists := records[named]
+		named, ok := types.Unalias(info.TypeOf(expression)).(*types.Named)
+		record, exists := findGoRecord(records, named)
 		if !ok || !exists || len(expression.Elts) != len(record.ordered) {
 			return nil, fmt.Errorf("expression.unsupported_record_construct")
 		}
@@ -1679,6 +1679,9 @@ func structuralMapLookupOptionCall(function *ast.FuncLit, call *ast.CallExpr, ou
 }
 
 func findGoRecord(records map[*types.Named]goRecordInfo, named *types.Named) (goRecordInfo, bool) {
+	if named == nil {
+		return goRecordInfo{}, false
+	}
 	if record, ok := records[named]; ok {
 		return record, true
 	}
@@ -1687,11 +1690,19 @@ func findGoRecord(records map[*types.Named]goRecordInfo, named *types.Named) (go
 		return record, true
 	}
 	for candidate, record := range records {
-		if candidate.Obj() != nil && origin.Obj() != nil && candidate.Obj().Pkg() == origin.Obj().Pkg() && candidate.Obj().Name() == origin.Obj().Name() {
+		if sameNamedType(candidate, origin) {
 			return record, true
 		}
 	}
 	return goRecordInfo{}, false
+}
+
+func sameNamedType(left, right *types.Named) bool {
+	if left == nil || right == nil || left.Obj() == nil || right.Obj() == nil || left.Obj().Name() != right.Obj().Name() {
+		return false
+	}
+	leftPackage, rightPackage := left.Obj().Pkg(), right.Obj().Pkg()
+	return leftPackage == nil && rightPackage == nil || leftPackage != nil && rightPackage != nil && leftPackage.Path() == rightPackage.Path()
 }
 
 func isSlicesFunction(info *types.Info, selector *ast.SelectorExpr, name string) bool {
