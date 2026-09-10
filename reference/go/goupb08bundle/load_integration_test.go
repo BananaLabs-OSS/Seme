@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -20,10 +21,13 @@ import (
 	"seme.local/reference/goorderedtransportadapter"
 	"seme.local/reference/goprovider"
 	"seme.local/reference/goupb08bundle"
+	"seme.local/reference/goupb08portruntime"
 	"seme.local/reference/goupb08report"
 	"seme.local/reference/internal/upb07testfixture"
 	"seme.local/reference/orderedtransportinstance"
+	"seme.local/reference/orderedtransportruntime"
 	"seme.local/reference/projectv11instance"
+	"seme.local/reference/wasmtarget"
 )
 
 func TestLoadAuthenticatesAndRejectsMixedFinalArtifacts(t *testing.T) {
@@ -111,6 +115,24 @@ func TestLoadAuthenticatesAndRejectsMixedFinalArtifacts(t *testing.T) {
 	if !relifted.Valid || !bytes.Equal([]byte(relifted.CanonicalG1), a.Base.Construction) {
 		t.Fatal("ordinary Go projection did not re-lift to its exact canonical graph")
 	}
+	profile, err := orderedtransportruntime.AuthenticatedProfile(v11.OrderedTransport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout := wasmtarget.PureValueLayout{Contract: "seme.pure-value-abi/v1", Type: "bytes", FixedSize: 8, VariablePayload: true, MaximumPayload: 4096, Encoding: "u32le-offset-u32le-byte-length/opaque"}
+	payload := make([]byte, 9)
+	binary.LittleEndian.PutUint32(payload[:4], 8)
+	binary.LittleEndian.PutUint32(payload[4:8], 1)
+	payload[8] = 7
+	frame, err := orderedtransportruntime.EncodeFrame(profile, orderedtransportruntime.Layouts{Command: layout, Response: layout}, orderedtransportruntime.Frame{Kind: orderedtransportruntime.FrameCommand, Payload: payload})
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := &integrationPort{frame: frame}
+	hostResult, err := goupb08portruntime.ExecuteSelected(loaded.Transport, "host.frames.v1", orderedtransportruntime.Layouts{Command: layout, Response: layout}, port, integrationHandler{payload: payload})
+	if err != nil || !hostResult.Sent || len(hostResult.Trace) != 2 {
+		t.Fatal("selected host port", err, hostResult)
+	}
 	bad := in
 	bad.Artifacts = cloneArtifacts(a)
 	bad.Artifacts.ProjectV11[len(bad.Artifacts.ProjectV11)-1] ^= 1
@@ -125,6 +147,34 @@ func TestLoadAuthenticatesAndRejectsMixedFinalArtifacts(t *testing.T) {
 	if _, e := goupb08bundle.Load(ctx, bad); e == nil {
 		t.Fatal("tampered transport accepted")
 	}
+}
+
+type integrationPort struct {
+	frame []byte
+	sent  map[string][]byte
+}
+
+func (p *integrationPort) Receive(orderedtransportruntime.ReceiveRequest) orderedtransportruntime.ReceiveOutcome {
+	return orderedtransportruntime.ReceiveOutcome{Frame: bytes.Clone(p.frame)}
+}
+func (p *integrationPort) Send(r orderedtransportruntime.SendRequest) orderedtransportruntime.SendOutcome {
+	if p.sent == nil {
+		p.sent = map[string][]byte{}
+	}
+	s := sha256.Sum256(r.Frame)
+	receipt := bytes.Clone(s[:])
+	p.sent[string(receipt)] = bytes.Clone(r.Frame)
+	return orderedtransportruntime.SendOutcome{Receipt: receipt, AcceptedSHA256: s}
+}
+func (p *integrationPort) Evidence(r []byte) ([]byte, bool) {
+	b, ok := p.sent[string(r)]
+	return bytes.Clone(b), ok
+}
+
+type integrationHandler struct{ payload []byte }
+
+func (h integrationHandler) Handle(orderedtransportruntime.Frame) orderedtransportruntime.SemanticResult {
+	return orderedtransportruntime.SemanticResult{Response: orderedtransportruntime.Frame{Kind: orderedtransportruntime.FrameResponse, Payload: bytes.Clone(h.payload)}, Committed: true}
 }
 
 func resolveV11(t *testing.T, root string) contractcatalog.ProjectContractSetV11 {
