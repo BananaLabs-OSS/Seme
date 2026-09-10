@@ -1,7 +1,6 @@
 # Go UPB-04 evidence
 
-The prospective mapped acceptance gate is `scripts/check-go-upb-04.sh`. The
-scorecard must remain unclaimed until that gate passes end to end.
+The mapped acceptance gate is `scripts/check-go-upb-04.sh`.
 
 The gate exercises the seven evidence classes over an ordinary materialized
 copy of the full three-package Go UAB-11 application and all 2,048 cumulative
