@@ -1,9 +1,9 @@
 package transport
 
 import (
-	"unicode/utf8"
+	"bytes"
+	"slices"
 
-	"example.test/go-uab-11/application"
 	"example.test/go-uab-11/persistence"
 	"example.test/go-uab-11/state"
 )
@@ -12,14 +12,18 @@ const (
 	MaximumCommands       = 256
 	MaximumEvents         = 1024
 	MaximumEventsPerReply = 4
-	MaximumStreamBytes    = 128
-	MaximumKindBytes      = 128
-	// Encoded byte limits are enforced by the host codec before Dispatch.
-	MaximumEncodedPayloadBytes  = 3072
-	MaximumEncodedResponseBytes = 3072
+	PlannerCommand        = 1
+	AcceptedEvent         = 1
+	RejectedEvent         = 2
+	ClassificationNew     = 1
+	ClassificationCached  = 2
+	// The host frame codec enforces byte and UTF-8 limits before this typed entry.
+	MaximumStreamBytes         = 128
+	MaximumEncodedPayloadBytes = 3072
+	MaximumEncodedFrameBytes   = 4096
 )
 
-type ErrorCode int64
+type ErrorCode = int64
 
 const (
 	InvalidState ErrorCode = 80 + iota
@@ -28,16 +32,16 @@ const (
 	InvalidCorrelation
 	InvalidKind
 	InvalidPayload
-	PayloadTooLarge
 	SequenceConflict
 	OutOfOrder
 	CorrelationReused
-	CommandLimit
 	InvalidDomainOutcome
-	DispatchFailed
 )
 
-type Correlation [16]byte
+// Correlation and Digest are exact host-authenticated words. The frame adapter
+// maps their 16 and 32 bytes respectively without interpreting them.
+type Correlation struct{ High, Low int64 }
+type Digest struct{ A, B, C, D int64 }
 
 type PlannerPayload struct {
 	Grants     persistence.Grants
@@ -48,64 +52,68 @@ type PlannerPayload struct {
 }
 
 type Command struct {
-	Stream      string
-	Sequence    int64
-	Correlation Correlation
-	Kind        string
-	Payload     PlannerPayload
-	Digest      [32]byte
-}
-
-type DomainEvent struct {
-	Kind    string
-	Payload persistence.Plan
-}
-
-type DomainOutcome struct {
-	Accepted bool
-	Code     int64
-	Receipt  persistence.Plan
-	Events   []DomainEvent
-}
-
-type Handler interface {
-	Handle(PlannerPayload) (DomainOutcome, error)
+	Stream           string
+	Sequence         int64
+	Correlation      Correlation
+	Kind             int64
+	Payload          PlannerPayload
+	CanonicalPayload []byte
+	Digest           Digest
 }
 
 type Event struct {
-	Stream          string
 	Sequence        int64
 	CommandSequence int64
 	Ordinal         int64
-	Correlation     Correlation
-	Kind            string
-	Payload         persistence.Plan
+	CorrelationHigh int64
+	CorrelationLow  int64
+	Kind            int64
+	Code            int64
+	Revision        int64
 }
 
 type Response struct {
-	Correlation Correlation
-	Sequence    int64
-	Accepted    bool
-	Code        int64
-	Receipt     persistence.Plan
-	Events      []Event
+	CorrelationHigh int64
+	CorrelationLow  int64
+	Sequence        int64
+	Accepted        bool
+	Code            int64
+	Revision        int64
+	EventCount      int64
+	Event0          Event
+	Event1          Event
+	Event2          Event
+	Event3          Event
 }
 
-type LedgerEntry struct {
-	Stream      string
-	Sequence    int64
-	Correlation Correlation
-	Kind        string
-	Payload     PlannerPayload
-	Digest      [32]byte
-	Response    Response
-}
-
+// State is a bounded columnar ledger. Every column has exactly one item per
+// accepted unique command, so cached replies require no domain re-execution.
 type State struct {
-	Stream      string
-	NextCommand int64
-	NextEvent   int64
-	Ledger      []LedgerEntry
+	Stream          string
+	NextCommand     int64
+	NextEvent       int64
+	CorrelationHigh []int64
+	CorrelationLow  []int64
+	DigestA         []int64
+	DigestB         []int64
+	DigestC         []int64
+	DigestD         []int64
+	PayloadBytes    []byte
+	PayloadStarts   []int64
+	PayloadLengths  []int64
+	Kinds           []int64
+	Accepted        []int64
+	Codes           []int64
+	Revisions       []int64
+	EventCounts     []int64
+	EventStarts     []int64
+}
+
+type Classification struct {
+	Kind     int64
+	Index    int64
+	Response Response
+	Error    int64
 }
 
 type Result struct {
@@ -113,235 +121,160 @@ type Result struct {
 	Duplicate bool
 	State     State
 	Response  Response
-	Error     ErrorCode
-}
-
-type ReplayResult struct {
-	OK        bool
-	State     State
-	Responses []Response
-	Error     ErrorCode
+	Error     int64
 }
 
 func NewState(stream string) State {
-	return State{Stream: stream, NextCommand: 1, NextEvent: 1, Ledger: []LedgerEntry{}}
+	return State{Stream: stream, NextCommand: 1, NextEvent: 1, CorrelationHigh: []int64{}, CorrelationLow: []int64{}, DigestA: []int64{}, DigestB: []int64{}, DigestC: []int64{}, DigestD: []int64{}, PayloadBytes: []byte{}, PayloadStarts: []int64{}, PayloadLengths: []int64{}, Kinds: []int64{}, Accepted: []int64{}, Codes: []int64{}, Revisions: []int64{}, EventCounts: []int64{}, EventStarts: []int64{}}
 }
 
-func NewCommand(stream string, sequence int64, correlation Correlation, kind string, payload PlannerPayload, digest [32]byte) Command {
-	return Command{Stream: stream, Sequence: sequence, Correlation: correlation, Kind: kind, Payload: clonePayload(payload), Digest: digest}
-}
-
-func Dispatch(current State, command Command, handler Handler) Result {
-	if !validState(current) {
-		return failure(current, InvalidState)
+func Classify(current State, command Command) Classification {
+	if !ValidState(current) {
+		return Classification{Error: 80}
 	}
-	if command.Stream != current.Stream || !validText(command.Stream, MaximumStreamBytes) {
-		return failure(current, InvalidStream)
+	if command.Stream == "" || command.Stream != current.Stream {
+		return Classification{Error: 81}
 	}
-	if command.Sequence < 1 || command.Sequence > MaximumCommands {
-		return failure(current, InvalidSequence)
+	if command.Sequence < 1 || 256 < command.Sequence {
+		return Classification{Error: 82}
 	}
-	if zeroCorrelation(command.Correlation) {
-		return failure(current, InvalidCorrelation)
+	if EqualI64(command.Correlation.High, 0) && EqualI64(command.Correlation.Low, 0) {
+		return Classification{Error: 83}
 	}
-	if !validText(command.Kind, MaximumKindBytes) {
-		return failure(current, InvalidKind)
+	if !EqualI64(command.Kind, 1) {
+		return Classification{Error: 84}
 	}
-	if command.Digest == [32]byte{} {
-		return failure(current, InvalidPayload)
+	if ZeroDigest(command.Digest) || len(command.CanonicalPayload) == 0 || 3072 < len(command.CanonicalPayload) {
+		return Classification{Error: 85}
 	}
 	if command.Sequence < current.NextCommand {
-		entry := current.Ledger[command.Sequence-1]
-		if !sameCommand(entry, command) {
-			return failure(current, SequenceConflict)
+		index := command.Sequence - 1
+		start := current.PayloadStarts[index]
+		length := current.PayloadLengths[index]
+		if !EqualI64(current.CorrelationHigh[index], command.Correlation.High) || !EqualI64(current.CorrelationLow[index], command.Correlation.Low) || !EqualI64(current.Kinds[index], command.Kind) || !EqualDigestAt(current, index, command.Digest) || !EqualI64(length, int64(len(command.CanonicalPayload))) || !bytes.Equal(current.PayloadBytes[start:start+length], command.CanonicalPayload) {
+			return Classification{Error: 86}
 		}
-		return Result{OK: true, Duplicate: true, State: cloneState(current), Response: cloneResponse(entry.Response)}
+		return Classification{Kind: 2, Index: index, Response: ResponseAt(current, index)}
 	}
-	if command.Sequence > current.NextCommand {
-		return failure(current, OutOfOrder)
+	if current.NextCommand < command.Sequence {
+		return Classification{Error: 87}
 	}
-	if len(current.Ledger) >= MaximumCommands {
-		return failure(current, CommandLimit)
-	}
-	for _, entry := range current.Ledger {
-		if entry.Correlation == command.Correlation {
-			return failure(current, CorrelationReused)
+	index := int64(0)
+	reused := false
+	for index < int64(len(current.CorrelationHigh)) {
+		if EqualI64(current.CorrelationHigh[index], command.Correlation.High) && EqualI64(current.CorrelationLow[index], command.Correlation.Low) {
+			reused = true
 		}
+		index = index + 1
 	}
-	if handler == nil {
-		return failure(current, DispatchFailed)
+	if reused {
+		return Classification{Error: 88}
 	}
-	outcome, err := handler.Handle(clonePayload(command.Payload))
-	if err != nil {
-		return failure(current, DispatchFailed)
-	}
-	if !validOutcome(outcome) || current.NextEvent+int64(len(outcome.Events))-1 > MaximumEvents {
-		return failure(current, InvalidDomainOutcome)
-	}
-	response := Response{Correlation: command.Correlation, Sequence: command.Sequence, Accepted: outcome.Accepted, Code: outcome.Code, Receipt: clonePlan(outcome.Receipt), Events: make([]Event, len(outcome.Events))}
-	for index, event := range outcome.Events {
-		response.Events[index] = Event{Stream: current.Stream, Sequence: current.NextEvent + int64(index), CommandSequence: command.Sequence, Ordinal: int64(index), Correlation: command.Correlation, Kind: event.Kind, Payload: clonePlan(event.Payload)}
-	}
-	next := cloneState(current)
-	next.NextCommand++
-	next.NextEvent += int64(len(response.Events))
-	next.Ledger = append(next.Ledger, LedgerEntry{Stream: command.Stream, Sequence: command.Sequence, Correlation: command.Correlation, Kind: command.Kind, Payload: clonePayload(command.Payload), Digest: command.Digest, Response: cloneResponse(response)})
-	return Result{OK: true, State: next, Response: response}
+	return Classification{Kind: 1, Index: current.NextCommand - 1}
 }
 
-func Replay(initial State, commands []Command, handler Handler) ReplayResult {
-	current := cloneState(initial)
-	responses := make([]Response, 0, len(commands))
-	for _, command := range commands {
-		if command.Sequence != current.NextCommand {
-			return ReplayResult{State: current, Responses: responses, Error: OutOfOrder}
-		}
-		result := Dispatch(current, command, handler)
-		if !result.OK || result.Duplicate {
-			return ReplayResult{State: current, Responses: responses, Error: result.Error}
-		}
-		current = result.State
-		responses = append(responses, cloneResponse(result.Response))
+func Commit(current State, command Command, accepted bool, code int64, revision int64, eventCount int64) Result {
+	classification := Classify(current, command)
+	if !EqualI64(classification.Error, 0) {
+		return Failure(current, classification.Error)
 	}
-	return ReplayResult{OK: true, State: current, Responses: responses}
+	if EqualI64(classification.Kind, 2) {
+		return Cached(current, classification.Response)
+	}
+	if eventCount < 0 || 4 < eventCount || 1024 < current.NextEvent+eventCount-1 || accepted && !EqualI64(code, 0) || !accepted && EqualI64(code, 0) {
+		return Failure(current, 89)
+	}
+	if 4096 < len(current.PayloadBytes)+len(command.CanonicalPayload) {
+		return Failure(current, 85)
+	}
+	acceptedValue := int64(0)
+	if accepted {
+		acceptedValue = 1
+	}
+	next := State{
+		Stream: current.Stream, NextCommand: current.NextCommand + 1, NextEvent: current.NextEvent + eventCount,
+		CorrelationHigh: append(slices.Clone(current.CorrelationHigh), command.Correlation.High), CorrelationLow: append(slices.Clone(current.CorrelationLow), command.Correlation.Low),
+		DigestA: append(slices.Clone(current.DigestA), command.Digest.A), DigestB: append(slices.Clone(current.DigestB), command.Digest.B), DigestC: append(slices.Clone(current.DigestC), command.Digest.C), DigestD: append(slices.Clone(current.DigestD), command.Digest.D),
+		PayloadBytes: append(slices.Clone(current.PayloadBytes), command.CanonicalPayload...), PayloadStarts: append(slices.Clone(current.PayloadStarts), int64(len(current.PayloadBytes))), PayloadLengths: append(slices.Clone(current.PayloadLengths), int64(len(command.CanonicalPayload))),
+		Kinds: append(slices.Clone(current.Kinds), command.Kind), Accepted: append(slices.Clone(current.Accepted), acceptedValue), Codes: append(slices.Clone(current.Codes), code), Revisions: append(slices.Clone(current.Revisions), revision),
+		EventCounts: append(slices.Clone(current.EventCounts), eventCount), EventStarts: append(slices.Clone(current.EventStarts), current.NextEvent),
+	}
+	return Result{OK: true, State: next, Response: ResponseAt(next, command.Sequence-1)}
 }
 
-func Reject(current State, code ErrorCode) Result { return failure(current, code) }
+func Failure(current State, code int64) Result {
+	return Result{State: CloneState(current), Error: code}
+}
+func Cached(current State, response Response) Result {
+	return Result{OK: true, Duplicate: true, State: CloneState(current), Response: response}
+}
 
-func validState(value State) bool {
-	if !validText(value.Stream, MaximumStreamBytes) || value.NextCommand != int64(len(value.Ledger))+1 || value.NextCommand < 1 || value.NextCommand > MaximumCommands+1 || value.NextEvent < 1 || value.NextEvent > MaximumEvents+1 {
+func ValidState(value State) bool {
+	count := int64(len(value.CorrelationHigh))
+	if value.Stream == "" || 4096 < len(value.PayloadBytes) || !EqualI64(value.NextCommand, count+1) || value.NextCommand < 1 || 257 < value.NextCommand || value.NextEvent < 1 || 1025 < value.NextEvent || !EqualI64(int64(len(value.CorrelationLow)), count) || !EqualI64(int64(len(value.DigestA)), count) || !EqualI64(int64(len(value.DigestB)), count) || !EqualI64(int64(len(value.DigestC)), count) || !EqualI64(int64(len(value.DigestD)), count) || !EqualI64(int64(len(value.PayloadStarts)), count) || !EqualI64(int64(len(value.PayloadLengths)), count) || !EqualI64(int64(len(value.Kinds)), count) || !EqualI64(int64(len(value.Accepted)), count) || !EqualI64(int64(len(value.Codes)), count) || !EqualI64(int64(len(value.Revisions)), count) || !EqualI64(int64(len(value.EventCounts)), count) || !EqualI64(int64(len(value.EventStarts)), count) {
 		return false
 	}
 	nextEvent := int64(1)
-	for index, entry := range value.Ledger {
-		if entry.Stream != value.Stream || entry.Sequence != int64(index+1) || zeroCorrelation(entry.Correlation) || duplicateCorrelation(value.Ledger, index) || !validText(entry.Kind, MaximumKindBytes) || entry.Digest == [32]byte{} || entry.Response.Correlation != entry.Correlation || entry.Response.Sequence != entry.Sequence || entry.Response.Accepted && entry.Response.Code != 0 || !entry.Response.Accepted && entry.Response.Code == 0 || len(entry.Response.Events) > MaximumEventsPerReply {
-			return false
+	payloadEnd := int64(0)
+	index := int64(0)
+	valid := true
+	for index < count {
+		if !EqualI64(value.PayloadStarts[index], payloadEnd) || value.PayloadLengths[index] < 1 || 3072 < value.PayloadLengths[index] || int64(len(value.PayloadBytes)) < value.PayloadStarts[index]+value.PayloadLengths[index] || !EqualI64(value.EventStarts[index], nextEvent) || value.EventCounts[index] < 0 || 4 < value.EventCounts[index] || value.Accepted[index] < 0 || 1 < value.Accepted[index] || EqualI64(value.Accepted[index], 1) && !EqualI64(value.Codes[index], 0) || EqualI64(value.Accepted[index], 0) && EqualI64(value.Codes[index], 0) {
+			valid = false
 		}
-		for ordinal, event := range entry.Response.Events {
-			if event.Stream != value.Stream || event.Sequence != nextEvent || event.CommandSequence != entry.Sequence || event.Ordinal != int64(ordinal) || event.Correlation != entry.Correlation || !validText(event.Kind, MaximumKindBytes) {
-				return false
+		prior := int64(0)
+		for prior < index {
+			if EqualI64(value.CorrelationHigh[prior], value.CorrelationHigh[index]) && EqualI64(value.CorrelationLow[prior], value.CorrelationLow[index]) {
+				valid = false
 			}
-			nextEvent++
+			prior = prior + 1
 		}
+		nextEvent = nextEvent + value.EventCounts[index]
+		payloadEnd = payloadEnd + value.PayloadLengths[index]
+		index = index + 1
 	}
-	return value.NextEvent == nextEvent
+	return valid && EqualI64(value.NextEvent, nextEvent) && EqualI64(payloadEnd, int64(len(value.PayloadBytes)))
 }
 
-func validOutcome(value DomainOutcome) bool {
-	if len(value.Events) > MaximumEventsPerReply {
-		return false
+func ResponseAt(value State, index int64) Response {
+	accepted := EqualI64(value.Accepted[index], 1)
+	count := value.EventCounts[index]
+	start := value.EventStarts[index]
+	kind := int64(2)
+	if accepted {
+		kind = 1
 	}
-	if value.Accepted && value.Code != 0 || !value.Accepted && value.Code == 0 {
-		return false
+	event0 := Event{Sequence: 0}
+	event1 := Event{Sequence: 0}
+	event2 := Event{Sequence: 0}
+	event3 := Event{Sequence: 0}
+	if 0 < count {
+		event0 = MakeEvent(start, index+1, 0, value.CorrelationHigh[index], value.CorrelationLow[index], kind, value.Codes[index], value.Revisions[index])
 	}
-	for _, event := range value.Events {
-		if !validText(event.Kind, MaximumKindBytes) {
-			return false
-		}
+	if 1 < count {
+		event1 = MakeEvent(start+1, index+1, 1, value.CorrelationHigh[index], value.CorrelationLow[index], kind, value.Codes[index], value.Revisions[index])
 	}
-	return true
-}
-
-func validText(value string, limit int) bool {
-	return value != "" && len(value) <= limit && utf8.ValidString(value)
-}
-
-func zeroCorrelation(value Correlation) bool {
-	return value == Correlation{}
-}
-
-func sameCommand(entry LedgerEntry, command Command) bool {
-	return entry.Stream == command.Stream && entry.Sequence == command.Sequence && entry.Correlation == command.Correlation && entry.Kind == command.Kind && entry.Digest == command.Digest && equalPayload(entry.Payload, command.Payload)
-}
-
-func failure(current State, code ErrorCode) Result {
-	return Result{State: cloneState(current), Error: code}
-}
-
-func cloneState(value State) State {
-	out := State{Stream: value.Stream, NextCommand: value.NextCommand, NextEvent: value.NextEvent, Ledger: make([]LedgerEntry, len(value.Ledger))}
-	for index, entry := range value.Ledger {
-		out.Ledger[index] = entry
-		out.Ledger[index].Payload = clonePayload(entry.Payload)
-		out.Ledger[index].Response = cloneResponse(entry.Response)
+	if 2 < count {
+		event2 = MakeEvent(start+2, index+1, 2, value.CorrelationHigh[index], value.CorrelationLow[index], kind, value.Codes[index], value.Revisions[index])
 	}
-	return out
-}
-
-func cloneResponse(value Response) Response {
-	out := value
-	out.Receipt = clonePlan(value.Receipt)
-	out.Events = make([]Event, len(value.Events))
-	for index, event := range value.Events {
-		out.Events[index] = event
-		out.Events[index].Payload = clonePlan(event.Payload)
+	if 3 < count {
+		event3 = MakeEvent(start+3, index+1, 3, value.CorrelationHigh[index], value.CorrelationLow[index], kind, value.Codes[index], value.Revisions[index])
 	}
-	return out
+	return Response{CorrelationHigh: value.CorrelationHigh[index], CorrelationLow: value.CorrelationLow[index], Sequence: index + 1, Accepted: accepted, Code: value.Codes[index], Revision: value.Revisions[index], EventCount: count, Event0: event0, Event1: event1, Event2: event2, Event3: event3}
 }
 
-func duplicateCorrelation(entries []LedgerEntry, index int) bool {
-	for prior := 0; prior < index; prior++ {
-		if entries[prior].Correlation == entries[index].Correlation {
-			return true
-		}
-	}
-	return false
+func MakeEvent(sequence int64, commandSequence int64, ordinal int64, correlationHigh int64, correlationLow int64, kind int64, code int64, revision int64) Event {
+	return Event{Sequence: sequence, CommandSequence: commandSequence, Ordinal: ordinal, CorrelationHigh: correlationHigh, CorrelationLow: correlationLow, Kind: kind, Code: code, Revision: revision}
 }
 
-func equalPayload(left, right PlannerPayload) bool {
-	if left.Grants != right.Grants || left.Loaded.Found != right.Loaded.Found || left.Loaded.Version != right.Loaded.Version || left.Loaded.Token != right.Loaded.Token || left.Loaded.Digest != right.Loaded.Digest || left.NextDigest != right.NextDigest || left.Key != right.Key || !equalV1(left.Loaded.V1, right.Loaded.V1) || !equalV2(left.Loaded.V2, right.Loaded.V2) || !equalV2(left.Initial, right.Initial) {
-		return false
-	}
-	return true
+func CloneState(value State) State {
+	return State{Stream: value.Stream, NextCommand: value.NextCommand, NextEvent: value.NextEvent, CorrelationHigh: slices.Clone(value.CorrelationHigh), CorrelationLow: slices.Clone(value.CorrelationLow), DigestA: slices.Clone(value.DigestA), DigestB: slices.Clone(value.DigestB), DigestC: slices.Clone(value.DigestC), DigestD: slices.Clone(value.DigestD), PayloadBytes: slices.Clone(value.PayloadBytes), PayloadStarts: slices.Clone(value.PayloadStarts), PayloadLengths: slices.Clone(value.PayloadLengths), Kinds: slices.Clone(value.Kinds), Accepted: slices.Clone(value.Accepted), Codes: slices.Clone(value.Codes), Revisions: slices.Clone(value.Revisions), EventCounts: slices.Clone(value.EventCounts), EventStarts: slices.Clone(value.EventStarts)}
 }
 
-func equalV1(left, right state.V1) bool { return equalApplication(left.State, right.State) }
-func equalV2(left, right state.V2) bool {
-	return left.Revision == right.Revision && equalApplication(left.State, right.State)
+func EqualI64(left int64, right int64) bool { return left <= right && right <= left }
+func ZeroDigest(value Digest) bool {
+	return EqualI64(value.A, 0) && EqualI64(value.B, 0) && EqualI64(value.C, 0) && EqualI64(value.D, 0)
 }
-
-func equalApplication(left, right application.State) bool {
-	if left.Name != right.Name || len(left.Values) != len(right.Values) || len(left.Counters) != len(right.Counters) {
-		return false
-	}
-	for index := range left.Values {
-		if left.Values[index] != right.Values[index] {
-			return false
-		}
-	}
-	for key, value := range left.Counters {
-		other, ok := right.Counters[key]
-		if !ok || other != value {
-			return false
-		}
-	}
-	return true
-}
-
-func clonePayload(value PlannerPayload) PlannerPayload {
-	out := value
-	out.Loaded.V1.State = cloneApplication(value.Loaded.V1.State)
-	out.Loaded.V2.State = cloneApplication(value.Loaded.V2.State)
-	out.Initial.State = cloneApplication(value.Initial.State)
-	return out
-}
-
-func cloneApplication(value application.State) application.State {
-	out := value
-	out.Values = append([]int64(nil), value.Values...)
-	if value.Counters != nil {
-		out.Counters = map[int64]int64{}
-		for key, item := range value.Counters {
-			out.Counters[key] = item
-		}
-	}
-	return out
-}
-
-func clonePlan(value persistence.Plan) persistence.Plan {
-	out := value
-	out.Value.Value.State = cloneApplication(value.Value.Value.State)
-	out.Value.Load.Value.State = cloneApplication(value.Value.Load.Value.State)
-	out.Value.CompareExchange.Value.State = cloneApplication(value.Value.CompareExchange.Value.State)
-	return out
+func EqualDigestAt(value State, index int64, digest Digest) bool {
+	return EqualI64(value.DigestA[index], digest.A) && EqualI64(value.DigestB[index], digest.B) && EqualI64(value.DigestC[index], digest.C) && EqualI64(value.DigestD[index], digest.D)
 }

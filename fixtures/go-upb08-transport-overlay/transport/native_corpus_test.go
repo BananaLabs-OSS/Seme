@@ -6,24 +6,20 @@ import (
 	"testing"
 )
 
-func TestNativeTransportCorpusIsDeterministic(t *testing.T) {
+func TestNativeTransportCorpusHas4096DeterministicObservations(t *testing.T) {
 	build := func() [32]byte {
 		hash := sha256.New()
-		for index := 0; index < 4096; index++ {
-			calls := 0
-			sequence := int64(1)
-			command := command(t, sequence, byte(index%255+1))
+		for index := int64(0); index < 4096; index++ {
 			current := NewState("match")
+			value := command(1, index+1)
 			if index%11 == 0 {
-				command.Sequence = 2
+				value.Sequence = 2
 			}
-			result := Dispatch(current, command, accepting(index%5, &calls))
-			observation := struct {
-				Index int
-				Calls int
+			result := Commit(current, value, index%3 != 0, map[bool]int64{true: 0, false: 71}[index%3 != 0], index+1, index%5)
+			encoded, err := json.Marshal(struct {
+				Index int64
 				Value Result
-			}{index, calls, result}
-			encoded, err := json.Marshal(observation)
+			}{index, result})
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -1,6 +1,7 @@
 package streamservice
 
 import (
+	"reflect"
 	"testing"
 
 	"example.test/go-uab-11/application"
@@ -9,46 +10,37 @@ import (
 	"example.test/go-uab-11/transport"
 )
 
-func id(value byte) transport.Correlation {
-	var result transport.Correlation
-	result[15] = value
-	return result
-}
-
-func plannerPayload() transport.PlannerPayload {
+func command(sequence int64, identity int64) transport.Command {
 	base := application.State{Name: "pilot", Counters: map[int64]int64{}}
-	return transport.PlannerPayload{Grants: persistence.Grants{Read: true, CompareExchange: true}, Loaded: persistence.Loaded{Found: true, Version: 2, Token: "opaque", V2: state.V2{State: base, Revision: 4}}, Initial: state.V2{State: base, Revision: 1}, NextDigest: "sha256:next", Key: "slot"}
+	return transport.Command{Stream: "match", Sequence: sequence, Correlation: transport.Correlation{Low: identity}, Kind: transport.PlannerCommand, Digest: transport.Digest{A: identity}, CanonicalPayload: []byte{byte(identity)}, Payload: transport.PlannerPayload{Grants: persistence.Grants{Read: true, CompareExchange: true}, Loaded: persistence.Loaded{Found: true, Version: 2, Token: "opaque", V2: state.V2{State: base, Revision: 4}}, Initial: state.V2{State: base, Revision: 1}, NextDigest: "sha256:next", Key: "slot"}}
 }
 
-func TestAdapterUsesDurablePlannerForAcceptedAndRejectedCommands(t *testing.T) {
-	var firstDigest [32]byte
-	firstDigest[0] = 1
-	acceptedCommand := transport.NewCommand("match", 1, id(1), PlannerCommand, plannerPayload(), firstDigest)
-	accepted := Dispatch(transport.NewState("match"), acceptedCommand)
-	if !accepted.OK || !accepted.Response.Accepted || accepted.Response.Code != 0 || len(accepted.Response.Events) != 1 || accepted.Response.Events[0].Kind != "planner.accepted.v1" {
-		t.Fatalf("accepted=%#v", accepted)
+func TestDispatchUsesPlannerOnlyForNewCommands(t *testing.T) {
+	firstCommand := command(1, 1)
+	first := Dispatch(transport.NewState("match"), firstCommand)
+	if !first.OK || !first.Response.Accepted || first.Response.Revision != 5 || first.Response.Event0.Kind != transport.AcceptedEvent {
+		t.Fatalf("first=%#v", first)
 	}
-	plan := accepted.Response.Receipt
-	if !plan.Ok || plan.Value.Value.Revision != 5 {
-		t.Fatalf("plan=%#v", plan)
+	duplicate := Dispatch(first.State, firstCommand)
+	if !duplicate.OK || !duplicate.Duplicate || duplicate.Response.Revision != 5 || !reflect.DeepEqual(duplicate.State, first.State) {
+		t.Fatalf("duplicate=%#v", duplicate)
 	}
-	rejectedPayload := plannerPayload()
-	rejectedPayload.Loaded.Version = 3
-	var secondDigest [32]byte
-	secondDigest[0] = 2
-	rejectedCommand := transport.NewCommand("match", 2, id(2), PlannerCommand, rejectedPayload, secondDigest)
-	rejected := Dispatch(accepted.State, rejectedCommand)
-	if !rejected.OK || rejected.Response.Accepted || rejected.Response.Code != 71 || rejected.State.NextCommand != 3 || rejected.Response.Events[0].Kind != "planner.rejected.v1" {
+	rejectedCommand := command(2, 2)
+	rejectedCommand.Payload.Loaded.Version = 3
+	rejected := Dispatch(first.State, rejectedCommand)
+	if !rejected.OK || rejected.Response.Accepted || rejected.Response.Code != 71 || rejected.State.NextCommand != 3 || rejected.Response.Event0.Kind != transport.RejectedEvent {
 		t.Fatalf("rejected=%#v", rejected)
 	}
 }
 
-func TestAdapterRejectsUnknownKindBeforePlanner(t *testing.T) {
-	var digest [32]byte
-	digest[0] = 1
-	command := transport.NewCommand("match", 1, id(1), "unknown", plannerPayload(), digest)
-	result := Dispatch(transport.NewState("match"), command)
-	if result.OK || result.Error != transport.InvalidKind || result.State.NextCommand != 1 {
-		t.Fatalf("result=%#v", result)
+func TestTransportRejectionDoesNotConsumeSequence(t *testing.T) {
+	initial := transport.NewState("match")
+	gap := Dispatch(initial, command(2, 2))
+	if gap.OK || gap.Error != transport.OutOfOrder || !reflect.DeepEqual(gap.State, initial) {
+		t.Fatalf("gap=%#v", gap)
+	}
+	valid := Dispatch(gap.State, command(1, 1))
+	if !valid.OK || valid.State.NextCommand != 2 {
+		t.Fatalf("valid=%#v", valid)
 	}
 }
