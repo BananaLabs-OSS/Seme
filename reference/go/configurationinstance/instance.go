@@ -411,8 +411,18 @@ func validateGraph(e, base wire.Envelope, graph wire.ID, allowParameterized bool
 		}
 		key := string(q.Fields[id("4111")].Bytes)
 		owner := q.Fields[id("4110")].Reference
-		if key == "" || !utf8.ValidString(key) || keys[key] != (wire.ID{}) || !owners[owner] || origins[q.Fields[id("4115")].Reference] != owner {
-			return fmt.Errorf("configuration.field")
+		if key == "" || !utf8.ValidString(key) {
+			return fmt.Errorf("configuration.field_key")
+		}
+		if keys[key] != (wire.ID{}) {
+			return fmt.Errorf("configuration.field_key_duplicate:%s", key)
+		}
+		if !owners[owner] {
+			return fmt.Errorf("configuration.field_owner:%s", owner)
+		}
+		origin := q.Fields[id("4115")].Reference
+		if origins[origin] != owner {
+			return fmt.Errorf("configuration.field_origin:%s", origin)
 		}
 		typ := q.Fields[id("4112")].Reference
 		if !canonicalType(base, typ) {
