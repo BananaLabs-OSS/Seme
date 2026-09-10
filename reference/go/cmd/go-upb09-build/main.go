@@ -105,7 +105,7 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 	for _, p := range o.inputs() {
 		b, e := readStrict(p)
 		if e != nil {
-			return fmt.Errorf("input:%w", e)
+			return fmt.Errorf("input:%s:%w", p, e)
 		}
 		inputs[p] = b
 	}
@@ -142,7 +142,7 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(parent, 90*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
 	defer cancel()
 	base := goupb05pipeline.V8Input{
 		Documents: goprovider.DocumentSnapshot{Revision: o.revision, ModulePath: o.module, PackagePath: o.pkg, Entry: o.entry, Files: files},

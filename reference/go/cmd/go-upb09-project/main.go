@@ -105,7 +105,7 @@ func run(parent context.Context, args []string) error {
 			return err
 		}
 	}
-	if err = write("go.mod", []byte("module "+*module+"\n\ngo 1.26\n")); err != nil {
+	if err = write("go.mod", []byte("module "+*module+"\n\ngo 1.25\n")); err != nil {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, *goTool, "test", "./...")
