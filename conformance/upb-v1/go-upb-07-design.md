@@ -67,6 +67,15 @@ write operation in this cell; unconditional save, transactions over multiple
 keys, queries, leases, deletion, and provider-specific consistency levels stay
 outside UPB-07.
 
+The bounded placement is explicit. Pure validation, migration, update, and
+planner behavior is claimed for native Go, canonical evaluation, standalone
+Wasm, and pinned Pulp. The stateful DurablePort executor is claimed only for
+the authenticated Go host boundary. Pinned Pulp must resolve the opaque-token
+CAS requirement as unsupported and receives no filesystem, SQLite, or other
+ambient storage authority. This does not weaken cross-target agreement: every
+target actually claimed for a behavior must agree; DurablePort is simply not a
+claimed Pulp behavior until a conforming provider exists.
+
 ## Execution route and exact traces
 
 One runtime command follows this fixed route:
@@ -176,10 +185,17 @@ target, or Pulp runner.
    authority chain plus Durable State v1, proves the single acyclic v1-to-v2
    migration, exact callable/type ownership, canonical codec, bounds, and
    capability requirements, and emits a deterministic report.
-5. **Target parity.** Standalone Wasm and pinned Pulp use the same canonical
-   program and scripted in-memory port, producing exactly the native values,
-   state, CAS payload bytes, and ordered traces. No target receives ambient
-   filesystem/database access.
+5. **Target and host-boundary placement evidence.** Standalone Wasm and pinned
+   Pulp execute the pure durable planner with the same canonical program and
+   reproduce its native values. Separately, the authenticated Durable-v1
+   artifact derives an immutable host profile that drives the host executor's
+   exact family, bounds, capabilities, operation identities/order, and opaque
+   token threading against a deterministic in-memory port. This probe proves
+   authenticated metadata reaches the host boundary; it does not prove the
+   probe transformer implements the declared codec or project domain. The
+   pinned Pulp runtime has no matching opaque-token compare-exchange provider,
+   so UPB-07 does not claim that Pulp executes DurablePort or produces its CAS
+   traces. A future Pulp realization requires separate provider evidence.
 6. **Project round trip.** Authenticated projection emits ordinary Go and
    copies opaque project/resource bytes exactly. Native tests pass; exact
    execution meaning and durable family/migration authority re-lift, while
@@ -220,7 +236,11 @@ Runtime and codec:
 - CAS conflict that mutates state or emits a success effect;
 - storage provider returning success without committing the exact bytes;
 - request replay from the same initial store producing different trace/state;
-- malformed Wasm ABI, denied capability, target trap, and partial output.
+- malformed Wasm ABI, denied capability, target trap, and partial output for
+  the pure planner target;
+- a Pulp placement attempt that treats filesystem or SQLite writes as the
+  required opaque-token CAS, or otherwise reports DurablePort supported; and
+- any Pulp planner execution receiving ambient storage capability.
 
 Filesystem/database adapter boundaries:
 
@@ -238,7 +258,8 @@ semantic, and runtime-port proofs. Only one final gate may map the cell:
 
 ```text
 scripts/check-go-upb-07-fixture.sh       # ordinary/native development evidence
-scripts/check-go-upb-07-runtime.sh       # canonical/Wasm/Pulp port development
+scripts/check-go-upb-07-runtime.sh       # pure planner canonical/Wasm/Pulp evidence
+scripts/check-go-upb-07-port-runtime.sh  # host DurablePort boundary evidence
 scripts/check-go-upb-07.sh               # eventual seven-class authority gate
 ```
 

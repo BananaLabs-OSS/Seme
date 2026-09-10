@@ -16,6 +16,13 @@ prove exact final storage and traces for missing-create, migration, update,
 validation and transformation failures, authorization failures, malformed
 provider outcomes, load/CAS failure, and conflict.
 
+`ExecuteAuthenticated` is the direct path from validated Durable-v1 instance
+metadata to that host executor. The source-free UPB-07 report exercises it
+with an in-memory profile probe and records the authenticated family and exact
+Load/CAS identities and order. That probe establishes metadata-to-host-boundary
+placement and opaque-token threading only; its small transformer is not
+evidence for the declared codec or the project's domain semantics.
+
 This is host-boundary conformance evidence, not Core or Execution semantics.
 It cannot make a dishonest provider atomic; provider realization evidence must
 prove that a reported save actually committed the exact bytes and that every
