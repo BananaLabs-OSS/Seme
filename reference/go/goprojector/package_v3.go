@@ -24,6 +24,9 @@ func ProjectPackagesV3(g1 []byte, contracts contractcatalog.ProjectContractSetV5
 	if err != nil {
 		return nil, err
 	}
+	// Wire entity storage is intentionally unordered. Normalize the derived
+	// ownership model before applying the projector's strict order checks.
+	NormalizeRichPackageOwnership(&ownership)
 	out, err := ProjectPackagesRich(g1, ownership)
 	if err != nil {
 		return nil, err
@@ -77,6 +80,12 @@ func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
 		for _, mv := range d.Fields[wid("b211")].List {
 			m := e.Entities[mv.Reference]
 			decl := m.Fields[wid("b220")].Reference
+			// Package v2 now annotates both callable interfaces and other
+			// declarations. Only top-level Function entities belong to this
+			// legacy callable loop; Package v3 owns the richer kinds below.
+			if e.Entities[decl].Schema != wid("9011") {
+				continue
+			}
 			namev := m.Fields[wid("b221")]
 			if namev.Tag != 5 {
 				return RichPackageOwnership{}, fmt.Errorf("go_projection.package_v3_member")
