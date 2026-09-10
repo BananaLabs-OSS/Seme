@@ -68,6 +68,17 @@ type PackageMetadata struct {
 	// Supplemental owns canonical declarations represented by Package v3 but
 	// not by the Package v2 function-member surface.
 	Supplemental []SemanticDeclarationMetadata
+	Aliases      []SourceAliasMetadata
+}
+
+// SourceAliasMetadata preserves a source-language presentation declaration
+// whose runtime meaning is exactly its canonical Execution target. Aliases do
+// not become Core or Execution types.
+type SourceAliasMetadata struct {
+	Name, Package, Target, Document string
+	Exported, Generic               bool
+	Start, End, Line, Column        int
+	ReferencedImports               []string
 }
 type PackageFunctionMetadata struct {
 	ID, Name     string
@@ -191,6 +202,10 @@ func clonePackageMetadata(in []PackageMetadata) []PackageMetadata {
 		out[i].Members = clonePackageFunctions(p.Members)
 		out[i].Functions = clonePackageFunctions(p.Functions)
 		out[i].Supplemental = cloneSemanticDeclarations(p.Supplemental)
+		out[i].Aliases = append([]SourceAliasMetadata(nil), p.Aliases...)
+		for j := range out[i].Aliases {
+			out[i].Aliases[j].ReferencedImports = append([]string(nil), p.Aliases[j].ReferencedImports...)
+		}
 	}
 	return out
 }
@@ -763,7 +778,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 		refsField(0x9150, functionIDs), refField(0x9151, entryID),
 	})})
 	revision := stableID("session-revision", snapshot.PackagePath, strconv.FormatUint(snapshot.Revision, 10))
-	metadata := buildPackageMetadata(snapshot.PackagePath, units, functions, supportedFunctions)
+	metadata := buildPackageMetadata(snapshot.PackagePath, units, functions, supportedFunctions, instances)
 	if diagnostic := attachSemanticOwnership(metadata, units, functions, instances); diagnostic != nil {
 		diagnostics = append(diagnostics, *diagnostic)
 		return "", nil, nil, sortedDiagnostics(diagnostics)
@@ -771,7 +786,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	return composeExecutionG1(moduleG1, revision, instances), sources, metadata, sortedDiagnostics(diagnostics)
 }
 
-func buildPackageMetadata(root string, units []*checkedSessionPackage, functions []sessionFunction, supported map[string]bool) []PackageMetadata {
+func buildPackageMetadata(root string, units []*checkedSessionPackage, functions []sessionFunction, supported map[string]bool, instances []graphEntity) []PackageMetadata {
 	local := map[string]bool{}
 	for _, u := range units {
 		local[u.path] = true
@@ -802,11 +817,74 @@ func buildPackageMetadata(root string, units []*checkedSessionPackage, functions
 				p.Functions = append(p.Functions, m)
 			}
 		}
+		for identifier, object := range u.info.Defs {
+			typeName, ok := object.(*types.TypeName)
+			if !ok || !typeName.IsAlias() {
+				continue
+			}
+			target := goSemanticTypeIdentity(typeName.Type())
+			if !hasGraphEntity(instances, target) {
+				continue
+			}
+			start := u.fset.Position(identifier.Pos())
+			end := u.fset.Position(identifier.End())
+			imports := typePackagePaths(typeName.Type(), u.path)
+			p.Aliases = append(p.Aliases, SourceAliasMetadata{Name: identifier.Name, Package: u.path, Target: target, Document: filepath.ToSlash(start.Filename), Exported: ast.IsExported(identifier.Name), Generic: false, Start: start.Offset, End: end.Offset, Line: start.Line, Column: start.Column, ReferencedImports: imports})
+		}
 		sort.Slice(p.Members, func(i, j int) bool { return p.Members[i].ID < p.Members[j].ID })
 		sort.Slice(p.Functions, func(i, j int) bool { return p.Functions[i].ID < p.Functions[j].ID })
+		sort.Slice(p.Aliases, func(i, j int) bool { return p.Aliases[i].Name < p.Aliases[j].Name })
 		out = append(out, p)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}
+
+func typePackagePaths(value types.Type, self string) []string {
+	seen := map[types.Type]bool{}
+	paths := map[string]bool{}
+	var visit func(types.Type)
+	visit = func(t types.Type) {
+		if t == nil || seen[t] {
+			return
+		}
+		seen[t] = true
+		switch x := t.(type) {
+		case *types.Alias:
+			visit(types.Unalias(x))
+		case *types.Named:
+			if x.Obj() != nil && x.Obj().Pkg() != nil && x.Obj().Pkg().Path() != self {
+				paths[x.Obj().Pkg().Path()] = true
+			}
+			if x.TypeArgs() != nil {
+				for i := 0; i < x.TypeArgs().Len(); i++ {
+					visit(x.TypeArgs().At(i))
+				}
+			}
+		case *types.Pointer:
+			visit(x.Elem())
+		case *types.Slice:
+			visit(x.Elem())
+		case *types.Array:
+			visit(x.Elem())
+		case *types.Map:
+			visit(x.Key())
+			visit(x.Elem())
+		case *types.Signature:
+			for i := 0; i < x.Params().Len(); i++ {
+				visit(x.Params().At(i).Type())
+			}
+			for i := 0; i < x.Results().Len(); i++ {
+				visit(x.Results().At(i).Type())
+			}
+		}
+	}
+	visit(value)
+	out := make([]string, 0, len(paths))
+	for p := range paths {
+		out = append(out, p)
+	}
+	sort.Strings(out)
 	return out
 }
 
