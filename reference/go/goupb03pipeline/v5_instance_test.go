@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"seme.local/reference/configurationinstance"
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/packagedetail"
 	"seme.local/reference/packagev3instance"
@@ -15,6 +16,7 @@ import (
 	"seme.local/reference/projectgraphinstance"
 	"seme.local/reference/projectv5instance"
 	"seme.local/reference/projectv5report"
+	"seme.local/reference/projectv6instance"
 	"seme.local/reference/wire"
 )
 
@@ -92,6 +94,86 @@ func TestPackageV3AndProjectV5InstancesRepeatValidateAndRejectTamper(t *testing.
 	}
 	if bytes.Contains(mustJSON(t, reportA), []byte("package application")) {
 		t.Fatal("source bytes leaked")
+	}
+	v6, err := contractcatalog.ResolveProjectContractSetV6(read("modules/foundation/v1/module.seme"), read("modules/execution/v35/module.seme"), read("modules/package/v3/module.seme"), read("modules/dependency/v1/module.seme"), read("modules/configuration/v1/module.seme"), read("modules/project/v6/module.seme"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := configurationinstance.Input{Contracts: v6, ProjectV5: pi, Model: configurationinstance.Model{}}
+	configA, err := configurationinstance.Emit(configuration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configB, err := configurationinstance.Emit(configuration)
+	if err != nil || !bytes.Equal(configA, configB) {
+		t.Fatal("nondeterministic configuration instance")
+	}
+	configuration.Artifact = configA
+	if err = configurationinstance.Validate(configuration); err != nil {
+		t.Fatal(err)
+	}
+	staleConfiguration, err := wire.Decode(configA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for x, entity := range staleConfiguration.Entities {
+		if entity.Schema == testID("4010") {
+			entity.Fields[testID("4105")] = wire.Value{Tag: 5, Bytes: make([]byte, 32)}
+			staleConfiguration.Entities[x] = entity
+			break
+		}
+	}
+	staleConfiguration.Revision = configurationinstance.ArtifactRevision(staleConfiguration)
+	configuration.Artifact, err = wire.Encode(staleConfiguration)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configurationinstance.Validate(configuration) == nil {
+		t.Fatal("stale configuration graph revision accepted")
+	}
+	configuration.Artifact = configA
+	p6input := projectv6instance.Inputs{Contracts: v6, ProjectV5: pi, Configuration: configuration}
+	p6a, err := projectv6instance.Emit(p6input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p6b, err := projectv6instance.Emit(p6input)
+	if err != nil || !bytes.Equal(p6a, p6b) {
+		t.Fatal("nondeterministic project v6")
+	}
+	p6input.Composed = p6a
+	if err = projectv6instance.Validate(p6input); err != nil {
+		t.Fatal(err)
+	}
+	staleProject, err := wire.Decode(p6a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for x, entity := range staleProject.Entities {
+		if entity.Schema == testID("e021") {
+			entity.Fields[testID("e212")] = wire.Value{Tag: 5, Bytes: make([]byte, 32)}
+			staleProject.Entities[x] = entity
+			break
+		}
+	}
+	staleProject.Revision = projectv6instance.ArtifactRevision(staleProject)
+	p6input.Composed, err = wire.Encode(staleProject)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projectv6instance.Validate(p6input) == nil {
+		t.Fatal("stale Project v6 snapshot revision accepted")
+	}
+	p6input.Composed = p6a
+	badP6 := p6input
+	badP6.Contracts = contractcatalog.ProjectContractSetV6{}
+	if out, e := projectv6instance.Emit(badP6); e == nil || out != nil {
+		t.Fatal("untrusted project v6 contracts accepted")
+	}
+	badConfiguration := configuration
+	badConfiguration.Contracts = contractcatalog.ProjectContractSetV6{}
+	if out, e := configurationinstance.Emit(badConfiguration); e == nil || out != nil {
+		t.Fatal("untrusted configuration contracts accepted")
 	}
 	badPI := pi
 	badPI.Contracts = contractcatalog.ProjectContractSetV5{}
