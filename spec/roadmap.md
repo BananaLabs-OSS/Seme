@@ -166,8 +166,8 @@ and use the same provider, patch, target-contract, and conformance boundaries.
 
 ## 7. Useful Project Bridge v1
 
-Status: 6/36 cells (16.7%); Go UPB-01 through UPB-06 pass all seven evidence
-classes, placing the Go column at 6/12 (50%).
+Status: 7/36 cells (19.4%); Go UPB-01 through UPB-07 pass all seven evidence
+classes, placing the Go column at 7/12 (58.3%).
 
 The completed UAB-v1 proves a bounded application semantic vocabulary. It does
 not by itself prove that Seme can preserve an ordinary project's source closure,
@@ -240,3 +240,15 @@ semantics into Core. The 2,066-case four-target corpus, source-free loader,
 ordinary projection, deterministic re-lift, and atomic adversaries pass.
 Transforms, streaming, broad asset pipelines, and platform packaging remain
 unclaimed.
+
+Go UPB-07 is complete for one bounded versioned durable-state family and
+migration. Durable State v1 and Project v10 authenticate schema versions,
+validators, migration, canonical codec identity, key/payload bounds, and
+ordered Load/compare-exchange requirements. Source Presentation v1 preserves
+native aliases as project presentation rather than Execution semantics. The
+2,080-case pure planner agrees across native, canonical, standalone Wasm, and
+pinned Pulp; an authenticated Go host profile separately drives exact
+opaque-token port traces. Pinned Pulp has no conforming CAS provider, so no
+Pulp DurablePort claim is made. Deterministic bundles, source-free reporting,
+ordinary projection, normalized semantic re-lift, honest source-bound
+revisions, a second-cycle fixed point, and atomic adversaries pass.

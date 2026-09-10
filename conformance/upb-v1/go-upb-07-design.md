@@ -1,7 +1,7 @@
 # Go UPB-07 acceptance design
 
-Status: unclaimed design only. No Durable State contract, implementation,
-fixture, acceptance gate, or score is claimed by this document.
+Status: claimed 2026-09-10 by `scripts/check-go-upb-07.sh`. This document
+records the bounded acceptance design and explicit target-placement limit.
 
 UPB-07 should extend the complete cumulative UPB-06 project with one neutral,
 capability-backed durable-state port. Filesystems, databases, Pulp storage, and
@@ -253,17 +253,17 @@ Filesystem/database adapter boundaries:
 - provider-specific transaction, SQL, filesystem-locking, or retry claims do
   not count without separate realization evidence.
 
-## Intended commands
+## Commands
 
-The future unclaimed development gates may be split into fixture, pure
-semantic, and runtime-port proofs. Only one final gate may map the cell:
+Development evidence is split into fixture, pure semantic, and runtime-port
+proofs. Only the final cumulative gate maps the cell:
 
 ```text
 scripts/check-go-upb-07-fixture.sh       # ordinary/native development evidence
 scripts/check-go-upb-07-runtime.sh       # pure planner canonical/Wasm/Pulp evidence
 scripts/check-go-upb-07-port-runtime.sh  # host DurablePort boundary evidence
-scripts/check-go-upb-07.sh               # eventual seven-class authority gate
+scripts/check-go-upb-07.sh               # mapped seven-class authority gate
 ```
 
-None of these commands exists or is claimed by this design. The score remains
-6/36 overall and 6/12 for Go until the final gate actually passes and is mapped.
+The mapped final gate passes all seven evidence classes. The profile is 7/36
+overall (19.4%), and the Go column is 7/12 (58.3%).
