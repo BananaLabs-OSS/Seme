@@ -41,6 +41,21 @@ func NewControlledState(stream string) ControlledState {
 }
 
 func DispatchControlled(current ControlledState, command ControlledCommand) ControlledResult {
+	result := transitionControlled(current, command)
+	if result.OK && !result.Duplicate {
+		log.Print(result.Response.Accepted)
+	}
+	return result
+}
+
+// ReplayControlled is the effect-free replay transition. A replay driver folds
+// it over the retained ordered commands and their explicit clock/random input;
+// unlike live dispatch it never requests physical effect delivery.
+func ReplayControlled(current ControlledState, command ControlledCommand) ControlledResult {
+	return transitionControlled(current, command)
+}
+
+func transitionControlled(current ControlledState, command ControlledCommand) ControlledResult {
 	classification := transport.Classify(current.Transport, command.Command)
 	if classification.Error != 0 {
 		return controlledFailure(current, classification.Error)
@@ -77,7 +92,6 @@ func DispatchControlled(current ControlledState, command ControlledCommand) Cont
 	if !committed.OK || committed.Duplicate {
 		return controlledFailure(current, committed.Error)
 	}
-	log.Print(accepted)
 	next := cloneControlled(current)
 	next.Transport = committed.State
 	next.ClockSequences = append(next.ClockSequences, command.Clock.Sequence)
