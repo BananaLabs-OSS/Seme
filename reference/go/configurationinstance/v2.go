@@ -488,7 +488,7 @@ func boundComponents(in BoundInput) (wire.Envelope, wire.ID, error) {
 	if !in.Contracts.Validated() || in.Contracts.Configuration().Pin() != (contractcatalog.Pin{Module: id("4000"), Revision: id("4005")}) || in.Contracts.Project().Pin() != (contractcatalog.Pin{Module: id("e000"), Revision: id("e009")}) {
 		return wire.Envelope{}, wire.ID{}, fmt.Errorf("configuration_v2.contracts")
 	}
-	if err := Validate(in.Base); err != nil {
+	if err := validate(in.Base, true); err != nil {
 		return wire.Envelope{}, wire.ID{}, fmt.Errorf("configuration_v2.base:%w", err)
 	}
 	e, err := wire.Decode(in.Base.Artifact)

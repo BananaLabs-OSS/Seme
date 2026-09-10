@@ -23,7 +23,18 @@ type Inputs struct {
 }
 
 func Emit(in Inputs) ([]byte, error) {
-	if err := components(in); err != nil {
+	return emit(in, false)
+}
+
+// EmitBindable emits the Project v6 structural component used by Project v7
+// when its Configuration v1 graph has parameterized initializers. It is not a
+// standalone Project v6 plan; Project v7 must supply and validate all bindings.
+func EmitBindable(in Inputs) ([]byte, error) {
+	return emit(in, true)
+}
+
+func emit(in Inputs, allowParameterized bool) ([]byte, error) {
+	if err := components(in, allowParameterized); err != nil {
 		return nil, err
 	}
 	p, _ := wire.Decode(in.ProjectV5.Composed)
@@ -71,14 +82,24 @@ func Emit(in Inputs) ([]byte, error) {
 		return nil, err
 	}
 	in.Composed = out
-	if err = Validate(in); err != nil {
+	if err = validate(in, allowParameterized); err != nil {
 		return nil, fmt.Errorf("project_v6.emit_validate:%w", err)
 	}
 	return out, nil
 }
 
 func Validate(in Inputs) error {
-	if err := components(in); err != nil {
+	return validate(in, false)
+}
+
+// ValidateBindable validates a Project v6 structural component whose
+// parameterized initialization is completed by Project v7.
+func ValidateBindable(in Inputs) error {
+	return validate(in, true)
+}
+
+func validate(in Inputs, allowParameterized bool) error {
+	if err := components(in, allowParameterized); err != nil {
 		return err
 	}
 	e, err := wire.Decode(in.Composed)
@@ -129,7 +150,7 @@ func Validate(in Inputs) error {
 	}
 	return nil
 }
-func components(in Inputs) error {
+func components(in Inputs, allowParameterized bool) error {
 	if !in.Contracts.Validated() || in.Contracts.Project().Pin() != (contractcatalog.Pin{Module: id("e000"), Revision: id("e008")}) {
 		return fmt.Errorf("project_v6.contracts")
 	}
@@ -138,7 +159,13 @@ func components(in Inputs) error {
 	}
 	in.Configuration.Contracts = in.Contracts
 	in.Configuration.ProjectV5 = in.ProjectV5
-	if err := configurationinstance.Validate(in.Configuration); err != nil {
+	var err error
+	if allowParameterized {
+		err = configurationinstance.ValidateBindableBase(in.Configuration)
+	} else {
+		err = configurationinstance.Validate(in.Configuration)
+	}
+	if err != nil {
 		return fmt.Errorf("project_v6.configuration:%w", err)
 	}
 	return nil
