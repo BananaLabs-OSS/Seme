@@ -13,6 +13,34 @@ import (
 	"seme.local/reference/wire"
 )
 
+func TestConsumedImportRealizationsAreClosedAndConstructBacked(t *testing.T) {
+	e := wire.Envelope{Entities: map[wire.ID]wire.Entity{
+		testID("101"): {ID: testID("101"), Schema: testID("a043"), Version: 1},
+		testID("102"): {ID: testID("102"), Schema: testID("90fc"), Version: 1},
+		testID("103"): {ID: testID("103"), Schema: testID("15"), Version: 1, Fields: map[wire.ID]wire.Value{testID("150"): {Tag: 5, Bytes: []byte("observability.log")}}},
+	}}
+	for _, name := range []string{"go-consumed:maps:Clone", "go-consumed:slices:Clone,Replace", "go-consumed:log:Print"} {
+		if !realizationPresent(e, name) {
+			t.Fatalf("valid realization absent: %s", name)
+		}
+	}
+	for _, name := range []string{"go-consumed:maps:Delete", "go-consumed:slices:Clone", "go-consumed:log:Printf", "go-consumed:strings:Clone"} {
+		if realizationPresent(e, name) {
+			t.Fatalf("unknown realization accepted: %s", name)
+		}
+	}
+	delete(e.Entities, testID("101"))
+	if realizationPresent(e, "go-consumed:maps:Clone") {
+		t.Fatal("maps import accepted without canonical map update")
+	}
+	q := e.Entities[testID("103")]
+	q.Fields[testID("150")] = wire.Value{Tag: 5, Bytes: []byte("other")}
+	e.Entities[testID("103")] = q
+	if realizationPresent(e, "go-consumed:log:Print") {
+		t.Fatal("log import accepted without exact Foundation effect")
+	}
+}
+
 func inventoryFixture(t *testing.T) (goprovider.DocumentSnapshot, goprovider.ResolutionManifest, contractcatalog.Contract, []byte, []byte) {
 	t.Helper()
 	read := func(p string) []byte {

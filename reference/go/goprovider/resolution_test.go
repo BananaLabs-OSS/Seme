@@ -118,6 +118,42 @@ func TestResolutionRejectsExternalNonStandardImportWithLocation(t *testing.T) {
 		t.Fatalf("diagnostics=%#v", result.Diagnostics)
 	}
 }
+
+func TestResolutionClassifiesOnlyClosedConsumedStandardImports(t *testing.T) {
+	snapshot := DocumentSnapshot{Revision: 1, ModulePath: "example.test/consumed", PackagePath: "example.test/consumed", Entry: "Apply", Files: map[string]string{"main.go": `package consumed
+import ("maps"; "slices"; "log")
+func Apply(v int64) int64 { _ = maps.Clone(map[int64]int64{1:v}); _ = slices.Replace(slices.Clone([]int64{v}),0,1,v); log.Print(true); return v }
+`}}
+	r, diagnostics := resolveSnapshot(snapshot)
+	if len(diagnostics) != 0 {
+		t.Fatalf("%#v", diagnostics)
+	}
+	want := map[string]string{"maps": "go-consumed:maps:Clone", "slices": "go-consumed:slices:Clone,Replace", "log": "go-consumed:log:Print"}
+	for _, im := range r.Packages[0].Imports {
+		if !im.Consumed || im.Realization != want[im.Path] {
+			t.Fatalf("not exactly classified: %#v", im)
+		}
+		delete(want, im.Path)
+	}
+	if len(want) != 0 {
+		t.Fatalf("missing=%#v", want)
+	}
+
+	misclassified := snapshot
+	misclassified.Revision = 2
+	misclassified.Files = map[string]string{"main.go": "package consumed\nimport \"log\"\nfunc Apply(v int64) int64 { log.Printf(\"%d\",v); return v }\n"}
+	r, diagnostics = resolveSnapshot(misclassified)
+	if len(diagnostics) != 0 || len(r.Packages) != 1 || r.Packages[0].Imports[0].Consumed || r.Packages[0].Imports[0].Realization != "" {
+		t.Fatalf("unsupported log operation erased: %#v %#v", r, diagnostics)
+	}
+
+	unused := snapshot
+	unused.Revision = 3
+	unused.Files = map[string]string{"main.go": "package consumed\nimport \"maps\"\nfunc Apply(v int64) int64 { return v }\n"}
+	if r, d := resolveSnapshot(unused); len(d) == 0 || len(r.Packages) != 0 {
+		t.Fatalf("unused stdlib import accepted: %#v %#v", r, d)
+	}
+}
 func TestResolutionPreservesInaccessibleDeclarationLocation(t *testing.T) {
 	session, _ := NewIncrementalSession(resolutionModule(t))
 	result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/access", PackagePath: "example.test/access/app", Entry: "Apply", Files: map[string]string{"model/value.go": "package model\nfunc hidden(v int64) int64 { return v }", "app/main.go": "package app\nimport \"example.test/access/model\"\nfunc Apply(v int64) int64 { return model.hidden(v) }"}})

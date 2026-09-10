@@ -72,7 +72,11 @@ func attachSemanticOwnership(packages []PackageMetadata, units []*checkedSession
 							continue
 						}
 						paths, refs := referencedImports(unit, typeSpec, unit.path, localPackages)
-						if d := add(SemanticDeclarationMetadata{Declaration: id, Package: unit.path, Name: object.Name(), Kind: kind, Exported: object.Exported(), Origin: nodeLocation(unit.fset, typeSpec.Name), ReferencedImports: paths, ImportReferences: refs}); d != nil {
+						exportName := ""
+						if object.Exported() {
+							exportName = object.Name()
+						}
+						if d := add(SemanticDeclarationMetadata{Declaration: id, Package: unit.path, Name: object.Name(), OwnershipName: object.Name(), ExportName: exportName, Kind: kind, Exported: object.Exported(), Origin: nodeLocation(unit.fset, typeSpec.Name), ReferencedImports: paths, ImportReferences: refs}); d != nil {
 							return d
 						}
 					}
@@ -84,7 +88,12 @@ func attachSemanticOwnership(packages []PackageMetadata, units []*checkedSession
 	for _, function := range functions {
 		if function.method && emitted[function.id] {
 			paths, refs := referencedImports(unitByPackage[function.packagePath], function.fn, function.packagePath, localPackages)
-			if d := add(SemanticDeclarationMetadata{Declaration: function.id, Package: function.packagePath, Name: function.name, Kind: SemanticMethod, Exported: ast.IsExported(function.name), Origin: nodeLocation(function.fset, function.fn.Name), ReferencedImports: paths, ImportReferences: refs}); d != nil {
+			ownershipName := receiverTypeName(function.sig.Recv().Type()) + "." + function.name
+			exportName := ""
+			if ast.IsExported(function.name) {
+				exportName = function.name
+			}
+			if d := add(SemanticDeclarationMetadata{Declaration: function.id, Package: function.packagePath, Name: function.name, OwnershipName: ownershipName, ExportName: exportName, Kind: SemanticMethod, Exported: ast.IsExported(function.name), Origin: nodeLocation(function.fset, function.fn.Name), ReferencedImports: paths, ImportReferences: refs}); d != nil {
 				return d
 			}
 		}
@@ -105,6 +114,54 @@ func attachSemanticOwnership(packages []PackageMetadata, units []*checkedSession
 			return genericDiagnostic
 		}
 	}
+	// Option realizations introduced by two-result map lookup are body-local:
+	// Go has no corresponding named source declaration. Bind them to the exact
+	// typed index expression and require all uses to remain in one package.
+	type bodyRealization struct {
+		packagePath string
+		origin      ProjectLocation
+	}
+	body := map[string]bodyRealization{}
+	for _, function := range functions {
+		if function.fn == nil || function.fn.Body == nil || function.info == nil {
+			continue
+		}
+		ast.Inspect(function.fn.Body, func(node ast.Node) bool {
+			index, ok := node.(*ast.IndexExpr)
+			if !ok {
+				return true
+			}
+			value := function.info.TypeOf(index.X)
+			if value == nil {
+				return true
+			}
+			mapping, ok := value.Underlying().(*types.Map)
+			if !ok {
+				return true
+			}
+			id := stableID("execution", "type", "option", goSemanticTypeIdentity(mapping.Elem()))
+			if !emitted[id] {
+				return true
+			}
+			if prior, exists := body[id]; exists && prior.packagePath != function.packagePath {
+				body[id] = bodyRealization{}
+			} else if !exists {
+				body[id] = bodyRealization{function.packagePath, nodeLocation(function.fset, index)}
+			}
+			return true
+		})
+	}
+	for id, use := range body {
+		if use.packagePath == "" {
+			return &SessionDiagnostic{Code: "session.semantic_ownership_ambiguous", Message: "body-local generic realization is used by multiple packages", Severity: "error"}
+		}
+		if seen[id] {
+			continue
+		}
+		if d := add(SemanticDeclarationMetadata{Declaration: id, Package: use.packagePath, Name: id, OwnershipName: id, Kind: SemanticGenericRealization, Origin: use.origin}); d != nil {
+			return d
+		}
+	}
 	for i := range packages {
 		sort.Slice(packages[i].Supplemental, func(a, b int) bool {
 			return packages[i].Supplemental[a].Declaration < packages[i].Supplemental[b].Declaration
@@ -121,7 +178,12 @@ func genericRealization(named *types.Named, emitted map[string]bool) *SemanticDe
 	if !emitted[id] {
 		return nil
 	}
-	return &SemanticDeclarationMetadata{Declaration: id, Package: named.Obj().Pkg().Path(), Name: types.TypeString(named, func(p *types.Package) string { return p.Path() }), Kind: SemanticGenericRealization, Exported: named.Obj().Exported()}
+	name := types.TypeString(named, func(p *types.Package) string { return p.Path() })
+	exportName := ""
+	if named.Obj().Exported() {
+		exportName = named.Obj().Name()
+	}
+	return &SemanticDeclarationMetadata{Declaration: id, Package: named.Obj().Pkg().Path(), Name: name, OwnershipName: id, ExportName: exportName, Kind: SemanticGenericRealization, Exported: named.Obj().Exported()}
 }
 
 func visitSignatureNamed(signature *types.Signature, visit func(*types.Named)) {

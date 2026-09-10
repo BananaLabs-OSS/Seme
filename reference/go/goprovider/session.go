@@ -91,11 +91,11 @@ const (
 // positions used to emit CanonicalG1. Declaration is the emitted canonical
 // identity; Package is the Go package path, not a guessed wire identity.
 type SemanticDeclarationMetadata struct {
-	Declaration, Package, Name, GenericDefinition string
-	Kind                                          SemanticDeclarationKind
-	Exported                                      bool
-	Origin                                        ProjectLocation
-	ReferencedImports                             []string
+	Declaration, Package, Name, OwnershipName, ExportName, GenericDefinition string
+	Kind                                                                     SemanticDeclarationKind
+	Exported                                                                 bool
+	Origin                                                                   ProjectLocation
+	ReferencedImports                                                        []string
 	// ImportReferences retain the exact checked import-spec locations needed
 	// to reconcile paths to neutral Package ImportBinding identities.
 	ImportReferences []SemanticImportReference
@@ -172,7 +172,14 @@ func attachResolutionOwnership(resolution *ResolutionManifest, packages []Packag
 		byName[item.Name] = item.Supplemental
 	}
 	for i := range resolution.Packages {
-		resolution.Packages[i].Supplemental = cloneSemanticDeclarations(byName[resolution.Packages[i].Name])
+		supplemental := cloneSemanticDeclarations(byName[resolution.Packages[i].Name])
+		resolution.Packages[i].Supplemental = supplemental
+		for _, item := range supplemental {
+			resolution.Packages[i].Declarations = append(resolution.Packages[i].Declarations, ResolvedDeclaration{ID: item.Declaration, Name: item.OwnershipName, Exported: item.Exported, Location: item.Origin})
+		}
+		sort.Slice(resolution.Packages[i].Declarations, func(a, b int) bool {
+			return resolution.Packages[i].Declarations[a].ID < resolution.Packages[i].Declarations[b].ID
+		})
 	}
 }
 

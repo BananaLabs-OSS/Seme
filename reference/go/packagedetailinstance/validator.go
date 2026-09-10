@@ -105,6 +105,7 @@ func Validate(source []byte) error {
 			used[oid] = true
 		}
 		exports := map[string]wire.ID{}
+		exportNames := map[string]bool{}
 		names := map[string]bool{}
 		for _, mid := range members {
 			m, ok := e.Entities[mid]
@@ -149,10 +150,16 @@ func Validate(source []byte) error {
 				if value.Tag != 5 || len(value.Bytes) == 0 {
 					return fmt.Errorf("package_detail.export_visibility:%s", mid)
 				}
-				if _, dup := exports[string(value.Bytes)]; dup {
+				if exportNames[string(value.Bytes)] {
 					return fmt.Errorf("package_detail.export_duplicate:%s", value.Bytes)
 				}
-				exports[string(value.Bytes)] = decl
+				exportNames[string(value.Bytes)] = true
+				// Package v1 TypedInterface represents callable exports only.
+				// Package v2 may additionally own visible data types and receiver
+				// methods; their exact visibility is annotated by Package v3.
+				if e.Entities[decl].Schema == id("9011") {
+					exports[string(value.Bytes)] = decl
+				}
 			}
 		}
 		if err = matchInterfaces(e, pid, exports); err != nil {
