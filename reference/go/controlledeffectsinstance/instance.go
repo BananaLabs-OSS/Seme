@@ -48,13 +48,16 @@ type Bounds struct {
 // Model is the language-adapter boundary. All selections are explicit; this
 // package never discovers ambient time, entropy, or effects.
 type Model struct {
-	Owner                         wire.ID
-	Clock                         Clock
-	Random                        Random
-	ExternalEffect                ExternalBooleanEffect
-	Replay                        Replay
-	Bounds                        Bounds
-	ApplyFunction, ReplayFunction wire.ID
+	ClockOwner, ClockSample             wire.ID
+	RandomOwner, RandomState, Draw      wire.ID
+	EffectOwner, Command, State, Result wire.ID
+	NextFunction, DispatchFunction      wire.ID
+	ReplayFunction                      wire.ID
+	Clock                               Clock
+	Random                              Random
+	ExternalEffect                      ExternalBooleanEffect
+	Replay                              Replay
+	Bounds                              Bounds
 }
 
 type Inputs struct {
@@ -111,7 +114,7 @@ func emit(in Inputs) ([]byte, error) {
 	e.Entities[capability] = entity(capability, "16", map[string]wire.Value{"160": blob(in.Model.ExternalEffect.CapabilityIdentity)})
 	e.Entities[effect] = entity(effect, "15", map[string]wire.Value{"150": blob(in.Model.ExternalEffect.EffectIdentity), "151": ref(capability)})
 	e.Entities[clock] = entity(clock, "13101", map[string]wire.Value{"13210": blob(in.Model.Clock.Identity), "13211": ref(id("13102")), "13212": blob(in.Model.Clock.MonotonicPolicy), "13213": blob(in.Model.Clock.InjectionPolicy)})
-	e.Entities[random] = entity(random, "13103", map[string]wire.Value{"13230": blob(in.Model.Random.Identity), "13231": blob(in.Model.Random.Algorithm), "13232": blob(in.Model.Random.OverflowPolicy), "13233": ref(id("13104"))})
+	e.Entities[random] = entity(random, "13103", map[string]wire.Value{"13230": blob(in.Model.Random.Identity), "13231": blob(in.Model.Random.Algorithm), "13232": blob(in.Model.Random.OverflowPolicy), "13233": ref(id("13104")), "13234": ref(in.Model.NextFunction)})
 	e.Entities[external] = entity(external, "13105", map[string]wire.Value{"13250": blob(in.Model.ExternalEffect.Identity), "13251": ref(capability), "13252": ref(effect), "13253": ref(id("9020")), "13254": blob(in.Model.ExternalEffect.DeliveryPolicy)})
 	stepRefs := make([]wire.Value, 0, len(in.Model.Replay.Steps))
 	for i, s := range in.Model.Replay.Steps {
@@ -125,7 +128,7 @@ func emit(in Inputs) ([]byte, error) {
 	z := in.Model.Bounds
 	e.Entities[bounds] = entity(bounds, "13108", map[string]wire.Value{"13280": u(z.MaximumSteps), "13281": u(z.FirstClockSequence), "13282": u(z.ClockTerminalSentinel), "13283": u(z.MaximumUnixMilliseconds), "13284": u(z.MinimumSeed), "13285": u(z.MaximumSeed), "13286": u(z.MaximumDraws), "13287": u(z.MaximumEffects)})
 	root := stable(b, "plan")
-	e.Entities[root] = entity(root, "13100", map[string]wire.Value{"13200": ref(clock), "13201": ref(random), "13202": ref(external), "13203": ref(replay), "13204": ref(bounds), "13205": ref(in.Model.ApplyFunction), "13206": ref(in.Model.ReplayFunction), "13207": blobBytes(make([]byte, 32))})
+	e.Entities[root] = entity(root, "13100", map[string]wire.Value{"13200": ref(clock), "13201": ref(random), "13202": ref(external), "13203": ref(replay), "13204": ref(bounds), "13205": ref(in.Model.DispatchFunction), "13206": ref(in.Model.ReplayFunction), "13207": blobBytes(make([]byte, 32))})
 	q := e.Entities[root]
 	q.Fields[id("13207")] = blobBytes(contentRevision(e, root))
 	e.Entities[root] = q
@@ -164,27 +167,67 @@ func validateModel(e wire.Envelope, m Model) error {
 			effects++
 		}
 	}
-	if effects > z.MaximumEffects || m.ApplyFunction == m.ReplayFunction || !ownedPureFunction(e, m.Owner, m.ApplyFunction) || !ownedPureFunction(e, m.Owner, m.ReplayFunction) {
+	owners := declarationOwners(e)
+	for x, owner := range map[wire.ID]wire.ID{m.ClockSample: m.ClockOwner, m.RandomState: m.RandomOwner, m.Draw: m.RandomOwner, m.NextFunction: m.RandomOwner, m.Command: m.EffectOwner, m.State: m.EffectOwner, m.Result: m.EffectOwner, m.DispatchFunction: m.EffectOwner, m.ReplayFunction: m.EffectOwner} {
+		if x == (wire.ID{}) || owner == (wire.ID{}) || owners[x] != owner {
+			return fmt.Errorf("controlled_effects.ownership")
+		}
+	}
+	if e.Entities[m.ClockSample].Schema != id("9030") || e.Entities[m.RandomState].Schema != id("9030") || e.Entities[m.Draw].Schema != id("9030") || e.Entities[m.Command].Schema != id("9030") || e.Entities[m.State].Schema != id("9030") || e.Entities[m.Result].Schema != id("9030") {
+		return fmt.Errorf("controlled_effects.type")
+	}
+	if effects > z.MaximumEffects || m.DispatchFunction == m.ReplayFunction || !functionSignature(e, m.NextFunction, []wire.ID{m.RandomState}, m.Draw) || !functionSignature(e, m.DispatchFunction, []wire.ID{m.State, m.Command}, m.Result) || !functionSignature(e, m.ReplayFunction, []wire.ID{m.State, m.Command}, m.Result) || !ownedPureFunction(e, m.RandomOwner, m.NextFunction) || !ownedPureFunction(e, m.EffectOwner, m.ReplayFunction) {
 		return fmt.Errorf("controlled_effects.function_or_effect")
+	}
+	// Dispatch is intentionally the controlled-effect entry point and may carry
+	// the selected effect. Replay and random evolution must remain pure.
+	if q, ok := e.Entities[m.DispatchFunction]; !ok || q.Schema != id("9011") {
+		return fmt.Errorf("controlled_effects.dispatch_function")
 	}
 	return nil
 }
 
-func ownedPureFunction(e wire.Envelope, owner, fn wire.ID) bool {
-	owned := false
-	for _, q := range e.Entities {
-		if q.Schema == id("b011") && q.Fields[id("b111")].Reference == fn {
-			for _, p := range e.Entities {
-				if p.Schema == id("b010") {
-					for _, v := range p.Fields[id("b102")].List {
-						if v.Reference == q.ID && p.ID == owner {
-							owned = true
-						}
-					}
+func declarationOwners(e wire.Envelope) map[wire.ID]wire.ID {
+	out, details := map[wire.ID]wire.ID{}, map[wire.ID]wire.ID{}
+	for x, q := range e.Entities {
+		if q.Schema == id("b021") {
+			o := q.Fields[id("b210")].Reference
+			details[x] = o
+			for _, v := range q.Fields[id("b211")].List {
+				if member, ok := e.Entities[v.Reference]; ok {
+					out[member.Fields[id("b220")].Reference] = o
 				}
 			}
 		}
 	}
+	for _, q := range e.Entities {
+		if q.Schema == id("b028") {
+			out[q.Fields[id("b280")].Reference] = details[q.Fields[id("b281")].Reference]
+		}
+	}
+	return out
+}
+
+func functionSignature(e wire.Envelope, fn wire.ID, params []wire.ID, result wire.ID) bool {
+	q, ok := e.Entities[fn]
+	if !ok || q.Schema != id("9011") || q.Fields[id("9112")].Reference != result {
+		return false
+	}
+	ps := q.Fields[id("9111")].List
+	if len(ps) != len(params) {
+		return false
+	}
+	for i, p := range ps {
+		parameter, ok := e.Entities[p.Reference]
+		if !ok || parameter.Schema != id("9012") || parameter.Fields[id("9121")].Reference != params[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func ownedPureFunction(e wire.Envelope, owner, fn wire.ID) bool {
+	owned := declarationOwners(e)[fn] == owner
 	q, ok := e.Entities[fn]
 	return owned && ok && q.Schema == id("9011") && !reachesEffect(e, q.Fields[id("9113")].Reference, map[wire.ID]bool{})
 }
