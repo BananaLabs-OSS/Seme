@@ -26,12 +26,17 @@ type Input struct {
 	CanonicalG1 []byte
 	Packages    []goprovider.PackageMetadata
 	Compile     Compile
-	Contracts contractcatalog.ProjectContractSetV5
-	PackageV2 []byte
-	PackageV3 []byte
-	Fields    []FieldSelection
-	Runtime   []RuntimeInputSelection
-	Units     []UnitSelection
+	Contracts   contractcatalog.ProjectContractSetV5
+	PackageV2   []byte
+	PackageV3   []byte
+	Fields      []FieldSelection
+	Runtime     []RuntimeInputSelection
+	Units       []UnitSelection
+}
+type Selection struct {
+	Fields  []FieldSelection
+	Runtime []RuntimeInputSelection
+	Units   []UnitSelection
 }
 
 type TypeSelection struct{ Package, Name, ID string }
@@ -172,12 +177,16 @@ func Resolve(ctx context.Context, in Input) (Plan, error) {
 func authenticate(ctx context.Context, in Input) (evidence, error) {
 	construction, packages := []byte(in.Session.CanonicalG1), in.Session.Packages
 	if len(in.CanonicalG1) != 0 {
-		if len(construction) != 0 || len(in.Packages) == 0 { return evidence{}, fmt.Errorf("go_configuration.run_ambiguous") }
+		if len(construction) != 0 || len(in.Packages) == 0 {
+			return evidence{}, fmt.Errorf("go_configuration.run_ambiguous")
+		}
 		construction, packages = in.CanonicalG1, in.Packages
 	} else if !in.Session.Accepted || !in.Session.Valid || in.Session.Disposition != "accepted-valid" || in.Session.Revision == 0 || in.Session.LastValidRevision != in.Session.Revision {
 		return evidence{}, fmt.Errorf("go_configuration.run")
 	}
-	if len(construction)==0 || in.Compile==nil { return evidence{}, fmt.Errorf("go_configuration.run") }
+	if len(construction) == 0 || in.Compile == nil {
+		return evidence{}, fmt.Errorf("go_configuration.run")
+	}
 	compiled, err := in.Compile(ctx, construction)
 	if err != nil {
 		return evidence{}, fmt.Errorf("go_configuration.compile:%w", err)
