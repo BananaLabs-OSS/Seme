@@ -318,7 +318,8 @@ closure, authenticates it with Project v4, and proves that it applies to the
 exact canonical package edge and inventoried `go.mod`. Resolution repeats
 offline; native, canonical, standalone Wasm, pinned Pulp, and strict projection
 evidence agree. The ecosystem dependency is intentionally metadata-only in
-this cell—typed calls across that boundary begin at UPB-04. Run
+this cell. UPB-04 covers typed local package boundaries; it does not by itself
+claim calls into arbitrary ecosystem packages. Run
 `./scripts/check-go-upb-03.sh`.
 
 The first bounded foundation is now executable: [`Go Project Build v1`](spec/go-project-build-v1.md)

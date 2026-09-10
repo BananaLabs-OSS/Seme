@@ -212,4 +212,7 @@ the exact inventoried `go.mod`. The mapped gate repeats resolution offline,
 matches native, canonical, Wasm, and pinned-Pulp behavior, projects and re-lifts
 the project, and rejects floating, substituted, undeclared, mismatched,
 unrelated, symlinked, and tampered inputs. The external dependency is resolved
-but deliberately not called; typed ecosystem-package calls belong to UPB-04.
+but deliberately not called. UPB-04 begins with typed behavior across
+authenticated local package boundaries; ecosystem-package call interoperability
+requires separate provider and realization evidence and is not implied by that
+cell.
