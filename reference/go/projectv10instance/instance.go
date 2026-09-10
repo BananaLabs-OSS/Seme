@@ -8,21 +8,23 @@ import (
 	"fmt"
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/durableinstance"
+	"seme.local/reference/presentationinstance"
 	"seme.local/reference/projectv9instance"
 	"seme.local/reference/wire"
 	"sort"
 )
 
 type Inputs struct {
-	Contracts contractcatalog.ProjectContractSetV10
-	ProjectV9 projectv9instance.Inputs
-	Durable   durableinstance.Inputs
-	Composed  []byte
+	Contracts    contractcatalog.ProjectContractSetV10
+	ProjectV9    projectv9instance.Inputs
+	Durable      durableinstance.Inputs
+	Presentation presentationinstance.Inputs
+	Composed     []byte
 }
 
 func Emit(in Inputs) ([]byte, error) { return emit(in) }
 func Validate(in Inputs) error {
-	want, err := emit(Inputs{Contracts: in.Contracts, ProjectV9: in.ProjectV9, Durable: in.Durable})
+	want, err := emit(Inputs{Contracts: in.Contracts, ProjectV9: in.ProjectV9, Durable: in.Durable, Presentation: in.Presentation})
 	if err != nil {
 		return err
 	}
@@ -35,7 +37,7 @@ func emit(in Inputs) ([]byte, error) {
 	if !in.Contracts.Validated() || in.Contracts.Project().Pin() != (contractcatalog.Pin{Module: id("e000"), Revision: id("e00e")}) {
 		return nil, fmt.Errorf("project_v10.contracts")
 	}
-	if !bytes.Equal(in.ProjectV9.Composed, in.Durable.ProjectV9.Composed) {
+	if !bytes.Equal(in.ProjectV9.Composed, in.Durable.ProjectV9.Composed) || !bytes.Equal(in.ProjectV9.Composed, in.Presentation.ProjectV9.Composed) {
 		return nil, fmt.Errorf("project_v10.mixed_project")
 	}
 	in.Durable.Contracts = in.Contracts
@@ -45,6 +47,10 @@ func emit(in Inputs) ([]byte, error) {
 	if err := projectv9instance.Validate(in.ProjectV9); err != nil {
 		return nil, fmt.Errorf("project_v10.project_v9:%w", err)
 	}
+	in.Presentation.Contracts = in.Contracts
+	if err := presentationinstance.Validate(in.Presentation); err != nil {
+		return nil, fmt.Errorf("project_v10.presentation:%w", err)
+	}
 	p, err := wire.Decode(in.ProjectV9.Composed)
 	if err != nil {
 		return nil, err
@@ -53,8 +59,12 @@ func emit(in Inputs) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	presentation, err := wire.Decode(in.Presentation.Artifact)
+	if err != nil {
+		return nil, err
+	}
 	e := wire.Envelope{Entities: map[wire.ID]wire.Entity{}}
-	for _, part := range []wire.Envelope{p, d} {
+	for _, part := range []wire.Envelope{p, d, presentation} {
 		for x, q := range part.Entities {
 			if q.Schema == id("12") || q.Schema == id("13") {
 				continue
@@ -73,13 +83,17 @@ func emit(in Inputs) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+	presentationManifest, err := one(e, id("1010"))
+	if err != nil {
+		return nil, err
+	}
 	snap := stable(in, "snapshot")
-	e.Entities[snap] = entity(snap, "e025", map[string]wire.Value{"e250": ref(base), "e251": ref(plan), "e252": blob(make([]byte, 32))})
+	e.Entities[snap] = entity(snap, "e025", map[string]wire.Value{"e250": ref(base), "e251": ref(plan), "e252": blob(make([]byte, 32)), "e253": ref(presentationManifest)})
 	q := e.Entities[snap]
 	q.Fields[id("e252")] = blob(revision(e, snap))
 	e.Entities[snap] = q
 	imports := []wire.Value{}
-	for _, pin := range []contractcatalog.Pin{{Module: id("3000"), Revision: id("3001")}, {Module: id("4000"), Revision: id("4006")}, {Module: id("6000"), Revision: id("6001")}, {Module: id("8000"), Revision: id("8001")}, {Module: id("9000"), Revision: id("9024")}, {Module: id("b000"), Revision: id("b004")}, {Module: id("e000"), Revision: id("e00e")}, {Module: id("f000"), Revision: id("f001")}} {
+	for _, pin := range []contractcatalog.Pin{{Module: id("1000"), Revision: id("1001")}, {Module: id("3000"), Revision: id("3001")}, {Module: id("4000"), Revision: id("4006")}, {Module: id("6000"), Revision: id("6001")}, {Module: id("8000"), Revision: id("8001")}, {Module: id("9000"), Revision: id("9024")}, {Module: id("b000"), Revision: id("b004")}, {Module: id("e000"), Revision: id("e00e")}, {Module: id("f000"), Revision: id("f001")}} {
 		x := stable(in, "import", pin.Module.String())
 		e.Entities[x] = entity(x, "13", map[string]wire.Value{"130": ref(pin.Module), "131": blob(pin.Revision[:])})
 		imports = append(imports, ref(x))
@@ -110,7 +124,7 @@ func artifactRevision(e wire.Envelope) wire.ID {
 func stable(in Inputs, parts ...string) wire.ID {
 	h := sha256.New()
 	h.Write([]byte("seme.project-v10.identity.v1\x00"))
-	for _, b := range [][]byte{in.ProjectV9.Composed, in.Durable.Artifact} {
+	for _, b := range [][]byte{in.ProjectV9.Composed, in.Durable.Artifact, in.Presentation.Artifact} {
 		x := sha256.Sum256(b)
 		h.Write(x[:])
 	}

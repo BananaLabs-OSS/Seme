@@ -26,12 +26,12 @@ import (
 const maxFile, maxTotal, maxArtifact = int64(2 << 20), int64(32 << 20), int64(64 << 20)
 
 type options struct {
-	project, proxy, module, pkg, entry, out, dependency, version, localFrom, localTo string
-	configurationSelection, resourceManifest, resourceOwner, durableSelection        string
-	executionG1, execution, foundation, packageV4, projectV8                         string
-	dependencyV1, configurationV3, resourceV1, projectV9, durableV1, projectV10      string
-	k0, compiler                                                                     string
-	revision                                                                         uint64
+	project, proxy, module, pkg, entry, out, dependency, version, localFrom, localTo            string
+	configurationSelection, resourceManifest, resourceOwner, durableSelection                   string
+	executionG1, execution, foundation, packageV4, projectV8                                    string
+	dependencyV1, configurationV3, resourceV1, projectV9, durableV1, presentationV1, projectV10 string
+	k0, compiler                                                                                string
+	revision                                                                                    uint64
 }
 
 func main() {
@@ -57,7 +57,8 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 		"project-v8": &o.projectV8, "dependency-v1": &o.dependencyV1,
 		"configuration-v3": &o.configurationV3, "resource-v1": &o.resourceV1,
 		"project-v9": &o.projectV9, "durable-state-v1": &o.durableV1,
-		"project-v10": &o.projectV10, "k0": &o.k0, "g1-compiler": &o.compiler,
+		"source-presentation-v1": &o.presentationV1,
+		"project-v10":            &o.projectV10, "k0": &o.k0, "g1-compiler": &o.compiler,
 	}
 	for n, p := range flags {
 		f.StringVar(p, n, "", n+" input")
@@ -116,7 +117,7 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	v10, err := contractcatalog.ResolveProjectContractSetV10(inputs[o.foundation], inputs[o.execution], inputs[o.packageV4], inputs[o.dependencyV1], inputs[o.configurationV3], inputs[o.resourceV1], inputs[o.durableV1], inputs[o.projectV9], inputs[o.projectV10])
+	v10, err := contractcatalog.ResolveProjectContractSetV10(inputs[o.foundation], inputs[o.execution], inputs[o.packageV4], inputs[o.dependencyV1], inputs[o.configurationV3], inputs[o.resourceV1], inputs[o.durableV1], inputs[o.presentationV1], inputs[o.projectV9], inputs[o.projectV10])
 	if err != nil {
 		return err
 	}
@@ -140,7 +141,7 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 }
 
 func (o options) validate() error {
-	values := []string{o.project, o.proxy, o.module, o.pkg, o.entry, o.out, o.dependency, o.version, o.localFrom, o.localTo, o.configurationSelection, o.resourceManifest, o.resourceOwner, o.durableSelection, o.executionG1, o.execution, o.foundation, o.packageV4, o.projectV8, o.dependencyV1, o.configurationV3, o.resourceV1, o.projectV9, o.durableV1, o.projectV10, o.k0, o.compiler}
+	values := []string{o.project, o.proxy, o.module, o.pkg, o.entry, o.out, o.dependency, o.version, o.localFrom, o.localTo, o.configurationSelection, o.resourceManifest, o.resourceOwner, o.durableSelection, o.executionG1, o.execution, o.foundation, o.packageV4, o.projectV8, o.dependencyV1, o.configurationV3, o.resourceV1, o.projectV9, o.durableV1, o.presentationV1, o.projectV10, o.k0, o.compiler}
 	for _, v := range values {
 		if v == "" {
 			return fmt.Errorf("flag_missing")
@@ -158,7 +159,7 @@ func (o options) validate() error {
 }
 
 func (o options) inputs() []string {
-	return []string{o.configurationSelection, o.resourceManifest, o.durableSelection, o.executionG1, o.execution, o.foundation, o.packageV4, o.projectV8, o.dependencyV1, o.configurationV3, o.resourceV1, o.projectV9, o.durableV1, o.projectV10, o.k0, o.compiler}
+	return []string{o.configurationSelection, o.resourceManifest, o.durableSelection, o.executionG1, o.execution, o.foundation, o.packageV4, o.projectV8, o.dependencyV1, o.configurationV3, o.resourceV1, o.projectV9, o.durableV1, o.presentationV1, o.projectV10, o.k0, o.compiler}
 }
 
 func strictDir(p string) (string, error) {

@@ -34,7 +34,7 @@ func run(parent context.Context, args []string) error {
 	f := flag.NewFlagSet("go-upb07-project", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
 	paths := map[string]*string{}
-	for _, name := range []string{"root", "to", "module", "bundle", "selection", "durable-selection", "foundation", "execution", "package", "dependency", "configuration", "resource", "durable-state", "project-v8", "project-v9", "project-v10", "k0", "g1-compiler"} {
+	for _, name := range []string{"root", "to", "module", "bundle", "selection", "durable-selection", "foundation", "execution", "package", "dependency", "configuration", "resource", "durable-state", "source-presentation", "project-v8", "project-v9", "project-v10", "k0", "g1-compiler"} {
 		paths[name] = new(string)
 		f.StringVar(paths[name], name, "", name)
 	}
@@ -62,7 +62,7 @@ func run(parent context.Context, args []string) error {
 	}
 	read := func(name string) ([]byte, error) { return readStrict(*paths[name]) }
 	inputs := map[string][]byte{}
-	for _, name := range []string{"selection", "durable-selection", "foundation", "execution", "package", "dependency", "configuration", "resource", "durable-state", "project-v8", "project-v9", "project-v10", "k0", "g1-compiler"} {
+	for _, name := range []string{"selection", "durable-selection", "foundation", "execution", "package", "dependency", "configuration", "resource", "durable-state", "source-presentation", "project-v8", "project-v9", "project-v10", "k0", "g1-compiler"} {
 		inputs[name], err = read(name)
 		if err != nil {
 			return fmt.Errorf("%s:%w", name, err)
@@ -84,7 +84,7 @@ func run(parent context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	v10, err := contractcatalog.ResolveProjectContractSetV10(inputs["foundation"], inputs["execution"], inputs["package"], inputs["dependency"], inputs["configuration"], inputs["resource"], inputs["durable-state"], inputs["project-v9"], inputs["project-v10"])
+	v10, err := contractcatalog.ResolveProjectContractSetV10(inputs["foundation"], inputs["execution"], inputs["package"], inputs["dependency"], inputs["configuration"], inputs["resource"], inputs["durable-state"], inputs["source-presentation"], inputs["project-v9"], inputs["project-v10"])
 	if err != nil {
 		return err
 	}

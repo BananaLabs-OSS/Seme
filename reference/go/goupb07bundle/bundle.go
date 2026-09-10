@@ -13,13 +13,15 @@ import (
 	"seme.local/reference/durableinstance"
 	"seme.local/reference/goconfigurationadapter"
 	"seme.local/reference/godurableadapter"
+	"seme.local/reference/goprojector"
 	"seme.local/reference/goupb06bundle"
+	"seme.local/reference/presentationinstance"
 	"seme.local/reference/projectv10instance"
 	"seme.local/reference/wire"
 )
 
 type Artifacts struct {
-	Construction, Execution, ProjectBase, Inventory, PackageDetail, PackageV4, Dependency, ConfigurationV3, ProjectV8, Resource, ProjectV9, Durable, ProjectV10 []byte
+	Construction, Execution, ProjectBase, Inventory, PackageDetail, PackageV4, Dependency, ConfigurationV3, ProjectV8, Resource, ProjectV9, Durable, Presentation, ProjectV10 []byte
 }
 
 type Input struct {
@@ -38,11 +40,12 @@ type Input struct {
 }
 
 type Result struct {
-	Artifacts Artifacts
-	Base      goupb06bundle.Result
-	Durable   durableinstance.Inputs
-	Project   projectv10instance.Inputs
-	Blobs     map[[32]byte][]byte
+	Artifacts    Artifacts
+	Base         goupb06bundle.Result
+	Durable      durableinstance.Inputs
+	Presentation presentationinstance.Inputs
+	Project      projectv10instance.Inputs
+	Blobs        map[[32]byte][]byte
 }
 
 // Load rejects before returning any authority unless the closed bundle,
@@ -70,17 +73,49 @@ func Load(ctx context.Context, in Input) (Result, error) {
 	if err = durableinstance.Validate(di); err != nil {
 		return Result{}, err
 	}
-	pi := projectv10instance.Inputs{Contracts: in.Contracts, ProjectV9: base.Project, Durable: di, Composed: a.ProjectV10}
+	presentationModel, err := presentationinstance.ModelFromArtifact(a.Presentation)
+	if err != nil {
+		return Result{}, err
+	}
+	spi := presentationinstance.Inputs{Contracts: in.Contracts, ProjectV9: base.Project, Model: presentationModel, Artifact: a.Presentation}
+	if err = presentationinstance.Validate(spi); err != nil {
+		return Result{}, err
+	}
+	pi := projectv10instance.Inputs{Contracts: in.Contracts, ProjectV9: base.Project, Durable: di, Presentation: spi, Composed: a.ProjectV10}
 	if err = projectv10instance.Validate(pi); err != nil {
 		return Result{}, err
 	}
-	return Result{Artifacts: clone(a), Base: base, Durable: di, Project: pi, Blobs: cloneBlobs(in.Blobs)}, nil
+	return Result{Artifacts: clone(a), Base: base, Durable: di, Presentation: spi, Project: pi, Blobs: cloneBlobs(in.Blobs)}, nil
 }
 
 // Project returns ordinary Go package projections from the authenticated
 // package graph. Detached resources remain available in Result.Blobs and are
 // deliberately not interpreted as source.
-func Project(r Result) (map[string][]byte, error) { return goupb06bundle.Project(r.Base) }
+func Project(r Result) (map[string][]byte, error) {
+	e, err := wire.Decode(r.Artifacts.Presentation)
+	if err != nil {
+		return nil, err
+	}
+	owners := map[wire.ID]string{}
+	bindings := map[wire.ID]string{}
+	for x, q := range e.Entities {
+		if q.Schema == mustID("b010") {
+			owners[x] = string(q.Fields[mustID("b100")].Bytes)
+		}
+		if q.Schema == mustID("b024") {
+			bindings[x] = string(q.Fields[mustID("b241")].Bytes)
+		}
+	}
+	aliases := []goprojector.AliasPresentation{}
+	for _, a := range r.Presentation.Model.Aliases {
+		imports := []string{}
+		for _, b := range a.ImportBindings {
+			imports = append(imports, bindings[b])
+		}
+		aliases = append(aliases, goprojector.AliasPresentation{Package: owners[a.Owner], Name: a.Name, Target: a.Target.String(), Imports: imports})
+	}
+	return goprojector.ProjectPackagesV4WithAliases(r.Artifacts.Construction, r.Base.Base.ProjectV8Input.Contracts, r.Artifacts.PackageDetail, r.Artifacts.PackageV4, aliases)
+}
 
 type named struct {
 	name string
@@ -88,7 +123,7 @@ type named struct {
 }
 
 func files(a Artifacts) []named {
-	return []named{{"construction-v36.g1", a.Construction}, {"execution-v36.seme", a.Execution}, {"project-base-v8.seme", a.ProjectBase}, {"inventory-v8.seme", a.Inventory}, {"package-detail-v4.seme", a.PackageDetail}, {"package-v4.seme", a.PackageV4}, {"dependency-v1.seme", a.Dependency}, {"configuration-v3.seme", a.ConfigurationV3}, {"project-v8.seme", a.ProjectV8}, {"resource-v1.seme", a.Resource}, {"project-v9.seme", a.ProjectV9}, {"durable-state-v1.seme", a.Durable}, {"project-v10.seme", a.ProjectV10}}
+	return []named{{"construction-v36.g1", a.Construction}, {"execution-v36.seme", a.Execution}, {"project-base-v8.seme", a.ProjectBase}, {"inventory-v8.seme", a.Inventory}, {"package-detail-v4.seme", a.PackageDetail}, {"package-v4.seme", a.PackageV4}, {"dependency-v1.seme", a.Dependency}, {"configuration-v3.seme", a.ConfigurationV3}, {"project-v8.seme", a.ProjectV8}, {"resource-v1.seme", a.Resource}, {"project-v9.seme", a.ProjectV9}, {"durable-state-v1.seme", a.Durable}, {"source-presentation-v1.seme", a.Presentation}, {"project-v10.seme", a.ProjectV10}}
 }
 
 func validManifest(got []byte, a Artifacts, blobs map[[32]byte][]byte) bool {
@@ -256,7 +291,7 @@ func mustID(s string) wire.ID {
 }
 func clone(a Artifacts) Artifacts {
 	p := func(x []byte) []byte { return append([]byte(nil), x...) }
-	return Artifacts{p(a.Construction), p(a.Execution), p(a.ProjectBase), p(a.Inventory), p(a.PackageDetail), p(a.PackageV4), p(a.Dependency), p(a.ConfigurationV3), p(a.ProjectV8), p(a.Resource), p(a.ProjectV9), p(a.Durable), p(a.ProjectV10)}
+	return Artifacts{p(a.Construction), p(a.Execution), p(a.ProjectBase), p(a.Inventory), p(a.PackageDetail), p(a.PackageV4), p(a.Dependency), p(a.ConfigurationV3), p(a.ProjectV8), p(a.Resource), p(a.ProjectV9), p(a.Durable), p(a.Presentation), p(a.ProjectV10)}
 }
 func cloneBlobs(x map[[32]byte][]byte) map[[32]byte][]byte {
 	o := map[[32]byte][]byte{}

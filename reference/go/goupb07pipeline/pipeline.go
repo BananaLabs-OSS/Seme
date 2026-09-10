@@ -12,7 +12,9 @@ import (
 	"seme.local/reference/durableinstance"
 	"seme.local/reference/godurableadapter"
 	"seme.local/reference/godurablemanifest"
+	"seme.local/reference/gopresentationadapter"
 	"seme.local/reference/goupb06pipeline"
+	"seme.local/reference/presentationinstance"
 	"seme.local/reference/projectv10instance"
 )
 
@@ -22,10 +24,11 @@ type Input struct {
 	Manifest  []byte
 }
 type Result struct {
-	Base                goupb06pipeline.Result
-	Durable, ProjectV10 []byte
-	DurableInput        durableinstance.Inputs
-	ProjectInput        projectv10instance.Inputs
+	Base                              goupb06pipeline.Result
+	Durable, Presentation, ProjectV10 []byte
+	DurableInput                      durableinstance.Inputs
+	PresentationInput                 presentationinstance.Inputs
+	ProjectInput                      projectv10instance.Inputs
 }
 
 func Build(ctx context.Context, in Input) (Result, error) {
@@ -53,7 +56,20 @@ func Build(ctx context.Context, in Input) (Result, error) {
 	if err = durableinstance.Validate(di); err != nil {
 		return Result{}, err
 	}
-	pi := projectv10instance.Inputs{Contracts: in.Contracts, ProjectV9: base.ProjectInput, Durable: di}
+	presentationModel, err := gopresentationadapter.Resolve(base.ProjectInput, base.Base.Base.Packages)
+	if err != nil {
+		return Result{}, err
+	}
+	spi := presentationinstance.Inputs{Contracts: in.Contracts, ProjectV9: base.ProjectInput, Model: presentationModel}
+	presentation, err := presentationinstance.Emit(spi)
+	if err != nil {
+		return Result{}, err
+	}
+	spi.Artifact = presentation
+	if err = presentationinstance.Validate(spi); err != nil {
+		return Result{}, err
+	}
+	pi := projectv10instance.Inputs{Contracts: in.Contracts, ProjectV9: base.ProjectInput, Durable: di, Presentation: spi}
 	project, err := projectv10instance.Emit(pi)
 	if err != nil {
 		return Result{}, err
@@ -62,7 +78,7 @@ func Build(ctx context.Context, in Input) (Result, error) {
 	if err = projectv10instance.Validate(pi); err != nil {
 		return Result{}, err
 	}
-	return Result{Base: base, Durable: append([]byte(nil), durable...), ProjectV10: append([]byte(nil), project...), DurableInput: di, ProjectInput: pi}, nil
+	return Result{Base: base, Durable: append([]byte(nil), durable...), Presentation: append([]byte(nil), presentation...), ProjectV10: append([]byte(nil), project...), DurableInput: di, PresentationInput: spi, ProjectInput: pi}, nil
 }
 
 type artifact struct {
@@ -71,7 +87,7 @@ type artifact struct {
 }
 
 func artifacts(r Result) []artifact {
-	return []artifact{{"construction-v36.g1", r.Base.Base.Construction}, {"execution-v36.seme", r.Base.Base.Execution}, {"project-base-v8.seme", r.Base.Base.ProjectBase}, {"inventory-v8.seme", r.Base.Base.Inventory}, {"package-detail-v4.seme", r.Base.Base.PackageDetail}, {"package-v4.seme", r.Base.Base.PackageV4}, {"dependency-v1.seme", r.Base.Base.Dependency}, {"configuration-v3.seme", r.Base.Base.ConfigurationV3}, {"project-v8.seme", r.Base.Base.ProjectV8}, {"resource-v1.seme", r.Base.Resource}, {"project-v9.seme", r.Base.ProjectV9}, {"durable-state-v1.seme", r.Durable}, {"project-v10.seme", r.ProjectV10}}
+	return []artifact{{"construction-v36.g1", r.Base.Base.Construction}, {"execution-v36.seme", r.Base.Base.Execution}, {"project-base-v8.seme", r.Base.Base.ProjectBase}, {"inventory-v8.seme", r.Base.Base.Inventory}, {"package-detail-v4.seme", r.Base.Base.PackageDetail}, {"package-v4.seme", r.Base.Base.PackageV4}, {"dependency-v1.seme", r.Base.Base.Dependency}, {"configuration-v3.seme", r.Base.Base.ConfigurationV3}, {"project-v8.seme", r.Base.Base.ProjectV8}, {"resource-v1.seme", r.Base.Resource}, {"project-v9.seme", r.Base.ProjectV9}, {"durable-state-v1.seme", r.Durable}, {"source-presentation-v1.seme", r.Presentation}, {"project-v10.seme", r.ProjectV10}}
 }
 func Publish(destination string, r Result) error {
 	if !filepath.IsAbs(destination) || filepath.Clean(destination) != destination || filepath.Base(destination) == "." {

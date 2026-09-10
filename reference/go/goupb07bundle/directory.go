@@ -86,7 +86,7 @@ func ReadDirectory(root string) (Artifacts, []byte, map[[32]byte][]byte, error) 
 	if data["COMPLETE.sha256"] == nil {
 		return Artifacts{}, nil, nil, fmt.Errorf("go_upb07_directory.complete")
 	}
-	a := Artifacts{data["construction-v36.g1"], data["execution-v36.seme"], data["project-base-v8.seme"], data["inventory-v8.seme"], data["package-detail-v4.seme"], data["package-v4.seme"], data["dependency-v1.seme"], data["configuration-v3.seme"], data["project-v8.seme"], data["resource-v1.seme"], data["project-v9.seme"], data["durable-state-v1.seme"], data["project-v10.seme"]}
+	a := Artifacts{data["construction-v36.g1"], data["execution-v36.seme"], data["project-base-v8.seme"], data["inventory-v8.seme"], data["package-detail-v4.seme"], data["package-v4.seme"], data["dependency-v1.seme"], data["configuration-v3.seme"], data["project-v8.seme"], data["resource-v1.seme"], data["project-v9.seme"], data["durable-state-v1.seme"], data["source-presentation-v1.seme"], data["project-v10.seme"]}
 	return a, data["COMPLETE.sha256"], blobs, nil
 }
 func readFile(p string) ([]byte, error) {
