@@ -4,7 +4,6 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -117,7 +116,7 @@ func run(parent context.Context, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
-	a, manifest, blobs, err := loadFiles(*paths["bundle"], read)
+	a, manifest, blobs, err := goupb06bundle.ReadDirectory(*paths["bundle"])
 	if err != nil {
 		return err
 	}
@@ -149,48 +148,6 @@ func run(parent context.Context, args []string, stdout io.Writer) error {
 	encoder := json.NewEncoder(stdout)
 	encoder.SetEscapeHTML(false)
 	return encoder.Encode(out)
-}
-
-func loadFiles(directory string, read func(string) ([]byte, error)) (goupb06bundle.Artifacts, []byte, map[[32]byte][]byte, error) {
-	info, err := os.Lstat(directory)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return goupb06bundle.Artifacts{}, nil, nil, fmt.Errorf("bundle")
-	}
-	names := []string{"construction-v36.g1", "execution-v36.seme", "project-base-v8.seme", "inventory-v8.seme", "package-detail-v4.seme", "package-v4.seme", "dependency-v1.seme", "configuration-v3.seme", "project-v8.seme", "resource-v1.seme", "project-v9.seme"}
-	values := make([][]byte, len(names))
-	for i, name := range names {
-		values[i], err = read(filepath.Join(directory, name))
-		if err != nil {
-			return goupb06bundle.Artifacts{}, nil, nil, err
-		}
-	}
-	manifest, err := read(filepath.Join(directory, "COMPLETE.sha256"))
-	if err != nil {
-		return goupb06bundle.Artifacts{}, nil, nil, err
-	}
-	blobDir := filepath.Join(directory, "blobs")
-	entries, err := os.ReadDir(blobDir)
-	if err != nil || len(entries) == 0 || len(entries) > 16 {
-		return goupb06bundle.Artifacts{}, nil, nil, fmt.Errorf("blobs")
-	}
-	blobs := map[[32]byte][]byte{}
-	for _, entry := range entries {
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 || len(entry.Name()) != 64 {
-			return goupb06bundle.Artifacts{}, nil, nil, fmt.Errorf("blob_entry")
-		}
-		raw, e := hex.DecodeString(entry.Name())
-		if e != nil {
-			return goupb06bundle.Artifacts{}, nil, nil, fmt.Errorf("blob_name")
-		}
-		var digest [32]byte
-		copy(digest[:], raw)
-		data, e := read(filepath.Join(blobDir, entry.Name()))
-		if e != nil || sha256.Sum256(data) != digest {
-			return goupb06bundle.Artifacts{}, nil, nil, fmt.Errorf("blob_digest")
-		}
-		blobs[digest] = data
-	}
-	return goupb06bundle.Artifacts{Construction: values[0], Execution: values[1], ProjectBase: values[2], Inventory: values[3], PackageDetail: values[4], PackageV4: values[5], Dependency: values[6], ConfigurationV3: values[7], ProjectV8: values[8], Resource: values[9], ProjectV9: values[10]}, manifest, blobs, nil
 }
 
 func makeReport(contracts contractcatalog.ProjectContractSetV9, loaded goupb06bundle.Result) (report, error) {

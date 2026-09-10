@@ -74,8 +74,11 @@ and detached blob. Two identical offline builds must reproduce every byte.
    observations.
 6. **Project round trip.** Authenticated projection copies the declared
    resource bytes and opaque project-owned files exactly, emits ordinary Go,
-   passes native tests, and re-lifts to the exact Execution-v36, Resource-v1,
-   and Project-v9 artifacts. Projection is create-only and reproducible.
+   passes native tests, and re-lifts to the exact Execution-v36 behavior and
+   the same resource identities, destinations, bytes, sizes, and digests.
+   Inventory-bound Resource-v1 and Project-v9 bytes correctly change when
+   projected Go source bytes replace the originals; two re-lifts must reproduce
+   those new authority bytes exactly. Projection is create-only and reproducible.
 7. **Atomic rejection.** Every malformed or mismatched input below fails with
    no claimed output, no partial destination, and no modification of an
    existing destination.
