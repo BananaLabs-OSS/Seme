@@ -109,7 +109,10 @@ dependencies reject. This cell does not imply general registry compatibility.
 
 Compose UAB-v1 values and calls through real package boundaries without
 flattening packages or translating through another source language. Native,
-canonical, projected, and target observations must agree.
+canonical, projected, and target observations must agree. A language cell may
+bound this proof to packages owned by the imported project. Calls into
+ecosystem packages require their own provider and realization evidence and are
+not implied by local cross-package success.
 
 ### UPB-05 — configuration and initialization
 
@@ -201,4 +204,3 @@ databases or network protocols; lossless projection of arbitrary source; or
 universal language/runtime interoperability. Opaque, generated, vendored,
 embedded-runtime, remote, and native-island regions stay explicit and do not
 count as lifted semantics.
-
