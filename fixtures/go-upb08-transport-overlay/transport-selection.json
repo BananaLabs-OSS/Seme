@@ -1,0 +1,17 @@
+{
+  "version": "seme.ordered-transport-selection/v1",
+  "streams": [
+    {"identity": "primary", "package": "example.test/go-uab-11/service"}
+  ],
+  "command_kinds": [
+    {"identity": "configuration.initialize.v1", "owner": "example.test/go-uab-11/configuration", "payload": {"package": "example.test/go-uab-11/configuration", "name": "Input"}}
+  ],
+  "event_kinds": [
+    {"identity": "configuration.initialized.v1", "owner": "example.test/go-uab-11/configuration", "payload": {"package": "example.test/go-uab-11/configuration", "name": "Initialized"}}
+  ],
+  "ports": [
+    {"identity": "host.frames.v1", "package": "example.test/go-uab-11/service"}
+  ],
+  "dispatch": {"package": "example.test/go-uab-11/service", "name": "Assemble"},
+  "replay": {"package": "example.test/go-uab-11/service", "name": "Initialize"}
+}
