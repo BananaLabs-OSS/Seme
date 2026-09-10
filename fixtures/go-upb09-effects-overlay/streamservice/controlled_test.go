@@ -33,6 +33,9 @@ func TestOnlyNewCommandsConsumeInputsAndLog(t *testing.T) {
 	if !first.OK || len(first.State.Draws) != 1 || bytes.Count(output.Bytes(), []byte("\n")) != 1 {
 		t.Fatalf("first=%#v log=%q", first, output.String())
 	}
+	if output.String() != "true\n" {
+		t.Fatalf("accepted effect=%q", output.String())
+	}
 	duplicate := DispatchControlled(first.State, command)
 	if !duplicate.OK || !duplicate.Duplicate || !reflect.DeepEqual(duplicate.State, first.State) || bytes.Count(output.Bytes(), []byte("\n")) != 1 {
 		t.Fatalf("duplicate=%#v log=%q", duplicate, output.String())
@@ -59,6 +62,23 @@ func TestOnlyNewCommandsConsumeInputsAndLog(t *testing.T) {
 			t.Fatalf("%s consumed: %#v", name, got)
 		}
 	}
+	rejectedCommand := controlledCommand(2, 9)
+	rejectedCommand.Clock = controlled.ClockSample{Sequence: 2, UnixMilliseconds: 2000}
+	rejectedCommand.Random = controlled.RandomState{Value: first.State.RandomAfterValues[0], Draws: 1}
+	rejectedCommand.Command.Payload.Loaded.Version = 3
+	rejected := DispatchControlled(first.State, rejectedCommand)
+	if !rejected.OK || rejected.Response.Accepted || output.String() != "true\nfalse\n" {
+		t.Fatalf("domain rejection effect: %#v %q", rejected, output.String())
+	}
+	over := controlledCommand(2, 10)
+	over.Clock = controlled.ClockSample{Sequence: 2, UnixMilliseconds: 2001}
+	over.Random = controlled.RandomState{Value: first.State.RandomAfterValues[0], Draws: 1}
+	over.Command.PayloadWords = make([]int64, 512)
+	over.Command.PayloadByteLength = 3072
+	failed := DispatchControlled(first.State, over)
+	if failed.OK || !reflect.DeepEqual(failed.State, first.State) || output.String() != "true\nfalse\n" {
+		t.Fatalf("failed commit boundary logged: %#v %q", failed, output.String())
+	}
 }
 
 func TestInvalidExplicitInputsAreAtomic(t *testing.T) {
@@ -68,6 +88,33 @@ func TestInvalidExplicitInputsAreAtomic(t *testing.T) {
 		if got.OK || got.Error != InvalidControlledInput || !reflect.DeepEqual(got.State, initial) {
 			t.Fatal(got)
 		}
+	}
+}
+
+func TestCommitBoundFailureDoesNotLog(t *testing.T) {
+	oldWriter := log.Writer()
+	defer log.SetOutput(oldWriter)
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	log.SetFlags(0)
+	firstCommand := controlledCommand(1, 31)
+	firstCommand.Command.PayloadWords = make([]int64, 384)
+	firstCommand.Command.PayloadWords[0] = 31
+	firstCommand.Command.PayloadByteLength = 3072
+	first := DispatchControlled(NewControlledState("match"), firstCommand)
+	if !first.OK {
+		t.Fatal(first)
+	}
+	output.Reset()
+	second := controlledCommand(2, 32)
+	second.Clock = controlled.ClockSample{Sequence: 2, UnixMilliseconds: 2000}
+	second.Random = controlled.RandomState{Value: first.State.RandomAfterValues[0], Draws: 1}
+	second.Command.PayloadWords = make([]int64, 129)
+	second.Command.PayloadWords[0] = 32
+	second.Command.PayloadByteLength = 1032
+	got := DispatchControlled(first.State, second)
+	if got.OK || !reflect.DeepEqual(got.State, first.State) || output.Len() != 0 {
+		t.Fatalf("failed commit boundary logged: %#v %q", got, output.String())
 	}
 }
 

@@ -66,7 +66,6 @@ func DispatchControlled(current ControlledState, command ControlledCommand) Cont
 		return controlledFailure(current, InvalidControlledInput)
 	}
 	draw := controlled.Next(command.Random)
-	log.Print(draw.Value >= 0)
 	plan := persistence.BuildPlan(command.Command.Payload.Grants, command.Command.Payload.Loaded, command.Command.Payload.Initial, command.Command.Payload.NextDigest, command.Command.Payload.Key)
 	accepted, code, revision := true, int64(0), int64(0)
 	if plan.Ok {
@@ -78,6 +77,7 @@ func DispatchControlled(current ControlledState, command ControlledCommand) Cont
 	if !committed.OK || committed.Duplicate {
 		return controlledFailure(current, committed.Error)
 	}
+	log.Print(accepted)
 	next := cloneControlled(current)
 	next.Transport = committed.State
 	next.ClockSequences = append(next.ClockSequences, command.Clock.Sequence)
