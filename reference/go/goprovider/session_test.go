@@ -711,6 +711,34 @@ func TestIncrementalSessionLiftsFoundationEffectInvocation(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsResultWithPartiallyKeyedNestedRecord(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/records", PackagePath: "example.test/records", Entry: "Build", Files: map[string]string{
+		"records.go": `package records
+type Result[T, E any] struct { Ok bool; Value T; Error E }
+type Inner struct { Enabled bool; Values []int64 }
+type Decision struct { Code int64; Inner Inner; Note string; Marker []byte; Counts map[int64]int64 }
+func Build(code int64) Result[Decision, int64] {
+	return Result[Decision, int64]{Ok: true, Value: Decision{Code: code}}
+}`,
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("partially keyed result record rejected: %#v", result.Diagnostics)
+	}
+	for _, schema := range []string{"00000000000000000000000000009043", "00000000000000000000000000009033", "0000000000000000000000000000a064", "0000000000000000000000000000a068", "0000000000000000000000000000a041"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("zero-composed record omitted schema %s", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsFixedArrayIndexRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v21/module.g1")
 	if err != nil {
