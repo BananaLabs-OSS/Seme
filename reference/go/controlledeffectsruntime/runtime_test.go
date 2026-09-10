@@ -6,7 +6,7 @@ import (
 )
 
 func profile() Profile {
-	p := Profile{Clock: Operation{"clock.injected.unix-milliseconds.v1", "clock.injected.unix-milliseconds.v1"}, Log: Operation{"observability.log", "observability.log"}, MaximumSteps: 256, FirstClockSequence: 1, ClockTerminalSentinel: 257, MaximumUnixMilliseconds: 4102444800000, MaximumDraws: 256, MaximumEffects: 256}
+	p := Profile{Clock: Operation{"clock.injected.unix-milliseconds.v1", "clock.injected.unix-milliseconds.v1"}, Log: Operation{"observability.log", "observability.log"}, RandomIdentity: "random.seeded.lcg-48271-plus-1.v1", RandomAlgorithm: "state*48271+1", RandomOverflowPolicy: "signed-i64-modular", MaximumSteps: 256, FirstClockSequence: 1, ClockTerminalSentinel: 257, MaximumUnixMilliseconds: 4102444800000, MaximumDraws: 256, MaximumEffects: 256}
 	p.authentication = digestProfile(p)
 	return p
 }
@@ -32,17 +32,22 @@ type handler struct {
 	calls  int
 }
 
-func (h *handler) Classify([]byte) Classification                         { return h.class }
-func (h *handler) Handle([]byte, ClockSample, RandomState) SemanticResult { h.calls++; return h.result }
+func (h *handler) Classify([]byte) Classification { return h.class }
+func (h *handler) Handle(_ []byte, _ ClockSample, random RandomState) SemanticResult {
+	h.calls++
+	r := h.result
+	r.Random = RandomState{Value: random.Value*48271 + 1, Draws: random.Draws + 1}
+	return r
+}
 
 type replay struct{ calls int }
 
-func (r *replay) Fold(s, c []byte, _ ClockSample, _ RandomState) SemanticResult {
+func (r *replay) Fold(s, c []byte, _ ClockSample, random RandomState) SemanticResult {
 	r.calls++
-	return SemanticResult{Committed: true, Effects: []bool{true}, State: append(bytes.Clone(s), c...), Random: RandomState{Value: int64(r.calls), Draws: uint64(r.calls)}}
+	return SemanticResult{Committed: true, Effects: []bool{true}, State: append(bytes.Clone(s), c...), Random: RandomState{Value: random.Value*48271 + 1, Draws: random.Draws + 1}}
 }
 func good() (*ports, *handler) {
-	return &ports{sample: ClockOutcome{Sample: ClockSample{10, 1}}, outcome: EffectOutcome{Receipt: []byte("ok")}}, &handler{class: New, result: SemanticResult{Committed: true, Effects: []bool{true}, State: []byte("state"), Random: RandomState{2, 1}}}
+	return &ports{sample: ClockOutcome{Sample: ClockSample{10, 1}}, outcome: EffectOutcome{Receipt: []byte("ok")}}, &handler{class: New, result: SemanticResult{Committed: true, Effects: []bool{true}, State: []byte("state"), Random: RandomState{48272, 1}}}
 }
 func grants(p Profile) Grants { return Grants{p.Clock.Capability: true, p.Log.Capability: true} }
 
@@ -125,6 +130,15 @@ func TestMalformedClockAndSemanticEffects(t *testing.T) {
 		}
 	}
 }
+
+func TestExhaustedRandomRejectsBeforePorts(t *testing.T) {
+	p := profile()
+	ports, h := good()
+	r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{Value: 1, Draws: p.MaximumDraws})
+	if r.Failure != "seme.effects.random.exhausted" || ports.clock+ports.effect+h.calls != 0 {
+		t.Fatalf("%#v", r)
+	}
+}
 func TestDeliveryFailureRetryIsExactAndIdempotent(t *testing.T) {
 	p := profile()
 	ports, h := good()
@@ -144,7 +158,9 @@ func TestReplayHasNoPortsAndFoldsExplicitInputs(t *testing.T) {
 	p := profile()
 	ports, _ := good()
 	h := &replay{}
-	r := Replay(p, h, []byte("a"), []ReplayStep{{[]byte("b"), ClockSample{1, 1}, RandomState{1, 0}}, {[]byte("c"), ClockSample{2, 2}, RandomState{2, 1}}})
+	first := RandomState{1, 0}
+	second := RandomState{first.Value*48271 + 1, 1}
+	r := Replay(p, h, []byte("a"), []ReplayStep{{[]byte("b"), ClockSample{1, 1}, first}, {[]byte("c"), ClockSample{2, 2}, second}})
 	if r.Failure != "" || string(r.State) != "abc" || h.calls != 2 || ports.clock+ports.effect != 0 || len(r.Trace) != 0 {
 		t.Fatalf("%#v", r)
 	}
