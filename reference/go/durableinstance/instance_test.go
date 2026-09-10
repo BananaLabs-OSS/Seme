@@ -1,9 +1,29 @@
 package durableinstance
 
 import (
+	"os"
+	"seme.local/reference/contractcatalog"
 	"seme.local/reference/wire"
 	"testing"
 )
+
+func TestAuthenticatedOperationAuthorityOwnsBoundaryProfile(t *testing.T) {
+	b, err := os.ReadFile("../../../modules/durable-state/v1/module.seme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := contractcatalog.ResolveDurableStateContract(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := authenticatedOperationAuthority(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.loadEffect != LoadEffectIdentity || a.compareExchangeEffect != CompareExchangeEffectIdentity || a.loadCapability != LoadEffectIdentity+".capability" || a.compareExchangeCapability != CompareExchangeEffectIdentity+".capability" || a.codec != CodecIdentity || a.tokenPolicy != "opaque-thread-only" || a.loadSequence != 0 || a.compareExchangeSequence != 1 {
+		t.Fatalf("authority=%#v", a)
+	}
+}
 
 func TestNeutralIdentityAndTypeUnion(t *testing.T) {
 	for _, s := range []string{"state.counter-v1", "app/state_2"} {
