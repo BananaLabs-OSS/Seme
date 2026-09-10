@@ -10,3 +10,8 @@ little-endian `u32` body length (excluding the prefix), eight ASCII magic bytes
 `SEMEOT01`, one `u8` frame-kind discriminator, then one exact canonical Pure
 Value ABI v1 payload. The declared total length is exact; trailing bytes reject.
 The complete frame is limited to 4,096 bytes.
+
+Each canonical command payload remains limited to 3,072 bytes. A stream may
+retain at most 4,096 canonical payload bytes in total for exact duplicate
+comparison; a command that would exceed that retained-byte authority rejects
+atomically without changing the stream.

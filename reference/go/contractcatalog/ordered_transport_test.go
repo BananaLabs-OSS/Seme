@@ -14,7 +14,7 @@ func TestResolveOrderedTransportContractExactPins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !c.Validated() || c.Pin() != (Pin{orderedTransportModule, orderedTransportRev}) || len(c.Exports()) != 125 || len(c.Imports()) != 3 {
+	if !c.Validated() || c.Pin() != (Pin{orderedTransportModule, orderedTransportRev}) || len(c.Exports()) != 126 || len(c.Imports()) != 3 {
 		t.Fatalf("contract = %#v", c.Pin())
 	}
 	bad := append([]byte(nil), raw...)
