@@ -1,4 +1,4 @@
-// Command go-upb05-project projects an authenticated eleven-artifact UPB05
+// Command go-upb05-project projects an authenticated one-run v36 UPB05
 // bundle while preserving detached ordinary project files.
 package main
 
@@ -30,7 +30,7 @@ func run(parent context.Context, args []string) error {
 	f := flag.NewFlagSet("go-upb05-project", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
 	paths := map[string]*string{}
-	names := []string{"root", "to", "module", "selection", "manifest", "construction", "project-instance-v1", "inventory-v2", "package-instance-v2", "project-instance-v3", "dependency-instance-v1", "project-instance-v4", "package-instance-v3", "project-instance-v5", "configuration-instance-v2", "project-instance-v7", "foundation-contract", "execution-contract", "package-v1-contract", "package-v2-contract", "package-v3-contract", "dependency-contract", "configuration-v1-contract", "configuration-v2-contract", "project-v1-contract", "project-v2-contract", "project-v3-contract", "project-v4-contract", "project-v5-contract", "project-v6-contract", "project-v7-contract", "k0", "g1-compiler"}
+	names := []string{"root", "to", "module", "selection", "manifest", "construction-v36", "execution-v36", "project-base-v8", "inventory-v8", "package-detail-v4", "package-v4", "dependency-v1", "configuration-v3", "project-v8", "foundation-contract", "execution-contract", "package-v4-contract", "dependency-contract", "configuration-v3-contract", "project-v8-contract", "k0", "g1-compiler"}
 	for _, n := range names {
 		x := new(string)
 		paths[n] = x
@@ -72,47 +72,20 @@ func run(parent context.Context, args []string) error {
 	if err != nil {
 		return err
 	}
-	execution, package1, package2, package3, dependency := must("execution-contract"), must("package-v1-contract"), must("package-v2-contract"), must("package-v3-contract"), must("dependency-contract")
-	pv1, pv2, pv3, pv4, pv5, pv6, pv7 := must("project-v1-contract"), must("project-v2-contract"), must("project-v3-contract"), must("project-v4-contract"), must("project-v5-contract"), must("project-v6-contract"), must("project-v7-contract")
-	foundation, c1, c2 := must("foundation-contract"), must("configuration-v1-contract"), must("configuration-v2-contract")
-	v1, e := contractcatalog.ResolveProjectContractSet(execution, package1, pv1)
+	v8, e := contractcatalog.ResolveProjectContractSetV8(must("foundation-contract"), must("execution-contract"), must("package-v4-contract"), must("dependency-contract"), must("configuration-v3-contract"), must("project-v8-contract"))
 	if e != nil {
 		return e
 	}
-	v2, e := contractcatalog.ResolveProjectContractSetV2(execution, package1, pv2)
-	if e != nil {
-		return e
-	}
-	v3, e := contractcatalog.ResolveProjectContractSetV3(execution, package2, pv3)
-	if e != nil {
-		return e
-	}
-	v4, e := contractcatalog.ResolveProjectContractSetV4(execution, package2, dependency, pv4)
-	if e != nil {
-		return e
-	}
-	v5, e := contractcatalog.ResolveProjectContractSetV5(execution, package3, dependency, pv5)
-	if e != nil {
-		return e
-	}
-	v6, e := contractcatalog.ResolveProjectContractSetV6(foundation, execution, package3, dependency, c1, pv6)
-	if e != nil {
-		return e
-	}
-	v7, e := contractcatalog.ResolveProjectContractSetV7(foundation, execution, package3, dependency, c2, pv7)
-	if e != nil {
-		return e
-	}
-	a := goupb05bundle.Artifacts{Construction: must("construction"), ProjectV1: must("project-instance-v1"), InventoryV2: must("inventory-v2"), PackageV2: must("package-instance-v2"), ProjectV3: must("project-instance-v3"), DependencyV1: must("dependency-instance-v1"), ProjectV4: must("project-instance-v4"), PackageV3: must("package-instance-v3"), ProjectV5: must("project-instance-v5"), ConfigurationV2: must("configuration-instance-v2"), ProjectV7: must("project-instance-v7")}
+	a := goupb05bundle.V8Artifacts{Construction: must("construction-v36"), Execution: must("execution-v36"), ProjectBase: must("project-base-v8"), Inventory: must("inventory-v8"), PackageDetail: must("package-detail-v4"), PackageV4: must("package-v4"), Dependency: must("dependency-v1"), ConfigurationV3: must("configuration-v3"), ProjectV8: must("project-v8")}
 	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
 	defer cancel()
-	loaded, e := goupb05bundle.Load(ctx, goupb05bundle.Input{Contracts: goupb05bundle.Contracts{V1: v1, V2: v2, V3: v3, V4: v4, V5: v5, V6: v6, V7: v7, ProjectV2: v2.Project()}, Artifacts: a, Manifest: must("manifest"), Selection: selection, Compile: func(ctx context.Context, in []byte) ([]byte, error) {
+	loaded, e := goupb05bundle.LoadV8(ctx, goupb05bundle.V8Input{Contracts: v8, Artifacts: a, Manifest: must("manifest"), Selection: selection, Compile: func(ctx context.Context, in []byte) ([]byte, error) {
 		return compile(ctx, *paths["k0"], *paths["g1-compiler"], in)
 	}})
 	if e != nil {
 		return e
 	}
-	packages, e := goupb05bundle.Project(loaded)
+	packages, e := goupb05bundle.ProjectV8(loaded)
 	if e != nil {
 		return e
 	}

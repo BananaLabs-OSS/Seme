@@ -18,7 +18,10 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 	if err != nil {
 		return nil, err
 	}
-	whole, err := Project(g1, "projection")
+	// The temporary syntax tree may contain equal top-level names owned by
+	// different packages. It is never emitted as one Go package; authenticated
+	// ownership below partitions each declaration exactly once.
+	whole, err := project(g1, "projection", true)
 	if err != nil {
 		return nil, err
 	}
@@ -39,6 +42,7 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 			return nil, er
 		}
 		objectOwner := map[*ast.Object]string{}
+		objectDeclaration := map[*ast.Object]OwnedDeclaration{}
 		declOwner := map[ast.Decl]string{}
 		for _, decl := range file.Decls {
 			switch d := decl.(type) {
@@ -48,6 +52,7 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 					declOwner[decl] = x.Package
 					if d.Name.Obj != nil {
 						objectOwner[d.Name.Obj] = x.Package
+						objectDeclaration[d.Name.Obj] = x
 					}
 				}
 			case *ast.GenDecl:
@@ -67,6 +72,9 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 						declOwner[decl] = owner
 						if ts.Name.Obj != nil {
 							objectOwner[ts.Name.Obj] = owner
+							if x, yes := owned[id]; yes {
+								objectDeclaration[ts.Name.Obj] = x
+							}
 						}
 					}
 				}
@@ -103,16 +111,27 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 					return true
 				}
 				owner := objectOwner[id.Obj]
-				if owner == "" || owner == pkg.Identity {
+				declaration, declared := objectDeclaration[id.Obj]
+				if owner == "" {
 					return true
 				}
-				alias := aliases[owner]
-				if alias == "" {
+				replacementName := id.Name
+				if declared {
+					replacementName = declaration.Name
+				}
+				if owner != pkg.Identity {
+					alias := aliases[owner]
+					if alias == "" {
+						return true
+					}
+					imports[owner] = true
+					replacementName = alias + "." + replacementName
+				}
+				if replacementName == id.Name {
 					return true
 				}
-				imports[owner] = true
 				pos := fset.Position(id.Pos()).Offset - begin
-				repls = append(repls, replacement{pos, pos + len(id.Name), alias + "." + id.Name})
+				repls = append(repls, replacement{pos, pos + len(id.Name), replacementName})
 				return true
 			})
 			sort.Slice(repls, func(i, j int) bool { return repls[i].start > repls[j].start })
