@@ -87,6 +87,20 @@ func TestGenericEvaluatorIgnoresUnreachableEffectDeclarations(t *testing.T) {
 	}
 }
 
+func TestReturnedBlockTypeAllowsPriorNonReturnStatement(t *testing.T) {
+	ref := func(n uint64) wire.Value { return wire.Value{Tag: 6, Reference: id(n)} }
+	g := wire.Envelope{Entities: map[wire.ID]wire.Entity{}}
+	g.Entities[id(1)] = wire.Entity{ID: id(1), Schema: id(0x9010)}
+	g.Entities[id(2)] = wire.Entity{ID: id(2), Schema: id(0x9070), Fields: map[wire.ID]wire.Value{id(0x9701): ref(1)}}
+	g.Entities[id(3)] = wire.Entity{ID: id(3), Schema: id(0x90d1)}
+	g.Entities[id(4)] = wire.Entity{ID: id(4), Schema: id(0x9081), Fields: map[wire.ID]wire.Value{id(0x9810): {Tag: 7, List: []wire.Value{ref(2)}}}}
+	g.Entities[id(5)] = wire.Entity{ID: id(5), Schema: id(0x9080), Fields: map[wire.ID]wire.Value{id(0x9800): {Tag: 7, List: []wire.Value{ref(3), ref(4)}}}}
+	got, ok := returnedBlockType(g, id(5))
+	if !ok || got != id(1) {
+		t.Fatalf("type=%s ok=%t", got.String(), ok)
+	}
+}
+
 func effectGraph() wire.Envelope {
 	ref := func(n uint64) wire.Value { return wire.Value{Tag: 6, Reference: id(n)} }
 	list := func(ns ...uint64) wire.Value {
