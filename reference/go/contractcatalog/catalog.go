@@ -95,7 +95,7 @@ func ResolveSourcePresentationContract(source []byte) (Contract, error) {
 // ResolveOrderedTransportContract authenticates the exact project-neutral
 // Ordered Transport Contract v1. Network protocols are deliberately absent.
 func ResolveOrderedTransportContract(source []byte) (Contract, error) {
-	return Resolve(source, Expectation{Pin: Pin{orderedTransportModule, orderedTransportRev}, ModuleVersion: 1, RequiredExports: ids("10100", "10101", "10102", "10103", "10104", "10105", "10106", "10107", "10108", "10109", "1010a", "1010b", "1010c", "1010d", "1010e", "1010f", "10110", "10111", "10112", "10113", "10114", "10115"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("a150258328a921c3574db152fba2fe562cfbf242ef50a7cc2125474df21fbf85")})
+	return Resolve(source, Expectation{Pin: Pin{orderedTransportModule, orderedTransportRev}, ModuleVersion: 1, RequiredExports: ids("10100", "10101", "10102", "10103", "10104", "10105", "10106", "10107", "10108", "10109", "1010a", "1010b", "1010c", "1010d", "1010e", "1010f", "10110", "10111", "10112", "10113", "10114", "10115"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("708de180b6e0b7f9bdf65b8aa7fd9fa86d94be3c910fdfea4ae17ff6a40817f1")})
 }
 
 // Resolve accepts only the one canonical byte representation described by e.
