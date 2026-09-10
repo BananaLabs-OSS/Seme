@@ -33,7 +33,7 @@ type Input struct {
 	ExecutionG1 []byte
 	Compile     projectbuild.Compile
 }
-type Result struct{ ProjectV1, InventoryV2, PackageV2, ProjectV3 []byte }
+type Result struct{ CanonicalG1, ProjectV1, InventoryV2, PackageV2, ProjectV3 []byte }
 
 func Build(ctx context.Context, in Input) (Result, error) {
 	if err := validateContracts(in.Contracts); err != nil {
@@ -76,7 +76,7 @@ func Build(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("go_project_pipeline.compose:%w", err)
 	}
-	return Result{clone(project.Artifact), clone(inventory), clone(packageArtifact), clone(composed)}, nil
+	return Result{CanonicalG1: clone(project.CanonicalG1), ProjectV1: clone(project.Artifact), InventoryV2: clone(inventory), PackageV2: clone(packageArtifact), ProjectV3: clone(composed)}, nil
 }
 
 func validateContracts(c Contracts) error {
@@ -136,7 +136,7 @@ func Publish(destination string, r Result) error {
 	files := []struct {
 		name string
 		data []byte
-	}{{"project-v1.seme", r.ProjectV1}, {"inventory-v2.seme", r.InventoryV2}, {"package-v2.seme", r.PackageV2}, {"project-v3.seme", r.ProjectV3}}
+	}{{"construction.g1", r.CanonicalG1}, {"project-v1.seme", r.ProjectV1}, {"inventory-v2.seme", r.InventoryV2}, {"package-v2.seme", r.PackageV2}, {"project-v3.seme", r.ProjectV3}}
 	for _, file := range files {
 		name, data := file.name, file.data
 		if len(data) == 0 {

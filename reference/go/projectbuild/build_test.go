@@ -57,7 +57,7 @@ func Apply(v int64) int64 { return lib.AddOne(v) }`,
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(result.Artifact) == 0 || result.SourceDigest == "" || len(result.Packages) != 2 || len(result.Resolution.Packages) != 2 {
+	if len(result.Artifact) == 0 || len(result.CanonicalG1) == 0 || result.SourceDigest == "" || len(result.Packages) != 2 || len(result.Resolution.Packages) != 2 {
 		t.Fatalf("result=%#v", result)
 	}
 	privateFound := false
@@ -71,7 +71,9 @@ func Apply(v int64) int64 { return lib.AddOne(v) }`,
 	if !privateFound {
 		t.Fatalf("private package member missing: %#v", result.Packages)
 	}
+	wantG1First := result.CanonicalG1[0]
 	result.Artifact[0] ^= 1
+	result.CanonicalG1[0] ^= 1
 	result.Packages[0].Dependencies = append(result.Packages[0].Dependencies, "mutation")
 	result.Packages[0].Members[0].Parameters[0] = "mutation"
 	result.Resolution.Packages[0].Files[0] = "mutation"
@@ -79,7 +81,7 @@ func Apply(v int64) int64 { return lib.AddOne(v) }`,
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(again.Artifact) == 0 || again.Artifact[0] != 'S' {
+	if len(again.Artifact) == 0 || again.Artifact[0] != 'S' || len(again.CanonicalG1) == 0 || again.CanonicalG1[0] != wantG1First {
 		t.Fatal("result was not copy safe")
 	}
 	for _, p := range again.Packages {

@@ -32,9 +32,11 @@ func TestBuildDeterministicMultiPackageV3Chain(t *testing.T) {
 			t.Fatal("raw source leaked into artifact")
 		}
 	}
+	wantG1First := a.CanonicalG1[0]
 	a.ProjectV3[0] ^= 1
+	a.CanonicalG1[0] ^= 1
 	again, err := Build(context.Background(), in)
-	if err != nil || again.ProjectV3[0] != 'S' {
+	if err != nil || again.ProjectV3[0] != 'S' || again.CanonicalG1[0] != wantG1First {
 		t.Fatal("result aliases pipeline state")
 	}
 }
@@ -66,7 +68,7 @@ func TestBuildRejectsSourceMismatchInvalidAndCompileFailure(t *testing.T) {
 }
 
 func TestPublishCreateOnlyAndRollback(t *testing.T) {
-	r := Result{ProjectV1: []byte("p1"), InventoryV2: []byte("i2"), PackageV2: []byte("p2"), ProjectV3: []byte("p3")}
+	r := Result{CanonicalG1: []byte("g1"), ProjectV1: []byte("p1"), InventoryV2: []byte("i2"), PackageV2: []byte("p2"), ProjectV3: []byte("p3")}
 	parent := t.TempDir()
 	dest := filepath.Join(parent, "bundle")
 	if err := Publish(dest, r); err != nil {
@@ -80,7 +82,7 @@ func TestPublishCreateOnlyAndRollback(t *testing.T) {
 	if err != nil || !bytes.Contains(manifest, []byte("project-v3.seme ")) {
 		t.Fatalf("completion marker: %q %v", manifest, err)
 	}
-	if err = Publish(dest, Result{ProjectV1: []byte("x"), InventoryV2: []byte("x"), PackageV2: []byte("x"), ProjectV3: []byte("x")}); err == nil {
+	if err = Publish(dest, Result{CanonicalG1: []byte("x"), ProjectV1: []byte("x"), InventoryV2: []byte("x"), PackageV2: []byte("x"), ProjectV3: []byte("x")}); err == nil {
 		t.Fatal("existing nonempty destination replaced")
 	}
 	after, _ := os.ReadFile(filepath.Join(dest, "project-v3.seme"))
