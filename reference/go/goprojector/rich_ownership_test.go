@@ -1,6 +1,7 @@
 package goprojector
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -195,5 +196,44 @@ func TestTypeNamesArePackageRelativeAcrossRichFamilies(t *testing.T) {
 	name, err := typeNameRelative(g, "result", map[string]string{"state": "application.State"}, map[string]string{"result": "model.Result", "transition": "model.Transition"})
 	if err != nil || name != "model.Result[model.Transition[application.State, int64], int64]" {
 		t.Fatalf("name=%q err=%v", name, err)
+	}
+}
+
+func TestExternalNamedRecordStopsTransitiveImportTraversal(t *testing.T) {
+	// persistence owns Persist, which names state.State. State in turn names
+	// application.App. Go requires persistence to import state, not every
+	// package used inside state.State's definition.
+	const (
+		appID     = "0000000000000000000000000000aa01"
+		stateID   = "0000000000000000000000000000aa02"
+		persistID = "0000000000000000000000000000aa03"
+	)
+	record := func(id, name string, refs ...string) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "en %s %s 1 2\nfi 00000000000000000000000000009300 by %x\nfi 00000000000000000000000000009301 li %d\n", id, sRecordType, name, len(refs))
+		for _, ref := range refs {
+			fmt.Fprintf(&b, "rf %s\n", ref)
+		}
+		return b.String()
+	}
+	g1 := []byte(record(appID, "App") + record(stateID, "State", appID) + record(persistID, "Persist", stateID))
+	in := RichPackageOwnership{
+		Packages: []RichPackage{
+			{Identity: "example.test/application", Name: "application"},
+			{Identity: "example.test/persistence", Name: "persistence", Dependencies: []string{"example.test/state"}},
+			{Identity: "example.test/state", Name: "state", Dependencies: []string{"example.test/application"}},
+		},
+		Declarations: []OwnedDeclaration{
+			{ID: appID, Package: "example.test/application", Name: "App", Kind: RecordDeclaration, Exported: true},
+			{ID: stateID, Package: "example.test/state", Name: "State", Kind: RecordDeclaration, Exported: true},
+			{ID: persistID, Package: "example.test/persistence", Name: "Persist", Kind: RecordDeclaration, Exported: true},
+		},
+	}
+	plans, err := planRichPackages(g1, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := plans["example.test/persistence"].imports; !reflect.DeepEqual(got, []string{"example.test/state"}) {
+		t.Fatalf("persistence imports transitive implementation packages: %v", got)
 	}
 }
