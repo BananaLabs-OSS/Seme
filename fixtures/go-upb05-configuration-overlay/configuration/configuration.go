@@ -18,6 +18,29 @@ type Initialized struct {
 	Stage    int64
 }
 
+func DefaultLimit() int64 { return 64 }
+
+func DefaultNamePrefix() string { return "unit-" }
+
+func InternalDefaultDisabled() bool { return false }
+
+func ValidateNamePrefix(value string) model.Result[string, int64] {
+	if value == "" {
+		return model.Result[string, int64]{Error: 10}
+	}
+	return model.Result[string, int64]{Ok: true, Value: value}
+}
+
+func ValidateLimit(value int64) model.Result[int64, int64] {
+	if value < 1 {
+		return model.Result[int64, int64]{Error: 11}
+	}
+	if 4096 < value {
+		return model.Result[int64, int64]{Error: 12}
+	}
+	return model.Result[int64, int64]{Ok: true, Value: value}
+}
+
 func Resolve(input Input) model.Result[Settings, int64] {
 	if input.NamePrefix == "" {
 		return model.Result[Settings, int64]{Error: 10}

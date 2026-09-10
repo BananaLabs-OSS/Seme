@@ -27,9 +27,9 @@ func TestResolveBuildsExactThreeStageBoundPlan(t *testing.T) {
 	assembleParams := params(g.Entities, "assemble", []wire.ID{configured, prepared, state})
 	configResult, policyResult, assembleResult := result(g.Entities, configured), result(g.Entities, prepared), result(g.Entities, runtime)
 	functions := map[string]function{
-		selectKey("configuration", "Initialize"): {configFn, configOwner, configParams, configResult},
-		selectKey("policy", "Initialize"):        {policyFn, policyOwner, policyParams, policyResult},
-		selectKey("service", "Assemble"):         {assembleFn, serviceOwner, assembleParams, assembleResult},
+		selectKey("configuration", "Initialize"): {id: configFn, owner: configOwner, parameters: configParams, result: configResult},
+		selectKey("policy", "Initialize"):        {id: policyFn, owner: policyOwner, parameters: policyParams, result: policyResult},
+		selectKey("service", "Assemble"):         {id: assembleFn, owner: serviceOwner, parameters: assembleParams, result: assembleResult},
 	}
 	p := wire.Envelope{Entities: map[wire.ID]wire.Entity{}}
 	for name, owner := range map[string]wire.ID{"configuration": configOwner, "policy": policyOwner, "service": serviceOwner} {
@@ -92,6 +92,22 @@ func TestResolveRejectsUnauthenticatedRunWithoutOutput(t *testing.T) {
 	got, err := Resolve(t.Context(), Input{})
 	if err == nil || len(got.Fields) != 0 || len(got.Units) != 0 {
 		t.Fatal("accepted unauthenticated run")
+	}
+}
+
+func TestPureDefaultProviderExtractsOneExactTypedExpression(t *testing.T) {
+	typ, fn, lit := id("700"), id("701"), id("702")
+	g := wire.Envelope{Entities: map[wire.ID]wire.Entity{typ: {ID: typ, Schema: id("9010"), Version: 1, Fields: map[wire.ID]wire.Value{id("9100"): {Tag: 3, Unsigned: 64}, id("9101"): {Tag: 2}}}, lit: {ID: lit, Schema: id("9070"), Version: 1, Fields: map[wire.ID]wire.Value{id("9700"): {Tag: 3, Unsigned: 64}, id("9701"): {Tag: 6, Reference: typ}}}, fn: {ID: fn, Schema: id("9011"), Version: 1, Fields: map[wire.ID]wire.Value{id("9111"): {Tag: 7}, id("9112"): {Tag: 6, Reference: typ}, id("9113"): {Tag: 6, Reference: lit}}}}}
+	ev := evidence{graph: g, functions: map[string]function{selectKey("configuration", "DefaultLimit"): {id: fn, result: typ, body: lit}}}
+	got, err := providerValue(ev, FunctionSelection{"configuration", "DefaultLimit"}, typ)
+	if err != nil || got != lit {
+		t.Fatalf("provider: %s %v", got, err)
+	}
+	bad := ev.functions[selectKey("configuration", "DefaultLimit")]
+	bad.parameters = []wire.ID{id("703")}
+	ev.functions[selectKey("configuration", "DefaultLimit")] = bad
+	if _, err = providerValue(ev, FunctionSelection{"configuration", "DefaultLimit"}, typ); err == nil {
+		t.Fatal("accepted parameterized provider")
 	}
 }
 
