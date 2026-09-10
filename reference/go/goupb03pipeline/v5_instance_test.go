@@ -3,6 +3,7 @@ package goupb03pipeline
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -13,6 +14,7 @@ import (
 	"seme.local/reference/projectdependencyinstance"
 	"seme.local/reference/projectgraphinstance"
 	"seme.local/reference/projectv5instance"
+	"seme.local/reference/projectv5report"
 	"seme.local/reference/wire"
 )
 
@@ -66,6 +68,31 @@ func TestPackageV3AndProjectV5InstancesRepeatValidateAndRejectTamper(t *testing.
 	if err = projectv5instance.Validate(pi); err != nil {
 		t.Fatal(err)
 	}
+	reportA, err := projectv5report.Inspect(pi)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportB, err := projectv5report.Inspect(pi)
+	if err != nil || !bytes.Equal(mustJSON(t, reportA), mustJSON(t, reportB)) {
+		t.Fatal("unstable v5 report")
+	}
+	if reportA.ContractRevision != "0000000000000000000000000000e005" || reportA.Snapshot.ID == "" || reportA.Project.Project.Root == "" {
+		t.Fatal("incomplete v5 report")
+	}
+	if reportA.Pins.Execution.Revision != "00000000000000000000000000009023" || reportA.Pins.Package.Revision != "0000000000000000000000000000b003" || reportA.Pins.Dependency.Revision != "0000000000000000000000000000f001" || reportA.Pins.Project.Revision != "0000000000000000000000000000e005" {
+		t.Fatalf("wrong authenticated pins: %#v", reportA.Pins)
+	}
+	if len(reportA.PackageGraph.Members) == 0 {
+		t.Fatal("v2 members omitted")
+	}
+	for _, member := range reportA.PackageGraph.Members {
+		if member.Category != "function" && member.Category != "nonfunction" {
+			t.Fatalf("unclassified v2 member: %#v", member)
+		}
+	}
+	if bytes.Contains(mustJSON(t, reportA), []byte("package application")) {
+		t.Fatal("source bytes leaked")
+	}
 	badPI := pi
 	badPI.Contracts = contractcatalog.ProjectContractSetV5{}
 	if out, e := projectv5instance.Emit(badPI); e == nil || out != nil {
@@ -118,6 +145,10 @@ func TestPackageV3AndProjectV5InstancesRepeatValidateAndRejectTamper(t *testing.
 	if err = packagev3instance.Validate(v5, richBase, richOut); err != nil {
 		t.Fatal(err)
 	}
+	richReport, err := projectv5report.InspectPackage(v5, richBase, richOut)
+	if err != nil || len(richReport.Declarations) != 1 || richReport.Declarations[0].Kind != "data-type" || richReport.Declarations[0].Owner == "" || richReport.Declarations[0].Origin.Path != "model/thing.go" {
+		t.Fatalf("rich report=%#v err=%v", richReport, err)
+	}
 	wrongKind := rich
 	wrongKind.Declarations[0].Kind = packagev3instance.BehavioralInterface
 	if out, e := packagev3instance.Emit(wrongKind); e == nil || out != nil {
@@ -157,4 +188,12 @@ func testID(s string) wire.ID {
 		panic(e)
 	}
 	return x
+}
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, e := json.Marshal(v)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return b
 }
