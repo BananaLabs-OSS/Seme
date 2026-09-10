@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"os"
-	"sort"
 	"testing"
 
 	"seme.local/reference/contractcatalog"
@@ -28,7 +27,13 @@ func TestEmitDeterministicPrivatePublicAndLocalImport(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("base mutated")
 	}
+	if packagePin(base) != id("b001") {
+		t.Fatal("input pin changed")
+	}
 	decoded, _ := wire.Decode(a)
+	if packagePin(decoded) != id("b002") {
+		t.Fatal("output pin was not upgraded")
+	}
 	origins := 0
 	for _, entity := range decoded.Entities {
 		if entity.Schema == id("b026") {
@@ -63,6 +68,16 @@ func TestEmitRejectsAtomically(t *testing.T) {
 			e.Entities[x] = wire.Entity{ID: x, Schema: id("9010"), Version: 1, Fields: map[wire.ID]wire.Value{}}
 		},
 		"malformed-base": func(e *wire.Envelope, _ *packagedetail.Graph) { e.Entities[id("aaaa")] = wire.Entity{ID: id("bbbb")} },
+		"missing-pin":    func(e *wire.Envelope, _ *packagedetail.Graph) { removePackagePins(e) },
+		"duplicate-pin": func(e *wire.Envelope, _ *packagedetail.Graph) {
+			x := id("afff")
+			e.Entities[x] = wire.Entity{ID: x, Schema: id("13"), Version: 1, Fields: map[wire.ID]wire.Value{id("130"): {Tag: 6, Reference: id("b000")}, id("131"): {Tag: 5, Bytes: idBytes(id("b002"))}}}
+			m := e.Entities[e.Module]
+			v := m.Fields[id("121")]
+			v.List = append(v.List, wire.Value{Tag: 6, Reference: x})
+			m.Fields[id("121")] = v
+			e.Entities[m.ID] = m
+		},
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {
@@ -125,14 +140,6 @@ func fixture(t *testing.T) (wire.Envelope, packagedetail.Graph) {
 	s1, s2 := id("a001"), id("a002")
 	base.Entities[s1] = wire.Entity{ID: s1, Schema: id("e015"), Version: 1, Fields: map[wire.ID]wire.Value{}}
 	base.Entities[s2] = wire.Entity{ID: s2, Schema: id("e015"), Version: 1, Fields: map[wire.ID]wire.Value{}}
-	pin := id("a003")
-	base.Entities[pin] = wire.Entity{ID: pin, Schema: id("13"), Version: 1, Fields: map[wire.ID]wire.Value{id("130"): r(id("b000")), id("131"): {Tag: 5, Bytes: idBytes(id("b002"))}}}
-	module := base.Entities[base.Module]
-	imports := module.Fields[id("121")]
-	imports.List = append(imports.List, r(pin))
-	sort.Slice(imports.List, func(i, j int) bool { return imports.List[i].Reference.String() < imports.List[j].Reference.String() })
-	module.Fields[id("121")] = imports
-	base.Entities[module.ID] = module
 	d1, d2 := sha256.Sum256([]byte("model")), sha256.Sum256([]byte("root"))
 	o1 := packagedetail.Origin{SourceIdentity: s1.String(), Path: "model/value.go", ContentDigest: d1, ByteEnd: 10, StartLine: 1, StartColumn: 1, EndLine: 1, EndColumn: 11}
 	o2 := packagedetail.Origin{SourceIdentity: s2.String(), Path: "root/root.go", ContentDigest: d2, ByteEnd: 20, StartLine: 1, StartColumn: 1, EndLine: 1, EndColumn: 21}
@@ -159,3 +166,36 @@ func copyGraph(g packagedetail.Graph) packagedetail.Graph {
 	return out
 }
 func idBytes(x wire.ID) []byte { return append([]byte(nil), x[:]...) }
+func packagePin(e wire.Envelope) wire.ID {
+	var out wire.ID
+	count := 0
+	for _, q := range e.Entities {
+		if q.Schema == id("13") && q.Fields[id("130")].Tag == 6 && q.Fields[id("130")].Reference == id("b000") {
+			b := q.Fields[id("131")].Bytes
+			if len(b) == 16 {
+				copy(out[:], b)
+			}
+			count++
+		}
+	}
+	if count != 1 {
+		return wire.ID{}
+	}
+	return out
+}
+func removePackagePins(e *wire.Envelope) {
+	m := e.Entities[e.Module]
+	v := m.Fields[id("121")]
+	kept := v.List[:0]
+	for _, x := range v.List {
+		q := e.Entities[x.Reference]
+		if q.Schema == id("13") && q.Fields[id("130")].Reference == id("b000") {
+			delete(e.Entities, x.Reference)
+		} else {
+			kept = append(kept, x)
+		}
+	}
+	v.List = kept
+	m.Fields[id("121")] = v
+	e.Entities[m.ID] = m
+}
