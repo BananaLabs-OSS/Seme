@@ -18,6 +18,9 @@ type ResolvedPackage struct {
 	Files        []string
 	Declarations []ResolvedDeclaration
 	Imports      []ResolvedImport
+	// Supplemental is populated only after the typed lift proves that each
+	// declaration was emitted into the canonical construction graph.
+	Supplemental []SemanticDeclarationMetadata
 }
 type ResolvedDeclaration struct {
 	ID, Name string
@@ -126,6 +129,7 @@ func cloneResolutionManifest(in ResolutionManifest) ResolutionManifest {
 		out.Packages[i].Files = append([]string(nil), p.Files...)
 		out.Packages[i].Declarations = append([]ResolvedDeclaration(nil), p.Declarations...)
 		out.Packages[i].Imports = append([]ResolvedImport(nil), p.Imports...)
+		out.Packages[i].Supplemental = cloneSemanticDeclarations(p.Supplemental)
 	}
 	return out
 }
