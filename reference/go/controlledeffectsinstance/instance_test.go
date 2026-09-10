@@ -62,6 +62,28 @@ func TestModelRejectsOwnershipSignaturePurityAndReplayAdversaries(t *testing.T) 
 			e.Entities[id("effop")] = entity(id("effop"), "90f1", nil)
 		}},
 		{"same-dispatch-replay", func(_ *wire.Envelope, m *Model) { m.ReplayFunction = m.DispatchFunction }},
+		{"pure-dispatch", func(e *wire.Envelope, m *Model) {
+			q := e.Entities[m.DispatchFunction]
+			q.Fields[id("9113")] = ref(id("purebody"))
+			e.Entities[m.DispatchFunction] = q
+			e.Entities[id("purebody")] = entity(id("purebody"), "9013", nil)
+		}},
+		{"wrong-effect", func(e *wire.Envelope, _ *Model) {
+			q := e.Entities[id("dispatch-effect")]
+			target := e.Entities[q.Fields[id("9f10")].Reference]
+			target.Fields[id("150")] = blob("other")
+			e.Entities[target.ID] = target
+		}},
+		{"wrong-capability", func(e *wire.Envelope, _ *Model) {
+			q := e.Entities[id("dispatch-capability")]
+			q.Fields[id("160")] = blob("other")
+			e.Entities[q.ID] = q
+		}},
+		{"wrong-payload-count", func(e *wire.Envelope, _ *Model) {
+			q := e.Entities[id("dispatch-effect")]
+			q.Fields[id("9f11")] = wire.Value{Tag: 7}
+			e.Entities[q.ID] = q
+		}},
 		{"reordered-command", func(_ *wire.Envelope, m *Model) { m.Replay.Steps[1].CommandSequence = 1 }},
 		{"reordered-clock", func(_ *wire.Envelope, m *Model) { m.Replay.Steps[1].ClockSequence = 1 }},
 		{"reversed-time", func(_ *wire.Envelope, m *Model) { m.Replay.Steps[1].UnixMilliseconds = 1 }},
@@ -103,6 +125,14 @@ func validModelFixture() (wire.Envelope, Model) {
 	addFunction(next, []wire.ID{randomState}, draw)
 	addFunction(dispatch, []wire.ID{state, command}, result)
 	addFunction(replay, []wire.ID{state, command}, result)
+	capability, effect, invocation, argument := id("dispatch-capability"), id("dispatch-effect-definition"), id("dispatch-effect"), id("dispatch-argument")
+	e.Entities[capability] = entity(capability, "16", map[string]wire.Value{"160": blob("log-capability")})
+	e.Entities[effect] = entity(effect, "15", map[string]wire.Value{"150": blob("log-effect"), "151": ref(capability)})
+	e.Entities[argument] = entity(argument, "90b0", map[string]wire.Value{"9b00": {Tag: 2}})
+	e.Entities[invocation] = entity(invocation, "90f1", map[string]wire.Value{"9f10": ref(effect), "9f11": {Tag: 7, List: []wire.Value{ref(argument)}}})
+	q := e.Entities[dispatch]
+	q.Fields[id("9113")] = ref(invocation)
+	e.Entities[dispatch] = q
 	byOwner := map[wire.ID][]wire.ID{clockOwner: {clockSample}, randomOwner: {randomState, draw, next}, effectOwner: {command, state, result, dispatch, replay}}
 	for owner, declarations := range byOwner {
 		detail := stable(owner[:], "detail")
