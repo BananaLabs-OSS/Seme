@@ -430,7 +430,11 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 // tree is partitioned; the canonical graph and embedded envelope are unchanged.
 func uniquifyDeclarationNames(graph map[string]entity) {
 	fields := map[string]string{sRecordType: "00000000000000000000000000009300", sInterfaceType: "000000000000000000000000000a0100"}
-	seen := map[string]bool{}
+	seen := map[string]bool{
+		"Option":     graphHasSchema(graph, sOptionType),
+		"Result":     graphHasSchema(graph, sResultType),
+		"Transition": graphHasSchema(graph, sTransitionType),
+	}
 	ids := make([]string, 0, len(graph))
 	for id := range graph {
 		ids = append(ids, id)
