@@ -12,3 +12,8 @@ called by these packages. Their native behavior remains local. Typed behavior
 through an ecosystem-package boundary belongs to UPB-04 after that semantic
 contract exists; treating a native-only call as already liftable would
 overstate current support.
+
+The local behavior intentionally uses multiplication rather than comparison:
+the bounded project provider does not yet lift Go's `<` operator, and UPB-03
+does not claim that language feature. The native vectors still traverse all
+three internal packages while the project records the external dependency.
