@@ -14,7 +14,8 @@ type Operation struct{ Identity, Capability string }
 type Profile struct {
 	Clock, Log                                              Operation
 	MaximumSteps, FirstClockSequence, ClockTerminalSentinel uint64
-	MaximumUnixMilliseconds, MaximumDraws, MaximumEffects   uint64
+	MaximumUnixMilliseconds                                 int64
+	MaximumDraws, MaximumEffects                            uint64
 	authentication                                          [32]byte
 }
 
@@ -118,7 +119,7 @@ func Execute(p Profile, grants Grants, clock ClockPort, effects EffectPort, h Ha
 	}
 	co := cloneClock(clock.Sample(p.Clock))
 	trace := []Observation{{Sequence: 1, Operation: p.Clock.Identity, Clock: &co}}
-	if co.Error != nil || co.Sample.Sequence < p.FirstClockSequence || co.Sample.Sequence >= p.ClockTerminalSentinel || co.Sample.UnixMilliseconds < 0 || uint64(co.Sample.UnixMilliseconds) > p.MaximumUnixMilliseconds {
+	if co.Error != nil || co.Sample.Sequence < p.FirstClockSequence || co.Sample.Sequence >= p.ClockTerminalSentinel || co.Sample.UnixMilliseconds < 0 || co.Sample.UnixMilliseconds > p.MaximumUnixMilliseconds {
 		return Result{Failure: "seme.effects.clock.invalid", Trace: trace}
 	}
 	s := h.Handle(bytes.Clone(command), co.Sample, random)
@@ -184,7 +185,7 @@ func Replay(p Profile, h ReplayHandler, initial []byte, steps []ReplayStep) Resu
 	state := bytes.Clone(initial)
 	var random RandomState
 	for i, x := range steps {
-		if x.Clock.Sequence < p.FirstClockSequence || x.Clock.Sequence >= p.ClockTerminalSentinel || x.Clock.UnixMilliseconds < 0 || uint64(x.Clock.UnixMilliseconds) > p.MaximumUnixMilliseconds || (i > 0 && x.Clock.Sequence <= steps[i-1].Clock.Sequence) {
+		if x.Clock.Sequence < p.FirstClockSequence || x.Clock.Sequence >= p.ClockTerminalSentinel || x.Clock.UnixMilliseconds < 0 || x.Clock.UnixMilliseconds > p.MaximumUnixMilliseconds || (i > 0 && x.Clock.Sequence <= steps[i-1].Clock.Sequence) {
 			return Result{Failure: "seme.effects.replay.invalid"}
 		}
 		s := h.Fold(bytes.Clone(state), bytes.Clone(x.Command), x.Clock, x.RandomBefore)
@@ -198,7 +199,7 @@ func Replay(p Profile, h ReplayHandler, initial []byte, steps []ReplayStep) Resu
 }
 
 func validProfile(p Profile) bool {
-	return p.Clock.Identity != "" && p.Clock.Capability != "" && p.Log.Identity == "observability.log" && p.Log.Capability != "" && p.MaximumSteps > 0 && p.FirstClockSequence < p.ClockTerminalSentinel && p.MaximumEffects > 0 && p.authentication == digestProfile(p)
+	return p.Clock.Identity != "" && p.Clock.Capability != "" && p.Log.Identity == "observability.log" && p.Log.Capability != "" && p.MaximumSteps > 0 && p.FirstClockSequence < p.ClockTerminalSentinel && p.MaximumUnixMilliseconds >= 0 && p.MaximumEffects > 0 && p.authentication == digestProfile(p)
 }
 func digestProfile(p Profile) [32]byte {
 	return sha256.Sum256([]byte(fmt.Sprintf("seme.effects.profile.v1\x00%s\x00%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d", p.Clock.Identity, p.Clock.Capability, p.Log.Identity, p.Log.Capability, p.MaximumSteps, p.FirstClockSequence, p.ClockTerminalSentinel, p.MaximumUnixMilliseconds, p.MaximumDraws, p.MaximumEffects)))
