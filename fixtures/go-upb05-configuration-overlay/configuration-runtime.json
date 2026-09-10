@@ -1,0 +1,29 @@
+{
+  "configuration_inputs": {},
+  "runtime_inputs": {
+    "application-state": {
+      "kind": "record",
+      "fields": {
+        "Name": { "kind": "text", "text": "configured" },
+        "Values": {
+          "kind": "slice",
+          "items": [
+            { "kind": "i64", "i64": "2" },
+            { "kind": "i64", "i64": "3" }
+          ]
+        },
+        "Counters": {
+          "kind": "map",
+          "value_type": "i64",
+          "entries": [
+            {
+              "key": { "kind": "i64", "i64": "7" },
+              "value": { "kind": "i64", "i64": "10" }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "capability_grants": []
+}
