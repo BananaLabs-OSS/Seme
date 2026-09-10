@@ -5,6 +5,7 @@ import (
 	"go/token"
 	"go/types"
 	"sort"
+	"strconv"
 )
 
 // attachSemanticOwnership derives Package-v3 supplemental ownership directly
@@ -17,6 +18,12 @@ func attachSemanticOwnership(packages []PackageMetadata, units []*checkedSession
 		emitted[entity.id] = true
 	}
 	byPackage := make(map[string]*PackageMetadata, len(packages))
+	unitByPackage := make(map[string]*checkedSessionPackage, len(units))
+	localPackages := make(map[string]bool, len(units))
+	for _, unit := range units {
+		unitByPackage[unit.path] = unit
+		localPackages[unit.path] = true
+	}
 	for i := range packages {
 		byPackage[packages[i].Name] = &packages[i]
 	}
@@ -64,7 +71,8 @@ func attachSemanticOwnership(packages []PackageMetadata, units []*checkedSession
 						if !emitted[id] { // Unsupported generic definitions are not invented.
 							continue
 						}
-						if d := add(SemanticDeclarationMetadata{Declaration: id, Package: unit.path, Name: object.Name(), Kind: kind, Exported: object.Exported(), Origin: nodeLocation(unit.fset, typeSpec.Name), ReferencedImports: referencedPackages(unit, typeSpec, unit.path)}); d != nil {
+						paths, refs := referencedImports(unit, typeSpec, unit.path, localPackages)
+						if d := add(SemanticDeclarationMetadata{Declaration: id, Package: unit.path, Name: object.Name(), Kind: kind, Exported: object.Exported(), Origin: nodeLocation(unit.fset, typeSpec.Name), ReferencedImports: paths, ImportReferences: refs}); d != nil {
 							return d
 						}
 					}
@@ -75,7 +83,8 @@ func attachSemanticOwnership(packages []PackageMetadata, units []*checkedSession
 
 	for _, function := range functions {
 		if function.method && emitted[function.id] {
-			if d := add(SemanticDeclarationMetadata{Declaration: function.id, Package: function.packagePath, Name: function.name, Kind: SemanticMethod, Exported: ast.IsExported(function.name), Origin: nodeLocation(function.fset, function.fn.Name), ReferencedImports: referencedPackagesForFunction(function)}); d != nil {
+			paths, refs := referencedImports(unitByPackage[function.packagePath], function.fn, function.packagePath, localPackages)
+			if d := add(SemanticDeclarationMetadata{Declaration: function.id, Package: function.packagePath, Name: function.name, Kind: SemanticMethod, Exported: ast.IsExported(function.name), Origin: nodeLocation(function.fset, function.fn.Name), ReferencedImports: paths, ImportReferences: refs}); d != nil {
 				return d
 			}
 		}
@@ -159,25 +168,58 @@ func nodeLocation(fset *token.FileSet, node ast.Node) ProjectLocation {
 	return locationSpan(fset.Position(node.Pos()), fset.Position(node.End()))
 }
 
-func referencedPackages(unit *checkedSessionPackage, node ast.Node, own string) []string {
+func referencedImports(unit *checkedSessionPackage, node ast.Node, own string, local map[string]bool) ([]string, []SemanticImportReference) {
+	if unit == nil {
+		return nil, nil
+	}
 	set := map[string]bool{}
+	usedFiles := map[string]bool{}
 	for expression, object := range unit.info.Uses {
 		if expression.Pos() < node.Pos() || expression.Pos() >= node.End() || object == nil || object.Pkg() == nil || object.Pkg().Path() == own {
 			continue
 		}
 		set[object.Pkg().Path()] = true
+		usedFiles[unit.fset.Position(expression.Pos()).Filename] = true
 	}
 	result := make([]string, 0, len(set))
 	for path := range set {
 		result = append(result, path)
 	}
 	sort.Strings(result)
-	return result
-}
-
-func referencedPackagesForFunction(function sessionFunction) []string {
-	unit := &checkedSessionPackage{info: function.info}
-	return referencedPackages(unit, function.fn, function.packagePath)
+	refs := []SemanticImportReference{}
+	packageNames := map[string]string{}
+	for _, dependency := range unit.pkg.Imports() {
+		packageNames[dependency.Path()] = dependency.Name()
+	}
+	for _, file := range unit.files {
+		if !usedFiles[unit.fset.Position(file.Pos()).Filename] {
+			continue
+		}
+		for _, spec := range file.Imports {
+			requested, err := strconv.Unquote(spec.Path.Value)
+			if err == nil && set[requested] {
+				alias := packageNames[requested]
+				if spec.Name != nil {
+					alias = spec.Name.Name
+				}
+				refs = append(refs, SemanticImportReference{Alias: alias, Requested: requested, Resolved: requested, Local: local[requested], Location: nodeLocation(unit.fset, spec)})
+			}
+		}
+	}
+	sort.Slice(refs, func(i, j int) bool {
+		a, b := refs[i], refs[j]
+		if a.Requested != b.Requested {
+			return a.Requested < b.Requested
+		}
+		if a.Location.File != b.Location.File {
+			return a.Location.File < b.Location.File
+		}
+		if a.Location.Line != b.Location.Line {
+			return a.Location.Line < b.Location.Line
+		}
+		return a.Location.Column < b.Location.Column
+	})
+	return result, refs
 }
 
 func typeObjectLocation(units []*checkedSessionPackage, object *types.TypeName) ProjectLocation {

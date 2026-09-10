@@ -96,6 +96,15 @@ type SemanticDeclarationMetadata struct {
 	Exported                                      bool
 	Origin                                        ProjectLocation
 	ReferencedImports                             []string
+	// ImportReferences retain the exact checked import-spec locations needed
+	// to reconcile paths to neutral Package ImportBinding identities.
+	ImportReferences []SemanticImportReference
+}
+
+type SemanticImportReference struct {
+	Alias, Requested, Resolved string
+	Local                      bool
+	Location                   ProjectLocation
 }
 
 // IncrementalSession retains only the most recent valid canonical graph while
@@ -184,6 +193,7 @@ func cloneSemanticDeclarations(in []SemanticDeclarationMetadata) []SemanticDecla
 	for i := range in {
 		out[i] = in[i]
 		out[i].ReferencedImports = append([]string(nil), in[i].ReferencedImports...)
+		out[i].ImportReferences = append([]SemanticImportReference(nil), in[i].ImportReferences...)
 	}
 	return out
 }
