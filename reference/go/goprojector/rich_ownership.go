@@ -265,9 +265,13 @@ func planRichPackages(g1 []byte, in RichPackageOwnership) (map[string]richPackag
 			for _, r := range entityReferences(e, g) {
 				if owner, yes := owners[r]; yes && owner.Package != pkg {
 					imports[owner.Package] = true
-					if owner.Kind == FunctionDeclaration || owner.Kind == MethodDeclaration {
-						continue
-					}
+					// Every owned declaration is a named Go boundary. Its owning
+					// package, rather than each package used inside its definition,
+					// is the direct dependency of this package. Traversing through an
+					// external record/interface previously invented transitive imports
+					// (for example persistence -> application through state.V2) that
+					// were absent from the authenticated package graph.
+					continue
 				}
 				queue = append(queue, r)
 			}
