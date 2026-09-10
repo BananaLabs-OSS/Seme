@@ -247,13 +247,19 @@ func authenticate(ctx context.Context, in coreInput, validatePackage func() erro
 	}
 	ev := evidence{graph: g, packages: p, functions: map[string]function{}, types: map[string]ownedType{}}
 	detailOwner := map[wire.ID]wire.ID{}
+	detailPackage := map[wire.ID]wire.ID{}
 	for _, q := range p.Entities {
 		if q.Schema != id("b021") {
 			continue
 		}
+		packageID, ok := reference(q, id("b210"))
+		if !ok || p.Entities[packageID].Schema != id("b010") {
+			return evidence{}, fmt.Errorf("go_configuration.package_detail_owner")
+		}
+		detailPackage[q.ID] = packageID
 		for _, m := range q.Fields[id("b211")].List {
 			member := p.Entities[m.Reference]
-			detailOwner[member.Fields[id("b220")].Reference] = q.ID
+			detailOwner[member.Fields[id("b220")].Reference] = packageID
 		}
 	}
 	for _, pm := range packages {
@@ -316,7 +322,7 @@ func authenticate(ctx context.Context, in coreInput, validatePackage func() erro
 					return evidence{}, fmt.Errorf("go_configuration.function_duplicate")
 				}
 				body, _ := reference(fq, id("9113"))
-				ev.functions[key] = function{fid, q.ID, params, result, body}
+				ev.functions[key] = function{fid, detailPackage[q.ID], params, result, body}
 			}
 		}
 	}
@@ -346,7 +352,7 @@ func authenticate(ctx context.Context, in coreInput, validatePackage func() erro
 		if _, exists := ev.types[key]; exists {
 			return evidence{}, fmt.Errorf("go_configuration.type_duplicate")
 		}
-		ev.types[key] = ownedType{decl, owner, origin}
+		ev.types[key] = ownedType{decl, detailPackage[owner], origin}
 	}
 	return ev, nil
 }
@@ -789,7 +795,7 @@ func packageOwner(e wire.Envelope, name string) wire.ID {
 		}
 		p := e.Entities[q.Fields[id("b210")].Reference]
 		if string(p.Fields[id("b100")].Bytes) == name {
-			return q.ID
+			return p.ID
 		}
 	}
 	return wire.ID{}

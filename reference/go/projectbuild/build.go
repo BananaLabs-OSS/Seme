@@ -20,6 +20,7 @@ type Compile func(context.Context, []byte) ([]byte, error)
 type Result struct {
 	Artifact     []byte
 	CanonicalG1  []byte
+	Execution    []byte
 	SourceDigest string
 	Packages     []goprovider.PackageMetadata
 	Resolution   goprovider.ResolutionManifest
@@ -97,7 +98,7 @@ func build(ctx context.Context, snapshot goprovider.DocumentSnapshot, executionC
 		return Result{}, fmt.Errorf("project_build.emit:%w", err)
 	}
 	return Result{
-		Artifact: append([]byte(nil), artifact...), CanonicalG1: []byte(lifted.CanonicalG1), SourceDigest: lifted.ContentDigest,
+		Artifact: append([]byte(nil), artifact...), CanonicalG1: []byte(lifted.CanonicalG1), Execution: append([]byte(nil), compiled...), SourceDigest: lifted.ContentDigest,
 		Packages: clonePackages(lifted.Packages), Resolution: cloneResolution(lifted.Resolution),
 	}, nil
 }

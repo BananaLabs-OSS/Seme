@@ -40,6 +40,25 @@ func TestValidationRejectsOriginVisibilityAndOrdering(t *testing.T) {
 }
 
 func TestOwnershipAndNamespaceAdversaries(t *testing.T) {
+	t.Run("aliases are source scoped", func(t *testing.T) {
+		g := fixture()
+		d := sha256.Sum256([]byte("second"))
+		g.Packages[0].Sources = append(g.Packages[0].Sources, Source{Identity: "src2", Path: "b.go", ContentDigest: d, ByteSize: 6})
+		a := g.Packages[0].Members[0].Origin
+		b := Origin{"src2", "b.go", d, 0, 3, 1, 1, 1, 4}
+		g.Packages[0].Imports = []Import{{Alias: "x", Requested: "a", Resolved: "a", Class: External, Origin: a}, {Alias: "x", Requested: "a", Resolved: "a", Class: External, Origin: b}}
+		if err := Validate(g); err != nil {
+			t.Fatalf("same alias in two source units rejected: %v", err)
+		}
+		g.Packages[0].Imports[1].Origin = a
+		g.Packages[0].Imports[1].Origin.ByteStart = 1
+		g.Packages[0].Imports[1].Origin.ByteEnd = 2
+		g.Packages[0].Imports[1].Origin.StartColumn = 2
+		g.Packages[0].Imports[1].Origin.EndColumn = 3
+		if err := Validate(g); err == nil {
+			t.Fatal("duplicate alias within one source unit accepted")
+		}
+	})
 	t.Run("source without origin", func(t *testing.T) {
 		g := fixture()
 		g.Packages[0].Sources = append(g.Packages[0].Sources, Source{Identity: "unused", Path: "unused.go", ContentDigest: sha256.Sum256([]byte("unused")), ByteSize: 6})

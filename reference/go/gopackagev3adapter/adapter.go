@@ -16,8 +16,22 @@ import (
 )
 
 func Convert(resolution goprovider.ResolutionManifest, metadata []goprovider.PackageMetadata, packageV2 []byte) ([]packagev3instance.Declaration, error) {
-	if err := packagedetailinstance.Validate(packageV2); err != nil {
-		return nil, fmt.Errorf("go_package_v3.base:%w", err)
+	return convert(resolution, metadata, packageV2, false)
+}
+
+func ConvertV4(resolution goprovider.ResolutionManifest, metadata []goprovider.PackageMetadata, packageV4Base []byte) ([]packagev3instance.Declaration, error) {
+	return convert(resolution, metadata, packageV4Base, true)
+}
+
+func convert(resolution goprovider.ResolutionManifest, metadata []goprovider.PackageMetadata, packageV2 []byte, v4 bool) ([]packagev3instance.Declaration, error) {
+	var validation error
+	if v4 {
+		validation = packagedetailinstance.ValidateV4(packageV2)
+	} else {
+		validation = packagedetailinstance.Validate(packageV2)
+	}
+	if validation != nil {
+		return nil, fmt.Errorf("go_package_v3.base:%w", validation)
 	}
 	e, err := wire.Decode(packageV2)
 	if err != nil {

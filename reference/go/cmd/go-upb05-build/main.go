@@ -16,10 +16,7 @@ import (
 
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/goconfigurationmanifest"
-	"seme.local/reference/goprojectpipeline"
 	"seme.local/reference/goprovider"
-	"seme.local/reference/goupb03pipeline"
-	"seme.local/reference/goupb04pipeline"
 	"seme.local/reference/goupb05pipeline"
 	"seme.local/reference/projectsource"
 )
@@ -27,9 +24,9 @@ import (
 const maxFile, maxTotal, maxArtifact = int64(2 << 20), int64(32 << 20), int64(64 << 20)
 
 type options struct {
-	project, proxy, module, pkg, entry, out, dependency, version, localFrom, localTo, manifest                                                                                                                     string
-	executionG1, execution, foundation, packageV1, packageV2, packageV3, projectV1, projectV2, projectV3, projectV4, projectV5, projectV6, projectV7, dependencyV1, configurationV1, configurationV2, k0, compiler string
-	revision                                                                                                                                                                                                       uint64
+	project, proxy, module, pkg, entry, out, dependency, version, localFrom, localTo, manifest            string
+	executionG1, execution, foundation, packageV4, projectV8, dependencyV1, configurationV3, k0, compiler string
+	revision                                                                                              uint64
 }
 
 func main() {
@@ -42,7 +39,7 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 	f := flag.NewFlagSet("go-upb05-build", flag.ContinueOnError)
 	f.SetOutput(stderr)
 	var o options
-	flags := map[string]*string{"project": &o.project, "proxy": &o.proxy, "module": &o.module, "package": &o.pkg, "entry": &o.entry, "out": &o.out, "dependency": &o.dependency, "version": &o.version, "local-from": &o.localFrom, "local-to": &o.localTo, "selection": &o.manifest, "execution-g1": &o.executionG1, "execution-contract": &o.execution, "foundation-contract": &o.foundation, "package-v1": &o.packageV1, "package-v2": &o.packageV2, "package-v3": &o.packageV3, "project-v1": &o.projectV1, "project-v2": &o.projectV2, "project-v3": &o.projectV3, "project-v4": &o.projectV4, "project-v5": &o.projectV5, "project-v6": &o.projectV6, "project-v7": &o.projectV7, "dependency-v1": &o.dependencyV1, "configuration-v1": &o.configurationV1, "configuration-v2": &o.configurationV2, "k0": &o.k0, "g1-compiler": &o.compiler}
+	flags := map[string]*string{"project": &o.project, "proxy": &o.proxy, "module": &o.module, "package": &o.pkg, "entry": &o.entry, "out": &o.out, "dependency": &o.dependency, "version": &o.version, "local-from": &o.localFrom, "local-to": &o.localTo, "selection": &o.manifest, "execution-g1": &o.executionG1, "execution-contract": &o.execution, "foundation-contract": &o.foundation, "package-v4": &o.packageV4, "project-v8": &o.projectV8, "dependency-v1": &o.dependencyV1, "configuration-v3": &o.configurationV3, "k0": &o.k0, "g1-compiler": &o.compiler}
 	for n, p := range flags {
 		f.StringVar(p, n, "", n+" input")
 	}
@@ -88,46 +85,20 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	v1, err := contractcatalog.ResolveProjectContractSet(read(o.execution), read(o.packageV1), read(o.projectV1))
-	if err != nil {
-		return err
-	}
-	v2, err := contractcatalog.ResolveProjectContractSetV2(read(o.execution), read(o.packageV1), read(o.projectV2))
-	if err != nil {
-		return err
-	}
-	v3, err := contractcatalog.ResolveProjectContractSetV3(read(o.execution), read(o.packageV2), read(o.projectV3))
-	if err != nil {
-		return err
-	}
-	v4, err := contractcatalog.ResolveProjectContractSetV4(read(o.execution), read(o.packageV2), read(o.dependencyV1), read(o.projectV4))
-	if err != nil {
-		return err
-	}
-	v5, err := contractcatalog.ResolveProjectContractSetV5(read(o.execution), read(o.packageV3), read(o.dependencyV1), read(o.projectV5))
-	if err != nil {
-		return err
-	}
-	v6, err := contractcatalog.ResolveProjectContractSetV6(read(o.foundation), read(o.execution), read(o.packageV3), read(o.dependencyV1), read(o.configurationV1), read(o.projectV6))
-	if err != nil {
-		return err
-	}
-	v7, err := contractcatalog.ResolveProjectContractSetV7(read(o.foundation), read(o.execution), read(o.packageV3), read(o.dependencyV1), read(o.configurationV2), read(o.projectV7))
+	v8, err := contractcatalog.ResolveProjectContractSetV8(read(o.foundation), read(o.execution), read(o.packageV4), read(o.dependencyV1), read(o.configurationV3), read(o.projectV8))
 	if err != nil {
 		return err
 	}
 	ctx, cancel := context.WithTimeout(parent, 90*time.Second)
 	defer cancel()
-	base := goprojectpipeline.Input{Documents: goprovider.DocumentSnapshot{Revision: o.revision, ModulePath: o.module, PackagePath: o.pkg, Entry: o.entry, Files: files}, Sources: sources, Contracts: goprojectpipeline.Contracts{V1: v1, V2: v2, V3: v3}, ExecutionG1: read(o.executionG1), Compile: func(ctx context.Context, in []byte) ([]byte, error) { return compile(ctx, o, in) }}
-	upb4 := goupb04pipeline.Input{Base: goupb03pipeline.Input{Base: base, Contracts: v4, Dependency: goupb03pipeline.DependencyInput{ProjectRoot: root, ProxyRoot: o.proxy, Module: o.dependency, Version: o.version, LocalFrom: o.localFrom, LocalTo: o.localTo}}, Contracts: v5}
-	result, err := goupb05pipeline.Build(ctx, goupb05pipeline.Input{Base: upb4, V6: v6, V7: v7, Selection: selection})
+	result, err := goupb05pipeline.BuildV8(ctx, goupb05pipeline.V8Input{Documents: goprovider.DocumentSnapshot{Revision: o.revision, ModulePath: o.module, PackagePath: o.pkg, Entry: o.entry, Files: files}, Sources: sources, Contracts: v8, Dependency: goupb05pipeline.V8DependencyInput{ProjectRoot: root, ProxyRoot: o.proxy, Module: o.dependency, Version: o.version, LocalFrom: o.localFrom, LocalTo: o.localTo}, Selection: selection, ExecutionG1: read(o.executionG1), Compile: func(ctx context.Context, in []byte) ([]byte, error) { return compile(ctx, o, in) }})
 	if err != nil {
 		return err
 	}
-	return goupb05pipeline.Publish(o.out, result)
+	return goupb05pipeline.PublishV8(o.out, result)
 }
 func (o options) validate() error {
-	vals := []string{o.project, o.proxy, o.module, o.pkg, o.entry, o.out, o.dependency, o.version, o.localFrom, o.localTo, o.manifest, o.executionG1, o.execution, o.foundation, o.packageV1, o.packageV2, o.packageV3, o.projectV1, o.projectV2, o.projectV3, o.projectV4, o.projectV5, o.projectV6, o.projectV7, o.dependencyV1, o.configurationV1, o.configurationV2, o.k0, o.compiler}
+	vals := []string{o.project, o.proxy, o.module, o.pkg, o.entry, o.out, o.dependency, o.version, o.localFrom, o.localTo, o.manifest, o.executionG1, o.execution, o.foundation, o.packageV4, o.projectV8, o.dependencyV1, o.configurationV3, o.k0, o.compiler}
 	for _, v := range vals {
 		if v == "" {
 			return fmt.Errorf("flag_missing")
@@ -144,7 +115,7 @@ func (o options) validate() error {
 	return nil
 }
 func (o options) inputs() []string {
-	return []string{o.manifest, o.executionG1, o.execution, o.foundation, o.packageV1, o.packageV2, o.packageV3, o.projectV1, o.projectV2, o.projectV3, o.projectV4, o.projectV5, o.projectV6, o.projectV7, o.dependencyV1, o.configurationV1, o.configurationV2, o.k0, o.compiler}
+	return []string{o.manifest, o.executionG1, o.execution, o.foundation, o.packageV4, o.projectV8, o.dependencyV1, o.configurationV3, o.k0, o.compiler}
 }
 func strictDir(p string) (string, error) {
 	i, e := os.Lstat(p)
