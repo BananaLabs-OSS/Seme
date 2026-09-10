@@ -1,10 +1,16 @@
 package goprovider
 
 import (
+	"context"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+
+	"seme.local/reference/canonicaleval"
+	"seme.local/reference/wire"
 )
 
 func TestIncrementalSessionPublishesStablePackageMetadata(t *testing.T) {
@@ -84,6 +90,97 @@ func private(v int64) int64 { return v }`},
 	retained := a.Apply(bad)
 	if retained.Valid || len(retained.Packages) != 3 || reflect.DeepEqual(retained.Packages, first.Packages) {
 		t.Fatalf("invalid snapshot did not retain copy-safe metadata: %#v", retained)
+	}
+}
+
+func TestIncrementalSessionLiftsParallelOrdinaryAssignments(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package parallel
+func Apply(v int64) int64 {
+	a, b := v, v + 1
+	a, b = b, a
+	return a*100 + b
+}`
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/parallel", Entry: "Apply", Files: map[string]string{"program.go": source}})
+	if !result.Valid {
+		t.Fatalf("parallel assignment rejected: %#v", result.Diagnostics)
+	}
+	seen := map[string]bool{}
+	for _, line := range strings.Split(result.CanonicalG1, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) > 1 && fields[0] == "en" {
+			if seen[fields[1]] {
+				t.Fatalf("duplicate entity %s", fields[1])
+			}
+			seen[fields[1]] = true
+		}
+	}
+	d := t.TempDir()
+	in, out := filepath.Join(d, "in.g1"), filepath.Join(d, "out.seme")
+	if err = os.WriteFile(in, []byte(result.CanonicalG1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(context.Background(), "../../../bootstrap/seme-k0-linux-amd64", "../../../compiler/g1-compiler.k0", in, out)
+	if data, runErr := cmd.CombinedOutput(); runErr != nil {
+		t.Fatalf("compile: %v: %s", runErr, data)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := wire.Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fn wire.ID
+	for x, q := range graph.Entities {
+		if q.Schema == sessionTestID("9011") && string(q.Fields[sessionTestID("9110")].Bytes) == "Apply" {
+			fn = x
+		}
+	}
+	got, err := canonicaleval.EvaluateFunction(graph, fn, []canonicaleval.Value{{Kind: "i64", I64: "5"}})
+	if err != nil || got.I64 != "605" {
+		t.Fatalf("swap semantics: %#v %v", got, err)
+	}
+}
+
+func sessionTestID(s string) wire.ID {
+	for len(s) < 32 {
+		s = "0" + s
+	}
+	x, err := wire.ParseID(s)
+	if err != nil {
+		panic(err)
+	}
+	return x
+}
+
+func TestIncrementalSessionKeepsNativeIntTargetDependent(t *testing.T) {
+	module, _ := os.ReadFile("../../../modules/execution/v36/module.g1")
+	session, _ := NewIncrementalSession(module)
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-int", Entry: "Apply", Files: map[string]string{"program.go": `package nativeint
+func Apply(v int64) int64 { for i := 0; i < 1; i++ { v = v + 1 }; return v }`}})
+	if result.Valid || len(result.Diagnostics) == 0 || !strings.Contains(result.Diagnostics[0].Message, "for_binding") {
+		t.Fatalf("target-dependent int accepted: %#v", result.Diagnostics)
+	}
+}
+
+func TestIncrementalSessionLiftsTypedLocalAndImportedConstants(t *testing.T) {
+	module, _ := os.ReadFile("../../../modules/execution/v36/module.g1")
+	session, _ := NewIncrementalSession(module)
+	result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/constants", PackagePath: "example.test/constants/app", Entry: "Apply", Files: map[string]string{
+		"values/values.go": "package values\nconst Delta int64 = 3",
+		"app/app.go":       "package app\nimport \"example.test/constants/values\"\nconst Local int64 = 2\nfunc Apply(v int64) int64 { return v + Local + values.Delta }",
+	}})
+	if !result.Valid {
+		t.Fatalf("constants rejected: %#v", result.Diagnostics)
 	}
 }
 

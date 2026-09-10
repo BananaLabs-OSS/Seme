@@ -617,6 +617,70 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				}
 				continue
 			}
+			// Parallel ordinary assignments are one Go evaluation step: analyze every
+			// right-hand side against the pre-assignment scope, then publish or update
+			// the bindings in source order. This is general tuple-free Go syntax, not
+			// Go's special multi-result convention.
+			if len(statement.Lhs) > 1 && len(statement.Lhs) == len(statement.Rhs) && (statement.Tok == token.DEFINE || statement.Tok == token.ASSIGN) {
+				initializers := make([]*goExpression, len(statement.Rhs))
+				for i, rhs := range statement.Rhs {
+					value, err := analyzeGoExpressionWithProgram(rhs, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					initializers[i] = value
+				}
+				if statement.Tok == token.ASSIGN {
+					for i, target := range statement.Lhs {
+						name, ok := target.(*ast.Ident)
+						if !ok || name.Name == "_" {
+							return nil, fmt.Errorf("control.multi_binding_target")
+						}
+						object := info.Uses[name]
+						if object == nil {
+							return nil, fmt.Errorf("control.local_binding_type")
+						}
+						localType, ok := goLocalSemanticType(object.Type(), records)
+						if !ok {
+							return nil, fmt.Errorf("control.local_binding_type")
+						}
+						temporary := *next
+						*next++
+						block.statements = append(block.statements, &goStatement{localName: fmt.Sprintf("parallel.%d", i), localType: localType, local: temporary, initializer: initializers[i]})
+						initializers[i] = &goExpression{kind: goLocalRead, local: temporary}
+					}
+				}
+				for i, target := range statement.Lhs {
+					name, ok := target.(*ast.Ident)
+					if !ok || name.Name == "_" {
+						return nil, fmt.Errorf("control.multi_binding_target")
+					}
+					object := info.Defs[name]
+					if statement.Tok == token.ASSIGN {
+						object = info.Uses[name]
+					}
+					if object == nil {
+						return nil, fmt.Errorf("control.local_binding_type")
+					}
+					localType, ok := goLocalSemanticType(object.Type(), records)
+					if !ok {
+						return nil, fmt.Errorf("control.local_binding_type")
+					}
+					if statement.Tok == token.ASSIGN {
+						local, exists := locals[object]
+						if !exists || !mutable[object] {
+							return nil, fmt.Errorf("control.assignment_target")
+						}
+						block.statements = append(block.statements, &goStatement{local: local, mutable: true, assignment: initializers[i]})
+						continue
+					}
+					local := *next
+					*next++
+					block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializers[i], mutable: mutable[object]})
+					locals[object] = local
+				}
+				continue
+			}
 			if (statement.Tok != token.DEFINE && statement.Tok != token.ASSIGN) || len(statement.Lhs) != 1 || len(statement.Rhs) != 1 {
 				return nil, fmt.Errorf("control.local_binding_shape")
 			}
@@ -726,8 +790,50 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			block.statements = append(block.statements, branch.statements...)
 			return block, nil
 		case *ast.ForStmt:
-			if statement.Init != nil || statement.Post != nil || statement.Cond == nil {
+			if statement.Cond == nil {
 				return nil, fmt.Errorf("control.for_shape")
+			}
+			if statement.Init != nil || statement.Post != nil {
+				init, initOK := statement.Init.(*ast.AssignStmt)
+				post, postOK := statement.Post.(*ast.IncDecStmt)
+				if !initOK || init.Tok != token.DEFINE || len(init.Lhs) != 1 || len(init.Rhs) != 1 || !postOK {
+					return nil, fmt.Errorf("control.for_shape")
+				}
+				name, nameOK := init.Lhs[0].(*ast.Ident)
+				postName, postNameOK := post.X.(*ast.Ident)
+				if !nameOK || !postNameOK {
+					return nil, fmt.Errorf("control.for_binding")
+				}
+				object := info.Defs[name]
+				if info.Uses[postName] != object || object == nil || !isInt64(object.Type()) {
+					return nil, fmt.Errorf("control.for_binding")
+				}
+				initializer, err := analyzeGoExpressionWithProgram(init.Rhs[0], signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
+				local := *next
+				*next++
+				block.statements = append(block.statements, &goStatement{localName: name.Name, localType: "i64", local: local, initializer: initializer, mutable: true})
+				locals[object] = local
+				mutable[object] = true
+				condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
+				body, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, functions, records, mutable, next, false)
+				if err != nil {
+					return nil, err
+				}
+				kind := goIntegerAdd
+				if post.Tok == token.DEC {
+					kind = goIntegerSubtract
+				} else if post.Tok != token.INC {
+					return nil, fmt.Errorf("control.for_post")
+				}
+				body.statements = append(body.statements, &goStatement{local: local, mutable: true, assignment: &goExpression{kind: kind, left: &goExpression{kind: goPlaceRead, local: local}, right: &goExpression{kind: goIntegerLiteral, integer: 1}}})
+				block.statements = append(block.statements, &goStatement{condition: condition, loopBlock: body})
+				continue
 			}
 			condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
 			if err != nil {
@@ -767,6 +873,36 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 		return nil, fmt.Errorf("control.loop_body_empty")
 	}
 	return block, nil
+}
+
+func goLocalSemanticType(t types.Type, records map[*types.Named]goRecordInfo) (string, bool) {
+	if isInt64(t) {
+		return "i64", true
+	}
+	if isBool(t) {
+		return "bool", true
+	}
+	if isPureString(t) {
+		return "string", true
+	}
+	if isI64Slice(t) {
+		return stableID("execution", "type", "slice", "i64"), true
+	}
+	if isI64Map(t) {
+		return stableID("execution", "type", "map", "i64", "i64"), true
+	}
+	if _, _, ok := goResultTypes(t); ok {
+		return goSemanticTypeIdentity(t), true
+	}
+	if signature, ok := goFunctionSignature(t); ok && isUnaryI64Function(signature) {
+		return goFunctionTypeID(signature), true
+	}
+	if named, ok := types.Unalias(t).(*types.Named); ok {
+		if record, exists := findGoRecord(records, named); exists {
+			return record.id, true
+		}
+	}
+	return "", false
 }
 
 func blockContainsReturn(statements []ast.Stmt) bool {
@@ -847,10 +983,7 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 	}
 	statementIDs := make([]string, 0, len(block.statements))
 	for index, statement := range block.statements {
-		statementPath := path + ".statement"
-		if len(block.statements) != 1 {
-			statementPath += "." + strconv.Itoa(index)
-		}
+		statementPath := path + ".statement." + strconv.Itoa(index)
 		statementID := ""
 		if statement.initializer != nil {
 			bindingID := stableID("execution", owner, path, "local", strconv.Itoa(statement.local))
@@ -900,24 +1033,24 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			statementID = stableID("execution", owner, statementPath, "return")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{expressionID})})})
 		} else if statement.loopBlock != nil {
-			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+path+":loop-condition:"+strconv.Itoa(index), parameterIDs, localIDs, integerTypeID)
+			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+statementPath+":loop-condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {
 				return "", err
 			}
 			*instances = append(*instances, conditionEntities...)
-			bodyID, err := emitCanonicalBlockScoped(statement.loopBlock, owner, path+".loop."+strconv.Itoa(index), parameterIDs, integerTypeID, localIDs, instances)
+			bodyID, err := emitCanonicalBlockScoped(statement.loopBlock, owner, statementPath+".loop", parameterIDs, integerTypeID, localIDs, instances)
 			if err != nil {
 				return "", err
 			}
 			statementID = stableID("execution", owner, statementPath, "while")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090e4", []graphField{refField(0x9e40, conditionID), refField(0x9e41, bodyID)})})
 		} else if statement.whenBlock != nil {
-			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+path+":condition:"+strconv.Itoa(index), parameterIDs, localIDs, integerTypeID)
+			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+statementPath+":condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {
 				return "", err
 			}
 			*instances = append(*instances, conditionEntities...)
-			bodyID, err := emitCanonicalBlockScoped(statement.whenBlock, owner, path+".when."+strconv.Itoa(index), parameterIDs, integerTypeID, localIDs, instances)
+			bodyID, err := emitCanonicalBlockScoped(statement.whenBlock, owner, statementPath+".when", parameterIDs, integerTypeID, localIDs, instances)
 			if err != nil {
 				return "", err
 			}
@@ -944,16 +1077,16 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			statementID = stableID("execution", owner, statementPath, "effect-invoke")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090f1", []graphField{refField(0x9f10, effectID), refsField(0x9f11, argumentIDs)})})
 		} else {
-			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+path+":condition", parameterIDs, localIDs, integerTypeID)
+			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+statementPath+":condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {
 				return "", err
 			}
 			*instances = append(*instances, conditionEntities...)
-			thenID, err := emitCanonicalBlockScoped(statement.thenBlock, owner, path+".then", parameterIDs, integerTypeID, localIDs, instances)
+			thenID, err := emitCanonicalBlockScoped(statement.thenBlock, owner, statementPath+".then", parameterIDs, integerTypeID, localIDs, instances)
 			if err != nil {
 				return "", err
 			}
-			elseID, err := emitCanonicalBlockScoped(statement.elseBlock, owner, path+".else", parameterIDs, integerTypeID, localIDs, instances)
+			elseID, err := emitCanonicalBlockScoped(statement.elseBlock, owner, statementPath+".else", parameterIDs, integerTypeID, localIDs, instances)
 			if err != nil {
 				return "", err
 			}
