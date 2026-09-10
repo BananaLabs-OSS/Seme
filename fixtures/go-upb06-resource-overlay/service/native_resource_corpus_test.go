@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -167,9 +168,5 @@ func TestNativeResourceCorpus(t *testing.T) {
 }
 
 func resourceValue(resources resource.Set) any {
-	items := make([]any, len(resources.Marker))
-	for index, value := range resources.Marker {
-		items[index] = i64(int64(value))
-	}
-	return map[string]any{"kind": "record", "fields": map[string]any{"Notice": i64Text(resources.Notice), "Marker": map[string]any{"kind": "slice", "items": items}}}
+	return map[string]any{"kind": "record", "fields": map[string]any{"Notice": i64Text(resources.Notice), "Marker": map[string]any{"kind": "bytes", "bytes_hex": hex.EncodeToString(resources.Marker)}}}
 }

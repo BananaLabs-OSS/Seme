@@ -926,7 +926,10 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			kind = goIntegerLessEqual
 			left, right, negate = right, left, true
 		case token.NEQ:
-			if !isGoIntegerExpression(left, info) || !isGoIntegerExpression(right, info) || !stableIntegerComparisonOperand(left) || !stableIntegerComparisonOperand(right) {
+			if isGoStringExpression(left, info) && isGoStringExpression(right, info) {
+				kind = goStringEqual
+				negate = true
+			} else if !isGoIntegerExpression(left, info) || !isGoIntegerExpression(right, info) || !stableIntegerComparisonOperand(left) || !stableIntegerComparisonOperand(right) {
 				return nil, fmt.Errorf("expression.unsupported_integer_not_equal_operands")
 			}
 		default:
@@ -941,6 +944,9 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return nil, err
 		}
 		if expression.Op == token.NEQ {
+			if kind == goStringEqual {
+				return &goExpression{kind: goBooleanNot, left: &goExpression{kind: goStringEqual, left: analyzedLeft, right: analyzedRight}}, nil
+			}
 			equal := &goExpression{kind: goBooleanAnd,
 				left:  &goExpression{kind: goIntegerLessEqual, left: analyzedLeft, right: analyzedRight},
 				right: &goExpression{kind: goIntegerLessEqual, left: analyzedRight, right: analyzedLeft},
