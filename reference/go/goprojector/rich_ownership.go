@@ -291,7 +291,7 @@ func planRichPackages(g1 []byte, in RichPackageOwnership) (map[string]richPackag
 			}
 		}
 		for dep := range imports {
-			if !contains(packages[pkg].Dependencies, dep) {
+			if !richDependencyReachable(packages, pkg, dep) {
 				return nil, fmt.Errorf("go_projection.rich_type_dependency:%s:%s", pkg, dep)
 			}
 			p.imports = append(p.imports, dep)
@@ -301,6 +301,27 @@ func planRichPackages(g1 []byte, in RichPackageOwnership) (map[string]richPackag
 		plans[pkg] = p
 	}
 	return plans, nil
+}
+
+// richDependencyReachable authenticates generated imports against the closed
+// package graph. Projection may need to spell a nested zero value explicitly,
+// turning an existing transitive type dependency into a direct Go import.
+func richDependencyReachable(packages map[string]RichPackage, from, target string) bool {
+	queue := append([]string(nil), packages[from].Dependencies...)
+	seen := map[string]bool{from: true}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current == target {
+			return true
+		}
+		if seen[current] {
+			continue
+		}
+		seen[current] = true
+		queue = append(queue, packages[current].Dependencies...)
+	}
+	return false
 }
 
 func richImportAliases(packages []RichPackage) map[string]string {

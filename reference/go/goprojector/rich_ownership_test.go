@@ -215,6 +215,20 @@ func TestTypeNamesArePackageRelativeAcrossRichFamilies(t *testing.T) {
 	}
 }
 
+func TestGeneratedImportMayUseAuthenticatedDependencyClosure(t *testing.T) {
+	packages := map[string]RichPackage{
+		"application": {Identity: "application"},
+		"persistence": {Identity: "persistence", Dependencies: []string{"state"}},
+		"state":       {Identity: "state", Dependencies: []string{"application"}},
+	}
+	if !richDependencyReachable(packages, "persistence", "application") {
+		t.Fatal("authenticated transitive dependency rejected")
+	}
+	if richDependencyReachable(packages, "application", "persistence") || richDependencyReachable(packages, "persistence", "forged") {
+		t.Fatal("unreachable dependency accepted")
+	}
+}
+
 func TestExternalNamedRecordStopsTransitiveImportTraversal(t *testing.T) {
 	// persistence owns Persist, which names state.State. State in turn names
 	// application.App. Go requires persistence to import state, not every
