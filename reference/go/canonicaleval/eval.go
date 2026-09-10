@@ -453,6 +453,15 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 		t, err := field(e, 0xa0130)
 		return t.Reference, err == nil && t.Tag == 6
 	}
+	if e.Schema == id(0xa061) {
+		binding, err := field(e, 0xa0610)
+		if err != nil || binding.Tag != 6 {
+			return wire.ID{}, false
+		}
+		declaration, ok := g.Entities[binding.Reference]
+		typeValue, typeErr := field(declaration, 0xa0601)
+		return typeValue.Reference, ok && declaration.Schema == id(0xa060) && typeErr == nil && typeValue.Tag == 6
+	}
 	if e.Schema == id(0xa001) {
 		binding, err := field(e, 0xa0010)
 		if err != nil || binding.Tag != 6 {
@@ -484,7 +493,41 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 		t, err := field(e, 0xa0050)
 		return t.Reference, err == nil && t.Tag == 6
 	}
+	if e.Schema == id(0xa062) {
+		okBlock, okErr := field(e, 0xa0622)
+		errorBlock, errorErr := field(e, 0xa0624)
+		if okErr != nil || errorErr != nil || okBlock.Tag != 6 || errorBlock.Tag != 6 {
+			return wire.ID{}, false
+		}
+		okType, ok := returnedBlockType(g, okBlock.Reference)
+		errorType, errorOK := returnedBlockType(g, errorBlock.Reference)
+		return okType, ok && errorOK && okType == errorType
+	}
 	return wire.ID{}, false
+}
+
+func returnedBlockType(g wire.Envelope, blockID wire.ID) (wire.ID, bool) {
+	block, ok := g.Entities[blockID]
+	statements, err := field(block, 0x9800)
+	if !ok || block.Schema != id(0x9080) || err != nil || statements.Tag != 7 || len(statements.List) == 0 {
+		return wire.ID{}, false
+	}
+	for _, item := range statements.List[:len(statements.List)-1] {
+		statement, exists := g.Entities[item.Reference]
+		if item.Tag != 6 || !exists || statement.Schema == id(0x9081) {
+			return wire.ID{}, false
+		}
+	}
+	last := statements.List[len(statements.List)-1]
+	if last.Tag != 6 {
+		return wire.ID{}, false
+	}
+	statement, ok := g.Entities[last.Reference]
+	values, err := field(statement, 0x9810)
+	if !ok || statement.Schema != id(0x9081) || err != nil || values.Tag != 7 || len(values.List) != 1 || values.List[0].Tag != 6 {
+		return wire.ID{}, false
+	}
+	return expressionType(g, values.List[0].Reference)
 }
 
 // ExpressionType exposes the evaluator's fail-closed canonical type

@@ -942,6 +942,31 @@ func TestIncrementalSessionLoadsLocalModulePackageClosure(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionPreservesNestedGenericResultFieldTypes(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/nested", PackagePath: "example.test/nested/application", Entry: "Revision", Files: map[string]string{
+		"model/result.go": `package model
+type Result[S any, F any] struct { Ok bool; Value S; Error F }
+`,
+		"application/read.go": `package application
+import "example.test/nested/model"
+type State struct { Revision int64 }
+type Decision struct { Value State }
+func Revision(result model.Result[Decision, int64]) int64 { return result.Value.Value.Revision }
+`,
+	}})
+	if !result.Valid {
+		t.Fatalf("diagnostics=%#v", result.Diagnostics)
+	}
+}
+
 func TestIncrementalSessionSinglePackageMayUseSemanticPathDifferentFromModule(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v30/module.g1")
 	if err != nil {

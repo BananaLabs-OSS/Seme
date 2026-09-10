@@ -1525,7 +1525,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				match.initial = &goExpression{kind: goBooleanLiteral}
 				match.body = &goExpression{kind: goBooleanLiteral, boolean: true}
 			case "Value":
-				match.initial = &goExpression{kind: goIntegerLiteral}
+				zero, err := zeroGoExpression(item, records, map[string]bool{}, 0)
+				if err != nil {
+					return nil, err
+				}
+				match.initial = zero
 				match.body = &goExpression{kind: goVariantRead}
 			default:
 				return nil, fmt.Errorf("expression.unknown_option_field")
@@ -1544,9 +1548,17 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				match.alternate = &goExpression{kind: goBooleanLiteral}
 			case "Value":
 				match.body = &goExpression{kind: goVariantRead}
-				match.alternate = &goExpression{kind: goIntegerLiteral}
+				zero, err := zeroGoExpression(success, records, map[string]bool{}, 0)
+				if err != nil {
+					return nil, err
+				}
+				match.alternate = zero
 			case "Error":
-				match.body = &goExpression{kind: goIntegerLiteral}
+				zero, err := zeroGoExpression(failure, records, map[string]bool{}, 0)
+				if err != nil {
+					return nil, err
+				}
+				match.body = zero
 				match.alternate = &goExpression{kind: goVariantRead}
 			default:
 				return nil, fmt.Errorf("expression.unknown_result_field")
