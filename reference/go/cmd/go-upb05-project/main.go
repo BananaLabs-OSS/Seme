@@ -170,11 +170,28 @@ func readStrict(p string) ([]byte, error) {
 	if e != nil || r != filepath.Clean(p) {
 		return nil, fmt.Errorf("not_plain")
 	}
-	i, e := os.Lstat(p)
-	if e != nil || !i.Mode().IsRegular() || i.Size() > 64<<20 {
+	before, e := os.Lstat(p)
+	if e != nil || !before.Mode().IsRegular() || before.Size() < 0 || before.Size() > 64<<20 {
 		return nil, fmt.Errorf("not_regular")
 	}
-	return os.ReadFile(p)
+	f, e := os.Open(p)
+	if e != nil {
+		return nil, e
+	}
+	defer f.Close()
+	opened, e := f.Stat()
+	if e != nil || !os.SameFile(before, opened) {
+		return nil, fmt.Errorf("changed")
+	}
+	b, e := io.ReadAll(io.LimitReader(f, 64<<20+1))
+	if e != nil || int64(len(b)) != opened.Size() {
+		return nil, fmt.Errorf("changed")
+	}
+	after, e := os.Lstat(p)
+	if e != nil || !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return nil, fmt.Errorf("changed")
+	}
+	return b, nil
 }
 func compile(ctx context.Context, k0, compiler string, in []byte) ([]byte, error) {
 	d, e := os.MkdirTemp("", "seme-upb05-project-")
