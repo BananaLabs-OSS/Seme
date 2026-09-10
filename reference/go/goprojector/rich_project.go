@@ -25,6 +25,11 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 	if err != nil {
 		return nil, err
 	}
+	// A single-file envelope can only authenticate the exact single-file
+	// projection. Rich output is independently authenticated by Package-v4 and
+	// partitioned into several files, so carrying that envelope in one part
+	// would correctly fail its byte-exact verifier.
+	whole = stripSingleFileEnvelope(whole)
 	owned := map[string]OwnedDeclaration{}
 	for _, d := range ownership.Declarations {
 		owned[d.ID] = d
@@ -191,6 +196,18 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 		out[pkg.Identity] = formatted
 	}
 	return out, nil
+}
+
+func stripSingleFileEnvelope(source []byte) []byte {
+	lines := strings.Split(string(source), "\n")
+	out := lines[:0]
+	for _, line := range lines {
+		if strings.HasPrefix(line, "//seme:projection-v1 ") || strings.HasPrefix(line, "//seme:graph ") {
+			continue
+		}
+		out = append(out, line)
+	}
+	return []byte(strings.Join(out, "\n"))
 }
 
 type replacement struct {
