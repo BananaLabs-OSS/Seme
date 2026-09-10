@@ -26,7 +26,7 @@ durable_selection="$repo/fixtures/go-upb07-durable-overlay/durable-selection.jso
 # Class 4: focused producer, authenticated consumer, projection, and report APIs.
 "$repo/scripts/materialize-go-upb07-fixture.sh" "$work/source"
 (cd "$repo/reference/go" &&
-  go test -count=1 ./goupb07pipeline ./goupb07bundle ./godurableadapter ./gopresentationadapter ./durableinstance ./presentationinstance ./projectv10instance ./goprojector ./cmd/go-upb07-build ./cmd/go-upb07-project ./cmd/go-upb07-report &&
+  go test -p=1 -count=1 ./goupb07pipeline ./goupb07bundle ./godurableadapter ./gopresentationadapter ./durableinstance ./presentationinstance ./projectv10instance ./goprojector ./cmd/go-upb07-build ./cmd/go-upb07-project ./cmd/go-upb07-report &&
   go build -buildvcs=false -o "$work/build" ./cmd/go-upb07-build &&
   go build -buildvcs=false -o "$work/project" ./cmd/go-upb07-project &&
   go build -buildvcs=false -o "$work/report" ./cmd/go-upb07-report)
