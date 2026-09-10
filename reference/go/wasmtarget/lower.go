@@ -654,6 +654,16 @@ func lowerHelperBoolean(graph wire.Envelope, id wire.ID, parameterLocals map[wir
 		instructions := append(leftInstructions, 0x04, 0x7f)
 		instructions = append(instructions, rightInstructions...)
 		return append(instructions, 0x05, 0x41, 0x00, 0x0b), nil
+	case identity(0xa069):
+		value, valueErr := field(expression, 0xa0690)
+		if valueErr != nil || value.Tag != 6 {
+			return nil, fmt.Errorf("wasm.helper_boolean_not")
+		}
+		instructions, err := lowerHelperBoolean(graph, value.Reference, parameterLocals, used, visiting, budget)
+		if err != nil {
+			return nil, err
+		}
+		return append(instructions, 0x45), nil
 	case identity(0x90c1):
 		left, leftErr := field(expression, 0x9c10)
 		right, rightErr := field(expression, 0x9c11)

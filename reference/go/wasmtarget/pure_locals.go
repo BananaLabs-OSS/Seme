@@ -206,6 +206,8 @@ func expressionChildren(entity wire.Entity) []wire.ID {
 		fields = []wire.ID{identity(0x9140), identity(0x9141)}
 	case identity(0x9021):
 		fields = []wire.ID{identity(0x9160), identity(0x9161)}
+	case identity(0xa069):
+		fields = []wire.ID{identity(0xa0690)}
 	case identity(0x9090):
 		fields = []wire.ID{identity(0x9900), identity(0x9901)}
 	case identity(0x90a0):
