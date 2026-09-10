@@ -158,6 +158,9 @@ func ValidateRichPackageOwnership(g1 []byte, in RichPackageOwnership) error {
 		}
 	}
 	required := map[string]bool{}
+	if graphHasSchema(g, sOptionType) {
+		required["option"] = true
+	}
 	if graphHasSchema(g, sResultType) {
 		required["result"] = true
 	}

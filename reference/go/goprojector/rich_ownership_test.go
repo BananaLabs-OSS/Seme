@@ -2,8 +2,10 @@ package goprojector
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"seme.local/reference/goprovider"
@@ -65,7 +67,7 @@ func TestRichOwnershipValidatesUAB11WithoutGuessingIDs(t *testing.T) {
 		}
 		in.Declarations = append(in.Declarations, OwnedDeclaration{ID: id, Package: owner, Name: name, Kind: kind, Exported: exported})
 	}
-	in.Families = []OwnedFamily{{Kind: "result", Package: "example.test/go-uab-11/model", Name: "Result"}, {Kind: "transition", Package: "example.test/go-uab-11/model", Name: "Transition"}}
+	in.Families = []OwnedFamily{{Kind: "option", Package: "example.test/go-uab-11/model", Name: "Option"}, {Kind: "result", Package: "example.test/go-uab-11/model", Name: "Result"}, {Kind: "transition", Package: "example.test/go-uab-11/model", Name: "Transition"}}
 	NormalizeRichPackageOwnership(&in)
 	if err = ValidateRichPackageOwnership([]byte(result.CanonicalG1), in); err != nil {
 		t.Fatal(err)
@@ -82,6 +84,63 @@ func TestRichOwnershipValidatesUAB11WithoutGuessingIDs(t *testing.T) {
 	}
 	if application.familyNames["result"] != "model.Result" || application.familyNames["transition"] != "model.Transition" || policy.familyNames["result"] != "model.Result" || model.familyNames["result"] != "Result" {
 		t.Fatalf("families app=%v policy=%v model=%v", application.familyNames, policy.familyNames, model.familyNames)
+	}
+	projected, err := ProjectPackagesRich([]byte(result.CanonicalG1), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(projected) != 3 {
+		t.Fatalf("projected packages=%d", len(projected))
+	}
+	appSource, policySource, modelSource := string(projected["example.test/go-uab-11/application"]), string(projected["example.test/go-uab-11/policy"]), string(projected["example.test/go-uab-11/model"])
+	if strings.Count(appSource, "type State struct") != 1 || strings.Contains(policySource, "type State struct") || strings.Contains(modelSource, "type State struct") {
+		t.Fatal("State ownership flattened or duplicated")
+	}
+	if strings.Count(modelSource, "type Result[") != 1 || strings.Contains(appSource, "type Result[") || strings.Contains(policySource, "type Result[") {
+		t.Fatal("Result family ownership flattened or duplicated")
+	}
+	if strings.Count(policySource, "func (self Offset) Adjust") != 1 || strings.Contains(appSource, "func (self Offset) Adjust") || strings.Contains(modelSource, "func (self Offset) Adjust") {
+		t.Fatal("method ownership flattened or duplicated")
+	}
+	dir := t.TempDir()
+	if err = os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.test/go-uab-11\n\ngo 1.26\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	relift := map[string]string{}
+	for packagePath, source := range projected {
+		relative := strings.TrimPrefix(packagePath, "example.test/go-uab-11/")
+		name := filepath.Join(relative, "projected.go")
+		if err = os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err = os.WriteFile(filepath.Join(dir, name), source, 0644); err != nil {
+			t.Fatal(err)
+		}
+		relift[filepath.ToSlash(name)] = string(source)
+	}
+	testSource, err := os.ReadFile(filepath.Join(root, "application/application_test.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(dir, "application/application_test.go"), testSource, 0644); err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("go", "test", "-count=1", "./...")
+	command.Dir = dir
+	command.Env = append(os.Environ(), "GOCACHE="+filepath.Join(t.TempDir(), "cache"))
+	if output, e := command.CombinedOutput(); e != nil {
+		t.Fatalf("native UAB11: %v\n%s", e, output)
+	}
+	second, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again := second.Apply(goprovider.DocumentSnapshot{Revision: 1, ModulePath: "example.test/go-uab-11", PackagePath: "example.test/go-uab-11/application", Entry: "Apply", Files: relift})
+	if !again.Valid {
+		t.Fatal(again.Diagnostics)
+	}
+	if again.CanonicalG1 != result.CanonicalG1 {
+		t.Fatal("rich projection relift differs")
 	}
 	missing := in
 	missing.Declarations = append([]OwnedDeclaration(nil), in.Declarations[:len(in.Declarations)-1]...)
