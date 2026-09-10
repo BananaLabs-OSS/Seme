@@ -22,9 +22,11 @@ var (
 	executionRev    = mustID("00000000000000000000000000009023")
 	packageModule   = mustID("0000000000000000000000000000b000")
 	packageRev      = mustID("0000000000000000000000000000b001")
+	packageRevV2    = mustID("0000000000000000000000000000b002")
 	projectModule   = mustID("0000000000000000000000000000e000")
 	projectRev      = mustID("0000000000000000000000000000e001")
 	projectRevV2    = mustID("0000000000000000000000000000e002")
+	projectRevV3    = mustID("0000000000000000000000000000e003")
 )
 
 type Pin struct{ Module, Revision wire.ID }
@@ -222,6 +224,26 @@ func ResolveProjectContractSetV2(execution, packages, project []byte) (ProjectCo
 	return resolveProjectContractSet(execution, packages, project, true)
 }
 
+// ResolveProjectContractSetV3 resolves the Project v3 graph-binding contract
+// and its exact Package v2 and Execution v35 dependencies.
+func ResolveProjectContractSetV3(execution, packages, project []byte) (ProjectContractSet, error) {
+	execPin := Pin{executionModule, executionRev}
+	packagePin := Pin{packageModule, packageRevV2}
+	x, err := Resolve(execution, Expectation{Pin: execPin, ModuleVersion: 35, RequiredExports: []wire.ID{mustID("00000000000000000000000000009015")}, Digest: mustDigest("54fdd39b5d78f7f12da37fd43505e0a7962bad9d9808b54a16c20e4cf95e736a")})
+	if err != nil {
+		return ProjectContractSet{}, fmt.Errorf("execution:%w", err)
+	}
+	p, err := Resolve(packages, Expectation{Pin: packagePin, ModuleVersion: 2, RequiredExports: ids("b010", "b011", "b012", "b013", "b014", "b020", "b021", "b022", "b023", "b024", "b025", "b026"), Digest: mustDigest("f65c1ff583e3d7b2504e350d8b6a6dd3c00174e60de23a8dbcc73a4ae86f763b")})
+	if err != nil {
+		return ProjectContractSet{}, fmt.Errorf("package:%w", err)
+	}
+	r, err := Resolve(project, Expectation{Pin: Pin{projectModule, projectRevV3}, ModuleVersion: 3, RequiredExports: ids("e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018"), Imports: []Pin{packagePin, execPin}, Digest: mustDigest("68e5b5fce56065bc94deac4ff24d26dadfe496b69db7f1aefa8a82327c87c2f2")})
+	if err != nil {
+		return ProjectContractSet{}, fmt.Errorf("project:%w", err)
+	}
+	return ProjectContractSet{execution: x, packages: p, project: r, validated: true}, nil
+}
+
 func resolveProjectContractSet(execution, packages, project []byte, sourceInventory bool) (ProjectContractSet, error) {
 	execPin := Pin{executionModule, executionRev}
 	packagePin := Pin{packageModule, packageRev}
@@ -262,6 +284,16 @@ func mustID(s string) wire.ID {
 		panic(err)
 	}
 	return id
+}
+func ids(short ...string) []wire.ID {
+	out := make([]wire.ID, len(short))
+	for i, s := range short {
+		for len(s) < 32 {
+			s = "0" + s
+		}
+		out[i] = mustID(s)
+	}
+	return out
 }
 func mustDigest(s string) (out [sha256.Size]byte) {
 	b, err := hex.DecodeString(s)
