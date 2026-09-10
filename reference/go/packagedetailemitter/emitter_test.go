@@ -3,11 +3,13 @@ package packagedetailemitter
 import (
 	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"os"
 	"testing"
 
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/packagedetail"
+	"seme.local/reference/packagedetailmetadata"
 	"seme.local/reference/projectemitter"
 	"seme.local/reference/wire"
 )
@@ -42,6 +44,45 @@ func TestEmitDeterministicPrivatePublicAndLocalImport(t *testing.T) {
 	}
 	if origins != 2 {
 		t.Fatalf("shared origins were not reused: %d", origins)
+	}
+}
+
+func TestPackageDetailMetadataExtractsPrivatePublicAndAlias(t *testing.T) {
+	base, graph := fixture(t)
+	artifact, err := Emit(base, graph)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := packagedetailmetadata.Extract(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := packagedetailmetadata.Extract(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(a.Packages) != 2 || len(b.Packages) != 2 {
+		t.Fatalf("packages=%d", len(a.Packages))
+	}
+	root := a.Packages[1]
+	if !root.Projection.Root || len(root.Members) != 2 || len(root.Projection.Members) != 2 || len(root.Projection.Functions) != 1 {
+		t.Fatalf("root=%#v", root)
+	}
+	if root.Members[0].Projection.Exported == root.Members[1].Projection.Exported {
+		t.Fatal("private/public distinction lost")
+	}
+	if len(root.Imports) != 1 || root.Imports[0].Alias != "modelAlias" || root.Imports[0].Requested != "domain" || root.Imports[0].Resolved != "example.test/tool/model" || len(root.Projection.Dependencies) != 1 {
+		t.Fatalf("imports=%#v", root.Imports)
+	}
+	if root.Members[0].Projection.Document == "" || root.Members[0].Projection.Line != 1 || root.Members[0].Projection.Column != 1 {
+		t.Fatal("source location lost")
+	}
+	if !bytes.Equal(mustJSON(t, a), mustJSON(t, b)) {
+		t.Fatal("metadata extraction nondeterministic")
+	}
+	tampered := append(append([]byte(nil), artifact...), 'x')
+	if got, e := packagedetailmetadata.Extract(tampered); e == nil || len(got.Packages) != 0 {
+		t.Fatalf("tamper output=%#v err=%v", got, e)
 	}
 }
 
@@ -166,6 +207,14 @@ func copyGraph(g packagedetail.Graph) packagedetail.Graph {
 	return out
 }
 func idBytes(x wire.ID) []byte { return append([]byte(nil), x[:]...) }
+func mustJSON(t *testing.T, v any) []byte {
+	t.Helper()
+	b, e := json.Marshal(v)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return b
+}
 func packagePin(e wire.Envelope) wire.ID {
 	var out wire.ID
 	count := 0
