@@ -1,15 +1,20 @@
 package controlledeffectsinstance_test
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
+	"seme.local/reference/canonicaleval"
 	"seme.local/reference/contractcatalog"
 	ceinstance "seme.local/reference/controlledeffectsinstance"
 	"seme.local/reference/goconfigurationmanifest"
@@ -18,6 +23,8 @@ import (
 	"seme.local/reference/godurablemanifest"
 	"seme.local/reference/goorderedtransportmanifest"
 	"seme.local/reference/goupb08bundle"
+	"seme.local/reference/goupb09replay"
+	"seme.local/reference/wasmtarget"
 	"seme.local/reference/wire"
 )
 
@@ -115,6 +122,62 @@ func TestRealProjectEmitsDeterministicTamperSensitiveEffectsPlan(t *testing.T) {
 	if err = ceinstance.Validate(in); err != nil {
 		t.Fatal(err)
 	}
+	// Reuse this exact materialized graph to build and execute one nonempty
+	// replay. The native corpus supplies ABI-shaped values, but ReplayControlled
+	// itself is invoked by the independent canonical evaluator below.
+	corpus := filepath.Join(work, "effects-corpus")
+	c = exec.CommandContext(ctx, "go", "test", "-count=1", "-buildvcs=false", "./streamservice", "-run", "^TestNativeControlledEffectsRuntimeCorpus$", "-args", "-native-effects-corpus-dir", corpus)
+	c.Dir = source
+	c.Env = append(os.Environ(), "GOCACHE="+filepath.Join(work, "native-cache"), "GOTOOLCHAIN=local", "GOPROXY=file://"+p("fixtures/go-upb03-offline-proxy"), "GOSUMDB=off")
+	run(c)
+	stateValue, commandValue := firstAcceptedRequest(t, filepath.Join(corpus, "requests.jsonl"), filepath.Join(corpus, "expected.jsonl"))
+	program, err := wire.Decode(loaded.Project.ProjectV10.Composed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stateLayout, err := wasmtarget.CertifyPureValueLayout(program, model.State)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandLayout, err := wasmtarget.CertifyPureValueLayout(program, model.Command)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executor := realReplayExecutor{graph: program, function: model.ReplayFunction, state: stateLayout, command: commandLayout}
+	initialBytes, err := wasmtarget.EncodePureValue(stateLayout, stateValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commandBytes, err := wasmtarget.EncodePureValue(commandLayout, commandValue)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome := executor.Execute(goupb09replay.Request{State: initialBytes, CanonicalCommand: commandBytes, CommandSequence: 1, ClockSequence: 1, RandomDrawOrdinal: 1, UnixMilliseconds: valueI64(commandValue.Fields["Clock"].Fields["UnixMilliseconds"]), RandomBefore: valueI64(commandValue.Fields["Random"].Fields["Value"])})
+	if !outcome.Committed || outcome.Failure != "" {
+		t.Fatal(outcome.Failure)
+	}
+	model.Replay.InitialSeed = outcomeRequestRandom(commandValue)
+	model.Replay.InitialState = initialBytes
+	model.Replay.Steps = []ceinstance.ReplayStep{{CommandSequence: 1, ClockSequence: 1, UnixMilliseconds: valueI64(commandValue.Fields["Clock"].Fields["UnixMilliseconds"]), RandomBefore: model.Replay.InitialSeed, RandomAfter: outcome.RandomAfter, RandomValue: outcome.RandomValue, RandomDrawOrdinal: 1, EffectValue: outcome.EffectValue, CanonicalCommand: commandBytes, ResponseSHA256: sha256.Sum256(outcome.Response), EventsSHA256: sha256.Sum256(outcome.Events), StateBeforeSHA256: sha256.Sum256(initialBytes), StateAfterSHA256: sha256.Sum256(outcome.State)}}
+	in.Model = model
+	in.Artifact, err = ceinstance.Emit(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, err := goupb09replay.Verify(in, executor)
+	if err != nil || replayed.Steps != 1 || !bytes.Equal(replayed.FinalState, outcome.State) {
+		t.Fatal(replayed, err)
+	}
+	bad := in
+	bad.Model.Replay.Steps = append([]ceinstance.ReplayStep(nil), in.Model.Replay.Steps...)
+	bad.Model.Replay.Steps[0].ResponseSHA256[0] ^= 1
+	bad.Artifact, err = ceinstance.Emit(bad)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if partial, verifyErr := goupb09replay.Verify(bad, executor); verifyErr == nil || !reflect.DeepEqual(partial, goupb09replay.Result{}) {
+		t.Fatal("accepted real replay tamper", partial, verifyErr)
+	}
 	g, err := wire.Decode(first)
 	if err != nil {
 		t.Fatal(err)
@@ -140,6 +203,102 @@ func TestRealProjectEmitsDeterministicTamperSensitiveEffectsPlan(t *testing.T) {
 	if err = ceinstance.Validate(in); err == nil {
 		t.Fatal("accepted next binding substitution")
 	}
+}
+
+type realReplayExecutor struct {
+	graph          wire.Envelope
+	function       wire.ID
+	state, command wasmtarget.PureValueLayout
+}
+
+func (x realReplayExecutor) Execute(r goupb09replay.Request) goupb09replay.Outcome {
+	s, e := wasmtarget.DecodePureValue(x.state, r.State)
+	if e != nil {
+		return goupb09replay.Outcome{Failure: e.Error()}
+	}
+	c, e := wasmtarget.DecodePureValue(x.command, r.CanonicalCommand)
+	if e != nil {
+		return goupb09replay.Outcome{Failure: e.Error()}
+	}
+	v, effects, e := canonicaleval.EvaluateFunctionAuthorized(x.graph, x.function, []canonicaleval.Value{s, c}, map[string]bool{})
+	if e != nil || len(effects) != 0 {
+		return goupb09replay.Outcome{Failure: fmt.Sprint(e)}
+	}
+	next, response := v.Fields["State"], v.Fields["Response"]
+	nextBytes, e := wasmtarget.EncodePureValue(x.state, next)
+	if e != nil {
+		return goupb09replay.Outcome{Failure: e.Error()}
+	}
+	responseLayout, ok := layoutField(resultLayout(x.graph, x.function), "Response")
+	if !ok {
+		return goupb09replay.Outcome{Failure: "response layout"}
+	}
+	responseBytes, e := wasmtarget.EncodePureValue(responseLayout, response)
+	if e != nil {
+		return goupb09replay.Outcome{Failure: e.Error()}
+	}
+	transportLayout, ok := layoutField(x.state, "Transport")
+	if !ok {
+		return goupb09replay.Outcome{Failure: "events layout"}
+	}
+	eventBytes, e := wasmtarget.EncodePureValue(transportLayout, next.Fields["Transport"])
+	if e != nil {
+		return goupb09replay.Outcome{Failure: e.Error()}
+	}
+	after := r.RandomBefore*48271 + 1
+	return goupb09replay.Outcome{Committed: true, State: nextBytes, Response: responseBytes, Events: eventBytes, RandomAfter: after, RandomValue: after, RandomDrawOrdinal: r.RandomDrawOrdinal, EffectValue: response.Fields["Accepted"].Bool}
+}
+func resultLayout(g wire.Envelope, function wire.ID) wasmtarget.PureValueLayout {
+	return mustLayout(g, g.Entities[function].Fields[xid("9112")].Reference)
+}
+func mustLayout(g wire.Envelope, typ wire.ID) wasmtarget.PureValueLayout {
+	x, e := wasmtarget.CertifyPureValueLayout(g, typ)
+	if e != nil {
+		panic(e)
+	}
+	return x
+}
+func layoutField(l wasmtarget.PureValueLayout, name string) (wasmtarget.PureValueLayout, bool) {
+	for _, f := range l.Fields {
+		if f.Name == name {
+			return f.Value, true
+		}
+	}
+	return wasmtarget.PureValueLayout{}, false
+}
+func valueI64(v canonicaleval.Value) int64 { var x int64; _, _ = fmt.Sscan(v.I64, &x); return x }
+func outcomeRequestRandom(v canonicaleval.Value) int64 {
+	return valueI64(v.Fields["Random"].Fields["Value"])
+}
+func firstAcceptedRequest(t *testing.T, requests, expected string) (canonicaleval.Value, canonicaleval.Value) {
+	t.Helper()
+	rq, e := os.Open(requests)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer rq.Close()
+	ex, e := os.Open(expected)
+	if e != nil {
+		t.Fatal(e)
+	}
+	defer ex.Close()
+	rs, xs := bufio.NewScanner(rq), bufio.NewScanner(ex)
+	for rs.Scan() && xs.Scan() {
+		var r struct {
+			Arguments []canonicaleval.Value `json:"arguments"`
+		}
+		var x struct {
+			Value canonicaleval.Value `json:"value"`
+		}
+		if json.Unmarshal(rs.Bytes(), &r) != nil || json.Unmarshal(xs.Bytes(), &x) != nil {
+			t.Fatal("corpus JSON")
+		}
+		if len(r.Arguments) == 2 && x.Value.Fields["OK"].Bool && !x.Value.Fields["Duplicate"].Bool {
+			return r.Arguments[0], r.Arguments[1]
+		}
+	}
+	t.Fatal("no accepted corpus request")
+	return canonicaleval.Value{}, canonicaleval.Value{}
 }
 
 func xid(s string) wire.ID {
