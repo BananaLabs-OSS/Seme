@@ -66,3 +66,17 @@ func TestOperationIdentitiesAndNarrowBounds(t *testing.T) {
 		t.Fatal("profile drift")
 	}
 }
+
+func TestOperationEntityIdentitiesAreDerivedFromTheAuthenticatedSnapshot(t *testing.T) {
+	base := []byte("authenticated-project-v9")
+	loadCapability := stable(base, "capability", LoadEffectIdentity)
+	loadEffect := stable(base, "effect", LoadEffectIdentity)
+	casCapability := stable(base, "capability", CompareExchangeEffectIdentity)
+	casEffect := stable(base, "effect", CompareExchangeEffectIdentity)
+	if loadCapability == loadEffect || loadCapability == casCapability || loadEffect == casEffect {
+		t.Fatal("fixed operation identities collided")
+	}
+	if loadCapability == stable([]byte("different-project-v9"), "capability", LoadEffectIdentity) {
+		t.Fatal("operation identity was not bound to the authenticated project snapshot")
+	}
+}
