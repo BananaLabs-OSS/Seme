@@ -1433,15 +1433,17 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		named, ok := types.Unalias(info.TypeOf(expression)).(*types.Named)
 		record, exists := findGoRecord(records, named)
-		if !ok || !exists || len(expression.Elts) != len(record.ordered) {
+		if !ok || !exists {
 			return nil, fmt.Errorf("expression.unsupported_record_construct")
 		}
 		values := make([]*goExpression, len(record.ordered))
 		seen := make(map[*types.Var]bool, len(values))
+		keyedLiteral := false
 		for sourceIndex, element := range expression.Elts {
 			fieldIndex := sourceIndex
 			valueExpression := element
 			if keyed, keyedOK := element.(*ast.KeyValueExpr); keyedOK {
+				keyedLiteral = true
 				identifier, identifierOK := keyed.Key.(*ast.Ident)
 				fieldIndex = -1
 				for index, field := range record.ordered {
@@ -1454,6 +1456,8 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 					return nil, fmt.Errorf("expression.unknown_record_field")
 				}
 				valueExpression = keyed.Value
+			} else if fieldIndex >= len(record.ordered) {
+				return nil, fmt.Errorf("expression.record_field_count")
 			}
 			field := record.ordered[fieldIndex]
 			if seen[field] {
@@ -1466,8 +1470,14 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			values[fieldIndex] = value
 		}
-		for _, value := range values {
-			if value == nil {
+		for index, value := range values {
+			if value == nil && keyedLiteral {
+				var err error
+				values[index], err = zeroGoExpression(record.ordered[index].Type(), records, map[string]bool{}, 0)
+				if err != nil {
+					return nil, err
+				}
+			} else if value == nil {
 				return nil, fmt.Errorf("expression.missing_record_field")
 			}
 		}
@@ -1579,6 +1589,48 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}
+}
+
+// zeroGoExpression realizes fields omitted from a keyed Go struct literal.
+// It uses only existing neutral value constructors; Go nil versus empty
+// collection identity is outside this bounded semantic profile.
+func zeroGoExpression(value types.Type, records map[*types.Named]goRecordInfo, visiting map[string]bool, depth int) (*goExpression, error) {
+	if depth > 32 {
+		return nil, fmt.Errorf("expression.record_zero_depth")
+	}
+	switch {
+	case isInt64(value):
+		return &goExpression{kind: goIntegerLiteral}, nil
+	case isBool(value):
+		return &goExpression{kind: goBooleanLiteral}, nil
+	case isPureString(value):
+		return &goExpression{kind: goStringLiteral}, nil
+	case isBytes(value):
+		return &goExpression{kind: goBytesLiteral}, nil
+	case isI64Slice(value):
+		return &goExpression{kind: goSliceConstruct, typeID: stableID("execution", "type", "slice", "i64")}, nil
+	case isI64Map(value):
+		return &goExpression{kind: goEmptyMap, typeID: stableID("execution", "type", "map", "i64", "i64")}, nil
+	}
+	named, ok := types.Unalias(value).(*types.Named)
+	if !ok {
+		return nil, fmt.Errorf("expression.unsupported_record_zero")
+	}
+	record, exists := findGoRecord(records, named)
+	if !exists || visiting[record.id] {
+		return nil, fmt.Errorf("expression.unsupported_record_zero")
+	}
+	visiting[record.id] = true
+	defer delete(visiting, record.id)
+	values := make([]*goExpression, len(record.ordered))
+	for index, field := range record.ordered {
+		fieldValue, err := zeroGoExpression(field.Type(), records, visiting, depth+1)
+		if err != nil {
+			return nil, err
+		}
+		values[index] = fieldValue
+	}
+	return &goExpression{kind: goRecordConstruct, recordType: record.id, values: values}, nil
 }
 
 func structuralTaggedMatchCall(function *ast.FuncLit, call *ast.CallExpr, outer *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool) (*goExpression, bool) {
