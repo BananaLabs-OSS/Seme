@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"seme.local/reference/contractcatalog"
@@ -12,6 +13,7 @@ import (
 	"seme.local/reference/projectemitter"
 	"seme.local/reference/projectgraphinstance"
 	"seme.local/reference/projectsource"
+	"seme.local/reference/projectv3report"
 	"seme.local/reference/sourceinventory"
 	"seme.local/reference/wire"
 )
@@ -101,6 +103,14 @@ func TestEmitRepeatValidatedAndImmutable(t *testing.T) {
 	if e = projectgraphinstance.Validate(projectgraphinstance.Inputs{Contracts: in.Contracts, ProjectV2: in.ProjectV2, Project: in.Project, Inventory: in.Inventory, PackageGraph: in.PackageGraph, Composed: a}); e != nil {
 		t.Fatal(e)
 	}
+	report, e := projectv3report.Inspect(projectgraphinstance.Inputs{Contracts: in.Contracts, ProjectV2: in.ProjectV2, Project: in.Project, Inventory: in.Inventory, PackageGraph: in.PackageGraph, Composed: a})
+	if e != nil || report.Root != "example.test/v3" || len(report.Packages) != 1 || len(report.Packages[0].Members) != 1 || report.Packages[0].Members[0].Visibility != "public" || report.Packages[0].Members[0].Export != "Apply" || len(report.Sources) != 1 || report.Sources[0].Digest == "" {
+		t.Fatalf("report=%#v err=%v", report, e)
+	}
+	again, e := projectv3report.Inspect(projectgraphinstance.Inputs{Contracts: in.Contracts, ProjectV2: in.ProjectV2, Project: in.Project, Inventory: in.Inventory, PackageGraph: in.PackageGraph, Composed: a})
+	if e != nil || !reflect.DeepEqual(report, again) {
+		t.Fatal("report nondeterministic")
+	}
 }
 func TestMergeRejectsDivergentCollision(t *testing.T) {
 	x := id("f900")
@@ -113,6 +123,15 @@ func TestMergeRejectsDivergentCollision(t *testing.T) {
 }
 func TestEmitRejectsTamperCollisionWrongContract(t *testing.T) {
 	in := fixture(t)
+	composed, err := Emit(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportInput := projectgraphinstance.Inputs{Contracts: in.Contracts, ProjectV2: in.ProjectV2, Project: in.Project, Inventory: in.Inventory, PackageGraph: in.PackageGraph, Composed: append([]byte(nil), composed...)}
+	reportInput.Composed[len(reportInput.Composed)-1] ^= 1
+	if _, err = projectv3report.Inspect(reportInput); err == nil {
+		t.Fatal("report accepted tampered graph")
+	}
 	bad := in
 	bad.Inventory = append([]byte(nil), bad.Inventory...)
 	bad.Inventory[len(bad.Inventory)-1] ^= 1
@@ -128,7 +147,7 @@ func TestEmitRejectsTamperCollisionWrongContract(t *testing.T) {
 	p, _ := wire.Decode(bad.Project)
 	g, _ := wire.Decode(bad.PackageGraph)
 	for x, q := range p.Entities {
-		if old, ok := g.Entities[x]; ok {
+		if old, ok := g.Entities[x]; ok && q.Schema != moduleSchema && q.Schema != importSchema {
 			old.Version = q.Version + 1
 			g.Entities[x] = old
 			break
