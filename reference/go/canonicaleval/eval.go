@@ -47,6 +47,18 @@ type Entry struct {
 	Value Value `json:"value"`
 }
 
+// ValidateTypedValue validates an external runtime value against one exact
+// canonical type without evaluating any program behavior.
+func ValidateTypedValue(g wire.Envelope, typeID wire.ID, value Value) error {
+	if err := validateType(g, typeID, map[wire.ID]bool{}, 32); err != nil {
+		return fmt.Errorf("canonicaleval.external_type:%w", err)
+	}
+	if err := validateValue(g, typeID, value, 32); err != nil {
+		return fmt.Errorf("canonicaleval.external_value:%w", err)
+	}
+	return nil
+}
+
 func Evaluate(g wire.Envelope, arguments []Value) (Value, error) {
 	value, _, err := evaluateAuthorized(g, arguments, nil, false)
 	return value, err
