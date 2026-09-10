@@ -155,16 +155,12 @@ func validateModel(e wire.Envelope, m Model) error {
 	if z.MaximumSteps == 0 || uint64(len(m.Replay.Steps)) > z.MaximumSteps || z.FirstClockSequence >= z.ClockTerminalSentinel || z.MinimumSeed > z.MaximumSeed || m.Replay.InitialSeed < z.MinimumSeed || m.Replay.InitialSeed > z.MaximumSeed || z.MaximumDraws == 0 || z.MaximumEffects == 0 {
 		return fmt.Errorf("controlled_effects.bounds")
 	}
-	var effects uint64
 	for i, s := range m.Replay.Steps {
-		if s.ClockSequence < z.FirstClockSequence || s.ClockSequence >= z.ClockTerminalSentinel || s.UnixMilliseconds > z.MaximumUnixMilliseconds || s.RandomDraw >= z.MaximumDraws {
+		if s.ClockSequence < z.FirstClockSequence || s.ClockSequence >= z.ClockTerminalSentinel || s.UnixMilliseconds > z.MaximumUnixMilliseconds || uint64(i) >= z.MaximumDraws {
 			return fmt.Errorf("controlled_effects.replay_step:%d", i)
 		}
 		if i > 0 && (s.CommandSequence <= m.Replay.Steps[i-1].CommandSequence || s.ClockSequence <= m.Replay.Steps[i-1].ClockSequence || s.UnixMilliseconds < m.Replay.Steps[i-1].UnixMilliseconds) {
 			return fmt.Errorf("controlled_effects.replay_order:%d", i)
-		}
-		if s.EffectValue {
-			effects++
 		}
 	}
 	owners := declarationOwners(e)
@@ -176,7 +172,7 @@ func validateModel(e wire.Envelope, m Model) error {
 	if e.Entities[m.ClockSample].Schema != id("9030") || e.Entities[m.RandomState].Schema != id("9030") || e.Entities[m.Draw].Schema != id("9030") || e.Entities[m.Command].Schema != id("9030") || e.Entities[m.State].Schema != id("9030") || e.Entities[m.Result].Schema != id("9030") {
 		return fmt.Errorf("controlled_effects.type")
 	}
-	if effects > z.MaximumEffects || m.DispatchFunction == m.ReplayFunction || !functionSignature(e, m.NextFunction, []wire.ID{m.RandomState}, m.Draw) || !functionSignature(e, m.DispatchFunction, []wire.ID{m.State, m.Command}, m.Result) || !functionSignature(e, m.ReplayFunction, []wire.ID{m.State, m.Command}, m.Result) || !ownedPureFunction(e, m.RandomOwner, m.NextFunction) || !ownedPureFunction(e, m.EffectOwner, m.ReplayFunction) {
+	if uint64(len(m.Replay.Steps)) > z.MaximumEffects || m.DispatchFunction == m.ReplayFunction || !functionSignature(e, m.NextFunction, []wire.ID{m.RandomState}, m.Draw) || !functionSignature(e, m.DispatchFunction, []wire.ID{m.State, m.Command}, m.Result) || !functionSignature(e, m.ReplayFunction, []wire.ID{m.State, m.Command}, m.Result) || !ownedPureFunction(e, m.RandomOwner, m.NextFunction) || !ownedPureFunction(e, m.EffectOwner, m.ReplayFunction) {
 		return fmt.Errorf("controlled_effects.function_or_effect")
 	}
 	// Dispatch is intentionally the controlled-effect entry point and may carry

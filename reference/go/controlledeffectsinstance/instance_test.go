@@ -123,7 +123,7 @@ func validModelFixture() (wire.Envelope, Model) {
 		Clock: Clock{"clock.injected", "nondecreasing", "explicit"}, Random: Random{"random.seeded", "lcg", "modular"},
 		ExternalEffect: ExternalBooleanEffect{"log", "log-capability", "log-effect", "request"},
 		Replay:         Replay{InitialSeed: 1, DuplicatePolicy: "cached", RejectionPolicy: "atomic", Steps: []ReplayStep{{1, 2, 1, 0, false}, {2, 3, 2, 1, true}}},
-		Bounds:         Bounds{MaximumSteps: 2, FirstClockSequence: 1, ClockTerminalSentinel: 3, MaximumUnixMilliseconds: 3, MinimumSeed: 1, MaximumSeed: 99, MaximumDraws: 2, MaximumEffects: 1},
+		Bounds:         Bounds{MaximumSteps: 2, FirstClockSequence: 1, ClockTerminalSentinel: 3, MaximumUnixMilliseconds: 3, MinimumSeed: 1, MaximumSeed: 99, MaximumDraws: 2, MaximumEffects: 2},
 	}
 	return e, m
 }
