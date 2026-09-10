@@ -46,14 +46,12 @@ func ValidateRichPackageOwnership(g1 []byte, in RichPackageOwnership) error {
 		return err
 	}
 	packages := map[string]RichPackage{}
-	names := map[string]bool{}
 	prior := ""
 	for _, p := range in.Packages {
-		if p.Identity == "" || !identifier(p.Name) || p.Identity <= prior || names[p.Name] {
+		if p.Identity == "" || !identifier(p.Name) || p.Identity <= prior {
 			return fmt.Errorf("go_projection.rich_package")
 		}
 		prior = p.Identity
-		names[p.Name] = true
 		seen := map[string]bool{}
 		dp := ""
 		for _, d := range p.Dependencies {
