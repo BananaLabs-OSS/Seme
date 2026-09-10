@@ -677,9 +677,6 @@ func projectBlock(id string, c context) (string, error) {
 			}
 			lines = append(lines, "\t"+keyword+condition+" {", indentBlock(body), "\t}")
 		case sIf:
-			if index != len(statements)-1 {
-				return "", fmt.Errorf("go_projection.if_not_terminal")
-			}
 			conditionID, err := ref(statement, "00000000000000000000000000009c00")
 			if err != nil {
 				return "", err
