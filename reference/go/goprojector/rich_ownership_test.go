@@ -3,6 +3,7 @@ package goprojector
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"seme.local/reference/goprovider"
@@ -68,6 +69,19 @@ func TestRichOwnershipValidatesUAB11WithoutGuessingIDs(t *testing.T) {
 	NormalizeRichPackageOwnership(&in)
 	if err = ValidateRichPackageOwnership([]byte(result.CanonicalG1), in); err != nil {
 		t.Fatal(err)
+	}
+	plans, err := planRichPackages([]byte(result.CanonicalG1), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	application := plans["example.test/go-uab-11/application"]
+	policy := plans["example.test/go-uab-11/policy"]
+	model := plans["example.test/go-uab-11/model"]
+	if !reflect.DeepEqual(application.imports, []string{"example.test/go-uab-11/model", "example.test/go-uab-11/policy"}) || !reflect.DeepEqual(policy.imports, []string{"example.test/go-uab-11/model"}) || len(model.imports) != 0 {
+		t.Fatalf("imports app=%v policy=%v model=%v", application.imports, policy.imports, model.imports)
+	}
+	if application.familyNames["result"] != "model.Result" || application.familyNames["transition"] != "model.Transition" || policy.familyNames["result"] != "model.Result" || model.familyNames["result"] != "Result" {
+		t.Fatalf("families app=%v policy=%v model=%v", application.familyNames, policy.familyNames, model.familyNames)
 	}
 	missing := in
 	missing.Declarations = append([]OwnedDeclaration(nil), in.Declarations[:len(in.Declarations)-1]...)
