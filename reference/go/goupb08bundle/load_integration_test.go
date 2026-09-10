@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 	"seme.local/reference/goconfigurationmanifest"
 	"seme.local/reference/godurablemanifest"
 	"seme.local/reference/goorderedtransportadapter"
+	"seme.local/reference/goprovider"
 	"seme.local/reference/goupb08bundle"
+	"seme.local/reference/goupb08report"
 	"seme.local/reference/internal/upb07testfixture"
 	"seme.local/reference/orderedtransportinstance"
 	"seme.local/reference/projectv11instance"
@@ -79,6 +82,34 @@ func TestLoadAuthenticatesAndRejectsMixedFinalArtifacts(t *testing.T) {
 	loaded, err := goupb08bundle.Load(ctx, in)
 	if err != nil || !bytes.Equal(loaded.Artifacts.ProjectV11, a.ProjectV11) {
 		t.Fatal(err)
+	}
+	report, err := goupb08report.Inspect(loaded)
+	if err != nil || report.MaximumRetainedPayloadBytes != 4096 || len(report.Streams) != 1 || len(report.CommandKinds) != 1 || len(report.EventKinds) != 1 {
+		t.Fatal("source-free authority report", err)
+	}
+	projected, err := goupb08bundle.Project(loaded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	executionG1, err := os.ReadFile(filepath.Join(fx.Root, "modules/execution/v36/module.g1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := map[string]string{}
+	for pkg, source := range projected {
+		rel := "seme_projected.go"
+		if pkg != "example.test/go-uab-11" {
+			rel = filepath.ToSlash(filepath.Join(strings.TrimPrefix(pkg, "example.test/go-uab-11/"), rel))
+		}
+		files[rel] = string(source)
+	}
+	session, err := goprovider.NewIncrementalSession(executionG1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	relifted := session.Apply(goprovider.DocumentSnapshot{Revision: 1, ModulePath: "example.test/go-uab-11", PackagePath: "example.test/go-uab-11/service", Entry: "ApplyConfiguredResource", Files: files})
+	if !relifted.Valid || !bytes.Equal([]byte(relifted.CanonicalG1), a.Base.Construction) {
+		t.Fatal("ordinary Go projection did not re-lift to its exact canonical graph")
 	}
 	bad := in
 	bad.Artifacts = cloneArtifacts(a)
