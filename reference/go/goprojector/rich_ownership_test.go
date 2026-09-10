@@ -219,6 +219,18 @@ func TestTypeNamesArePackageRelativeAcrossRichFamilies(t *testing.T) {
 	}
 }
 
+func TestTemporaryWholeProjectionReservesNeutralFamilyNames(t *testing.T) {
+	g := map[string]entity{
+		"family":   {schema: sResultType},
+		"record00": {schema: sRecordType, fields: map[string][]string{"00000000000000000000000000009300": {"by 526573756c74"}}},
+	}
+	uniquifyDeclarationNames(g)
+	name, err := text(g["record00"], "00000000000000000000000000009300")
+	if err != nil || name != "Result__seme_record00" {
+		t.Fatalf("name=%q err=%v", name, err)
+	}
+}
+
 func TestGeneratedImportMayUseAuthenticatedDependencyClosure(t *testing.T) {
 	packages := map[string]RichPackage{
 		"application": {Identity: "application"},
