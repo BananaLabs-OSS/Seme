@@ -43,6 +43,10 @@ type Result struct {
 	Blobs     map[[32]byte][]byte
 }
 
+// Project delegates ordinary Go projection to the authenticated cumulative
+// Project-v10 graph retained by this Project-v11 bundle.
+func Project(r Result) (map[string][]byte, error) { return goupb07bundle.Project(r.Base) }
+
 // Load returns no authority until every artifact, detached blob, prior layer,
 // independent transport selection, and Project-v11 binding reproduces exactly.
 func Load(ctx context.Context, in Input) (Result, error) {
