@@ -75,14 +75,16 @@ func Resolve(in projectv9instance.Inputs, s Selection) (durableinstance.Model, e
 		return durableinstance.Model{}, err
 	}
 	integer, err := oneType(e, "9010", func(q wire.Entity) bool {
-		return q.Fields[id("9100")].Unsigned == 64 && q.Fields[id("9101")].Tag == 2 && q.Fields[id("9101")].Unsigned == 1
+		// Wire booleans encode truth in Tag 2 itself; Unsigned is not a
+		// secondary boolean payload.
+		return q.Fields[id("9100")].Tag == 3 && q.Fields[id("9100")].Unsigned == 64 && q.Fields[id("9101")].Tag == 2
 	})
 	if err != nil {
-		return durableinstance.Model{}, err
+		return durableinstance.Model{}, fmt.Errorf("durable_adapter.error_type:%w", err)
 	}
 	str, err := oneType(e, "9040", func(wire.Entity) bool { return true })
 	if err != nil {
-		return durableinstance.Model{}, err
+		return durableinstance.Model{}, fmt.Errorf("durable_adapter.key_type:%w", err)
 	}
 	return durableinstance.Model{Identity: s.Identity, PortIdentity: s.PortIdentity, StateOwner: stateOwner, PortOwner: portOwner, Version1Type: v1, Version2Type: v2, ErrorType: integer, Validator1: f1, Validator2: f2, Migration: mig, KeyType: str, MaximumPayloadBytes: s.MaximumPayloadBytes, MaximumKeyBytes: s.MaximumKeyBytes}, nil
 }
