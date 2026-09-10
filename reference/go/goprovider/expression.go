@@ -53,6 +53,7 @@ const (
 	goMutableCaptureRead
 	goCaptureUpdate
 	goSequence
+	goBooleanNot
 	goMutableClosureConstruct
 	goStatefulIndirectCall
 	goEmptyMap
@@ -657,6 +658,14 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			id := expressionNodeID(owner, path, "boolean-and")
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090b1", []graphField{refField(0x9b10, left), refField(0x9b11, right)})}
 			return id, nil
+		case goBooleanNot:
+			value, err := emit(expression.left, path+".value")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "boolean-not")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a069", []graphField{refField(0xa0690, value)})}
+			return id, nil
 		case goBooleanOr, goStringEqual, goStringConcat:
 			left, err := emit(expression.left, path+".left")
 			if err != nil {
@@ -886,6 +895,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 	case *ast.BinaryExpr:
 		left, right := expression.X, expression.Y
 		kind := goExpressionKind(0)
+		negate := false
 		switch expression.Op {
 		case token.ADD:
 			if isGoStringExpression(expression, info) {
@@ -912,6 +922,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		case token.GEQ:
 			kind = goIntegerLessEqual
 			left, right = right, left
+		case token.LSS:
+			kind = goIntegerLessEqual
+			left, right, negate = right, left, true
+		case token.NEQ:
+			if !isGoIntegerExpression(left, info) || !isGoIntegerExpression(right, info) || !stableIntegerComparisonOperand(left) || !stableIntegerComparisonOperand(right) {
+				return nil, fmt.Errorf("expression.unsupported_integer_not_equal_operands")
+			}
 		default:
 			return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
 		}
@@ -923,7 +940,27 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		if err != nil {
 			return nil, err
 		}
-		return &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}, nil
+		if expression.Op == token.NEQ {
+			equal := &goExpression{kind: goBooleanAnd,
+				left:  &goExpression{kind: goIntegerLessEqual, left: analyzedLeft, right: analyzedRight},
+				right: &goExpression{kind: goIntegerLessEqual, left: analyzedRight, right: analyzedLeft},
+			}
+			return &goExpression{kind: goBooleanNot, left: equal}, nil
+		}
+		result := &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}
+		if negate {
+			result = &goExpression{kind: goBooleanNot, left: result}
+		}
+		return result, nil
+	case *ast.UnaryExpr:
+		if expression.Op != token.NOT {
+			return nil, fmt.Errorf("expression.unsupported_unary_operator:%s", expression.Op)
+		}
+		value, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+		if err != nil {
+			return nil, err
+		}
+		return &goExpression{kind: goBooleanNot, left: value}, nil
 	case *ast.CallExpr:
 		if function, ok := ast.Unparen(expression.Fun).(*ast.FuncLit); ok {
 			if match, valid := structuralTaggedMatchCall(function, expression, signature, info, locals, functions, records, mutableLocals); valid {
@@ -1801,6 +1838,29 @@ func isGoStringExpression(expression ast.Expr, info *types.Info) bool {
 	return ok && (basic.Kind() == types.String || basic.Kind() == types.UntypedString || basic.Info()&types.IsString != 0)
 }
 
+func isGoIntegerExpression(expression ast.Expr, info *types.Info) bool {
+	typeOf := info.TypeOf(expression)
+	if typeOf == nil {
+		return false
+	}
+	basic, ok := typeOf.Underlying().(*types.Basic)
+	return ok && basic.Info()&types.IsInteger != 0
+}
+
+// Rewriting integer inequality through ordering would duplicate evaluation of
+// each operand. Until canonical let-binding is available, accept only stable
+// source operands for which that duplication is observationally exact.
+func stableIntegerComparisonOperand(expression ast.Expr) bool {
+	switch value := ast.Unparen(expression).(type) {
+	case *ast.BasicLit, *ast.Ident:
+		return true
+	case *ast.SelectorExpr:
+		return stableIntegerComparisonOperand(value.X)
+	default:
+		return false
+	}
+}
+
 func evaluateBooleanExpression(expression *goExpression, parameters []int64) (bool, error) {
 	if expression == nil {
 		return false, fmt.Errorf("expression.nil")
@@ -1820,6 +1880,9 @@ func evaluateBooleanExpression(expression *goExpression, parameters []int64) (bo
 			return left, err
 		}
 		return evaluateBooleanExpression(expression.right, parameters)
+	case goBooleanNot:
+		value, err := evaluateBooleanExpression(expression.left, parameters)
+		return !value, err
 	case goStringEqual:
 		left, err := evaluateStringExpression(expression.left)
 		if err != nil {

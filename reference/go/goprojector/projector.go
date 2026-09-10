@@ -55,6 +55,7 @@ const (
 	sSliceRemove         = "0000000000000000000000000000a066"
 	sMapRemove           = "0000000000000000000000000000a067"
 	sSliceConstruct      = "0000000000000000000000000000a068"
+	sBooleanNot          = "0000000000000000000000000000a069"
 	sBytes               = "00000000000000000000000000009041"
 	sResultType          = "00000000000000000000000000009042"
 	sResultOk            = "00000000000000000000000000009043"
@@ -1843,6 +1844,16 @@ func expr(id string, c context) (string, error) {
 		return "func(m map[int64]int64, k int64) map[int64]int64 { out := maps.Clone(m); delete(out, k); return out }(" + m + ", " + k + ")", nil
 	case sFold:
 		return "", fmt.Errorf("go_projection.fold_requires_statement_context")
+	case sBooleanNot:
+		value, err := ref(e, "000000000000000000000000000a0690")
+		if err != nil {
+			return "", err
+		}
+		projected, err := expr(value, c)
+		if err != nil {
+			return "", err
+		}
+		return "!(" + projected + ")", nil
 	case sAdd, sConcat, sMultiply, sSubtract, sLessEqual, sAnd, sOr:
 		leftField, rightField := "00000000000000000000000000009140", "00000000000000000000000000009141"
 		op := "+"

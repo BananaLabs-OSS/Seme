@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"go/types"
+	"math"
 	"strings"
 	"testing"
 )
@@ -34,6 +35,51 @@ func TestAnalyzeGoExpressionRejectsUnsupportedOperator(t *testing.T) {
 	expression, signature, info := checkedReturnExpression(t, "return a/b <= c")
 	if _, err := analyzeGoExpression(expression, signature, info); err == nil {
 		t.Fatal("division was accepted before its semantic revision")
+	}
+}
+
+func TestAnalyzeComposesStrictLessAndIntegerNotEqual(t *testing.T) {
+	for _, test := range []struct {
+		source string
+		want   []bool
+	}{
+		{"return a < b", []bool{false, true, false}},
+		{"return a != b", []bool{false, true, true}},
+	} {
+		expression, signature, info := checkedReturnExpression(t, test.source)
+		analyzed, err := analyzeGoExpression(expression, signature, info)
+		if err != nil {
+			t.Fatalf("%s: %v", test.source, err)
+		}
+		if analyzed.kind != goBooleanNot {
+			t.Fatalf("%s root=%v", test.source, analyzed.kind)
+		}
+		for index, parameters := range [][]int64{{0, 0, 0}, {math.MinInt64, math.MaxInt64, 0}, {math.MaxInt64, math.MinInt64, 0}} {
+			got, evalErr := evaluateBooleanExpression(analyzed, parameters)
+			if evalErr != nil || got != test.want[index] {
+				t.Fatalf("%s(%v)=%v,%v want %v", test.source, parameters[:2], got, evalErr, test.want[index])
+			}
+		}
+		entities, root, err := emitCanonicalExpression(analyzed, "comparison", []string{"a", "b", "c"}, "i64")
+		if err != nil || root != expressionNodeID("comparison", "root", "boolean-not") {
+			t.Fatalf("%s emit root=%s err=%v", test.source, root, err)
+		}
+		found := false
+		for _, entity := range entities {
+			if entity.id == root && strings.Contains(entity.text, "0000000000000000000000000000a069") {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("%s omitted BooleanNot", test.source)
+		}
+	}
+}
+
+func TestIntegerNotEqualRejectsDuplicatingEffectfulOperands(t *testing.T) {
+	expression, signature, info := checkedReturnExpression(t, "return a+1 != b")
+	if _, err := analyzeGoExpression(expression, signature, info); err == nil || !strings.Contains(err.Error(), "unsupported_integer_not_equal_operands") {
+		t.Fatalf("effectful/compound inequality err=%v", err)
 	}
 }
 
