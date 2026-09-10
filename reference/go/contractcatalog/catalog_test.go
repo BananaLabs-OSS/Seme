@@ -465,14 +465,14 @@ func TestResolveProjectContractSetV10ExactPins(t *testing.T) {
 		}
 		return b
 	}
-	s, err := ResolveProjectContractSetV10(read("../../../modules/foundation/v1/module.seme"), read("../../../modules/execution/v36/module.seme"), read("../../../modules/package/v4/module.seme"), read("../../../modules/dependency/v1/module.seme"), read("../../../modules/configuration/v3/module.seme"), read("../../../modules/resource/v1/module.seme"), read("../../../modules/durable-state/v1/module.seme"), read("../../../modules/project/v9/module.seme"), read("../../../modules/project/v10/module.seme"))
+	s, err := ResolveProjectContractSetV10(read("../../../modules/foundation/v1/module.seme"), read("../../../modules/execution/v36/module.seme"), read("../../../modules/package/v4/module.seme"), read("../../../modules/dependency/v1/module.seme"), read("../../../modules/configuration/v3/module.seme"), read("../../../modules/resource/v1/module.seme"), read("../../../modules/durable-state/v1/module.seme"), read("../../../modules/source-presentation/v1/module.seme"), read("../../../modules/project/v9/module.seme"), read("../../../modules/project/v10/module.seme"))
 	if err != nil || !s.Validated() {
 		t.Fatalf("resolve: %v", err)
 	}
-	if s.DurableState().Pin() != (Pin{durableStateModule, durableStateRev}) || s.Project().Pin() != (Pin{projectModule, projectRevV10}) {
+	if s.DurableState().Pin() != (Pin{durableStateModule, durableStateRev}) || s.Presentation().Pin() != (Pin{presentationModule, presentationRev}) || s.Project().Pin() != (Pin{projectModule, projectRevV10}) {
 		t.Fatal("pins")
 	}
-	if _, err = ResolveProjectContractSetV10(read("../../../modules/foundation/v1/module.seme"), read("../../../modules/execution/v36/module.seme"), read("../../../modules/package/v4/module.seme"), read("../../../modules/dependency/v1/module.seme"), read("../../../modules/configuration/v3/module.seme"), read("../../../modules/resource/v1/module.seme"), read("../../../modules/resource/v1/module.seme"), read("../../../modules/project/v9/module.seme"), read("../../../modules/project/v10/module.seme")); err == nil {
+	if _, err = ResolveProjectContractSetV10(read("../../../modules/foundation/v1/module.seme"), read("../../../modules/execution/v36/module.seme"), read("../../../modules/package/v4/module.seme"), read("../../../modules/dependency/v1/module.seme"), read("../../../modules/configuration/v3/module.seme"), read("../../../modules/resource/v1/module.seme"), read("../../../modules/resource/v1/module.seme"), read("../../../modules/source-presentation/v1/module.seme"), read("../../../modules/project/v9/module.seme"), read("../../../modules/project/v10/module.seme")); err == nil {
 		t.Fatal("accepted substituted durable contract")
 	}
 }

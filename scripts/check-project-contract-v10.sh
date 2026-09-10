@@ -9,4 +9,4 @@ cmp "$repo/modules/project/v10/module.g1" "$work/module.g1"
 cmp "$repo/modules/project/v10/module.seme" "$work/module.seme"
 (cd "$repo/modules/project/v10" && sha256sum -c module.g1.sha256 && sha256sum -c module.seme.sha256)
 "$repo/bootstrap/seme-k0-linux-amd64" "$repo/modules/foundation/v1/validator.k0" "$repo/modules/project/v10/module.seme"
-echo 'Project Contract v10: exact Project-v9 and Durable-State-v1 binding is reproducible'
+echo 'Project Contract v10: exact Project-v9, Durable-State-v1, and Source-Presentation-v1 binding is reproducible'

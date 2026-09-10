@@ -59,12 +59,12 @@ func TestEmitV2ExtendsV1WithExactAncestryAndNeutralSources(t *testing.T) {
 	}
 }
 
-func TestEmitV10BindsExactV9AndDurablePlan(t *testing.T) {
+func TestEmitV10BindsExactV9DurablePlanAndPresentation(t *testing.T) {
 	var out bytes.Buffer
 	if err := EmitVersion(&out, 10); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{RevisionV10ID, "pc 1\n" + RevisionV9ID, "00000000000000000000000000008000", "00000000000000000000000000008001", "0000000000000000000000000000e025", "0000000000000000000000000000e250", "0000000000000000000000000000e252"} {
+	for _, want := range []string{RevisionV10ID, "pc 1\n" + RevisionV9ID, "00000000000000000000000000008000", "00000000000000000000000000008001", "00000000000000000000000000001000", "00000000000000000000000000001001", "0000000000000000000000000000e025", "0000000000000000000000000000e250", "0000000000000000000000000000e252", "0000000000000000000000000000e253"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("v10 missing %s", want)
 		}
@@ -76,6 +76,24 @@ func TestEmitV10BindsExactV9AndDurablePlan(t *testing.T) {
 	var got bytes.Buffer
 	if err = EmitVersion(&got, 9); err != nil || !bytes.Equal(want, got.Bytes()) {
 		t.Fatalf("v9 changed: %v", err)
+	}
+}
+
+func TestEmitV10KeepsEntityIdentitiesSortedWhenAddingLateImport(t *testing.T) {
+	var out bytes.Buffer
+	if err := EmitVersion(&out, 10); err != nil {
+		t.Fatal(err)
+	}
+	last := ""
+	for _, line := range strings.Split(out.String(), "\n") {
+		parts := strings.Fields(line)
+		if len(parts) == 0 || parts[0] != "en" {
+			continue
+		}
+		if last != "" && parts[1] <= last {
+			t.Fatalf("entity order %s after %s", parts[1], last)
+		}
+		last = parts[1]
 	}
 }
 
