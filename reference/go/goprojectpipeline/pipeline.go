@@ -33,7 +33,10 @@ type Input struct {
 	ExecutionG1 []byte
 	Compile     projectbuild.Compile
 }
-type Result struct{ CanonicalG1, ProjectV1, InventoryV2, PackageV2, ProjectV3 []byte }
+type Result struct {
+	CanonicalG1, ProjectV1, InventoryV2, PackageV2, ProjectV3 []byte
+	Resolution                                                goprovider.ResolutionManifest
+}
 
 func Build(ctx context.Context, in Input) (Result, error) {
 	if err := validateContracts(in.Contracts); err != nil {
@@ -76,7 +79,7 @@ func Build(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("go_project_pipeline.compose:%w", err)
 	}
-	return Result{CanonicalG1: clone(project.CanonicalG1), ProjectV1: clone(project.Artifact), InventoryV2: clone(inventory), PackageV2: clone(packageArtifact), ProjectV3: clone(composed)}, nil
+	return Result{CanonicalG1: clone(project.CanonicalG1), ProjectV1: clone(project.Artifact), InventoryV2: clone(inventory), PackageV2: clone(packageArtifact), ProjectV3: clone(composed), Resolution: cloneResolution(project.Resolution)}, nil
 }
 
 func validateContracts(c Contracts) error {
@@ -189,3 +192,13 @@ func mustID(s string) wire.ID {
 	return x
 }
 func clone(x []byte) []byte { return append([]byte(nil), x...) }
+func cloneResolution(in goprovider.ResolutionManifest) goprovider.ResolutionManifest {
+	out := goprovider.ResolutionManifest{Packages: make([]goprovider.ResolvedPackage, len(in.Packages))}
+	for i, p := range in.Packages {
+		out.Packages[i] = p
+		out.Packages[i].Files = append([]string(nil), p.Files...)
+		out.Packages[i].Declarations = append([]goprovider.ResolvedDeclaration(nil), p.Declarations...)
+		out.Packages[i].Imports = append([]goprovider.ResolvedImport(nil), p.Imports...)
+	}
+	return out
+}
