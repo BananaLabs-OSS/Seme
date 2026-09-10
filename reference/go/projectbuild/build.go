@@ -19,6 +19,7 @@ type Result struct {
 	Artifact     []byte
 	SourceDigest string
 	Packages     []goprovider.PackageMetadata
+	Resolution   goprovider.ResolutionManifest
 }
 
 func Build(ctx context.Context, snapshot goprovider.DocumentSnapshot, contracts contractcatalog.ProjectContractSet, executionG1 []byte, compile Compile) (Result, error) {
@@ -73,7 +74,7 @@ func Build(ctx context.Context, snapshot goprovider.DocumentSnapshot, contracts 
 	}
 	return Result{
 		Artifact: append([]byte(nil), artifact...), SourceDigest: lifted.ContentDigest,
-		Packages: clonePackages(lifted.Packages),
+		Packages: clonePackages(lifted.Packages), Resolution: cloneResolution(lifted.Resolution),
 	}, nil
 }
 
@@ -113,6 +114,17 @@ func cloneFunctions(in []goprovider.PackageFunctionMetadata) []goprovider.Packag
 	for i, function := range in {
 		out[i] = function
 		out[i].Parameters = append([]string(nil), function.Parameters...)
+	}
+	return out
+}
+
+func cloneResolution(in goprovider.ResolutionManifest) goprovider.ResolutionManifest {
+	out := goprovider.ResolutionManifest{Packages: make([]goprovider.ResolvedPackage, len(in.Packages))}
+	for i, p := range in.Packages {
+		out.Packages[i] = p
+		out.Packages[i].Files = append([]string(nil), p.Files...)
+		out.Packages[i].Declarations = append([]goprovider.ResolvedDeclaration(nil), p.Declarations...)
+		out.Packages[i].Imports = append([]goprovider.ResolvedImport(nil), p.Imports...)
 	}
 	return out
 }
