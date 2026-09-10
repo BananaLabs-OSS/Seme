@@ -91,6 +91,18 @@ func TestModelRejectsOwnershipSignaturePurityAndReplayAdversaries(t *testing.T) 
 		{"step-overflow", func(_ *wire.Envelope, m *Model) { m.Bounds.MaximumSteps = 1 }},
 		{"seed-underflow", func(_ *wire.Envelope, m *Model) { m.Replay.InitialSeed = 0 }},
 		{"clock-sentinel", func(_ *wire.Envelope, m *Model) { m.Replay.Steps[1].ClockSequence = m.Bounds.ClockTerminalSentinel }},
+		{"random-before-chain", func(_ *wire.Envelope, m *Model) { m.Replay.Steps[1].RandomBefore++ }},
+		{"random-transition", func(_ *wire.Envelope, m *Model) { m.Replay.Steps[0].RandomAfter++ }},
+		{"draw-ordinal", func(_ *wire.Envelope, m *Model) { m.Replay.Steps[1].RandomDrawOrdinal = 1 }},
+		{"state-chain", func(_ *wire.Envelope, m *Model) { m.Replay.Steps[1].StateBeforeSHA256[0] ^= 1 }},
+		{"zero-response-digest", func(_ *wire.Envelope, m *Model) { m.Replay.Steps[0].ResponseSHA256 = [32]byte{} }},
+		{"trailing-command", func(_ *wire.Envelope, m *Model) {
+			m.Replay.Steps[0].CanonicalCommand = append(m.Replay.Steps[0].CanonicalCommand, 0)
+		}},
+		{"trailing-initial-state", func(_ *wire.Envelope, m *Model) {
+			m.Replay.InitialState = append(m.Replay.InitialState, 0)
+			m.Bounds.MaximumInitialStateBytes++
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -100,6 +112,21 @@ func TestModelRejectsOwnershipSignaturePurityAndReplayAdversaries(t *testing.T) 
 				t.Fatal("accepted adversary")
 			}
 		})
+	}
+}
+
+func TestTranscriptBoundExactAndPlusOne(t *testing.T) {
+	e, m := validModelFixture()
+	// 8 initial-state bytes + two six-byte policies + 32 bytes of scalar/length
+	// framing + two steps of (8 command + 56 scalars + 1 bool + 128 digests +
+	// 8 command-length framing).
+	m.Bounds.MaximumTranscriptBytes = 454
+	if err := validateModel(e, m); err != nil {
+		t.Fatalf("exact bound: %v", err)
+	}
+	m.Bounds.MaximumTranscriptBytes--
+	if err := validateModel(e, m); err == nil {
+		t.Fatal("accepted transcript maximum plus one")
 	}
 }
 
