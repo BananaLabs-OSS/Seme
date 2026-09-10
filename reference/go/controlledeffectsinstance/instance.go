@@ -11,6 +11,7 @@ import (
 
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/projectv11instance"
+	"seme.local/reference/wasmtarget"
 	"seme.local/reference/wire"
 )
 
@@ -29,20 +30,29 @@ type ExternalBooleanEffect struct {
 }
 
 type ReplayStep struct {
-	CommandSequence, UnixMilliseconds, ClockSequence, RandomDraw uint64
-	EffectValue                                                  bool
+	CommandSequence, ClockSequence         uint64
+	UnixMilliseconds                       int64
+	RandomBefore, RandomAfter, RandomValue int64
+	RandomDrawOrdinal                      uint64
+	EffectValue                            bool
+	CanonicalCommand                       []byte
+	ResponseSHA256, EventsSHA256           [32]byte
+	StateBeforeSHA256, StateAfterSHA256    [32]byte
 }
 
 type Replay struct {
-	InitialSeed                      uint64
+	InitialSeed                      int64
+	InitialState                     []byte
 	Steps                            []ReplayStep
 	DuplicatePolicy, RejectionPolicy string
 }
 
 type Bounds struct {
 	MaximumSteps, FirstClockSequence, ClockTerminalSentinel uint64
-	MaximumUnixMilliseconds, MinimumSeed, MaximumSeed       uint64
+	MaximumUnixMilliseconds, MinimumSeed, MaximumSeed       int64
 	MaximumDraws, MaximumEffects                            uint64
+	MaximumCommandBytes, MaximumInitialStateBytes           uint64
+	MaximumTranscriptBytes                                  uint64
 }
 
 // Model is the language-adapter boundary. All selections are explicit; this
@@ -120,13 +130,14 @@ func emit(in Inputs) ([]byte, error) {
 	for i, s := range in.Model.Replay.Steps {
 		x := stable(b, "replay-step", fmt.Sprint(i))
 		clockSample := stable(b, "clock-sample", fmt.Sprint(i))
-		e.Entities[clockSample] = entity(clockSample, "13102", map[string]wire.Value{"13220": u(s.UnixMilliseconds), "13221": u(s.ClockSequence)})
-		e.Entities[x] = entity(x, "13106", map[string]wire.Value{"13260": u(s.CommandSequence), "13261": ref(clockSample), "13262": u(s.RandomDraw), "13263": boolean(s.EffectValue)})
+		e.Entities[clockSample] = entity(clockSample, "13102", map[string]wire.Value{"13220": signed(s.UnixMilliseconds), "13221": u(s.ClockSequence)})
+		e.Entities[x] = entity(x, "13106", map[string]wire.Value{"13260": u(s.CommandSequence), "13261": ref(clockSample), "13262": signed(s.RandomBefore), "13263": signed(s.RandomAfter), "13264": signed(s.RandomValue), "13265": u(s.RandomDrawOrdinal), "13266": boolean(s.EffectValue), "13267": blobBytes(s.CanonicalCommand), "13268": blobBytes(s.ResponseSHA256[:]), "13269": blobBytes(s.EventsSHA256[:]), "1326a": blobBytes(s.StateBeforeSHA256[:]), "1326b": blobBytes(s.StateAfterSHA256[:])})
 		stepRefs = append(stepRefs, ref(x))
 	}
-	e.Entities[replay] = entity(replay, "13107", map[string]wire.Value{"13270": u(in.Model.Replay.InitialSeed), "13271": {Tag: 7, List: stepRefs}, "13272": blobBytes(replayDigest(in.Model.Replay)), "13273": blob(in.Model.Replay.DuplicatePolicy), "13274": blob(in.Model.Replay.RejectionPolicy)})
+	initialStateDigest := sha256.Sum256(in.Model.Replay.InitialState)
+	e.Entities[replay] = entity(replay, "13107", map[string]wire.Value{"13270": signed(in.Model.Replay.InitialSeed), "13271": {Tag: 7, List: stepRefs}, "13272": blobBytes(replayDigest(in.Model.Replay)), "13273": blob(in.Model.Replay.DuplicatePolicy), "13274": blob(in.Model.Replay.RejectionPolicy), "13275": blobBytes(in.Model.Replay.InitialState), "13276": blobBytes(initialStateDigest[:])})
 	z := in.Model.Bounds
-	e.Entities[bounds] = entity(bounds, "13108", map[string]wire.Value{"13280": u(z.MaximumSteps), "13281": u(z.FirstClockSequence), "13282": u(z.ClockTerminalSentinel), "13283": u(z.MaximumUnixMilliseconds), "13284": u(z.MinimumSeed), "13285": u(z.MaximumSeed), "13286": u(z.MaximumDraws), "13287": u(z.MaximumEffects)})
+	e.Entities[bounds] = entity(bounds, "13108", map[string]wire.Value{"13280": u(z.MaximumSteps), "13281": u(z.FirstClockSequence), "13282": u(z.ClockTerminalSentinel), "13283": signed(z.MaximumUnixMilliseconds), "13284": signed(z.MinimumSeed), "13285": signed(z.MaximumSeed), "13286": u(z.MaximumDraws), "13287": u(z.MaximumEffects), "13288": u(z.MaximumCommandBytes), "13289": u(z.MaximumInitialStateBytes), "1328a": u(z.MaximumTranscriptBytes)})
 	root := stable(b, "plan")
 	e.Entities[root] = entity(root, "13100", map[string]wire.Value{"13200": ref(clock), "13201": ref(random), "13202": ref(external), "13203": ref(replay), "13204": ref(bounds), "13205": ref(in.Model.DispatchFunction), "13206": ref(in.Model.ReplayFunction), "13207": blobBytes(make([]byte, 32))})
 	q := e.Entities[root]
@@ -152,13 +163,52 @@ func validateModel(e wire.Envelope, m Model) error {
 		}
 	}
 	z := m.Bounds
-	if z.MaximumSteps == 0 || uint64(len(m.Replay.Steps)) > z.MaximumSteps || z.FirstClockSequence >= z.ClockTerminalSentinel || z.MinimumSeed > z.MaximumSeed || m.Replay.InitialSeed < z.MinimumSeed || m.Replay.InitialSeed > z.MaximumSeed || z.MaximumDraws == 0 || z.MaximumEffects == 0 {
+	if z.MaximumSteps == 0 || uint64(len(m.Replay.Steps)) > z.MaximumSteps || z.FirstClockSequence >= z.ClockTerminalSentinel || z.MinimumSeed > z.MaximumSeed || m.Replay.InitialSeed < z.MinimumSeed || m.Replay.InitialSeed > z.MaximumSeed || z.MaximumDraws == 0 || z.MaximumEffects == 0 || z.MaximumCommandBytes == 0 || z.MaximumInitialStateBytes == 0 || z.MaximumTranscriptBytes == 0 || uint64(len(m.Replay.InitialState)) > z.MaximumInitialStateBytes || uint64(len(m.Replay.InitialState)) > z.MaximumTranscriptBytes {
 		return fmt.Errorf("controlled_effects.bounds")
 	}
+	layout, err := wasmtarget.CertifyPureValueLayout(e, m.State)
+	if err != nil || (len(m.Replay.Steps) != 0 && len(m.Replay.InitialState) == 0) {
+		return fmt.Errorf("controlled_effects.initial_state_layout")
+	}
+	if len(m.Replay.InitialState) != 0 {
+		initial, decodeErr := wasmtarget.DecodePureValue(layout, m.Replay.InitialState)
+		if decodeErr != nil {
+			return fmt.Errorf("controlled_effects.initial_state")
+		}
+		canonical, encodeErr := wasmtarget.EncodePureValue(layout, initial)
+		if encodeErr != nil || !bytes.Equal(canonical, m.Replay.InitialState) {
+			return fmt.Errorf("controlled_effects.initial_state_canonical")
+		}
+	}
+	commandLayout, err := wasmtarget.CertifyPureValueLayout(e, m.Command)
+	if err != nil {
+		return fmt.Errorf("controlled_effects.command_layout")
+	}
+	transcriptBytes := uint64(len(m.Replay.InitialState)) + uint64(len(m.Replay.DuplicatePolicy)) + uint64(len(m.Replay.RejectionPolicy)) + 32
+	initialDigest := sha256.Sum256(m.Replay.InitialState)
+	previousState := initialDigest
 	for i, s := range m.Replay.Steps {
-		if s.ClockSequence < z.FirstClockSequence || s.ClockSequence >= z.ClockTerminalSentinel || s.UnixMilliseconds > z.MaximumUnixMilliseconds || uint64(i) >= z.MaximumDraws {
+		if s.ClockSequence < z.FirstClockSequence || s.ClockSequence >= z.ClockTerminalSentinel || s.UnixMilliseconds > z.MaximumUnixMilliseconds || s.RandomDrawOrdinal == 0 || s.RandomDrawOrdinal > z.MaximumDraws || len(s.CanonicalCommand) == 0 || uint64(len(s.CanonicalCommand)) > z.MaximumCommandBytes {
 			return fmt.Errorf("controlled_effects.replay_step:%d", i)
 		}
+		command, decodeErr := wasmtarget.DecodePureValue(commandLayout, s.CanonicalCommand)
+		if decodeErr != nil {
+			return fmt.Errorf("controlled_effects.command:%d", i)
+		}
+		canonical, encodeErr := wasmtarget.EncodePureValue(commandLayout, command)
+		if encodeErr != nil || !bytes.Equal(canonical, s.CanonicalCommand) {
+			return fmt.Errorf("controlled_effects.command_canonical:%d", i)
+		}
+		ordinal := uint64(i + 1)
+		if s.CommandSequence != ordinal || s.ClockSequence != ordinal || s.RandomDrawOrdinal != ordinal || (i == 0 && s.RandomBefore != m.Replay.InitialSeed) || (i > 0 && s.RandomBefore != m.Replay.Steps[i-1].RandomAfter) || s.RandomAfter != s.RandomBefore*48271+1 || s.RandomAfter != s.RandomValue || s.StateBeforeSHA256 != previousState || zeroDigest(s.ResponseSHA256) || zeroDigest(s.EventsSHA256) || zeroDigest(s.StateAfterSHA256) {
+			return fmt.Errorf("controlled_effects.replay_chain:%d", i)
+		}
+		previousState = s.StateAfterSHA256
+		stepBytes := uint64(len(s.CanonicalCommand)) + 8*7 + 1 + 32*4 + 8
+		if transcriptBytes > z.MaximumTranscriptBytes || stepBytes > z.MaximumTranscriptBytes-transcriptBytes {
+			return fmt.Errorf("controlled_effects.transcript_bound")
+		}
+		transcriptBytes += stepBytes
 		if i > 0 && (s.CommandSequence <= m.Replay.Steps[i-1].CommandSequence || s.ClockSequence <= m.Replay.Steps[i-1].ClockSequence || s.UnixMilliseconds < m.Replay.Steps[i-1].UnixMilliseconds) {
 			return fmt.Errorf("controlled_effects.replay_order:%d", i)
 		}
@@ -185,6 +235,8 @@ func validateModel(e wire.Envelope, m Model) error {
 	}
 	return nil
 }
+
+func zeroDigest(x [32]byte) bool { return x == [32]byte{} }
 
 func exactDispatchEffect(e wire.Envelope, fn wire.ID, effectName, capabilityName string) bool {
 	q := e.Entities[fn]
@@ -327,16 +379,25 @@ func replayDigest(r Replay) []byte {
 	h := sha256.New()
 	h.Write([]byte("seme.controlled-effects.replay.v1\x00"))
 	_ = binary.Write(h, binary.BigEndian, r.InitialSeed)
+	writeBytes(h, r.InitialState)
 	for _, s := range r.Steps {
 		_ = binary.Write(h, binary.BigEndian, s.CommandSequence)
 		_ = binary.Write(h, binary.BigEndian, s.UnixMilliseconds)
 		_ = binary.Write(h, binary.BigEndian, s.ClockSequence)
-		_ = binary.Write(h, binary.BigEndian, s.RandomDraw)
+		_ = binary.Write(h, binary.BigEndian, s.RandomBefore)
+		_ = binary.Write(h, binary.BigEndian, s.RandomAfter)
+		_ = binary.Write(h, binary.BigEndian, s.RandomValue)
+		_ = binary.Write(h, binary.BigEndian, s.RandomDrawOrdinal)
 		if s.EffectValue {
 			h.Write([]byte{1})
 		} else {
 			h.Write([]byte{0})
 		}
+		writeBytes(h, s.CanonicalCommand)
+		h.Write(s.ResponseSHA256[:])
+		h.Write(s.EventsSHA256[:])
+		h.Write(s.StateBeforeSHA256[:])
+		h.Write(s.StateAfterSHA256[:])
 	}
 	writeString(h, r.DuplicatePolicy)
 	writeString(h, r.RejectionPolicy)
@@ -348,6 +409,10 @@ type byteWriter interface{ Write([]byte) (int, error) }
 func writeString(w byteWriter, s string) {
 	_ = binary.Write(w, binary.BigEndian, uint64(len(s)))
 	_, _ = w.Write([]byte(s))
+}
+func writeBytes(w byteWriter, b []byte) {
+	_ = binary.Write(w, binary.BigEndian, uint64(len(b)))
+	_, _ = w.Write(b)
 }
 func stable(base []byte, parts ...string) wire.ID {
 	h := sha256.New()
@@ -390,6 +455,7 @@ func ref(x wire.ID) wire.Value      { return wire.Value{Tag: 6, Reference: x} }
 func blob(s string) wire.Value      { return blobBytes([]byte(s)) }
 func blobBytes(b []byte) wire.Value { return wire.Value{Tag: 5, Bytes: append([]byte(nil), b...)} }
 func u(x uint64) wire.Value         { return wire.Value{Tag: 3, Unsigned: x} }
+func signed(x int64) wire.Value     { return wire.Value{Tag: 4, Unsigned: uint64(x)} }
 func boolean(x bool) wire.Value {
 	if x {
 		return wire.Value{Tag: 2}
