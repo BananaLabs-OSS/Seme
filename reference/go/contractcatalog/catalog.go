@@ -104,7 +104,7 @@ func ResolveOrderedTransportContract(source []byte) (Contract, error) {
 // ResolveControlledEffectsContract authenticates the exact project-neutral
 // Controlled Effects Contract v1.
 func ResolveControlledEffectsContract(source []byte) (Contract, error) {
-	return Resolve(source, Expectation{Pin: Pin{controlledEffectsModule, controlledEffectsRev}, ModuleVersion: 1, RequiredExports: ids("13100", "13101", "13102", "13103", "13104", "13105", "13106", "13107", "13108"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("28b8d251de556e522328398b5ae83e2add8e96c8fc22d4f31309ca87b6db518c")})
+	return Resolve(source, Expectation{Pin: Pin{controlledEffectsModule, controlledEffectsRev}, ModuleVersion: 1, RequiredExports: ids("13100", "13101", "13102", "13103", "13104", "13105", "13106", "13107", "13108"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("074563089bc6fef94edecafb6048c9fbd98c22ea39dabbc7f7cd8c9a25eda69d")})
 }
 
 // Resolve accepts only the one canonical byte representation described by e.
