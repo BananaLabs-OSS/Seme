@@ -13,8 +13,10 @@ import (
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/dependencyemitter"
 	"seme.local/reference/goofflineclosure"
+	"seme.local/reference/goprojectdependency"
 	"seme.local/reference/goprojectpipeline"
 	"seme.local/reference/goprovider"
+	"seme.local/reference/projectdependencyinstance"
 	"seme.local/reference/projectgraphinstance"
 	"seme.local/reference/projectv4emitter"
 )
@@ -45,6 +47,10 @@ func Build(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("go_upb03_pipeline.dependency:%w", err)
 	}
+	closure, err = goprojectdependency.BindMetadata(closure, base.ProjectV3)
+	if err != nil {
+		return Result{}, fmt.Errorf("go_upb03_pipeline.applicability:%w", err)
+	}
 	dependency, err := dependencyemitter.Emit(in.Contracts.Dependency(), closure)
 	if err != nil {
 		return Result{}, fmt.Errorf("go_upb03_pipeline.dependency_emit:%w", err)
@@ -56,6 +62,9 @@ func Build(ctx context.Context, in Input) (Result, error) {
 	v4, err := projectv4emitter.Emit(projectv4emitter.Input{Contracts: in.Contracts, ProjectV3: v3, Dependency: dependency})
 	if err != nil {
 		return Result{}, fmt.Errorf("go_upb03_pipeline.project_v4:%w", err)
+	}
+	if err = goprojectdependency.Validate(projectdependencyinstance.Inputs{Contracts: in.Contracts, ProjectV3: v3, Dependency: dependency, Composed: v4}); err != nil {
+		return Result{}, fmt.Errorf("go_upb03_pipeline.applicability_validate:%w", err)
 	}
 	return Result{Base: cloneBase(base), DependencyV1: clone(dependency), ProjectV4: clone(v4)}, nil
 }
