@@ -184,6 +184,39 @@ func TestMalformedLoadVariantRejects(t *testing.T) {
 	})
 }
 
+// verifyMemoryRealization is provider evidence, not an Execute invariant. The
+// Durable-v1 Saved outcome does not echo committed bytes, so only a realization
+// with independently inspectable backing state can prove its Saved claim.
+func verifyMemoryRealization(result Result, stored *Payload) bool {
+	return result.Committed && result.Failure == "" && stored != nil && samePayload(result.Payload, *stored)
+}
+
+func TestMemoryProviderRealizationRejectsDishonestSavedClaims(t *testing.T) {
+	faithful := &memoryPort{token: Token("absence")}
+	faithfulResult := Execute(profile(), grants(), request(), faithful, &testTransform{})
+	if !verifyMemoryRealization(faithfulResult, faithful.stored) {
+		t.Fatal("faithful provider realization rejected")
+	}
+
+	for _, c := range []struct {
+		name string
+		port *savedClaimPort
+	}{
+		{"saved-without-store", &savedClaimPort{}},
+		{"saved-wrong-store", &savedClaimPort{wrong: true}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			result := Execute(profile(), grants(), request(), c.port, &testTransform{})
+			if !result.Committed {
+				t.Fatal("runtime did not observe the contract-level Saved response")
+			}
+			if verifyMemoryRealization(result, c.port.stored) {
+				t.Fatal("dishonest provider realization accepted")
+			}
+		})
+	}
+}
+
 func TestProfileCannotBeCallerForgedOrMutated(t *testing.T) {
 	forged := Profile{FamilyIdentity: "family", CurrentVersion: 2, CodecIdentity: "codec", TokenPolicy: "opaque-thread-only", MaximumKeyBytes: 32, MaximumPayloadBytes: 64, Load: Operation{Identity: "load", Capability: "read", Sequence: 0}, CompareExchange: Operation{Identity: "cas", Capability: "write", Sequence: 1}}
 	for _, p := range []Profile{forged, func() Profile { p := profile(); p.MaximumPayloadBytes++; return p }()} {
@@ -249,6 +282,22 @@ func (*mixedLoadPort) Load(LoadRequest) LoadOutcome {
 }
 func (*mixedLoadPort) CompareExchange(CompareExchangeRequest) CompareExchangeOutcome {
 	panic("must not call")
+}
+
+type savedClaimPort struct {
+	wrong  bool
+	stored *Payload
+}
+
+func (*savedClaimPort) Load(LoadRequest) LoadOutcome {
+	return LoadOutcome{Variant: LoadMissing, MissingToken: Token("absence")}
+}
+func (p *savedClaimPort) CompareExchange(r CompareExchangeRequest) CompareExchangeOutcome {
+	if p.wrong {
+		wrong := payload(r.Payload.Version, "v2:wrong")
+		p.stored = &wrong
+	}
+	return CompareExchangeOutcome{Variant: CompareExchangeSaved, Token: Token("next")}
 }
 
 func ptr[T any](x T) *T { return &x }
