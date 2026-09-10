@@ -39,7 +39,7 @@ func TestNativeDurableCorpus(t *testing.T) {
 	emit := func(grants Grants, loaded Loaded, initial state.V2, digest, key string) {
 		t.Helper()
 		plan := BuildPlan(grants, loaded, initial, digest, key)
-		request := map[string]any{"arguments": []any{grantsCorpusValue(grants), loadedCorpusValue(loaded), stateV2CorpusValue(initial), textCorpusValue(digest), textCorpusValue(key)}, "capabilities": []string{}}
+		request := map[string]any{"arguments": []any{grantsCorpusValue(grants), loadedCorpusValue(loaded), stateV2CorpusValue(initial), textCorpusValue(digest), textCorpusValue(key)}, "capabilities": []string{"observability.log"}}
 		observation := map[string]any{"value": planCorpusValue(plan), "effects": []any{}}
 		if err := rq.Encode(request); err != nil {
 			t.Fatal(err)
@@ -116,8 +116,20 @@ func createCorpusFile(t *testing.T, name string) *os.File {
 func i64CorpusValue(v int64) any {
 	return map[string]any{"kind": "i64", "i64": strconv.FormatInt(v, 10)}
 }
-func boolCorpusValue(v bool) any   { return map[string]any{"kind": "bool", "bool": v} }
-func textCorpusValue(v string) any { return map[string]any{"kind": "text", "text": v} }
+func boolCorpusValue(v bool) any {
+	value := map[string]any{"kind": "bool"}
+	if v {
+		value["bool"] = true
+	}
+	return value
+}
+func textCorpusValue(v string) any {
+	value := map[string]any{"kind": "text"}
+	if v != "" {
+		value["text"] = v
+	}
+	return value
+}
 func recordCorpusValue(fields map[string]any) any {
 	return map[string]any{"kind": "record", "fields": fields}
 }
@@ -138,7 +150,15 @@ func stateCorpusValue(v application.State) any {
 	for i, key := range keys {
 		entries[i] = map[string]any{"key": i64CorpusValue(key), "value": i64CorpusValue(v.Counters[key])}
 	}
-	return recordCorpusValue(map[string]any{"Name": textCorpusValue(v.Name), "Values": map[string]any{"kind": "slice", "items": items}, "Counters": map[string]any{"kind": "map", "value_type": "i64", "entries": entries}})
+	values := map[string]any{"kind": "slice"}
+	if len(items) != 0 {
+		values["items"] = items
+	}
+	counters := map[string]any{"kind": "map", "value_type": "i64"}
+	if len(entries) != 0 {
+		counters["entries"] = entries
+	}
+	return recordCorpusValue(map[string]any{"Name": textCorpusValue(v.Name), "Values": values, "Counters": counters})
 }
 func stateV1CorpusValue(v state.V1) any {
 	return recordCorpusValue(map[string]any{"State": stateCorpusValue(v.State)})
