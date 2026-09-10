@@ -12,7 +12,7 @@ import (
 // PureValueMaximumMessageSize is the implementation-wide ceiling for one
 // certified Pure Value ABI message. Individual layouts retain their smaller,
 // structurally derived FixedSize+MaximumPayload bound.
-const PureValueMaximumMessageSize uint64 = 128 << 10
+const PureValueMaximumMessageSize uint64 = 256 << 10
 
 // PureValueMaximumHexLineSize bounds a hexadecimal message plus conservative
 // line/record overhead in JSONL and line-oriented carrier tools.
