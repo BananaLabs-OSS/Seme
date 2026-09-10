@@ -144,12 +144,19 @@ type recordField struct{ id, name, typ string }
 // Project emits one gofmt-formatted file. packageName is projection metadata,
 // not canonical meaning, and must be a valid Go identifier.
 func Project(g1 []byte, packageName string) ([]byte, error) {
+	return project(g1, packageName, false)
+}
+
+func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, error) {
 	if !identifier(packageName) {
 		return nil, fmt.Errorf("go_projection.invalid_package_name")
 	}
 	graph, err := parse(g1)
 	if err != nil {
 		return nil, err
+	}
+	if allowDuplicateNames {
+		uniquifyDeclarationNames(graph)
 	}
 	var programs []entity
 	for _, e := range graph {
@@ -176,10 +183,14 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 			return nil, fmt.Errorf("go_projection.invalid_function_member")
 		}
 		name, err := text(fn, "00000000000000000000000000009110")
-		if err != nil || !identifier(name) || seen[name] {
+		if err != nil || !identifier(name) || (!allowDuplicateNames && seen[name]) {
 			return nil, fmt.Errorf("go_projection.invalid_function_name")
 		}
-		names[id], seen[name] = name, true
+		rendered := name
+		if allowDuplicateNames && seen[name] {
+			rendered = name + "__seme_" + id[:8]
+		}
+		names[id], seen[name] = rendered, true
 	}
 	if _, ok := names[entry]; !ok {
 		return nil, fmt.Errorf("go_projection.entry_membership")
@@ -412,6 +423,35 @@ func Project(g1 []byte, packageName string) ([]byte, error) {
 		return nil, fmt.Errorf("go_projection.format: %w", err)
 	}
 	return formatted, nil
+}
+
+// uniquifyDeclarationNames makes the rich projector's temporary single-file
+// syntax tree unambiguous. Authenticated owner names are restored when that
+// tree is partitioned; the canonical graph and embedded envelope are unchanged.
+func uniquifyDeclarationNames(graph map[string]entity) {
+	fields := map[string]string{sRecordType: "00000000000000000000000000009300", sInterfaceType: "000000000000000000000000000a0100"}
+	seen := map[string]bool{}
+	ids := make([]string, 0, len(graph))
+	for id := range graph {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	for _, id := range ids {
+		e := graph[id]
+		field, ok := fields[e.schema]
+		if !ok {
+			continue
+		}
+		name, err := text(e, field)
+		if err != nil {
+			continue
+		}
+		if seen[name] {
+			e.fields[field] = []string{"by " + hex.EncodeToString([]byte(name+"__seme_"+id[:8]))}
+			graph[id] = e
+		}
+		seen[name] = true
+	}
 }
 
 func writeProjectionEnvelope(out *strings.Builder, graph []byte) {
@@ -1950,6 +1990,13 @@ func projectMatchExpression(match entity, c context) (string, error) {
 	returnType, err := expressionTypeName(firstExprID, firstBinding, c.graph)
 	if err != nil {
 		return "", err
+	}
+	secondType, secondTypeErr := expressionTypeName(secondExprID, firstBinding, c.graph)
+	if secondTypeErr == nil && secondType != returnType && second == "0" {
+		// Canonical optional/result payload matches use the scalar zero literal
+		// for an absent payload. Go requires a type-correct zero for aggregate
+		// payloads, so realize that neutral zero without naming constructors.
+		second = "*new(" + returnType + ")"
 	}
 	return "func() " + returnType + " { matched := " + value + "; if matched" + tag + " { return " + first + " }; return " + second + " }()", nil
 }

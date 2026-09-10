@@ -15,6 +15,7 @@ import (
 
 	"example.test/go-uab-11/application"
 	"example.test/go-uab-11/configuration"
+	"example.test/go-uab-11/model"
 )
 
 var nativeCorpusDirectory = flag.String("native-corpus-dir", "", "new directory for deterministic request and observation JSONL")
@@ -172,7 +173,7 @@ func commandValue(command application.Command) any {
 	return map[string]any{"kind": "record", "fields": map[string]any{"Key": i64(command.Key), "Index": i64(command.Index), "Delta": i64(command.Delta), "Amount": i64(command.Amount), "Scale": map[string]any{"kind": "bool", "bool": command.Scale}}}
 }
 
-func outcomeValue(outcome application.Outcome) any {
+func outcomeValue(outcome model.Result[model.Transition[application.State, int64], int64]) any {
 	if !outcome.Ok {
 		return map[string]any{"kind": "result", "variant": "error", "payload": i64(outcome.Error)}
 	}

@@ -34,6 +34,24 @@ func ProjectPackagesV3(g1 []byte, contracts contractcatalog.ProjectContractSetV5
 	return out, nil
 }
 
+// ProjectPackagesV4 derives projection ownership from a Package-v4 artifact
+// authenticated by the one-run Execution-v36/Project-v8 contract set.
+func ProjectPackagesV4(g1 []byte, contracts contractcatalog.ProjectContractSetV8, packageV2, packageV4 []byte) (map[string][]byte, error) {
+	if err := packagev3instance.ValidateV4(contracts, packageV2, packageV4); err != nil {
+		return nil, fmt.Errorf("go_projection.package_v4:%w", err)
+	}
+	e, err := wire.Decode(packageV4)
+	if err != nil {
+		return nil, err
+	}
+	ownership, err := richOwnershipV3(e)
+	if err != nil {
+		return nil, err
+	}
+	NormalizeRichPackageOwnership(&ownership)
+	return ProjectPackagesRich(g1, ownership)
+}
+
 func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
 	graphIDs := withWireSchema(e, wid("b020"))
 	complete := withWireSchema(e, wid("b029"))
@@ -65,6 +83,7 @@ func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
 		}
 		detailPackage[d.ID] = pid
 		p := RichPackage{Identity: identity, Name: name}
+		dependencies := map[string]bool{}
 		for _, iv := range d.Fields[wid("b212")].List {
 			binding := e.Entities[iv.Reference]
 			class := e.Entities[binding.Fields[wid("b242")].Reference].Fields[wid("b250")].Unsigned
@@ -73,8 +92,11 @@ func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
 				if target.Tag != 6 || packageNames[target.Reference] == "" {
 					return RichPackageOwnership{}, fmt.Errorf("go_projection.package_v3_dependency")
 				}
-				p.Dependencies = append(p.Dependencies, packageNames[target.Reference])
+				dependencies[packageNames[target.Reference]] = true
 			}
+		}
+		for dependency := range dependencies {
+			p.Dependencies = append(p.Dependencies, dependency)
 		}
 		sort.Strings(p.Dependencies)
 		for _, mv := range d.Fields[wid("b211")].List {
