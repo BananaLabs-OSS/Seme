@@ -40,6 +40,46 @@ type Inputs struct {
 	Artifact  []byte
 }
 
+// ModelFromArtifact reconstructs the declarative model. Authenticity is not
+// implied; callers must pass the returned model to Validate with exact inputs.
+func ModelFromArtifact(artifact []byte) (Model, error) {
+	e, err := wire.Decode(artifact)
+	if err != nil {
+		return Model{}, err
+	}
+	byID := map[wire.ID]string{}
+	var out Model
+	for x, q := range e.Entities {
+		if q.Schema != id("6011") {
+			continue
+		}
+		name, owner, source, pathv, kind, media, size, digest := q.Fields[id("6110")], q.Fields[id("6111")], q.Fields[id("6112")], q.Fields[id("6113")], q.Fields[id("6114")], q.Fields[id("6115")], q.Fields[id("6116")], q.Fields[id("6117")]
+		ke, ok := e.Entities[kind.Reference]
+		if name.Tag != 5 || owner.Tag != 6 || source.Tag != 6 || pathv.Tag != 5 || kind.Tag != 6 || !ok || ke.Schema != id("6012") || media.Tag != 5 || size.Tag != 3 || digest.Tag != 5 || len(digest.Bytes) != 32 {
+			return Model{}, fmt.Errorf("resource_instance.decode")
+		}
+		var sum [32]byte
+		copy(sum[:], digest.Bytes)
+		n := string(name.Bytes)
+		byID[x] = n
+		out.Resources = append(out.Resources, Resource{Identity: n, Owner: owner.Reference, SourceUnit: source.Reference, Path: string(pathv.Bytes), Kind: ke.Fields[id("6120")].Unsigned, MediaType: string(media.Bytes), Size: size.Unsigned, SHA256: sum})
+	}
+	for _, q := range e.Entities {
+		if q.Schema == id("6013") {
+			r, d := q.Fields[id("6130")], q.Fields[id("6131")]
+			n, ok := byID[r.Reference]
+			if r.Tag != 6 || d.Tag != 5 || !ok {
+				return Model{}, fmt.Errorf("resource_instance.decode_placement")
+			}
+			out.Placements = append(out.Placements, Placement{Resource: n, Destination: string(d.Bytes)})
+		}
+	}
+	if len(out.Resources) == 0 {
+		return Model{}, fmt.Errorf("resource_instance.decode_empty")
+	}
+	return out, nil
+}
+
 // VerifyDetached authenticates the external content store independently of
 // canonical metadata. Callers remain responsible for race-safe filesystem or
 // transport acquisition before constructing this immutable map.
