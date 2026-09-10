@@ -40,6 +40,36 @@ func TestValidateExecutionV35Instance(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+func TestFoundationEffectAndCapabilityAreStrictRuntimeBoundaryValues(t *testing.T) {
+	base := valid()
+	effect, capability, invoke := id(0x8201), id(0x8202), id(0x8203)
+	base.Entities[capability] = wire.Entity{ID: capability, Schema: id(0x16), Version: 1, Fields: map[wire.ID]wire.Value{id(0x160): {Tag: 5, Bytes: []byte("observability.log")}}}
+	base.Entities[effect] = wire.Entity{ID: effect, Schema: id(0x15), Version: 1, Fields: map[wire.ID]wire.Value{id(0x150): {Tag: 5, Bytes: []byte("observability.log")}, id(0x151): {Tag: 6, Reference: capability}}}
+	base.Entities[invoke] = wire.Entity{ID: invoke, Schema: id(0x90f1), Version: 1, Fields: map[wire.ID]wire.Value{id(0x9f10): {Tag: 6, Reference: effect}, id(0x9f11): {Tag: 7, List: []wire.Value{{Tag: 6, Reference: id(0x8003)}}}}}
+	function := base.Entities[id(0x8004)]
+	function.Fields[id(0x9113)] = wire.Value{Tag: 6, Reference: invoke}
+	base.Entities[function.ID] = function
+	if err := Validate(contract(t), base); err != nil {
+		t.Fatal(err)
+	}
+	for name, mutate := range map[string]func(*wire.Envelope){
+		"effect-extra-field": func(e *wire.Envelope) {
+			q := e.Entities[effect]
+			q.Fields[id(0x999)] = wire.Value{Tag: 5}
+			e.Entities[effect] = q
+		},
+		"capability-wrong-schema":   func(e *wire.Envelope) { q := e.Entities[capability]; q.Schema = id(0x17); e.Entities[capability] = q },
+		"unknown-foundation-schema": func(e *wire.Envelope) { q := e.Entities[capability]; q.Schema = id(0x18); e.Entities[capability] = q },
+	} {
+		t.Run(name, func(t *testing.T) {
+			forged := clone(base)
+			mutate(&forged)
+			if err := Validate(contract(t), forged); err == nil {
+				t.Fatal("forged Foundation runtime value accepted")
+			}
+		})
+	}
+}
 func TestRejectsMalformedExecutionClosure(t *testing.T) {
 	c := contract(t)
 	base := valid()

@@ -34,6 +34,11 @@ func Validate(contract contractcatalog.Contract, input wire.Envelope) error {
 			declarationIDs[id(f.ID)] = true
 		}
 	}
+	// Execution may directly reference the two runtime-boundary Foundation
+	// value schemas imported by the authenticated v35 contract. Keep this list
+	// deliberately closed; no other Foundation schema is admitted here.
+	schemas[id(0x15)] = executionmodule.Schema{ID: 0x15, Name: "Effect", Fields: []executionmodule.Field{{ID: 0x150, Name: "effect.name", Kind: 4}, {ID: 0x151, Name: "effect.capability", Kind: 5, Schema: 0x16}}}
+	schemas[id(0x16)] = executionmodule.Schema{ID: 0x16, Name: "Capability", Fields: []executionmodule.Field{{ID: 0x160, Name: "capability.name", Kind: 4}}}
 	var program wire.ID
 	for eid, e := range input.Entities {
 		if e.Schema == id(0x9015) {
