@@ -27,10 +27,20 @@ const (
 // BindMetadata adds independently checkable Project-v3 applicability metadata
 // to an already resolved bounded Go closure.
 func BindMetadata(c dependencyresolution.Closure, projectV3 []byte) (dependencyresolution.Closure, error) {
+	return bindMetadata(c, projectV3)
+}
+
+// BindMetadataV8 binds resolution evidence to the single v36 Package-v4
+// artifact that contains the same-run source inventory and package graph.
+func BindMetadataV8(c dependencyresolution.Closure, packageV4 []byte) (dependencyresolution.Closure, error) {
+	return bindMetadata(c, packageV4)
+}
+
+func bindMetadata(c dependencyresolution.Closure, projectGraph []byte) (dependencyresolution.Closure, error) {
 	if err := dependencyresolution.Validate(c); err != nil {
 		return dependencyresolution.Closure{}, err
 	}
-	p, err := inspect(projectV3)
+	p, err := inspect(projectGraph)
 	if err != nil {
 		return dependencyresolution.Closure{}, err
 	}

@@ -26,6 +26,19 @@ type Result struct {
 }
 
 func Build(ctx context.Context, snapshot goprovider.DocumentSnapshot, contracts contractcatalog.ProjectContractSet, executionG1 []byte, compile Compile) (Result, error) {
+	return build(ctx, snapshot, contracts.Execution(), executionG1, compile, func(input projectemitter.Input) ([]byte, error) { return projectemitter.Emit(contracts, input) })
+}
+
+// BuildV8 performs one fresh lift and emits its semantic base directly under
+// the authenticated Execution-v36/Package-v4/Project-v8 authorities.
+func BuildV8(ctx context.Context, snapshot goprovider.DocumentSnapshot, contracts contractcatalog.ProjectContractSetV8, executionG1 []byte, compile Compile) (Result, error) {
+	if !contracts.Validated() {
+		return Result{}, fmt.Errorf("project_build.contracts")
+	}
+	return build(ctx, snapshot, contracts.Execution(), executionG1, compile, func(input projectemitter.Input) ([]byte, error) { return projectemitter.EmitV8Base(contracts, input) })
+}
+
+func build(ctx context.Context, snapshot goprovider.DocumentSnapshot, executionContract contractcatalog.Contract, executionG1 []byte, compile Compile, emit func(projectemitter.Input) ([]byte, error)) (Result, error) {
 	if compile == nil {
 		return Result{}, fmt.Errorf("project_build.compiler_missing")
 	}
@@ -52,7 +65,7 @@ func Build(ctx context.Context, snapshot goprovider.DocumentSnapshot, contracts 
 	if err != nil || !bytes.Equal(canonical, compiled) {
 		return Result{}, fmt.Errorf("project_build.execution_noncanonical")
 	}
-	if err = executionprofile.ValidateConstruction(contracts.Execution(), execution); err != nil {
+	if err = executionprofile.ValidateConstruction(executionContract, execution); err != nil {
 		return Result{}, fmt.Errorf("project_build.execution_profile:%w", err)
 	}
 
@@ -79,7 +92,7 @@ func Build(ctx context.Context, snapshot goprovider.DocumentSnapshot, contracts 
 		}
 		input.Packages = append(input.Packages, out)
 	}
-	artifact, err := projectemitter.Emit(contracts, input)
+	artifact, err := emit(input)
 	if err != nil {
 		return Result{}, fmt.Errorf("project_build.emit:%w", err)
 	}
