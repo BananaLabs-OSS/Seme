@@ -185,6 +185,114 @@ func NormalizeRichPackageOwnership(in *RichPackageOwnership) {
 	sort.Slice(in.Declarations, func(i, j int) bool { return in.Declarations[i].ID < in.Declarations[j].ID })
 	sort.Slice(in.Families, func(i, j int) bool { return in.Families[i].Kind < in.Families[j].Kind })
 }
+
+type richPackagePlan struct {
+	declarations []string
+	imports      []string
+	typeNames    map[string]string
+	familyNames  map[string]string
+}
+
+// planRichPackages determines owner-only emission and every package import
+// required by canonical calls, signatures, constructors and receiver types.
+func planRichPackages(g1 []byte, in RichPackageOwnership) (map[string]richPackagePlan, error) {
+	if err := ValidateRichPackageOwnership(g1, in); err != nil {
+		return nil, err
+	}
+	g, err := parse(g1)
+	if err != nil {
+		return nil, err
+	}
+	packages := map[string]RichPackage{}
+	aliases := map[string]string{}
+	for _, p := range in.Packages {
+		packages[p.Identity] = p
+		aliases[p.Identity] = p.Name
+	}
+	owners := map[string]OwnedDeclaration{}
+	plans := map[string]richPackagePlan{}
+	for _, p := range in.Packages {
+		plans[p.Identity] = richPackagePlan{typeNames: map[string]string{}, familyNames: map[string]string{}}
+	}
+	for _, d := range in.Declarations {
+		owners[d.ID] = d
+		p := plans[d.Package]
+		p.declarations = append(p.declarations, d.ID)
+		plans[d.Package] = p
+	}
+	families := map[string]OwnedFamily{}
+	for _, f := range in.Families {
+		families[f.Kind] = f
+	}
+	for pkg, p := range plans {
+		imports := map[string]bool{}
+		for id, d := range owners {
+			if d.Kind != RecordDeclaration && d.Kind != InterfaceDeclaration {
+				continue
+			}
+			name := d.Name
+			if d.Package != pkg {
+				name = aliases[d.Package] + "." + name
+			}
+			p.typeNames[id] = name
+		}
+		for kind, f := range families {
+			name := f.Name
+			if f.Package != pkg {
+				name = aliases[f.Package] + "." + name
+			}
+			p.familyNames[kind] = name
+		}
+		queue := append([]string(nil), p.declarations...)
+		seen := map[string]bool{}
+		for len(queue) > 0 {
+			x := queue[0]
+			queue = queue[1:]
+			if seen[x] {
+				continue
+			}
+			seen[x] = true
+			e, ok := g[x]
+			if !ok {
+				continue
+			}
+			for _, r := range entityReferences(e, g) {
+				if owner, yes := owners[r]; yes && owner.Package != pkg {
+					imports[owner.Package] = true
+					if owner.Kind == FunctionDeclaration || owner.Kind == MethodDeclaration {
+						continue
+					}
+				}
+				queue = append(queue, r)
+			}
+			switch e.schema {
+			case sOptionType:
+				if f, ok := families["option"]; ok && f.Package != pkg {
+					imports[f.Package] = true
+				}
+			case sResultType:
+				if f, ok := families["result"]; ok && f.Package != pkg {
+					imports[f.Package] = true
+				}
+			case sTransitionType:
+				if f, ok := families["transition"]; ok && f.Package != pkg {
+					imports[f.Package] = true
+				}
+			}
+		}
+		for dep := range imports {
+			if !contains(packages[pkg].Dependencies, dep) {
+				return nil, fmt.Errorf("go_projection.rich_type_dependency:%s:%s", pkg, dep)
+			}
+			p.imports = append(p.imports, dep)
+		}
+		sort.Strings(p.imports)
+		sort.Strings(p.declarations)
+		plans[pkg] = p
+	}
+	return plans, nil
+}
+
 func contains(xs []string, x string) bool {
 	for _, v := range xs {
 		if v == x {
