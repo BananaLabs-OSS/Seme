@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"seme.local/reference/contractcatalog"
+	"seme.local/reference/packagecallinstance"
 	"seme.local/reference/packagedetailinstance"
 	"seme.local/reference/projectinstance"
 	"seme.local/reference/sourceinventory"
@@ -55,6 +56,9 @@ func Validate(in Inputs) error {
 	}
 	if err := packagedetailinstance.Validate(in.PackageGraph); err != nil {
 		return fmt.Errorf("project_graph.package:%w", err)
+	}
+	if err := packagecallinstance.Validate(in.PackageGraph); err != nil {
+		return fmt.Errorf("project_graph.calls:%w", err)
 	}
 	project, _ := wire.Decode(in.Project)
 	inventory, _ := wire.Decode(in.Inventory)

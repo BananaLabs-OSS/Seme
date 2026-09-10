@@ -455,6 +455,13 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 	return wire.ID{}, false
 }
 
+// ExpressionType exposes the evaluator's fail-closed canonical type
+// derivation for validators that must compare expression and declaration
+// types without executing a value.
+func ExpressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
+	return expressionType(g, expressionID)
+}
+
 func evalBlock(g wire.Envelope, block wire.ID, env map[wire.ID]Value, budget int) (Value, error) {
 	v, returned, err := execBlock(g, block, env, budget)
 	if err != nil {
