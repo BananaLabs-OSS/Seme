@@ -52,7 +52,7 @@ func build(ctx context.Context, snapshot goprovider.DocumentSnapshot, executionC
 	}
 	lifted := session.Apply(snapshot)
 	if !lifted.Accepted || !lifted.Valid || lifted.Revision != snapshot.Revision || lifted.LastValidRevision != snapshot.Revision || lifted.Disposition != "accepted-valid" {
-		return Result{}, fmt.Errorf("project_build.current_snapshot_invalid")
+		return Result{}, fmt.Errorf("project_build.current_snapshot_invalid:%v", lifted.Diagnostics)
 	}
 	compiled, err := compile(ctx, []byte(lifted.CanonicalG1))
 	if err != nil {

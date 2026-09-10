@@ -1996,7 +1996,7 @@ func projectMatchExpression(match entity, c context) (string, error) {
 		// Canonical optional/result payload matches use the scalar zero literal
 		// for an absent payload. Go requires a type-correct zero for aggregate
 		// payloads, so realize that neutral zero without naming constructors.
-		second = "*new(" + returnType + ")"
+		second = returnType + "{}"
 	}
 	return "func() " + returnType + " { matched := " + value + "; if matched" + tag + " { return " + first + " }; return " + second + " }()", nil
 }
