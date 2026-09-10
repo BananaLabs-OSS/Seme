@@ -74,10 +74,9 @@ const (
 )
 
 type CompareExchangeOutcome struct {
-	Variant   CompareExchangeVariant
-	Token     Token
-	Committed *Payload
-	Error     *PortError
+	Variant CompareExchangeVariant
+	Token   Token
+	Error   *PortError
 }
 
 type Port interface {
@@ -178,17 +177,17 @@ func Execute(profile Profile, grants Grants, request Request, port Port, transfo
 	trace = append(trace, Observation{Sequence: profile.CompareExchange.Sequence, Operation: profile.CompareExchange.Identity, CompareRequest: &casRequest, CompareOutcome: &cas})
 	switch cas.Variant {
 	case CompareExchangeSaved:
-		if len(cas.Token) == 0 || cas.Error != nil || cas.Committed == nil || !samePayload(*cas.Committed, next) {
+		if len(cas.Token) == 0 || cas.Error != nil {
 			return fail("seme.durable.compare_exchange.invalid", trace)
 		}
 		return Result{Committed: true, Payload: clonePayload(next), Token: cloneBytes(cas.Token), Trace: trace}
 	case CompareExchangeConflict:
-		if len(cas.Token) == 0 || cas.Error != nil || cas.Committed != nil {
+		if len(cas.Token) == 0 || cas.Error != nil {
 			return fail("seme.durable.compare_exchange.invalid", trace)
 		}
 		return fail("seme.durable.compare_exchange.conflict", trace)
 	case CompareExchangeError:
-		if len(cas.Token) != 0 || cas.Committed != nil || !validPortError(cas.Error, profile.CompareExchange.Identity) {
+		if len(cas.Token) != 0 || !validPortError(cas.Error, profile.CompareExchange.Identity) {
 			return fail("seme.durable.compare_exchange.invalid", trace)
 		}
 		return fail(cas.Error.Identity, trace)
@@ -242,10 +241,6 @@ func cloneLoadOutcome(v LoadOutcome) LoadOutcome {
 }
 func cloneCompareOutcome(v CompareExchangeOutcome) CompareExchangeOutcome {
 	v.Token = cloneBytes(v.Token)
-	if v.Committed != nil {
-		x := clonePayload(*v.Committed)
-		v.Committed = &x
-	}
 	if v.Error != nil {
 		x := *v.Error
 		v.Error = &x
