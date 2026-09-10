@@ -261,6 +261,7 @@ type snapshotSourceImporter struct {
 	loaded      map[string]*checkedSessionPackage
 	checking    map[string]bool
 	diagnostics *[]SessionDiagnostic
+	standard    types.Importer
 }
 
 func (loader *snapshotSourceImporter) Import(path string) (*types.Package, error) {
@@ -280,7 +281,10 @@ func (loader *snapshotSourceImporter) Import(path string) (*types.Package, error
 		if err != nil || !pkg.Goroot {
 			return nil, fmt.Errorf("go.external_import_unsupported:%s", path)
 		}
-		return importer.Default().Import(path)
+		if loader.standard == nil {
+			loader.standard = importer.ForCompiler(token.NewFileSet(), "source", nil)
+		}
+		return loader.standard.Import(path)
 	}
 	if loader.checking[path] {
 		return nil, fmt.Errorf("go.import_cycle:%s", path)

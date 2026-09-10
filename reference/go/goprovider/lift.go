@@ -245,7 +245,12 @@ type sourceImporter struct {
 }
 
 func newSourceImporter(project string, manifest Manifest, root string) *sourceImporter {
-	return &sourceImporter{project: project, root: root, manifest: manifest, standard: importer.Default(), cache: map[string]*types.Package{}, loading: map[string]bool{}}
+	// Source import is deliberately independent of the process working
+	// directory. Go 1.26's compiled-package importer may consult `go list`,
+	// which makes an otherwise identical snapshot depend on whether the host
+	// happens to be inside a module. Reading the installed standard-library
+	// sources keeps provider authority rooted in GOROOT instead.
+	return &sourceImporter{project: project, root: root, manifest: manifest, standard: importer.ForCompiler(token.NewFileSet(), "source", nil), cache: map[string]*types.Package{}, loading: map[string]bool{}}
 }
 
 func (loader *sourceImporter) Import(path string) (*types.Package, error) {
