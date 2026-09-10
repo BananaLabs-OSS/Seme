@@ -185,6 +185,9 @@ func validate(source []byte, v4 bool) error {
 		if er != nil {
 			return er
 		}
+		// Import bindings are source occurrences. The same package-level alias
+		// may therefore appear once in each source unit, while two bindings in
+		// one unit would be ambiguous.
 		aliases := map[string]bool{}
 		for _, bid := range bindings {
 			b, ok := e.Entities[bid]
@@ -195,11 +198,6 @@ func validate(source []byte, v4 bool) error {
 			if err = shapeBinding(b); err != nil {
 				return at(bid, err)
 			}
-			alias := optionalBlob(b, id("b240"))
-			if alias != "" && aliases[alias] {
-				return fmt.Errorf("package_detail.alias_duplicate:%s", alias)
-			}
-			aliases[alias] = alias != ""
 			requested, _ := blob(b, id("b241"))
 			if len(requested) == 0 {
 				return fmt.Errorf("package_detail.requested_empty:%s", bid)
@@ -214,6 +212,17 @@ func validate(source []byte, v4 bool) error {
 			if !originSet[oid] {
 				return fmt.Errorf("package_detail.binding_origin:%s", bid)
 			}
+			alias := optionalBlob(b, id("b240"))
+			origin := e.Entities[oid]
+			source, sourceErr := ref(origin, id("b260"))
+			if sourceErr != nil {
+				return fmt.Errorf("package_detail.binding_origin:%s", bid)
+			}
+			aliasKey := source.String() + "\x00" + alias
+			if alias != "" && aliases[aliasKey] {
+				return fmt.Errorf("package_detail.alias_duplicate:%s", alias)
+			}
+			aliases[aliasKey] = alias != ""
 			local, lok := optionalRef(b, id("b243"))
 			external, eok := optionalRef(b, id("b244"))
 			if class == 0 {
