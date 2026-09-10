@@ -1,4 +1,4 @@
-// Package configurationmodule emits Configuration and Initialization Contract v1.
+// Package configurationmodule emits versioned Configuration and Initialization Contracts.
 package configurationmodule
 
 import (
@@ -10,6 +10,7 @@ import (
 
 const ModuleID = "00000000000000000000000000004000"
 const RevisionID = "00000000000000000000000000004001"
+const RevisionV2ID = "00000000000000000000000000004005"
 
 type Origin uint64
 
@@ -69,8 +70,31 @@ func declarations() []schema {
 	}
 }
 
+func declarationsV2() []schema {
+	return append(declarations(),
+		schema{0x4018, "RuntimeInput", []field{f(0x4180, "runtime_input.identity", 4, 0, 0), f(0x4181, "runtime_input.type", 5, 0, 0), f(0x4182, "runtime_input.capability", 5, 0x16, 1)}},
+		schema{0x4019, "ArgumentSourceKind", []field{f(0x4190, "argument_source_kind.code", 2, 0, 0)}},
+		schema{0x401a, "ArgumentSource", []field{f(0x41a0, "argument_source.kind", 5, 0x4019, 0), f(0x41a1, "argument_source.derived_type", 5, 0, 0), f(0x41a2, "argument_source.field", 5, 0x4011, 1), f(0x41a3, "argument_source.runtime_input", 5, 0x4018, 1), f(0x41a4, "argument_source.predecessor", 5, 0x401b, 1), f(0x41a5, "argument_source.static_value", 5, 0, 1), f(0x41a6, "argument_source.record_assembly", 5, 0x401c, 1)}},
+		schema{0x401b, "BoundInitializerUnit", []field{f(0x41b0, "bound_initializer_unit.base", 5, 0x4015, 0), f(0x41b1, "bound_initializer_unit.arguments", 5, 0x401e, 2)}},
+		schema{0x401c, "RecordAssembly", []field{f(0x41c0, "record_assembly.record_type", 5, 0x9030, 0), f(0x41c1, "record_assembly.members", 5, 0x401d, 2)}},
+		schema{0x401d, "RecordMemberBinding", []field{f(0x41d0, "record_member_binding.field", 5, 0x9031, 0), f(0x41d1, "record_member_binding.source", 5, 0x401a, 0)}},
+		schema{0x401e, "InitializerArgument", []field{f(0x41e0, "initializer_argument.parameter", 5, 0x9012, 0), f(0x41e1, "initializer_argument.index", 2, 0, 0), f(0x41e2, "initializer_argument.source", 5, 0x401a, 0)}},
+		schema{0x401f, "BoundConfigurationGraph", []field{f(0x41f0, "bound_configuration_graph.base", 5, 0x4010, 0), f(0x41f1, "bound_configuration_graph.runtime_inputs", 5, 0x4018, 2), f(0x41f2, "bound_configuration_graph.initializers", 5, 0x401b, 2), f(0x41f3, "bound_configuration_graph.content_revision", 4, 0, 0)}},
+	)
+}
+
 func Emit(out io.Writer) error {
-	d := declarations()
+	return EmitVersion(out, 1)
+}
+
+func EmitVersion(out io.Writer, version int) error {
+	if version < 1 || version > 2 {
+		return fmt.Errorf("unsupported Configuration Contract version %d", version)
+	}
+	d, revision, parent := declarations(), RevisionID, "pc 0"
+	if version == 2 {
+		d, revision, parent = declarationsV2(), RevisionV2ID, "pc 1\n"+RevisionID
+	}
 	fields := []field{}
 	for _, s := range d {
 		fields = append(fields, s.fields...)
@@ -78,8 +102,8 @@ func Emit(out io.Writer) error {
 	sort.Slice(fields, func(i, j int) bool { return fields[i].id < fields[j].id })
 	id := func(x uint64) string { return fmt.Sprintf("%032x", x) }
 	text := func(x string) string { return hex.EncodeToString([]byte(x)) }
-	fmt.Fprintf(out, "# Generated construction projection for Configuration and Initialization Contract v1.\nve 1\nmo %s\nrv %s\npc 0\nec %d\n\n", ModuleID, RevisionID, 4+len(d)+len(fields))
-	fmt.Fprintf(out, "en %s %s 1 3\nfi %s by %s\nfi %s li 3\nrf %s\nrf %s\nrf %s\nfi %s li %d\n", ModuleID, id(0x12), id(0x120), text("configuration-contract-v1"), id(0x121), id(0x4002), id(0x4003), id(0x4004), id(0x122), len(d)+len(fields))
+	fmt.Fprintf(out, "# Generated construction projection for Configuration and Initialization Contract v%d.\nve 1\nmo %s\nrv %s\n%s\nec %d\n\n", version, ModuleID, revision, parent, 4+len(d)+len(fields))
+	fmt.Fprintf(out, "en %s %s %d 3\nfi %s by %s\nfi %s li 3\nrf %s\nrf %s\nrf %s\nfi %s li %d\n", ModuleID, id(0x12), version, id(0x120), text(fmt.Sprintf("configuration-contract-v%d", version)), id(0x121), id(0x4002), id(0x4003), id(0x4004), id(0x122), len(d)+len(fields))
 	for _, s := range d {
 		fmt.Fprintf(out, "rf %s\n", id(s.id))
 	}

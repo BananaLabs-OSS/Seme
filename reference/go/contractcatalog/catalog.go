@@ -31,10 +31,12 @@ var (
 	projectRevV4        = mustID("0000000000000000000000000000e004")
 	projectRevV5        = mustID("0000000000000000000000000000e005")
 	projectRevV6        = mustID("0000000000000000000000000000e008")
+	projectRevV7        = mustID("0000000000000000000000000000e009")
 	dependencyModule    = mustID("0000000000000000000000000000f000")
 	dependencyRev       = mustID("0000000000000000000000000000f001")
 	configurationModule = mustID("00000000000000000000000000004000")
 	configurationRev    = mustID("00000000000000000000000000004001")
+	configurationRevV2  = mustID("00000000000000000000000000004005")
 	foundationModule    = mustID("00000000000000000000000000003000")
 	foundationRev       = mustID("00000000000000000000000000003001")
 )
@@ -241,6 +243,50 @@ type ProjectContractSetV5 struct {
 type ProjectContractSetV6 struct {
 	execution, packages, dependency, foundation, configuration, project Contract
 	validated                                                           bool
+}
+
+type ProjectContractSetV7 struct {
+	execution, packages, dependency, foundation, configuration, project Contract
+	validated                                                           bool
+}
+
+func (s ProjectContractSetV7) Validated() bool         { return s.validated }
+func (s ProjectContractSetV7) Execution() Contract     { return s.execution }
+func (s ProjectContractSetV7) Package() Contract       { return s.packages }
+func (s ProjectContractSetV7) Dependency() Contract    { return s.dependency }
+func (s ProjectContractSetV7) Foundation() Contract    { return s.foundation }
+func (s ProjectContractSetV7) Configuration() Contract { return s.configuration }
+func (s ProjectContractSetV7) Project() Contract       { return s.project }
+
+func ResolveProjectContractSetV7(foundation, execution, packages, dependency, configuration, project []byte) (ProjectContractSetV7, error) {
+	foundationPin := Pin{foundationModule, foundationRev}
+	execPin, packagePin := Pin{executionModule, executionRev}, Pin{packageModule, packageRevV3}
+	dependencyPin, configurationPin, projectPin := Pin{dependencyModule, dependencyRev}, Pin{configurationModule, configurationRevV2}, Pin{projectModule, projectRevV7}
+	f, err := Resolve(foundation, Expectation{Pin: foundationPin, ModuleVersion: 1, RequiredExports: ids("16"), Digest: mustDigest("bbb42f8d71f8c537713a478514f74f79cef60ba370b1a2e10525f631d922dd5d")})
+	if err != nil {
+		return ProjectContractSetV7{}, fmt.Errorf("foundation:%w", err)
+	}
+	x, err := Resolve(execution, Expectation{Pin: execPin, ModuleVersion: 35, RequiredExports: ids("9015"), Digest: mustDigest("54fdd39b5d78f7f12da37fd43505e0a7962bad9d9808b54a16c20e4cf95e736a")})
+	if err != nil {
+		return ProjectContractSetV7{}, fmt.Errorf("execution:%w", err)
+	}
+	p, err := Resolve(packages, Expectation{Pin: packagePin, ModuleVersion: 3, RequiredExports: ids("b010", "b011", "b012", "b013", "b014", "b020", "b021", "b022", "b023", "b024", "b025", "b026", "b027", "b028", "b029"), Digest: mustDigest("d05d708091bd5594f059d00ec51d083c2c694bc07015befb92cc0fc1a4f30f37")})
+	if err != nil {
+		return ProjectContractSetV7{}, fmt.Errorf("package:%w", err)
+	}
+	d, err := Resolve(dependency, Expectation{Pin: dependencyPin, ModuleVersion: 1, RequiredExports: ids("f010", "f011", "f012", "f013", "f014", "f015", "f016", "f017"), Digest: mustDigest("167cc9a93239db97075d064f0f008edae194bc79e8e9391e2e97958b345be024")})
+	if err != nil {
+		return ProjectContractSetV7{}, fmt.Errorf("dependency:%w", err)
+	}
+	c, err := Resolve(configuration, Expectation{Pin: configurationPin, ModuleVersion: 2, RequiredExports: ids("4010", "4011", "4012", "4013", "4014", "4015", "4016", "4017", "4018", "4019", "401a", "401b", "401c", "401d", "401e", "401f"), Imports: []Pin{packagePin, execPin, foundationPin}, Digest: mustDigest("8c10667d15d7ecb30f9567dc63af61a0fcd4e947993d2854eef27319c492cadf")})
+	if err != nil {
+		return ProjectContractSetV7{}, fmt.Errorf("configuration:%w", err)
+	}
+	r, err := Resolve(project, Expectation{Pin: projectPin, ModuleVersion: 7, RequiredExports: ids("e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e020", "e021", "e022"), Imports: []Pin{packagePin, execPin, dependencyPin, configurationPin}, Digest: mustDigest("68b5a7fa7412e88261938c701e3209c48041d8b1ccced46fb3ccd90f00e6885d")})
+	if err != nil {
+		return ProjectContractSetV7{}, fmt.Errorf("project:%w", err)
+	}
+	return ProjectContractSetV7{execution: x, packages: p, dependency: d, foundation: f, configuration: c, project: r, validated: true}, nil
 }
 
 func (s ProjectContractSetV6) Validated() bool         { return s.validated }

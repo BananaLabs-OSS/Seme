@@ -1,13 +1,16 @@
 package main
 
 import (
+	"flag"
 	"log"
 	"os"
 	"seme.local/reference/configurationmodule"
 )
 
 func main() {
-	if err := configurationmodule.Emit(os.Stdout); err != nil {
+	version := flag.Int("version", 1, "Configuration Contract version")
+	flag.Parse()
+	if err := configurationmodule.EmitVersion(os.Stdout, *version); err != nil {
 		log.Fatal(err)
 	}
 }
