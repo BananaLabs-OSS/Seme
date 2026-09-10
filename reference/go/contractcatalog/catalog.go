@@ -50,6 +50,11 @@ type Contract struct {
 	validated bool
 }
 
+// ResolveDependencyContract authenticates the exact Dependency Contract v1.
+func ResolveDependencyContract(source []byte) (Contract, error) {
+	return Resolve(source, Expectation{Pin: Pin{dependencyModule, dependencyRev}, ModuleVersion: 1, RequiredExports: ids("f010", "f011", "f012", "f013", "f014", "f015", "f016", "f017"), Digest: mustDigest("167cc9a93239db97075d064f0f008edae194bc79e8e9391e2e97958b345be024")})
+}
+
 // Resolve accepts only the one canonical byte representation described by e.
 func Resolve(source []byte, e Expectation) (Contract, error) {
 	graph, err := wire.Decode(source)
