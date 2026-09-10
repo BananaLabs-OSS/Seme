@@ -190,13 +190,14 @@ fixture or success criterion. The empty baseline is validated by
 `../scripts/check-upb-v1-scorecard.sh`; mapped claimed gates execute through
 `../scripts/check-upb-v1-claimed.sh`.
 
-Go UPB-02 is underway without a score claim. The provider now retains a typed,
-deterministic resolution manifest for file ownership, top-level declaration
-membership and visibility, import aliases and locality, and honest project
-locations. Projection distinguishes private package members from exported
-interfaces and rejects cross-package access to private members. A validated
-Package v1 graph inspector reports the currently canonical package identities,
-dependencies, exports, revisions, and signatures. Package v1 does not commit
-full private membership, import bindings, or source provenance, so UPB-02
-remains unclaimed until a neutral compatible contract evolution carries those
-facts and the seven-evidence gate proves them end to end.
+Go UPB-02 is complete for its bounded package-graph profile. Package Contract
+v2 carries full private/public membership, import bindings, aliases, native
+visibility, source ownership, exact spans, and digests; Project Contract v3
+binds that graph to the detached source inventory. The production Go pipeline
+emits and authenticates the complete Project v1 → Inventory v2 → Package v2 →
+Project v3 chain, strict projection consumes Package v2 without a legacy
+fallback, and the mapped seven-evidence gate proves native, canonical,
+standalone Wasm, pinned Pulp, projection/re-lift, and adversarial behavior.
+Original and projected Project v3 artifacts honestly differ when source paths
+or digests differ; semantic Project v1 remains byte-identical, while repeated
+lifts of the same projected source produce byte-identical Project v3 output.
