@@ -213,6 +213,10 @@ func TestTypeNamesArePackageRelativeAcrossRichFamilies(t *testing.T) {
 	if err != nil || name != "model.Result[model.Transition[application.State, int64], int64]" {
 		t.Fatalf("name=%q err=%v", name, err)
 	}
+	name, err = typeNameRelative(g, "result", map[string]string{"state": "application.State", "result": "model.Result", "transition": "model.Transition"}, map[string]string{"result": "model.Result", "transition": "model.Transition"})
+	if err != nil || name != "model.Result[model.Transition[application.State, int64], int64]" {
+		t.Fatalf("owned generic application name=%q err=%v", name, err)
+	}
 }
 
 func TestGeneratedImportMayUseAuthenticatedDependencyClosure(t *testing.T) {

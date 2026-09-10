@@ -2052,12 +2052,15 @@ func typeName(g map[string]entity, id string) (string, error) {
 // typeNameRelative renders declaration and generic-family names relative to
 // one package without changing their canonical identities.
 func typeNameRelative(g map[string]entity, id string, names, families map[string]string) (string, error) {
-	if name := names[id]; name != "" {
-		return name, nil
-	}
 	e, ok := g[id]
 	if !ok {
 		return "", fmt.Errorf("go_projection.missing_type:%s", id)
+	}
+	// Concrete applications of neutral generic families still need their type
+	// arguments. Package ownership may attach the family declaration name to
+	// the application identity; do not mistake that alias for a complete type.
+	if name := names[id]; name != "" && e.schema != sOptionType && e.schema != sResultType && e.schema != sTransitionType {
+		return name, nil
 	}
 	switch e.schema {
 	case sInteger:

@@ -133,7 +133,17 @@ func run(parent context.Context, args []string) error {
 	}
 	cmd := exec.CommandContext(ctx, *goTool, "test", "./...")
 	cmd.Dir = tmp
-	cmd.Env = append(os.Environ(), "GOWORK=off", "GOPROXY=off", "GOSUMDB=off")
+	environment := make([]string, 0, len(os.Environ())+4)
+	for _, value := range os.Environ() {
+		if !strings.HasPrefix(value, "GOROOT=") && !strings.HasPrefix(value, "GOWORK=") && !strings.HasPrefix(value, "GOPROXY=") && !strings.HasPrefix(value, "GOSUMDB=") {
+			environment = append(environment, value)
+		}
+	}
+	// The caller selects an exact executable. Bind its matching standard
+	// library as well so an ambient GOROOT cannot mix another Go edition into
+	// native validation.
+	goRoot := filepath.Dir(filepath.Dir(*goTool))
+	cmd.Env = append(environment, "GOROOT="+goRoot, "GOWORK=off", "GOPROXY=off", "GOSUMDB=off")
 	if out, testErr := cmd.CombinedOutput(); testErr != nil {
 		return fmt.Errorf("native_test:%w:%s", testErr, out)
 	}
