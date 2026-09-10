@@ -87,6 +87,17 @@ func TestAnalyzeComposesStringNotEqual(t *testing.T) {
 	}
 }
 
+func TestAnalyzeComposesStableIntegerEqual(t *testing.T) {
+	expression, signature, info := checkedReturnExpression(t, "return a == b")
+	analyzed, err := analyzeGoExpression(expression, signature, info)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analyzed.kind != goBooleanAnd || analyzed.left.kind != goIntegerLessEqual || analyzed.right.kind != goIntegerLessEqual {
+		t.Fatalf("unexpected integer equality composition: %#v", analyzed)
+	}
+}
+
 func TestIntegerNotEqualRejectsDuplicatingEffectfulOperands(t *testing.T) {
 	expression, signature, info := checkedReturnExpression(t, "return a+1 != b")
 	if _, err := analyzeGoExpression(expression, signature, info); err == nil || !strings.Contains(err.Error(), "unsupported_integer_not_equal_operands") {

@@ -912,8 +912,10 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		case token.LOR:
 			kind = goBooleanOr
 		case token.EQL:
-			if isGoStringExpression(expression.X, info) {
+			if isGoStringExpression(left, info) && isGoStringExpression(right, info) {
 				kind = goStringEqual
+			} else if isGoIntegerExpression(left, info) && isGoIntegerExpression(right, info) && stableIntegerComparisonOperand(left) && stableIntegerComparisonOperand(right) {
+				kind = goBooleanAnd
 			} else {
 				return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
 			}
@@ -953,7 +955,15 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return &goExpression{kind: goBooleanNot, left: equal}, nil
 		}
-		result := &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}
+		var result *goExpression
+		if expression.Op == token.EQL && kind == goBooleanAnd {
+			result = &goExpression{kind: goBooleanAnd,
+				left:  &goExpression{kind: goIntegerLessEqual, left: analyzedLeft, right: analyzedRight},
+				right: &goExpression{kind: goIntegerLessEqual, left: analyzedRight, right: analyzedLeft},
+			}
+		} else {
+			result = &goExpression{kind: kind, left: analyzedLeft, right: analyzedRight}
+		}
 		if negate {
 			result = &goExpression{kind: goBooleanNot, left: result}
 		}
@@ -1938,6 +1948,9 @@ func stableIntegerComparisonOperand(expression ast.Expr) bool {
 		return true
 	case *ast.SelectorExpr:
 		return stableIntegerComparisonOperand(value.X)
+	case *ast.CallExpr:
+		identifier, ok := ast.Unparen(value.Fun).(*ast.Ident)
+		return ok && identifier.Name == "len" && len(value.Args) == 1 && stableIntegerComparisonOperand(value.Args[0])
 	default:
 		return false
 	}
