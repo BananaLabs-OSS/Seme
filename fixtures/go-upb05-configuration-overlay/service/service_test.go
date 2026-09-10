@@ -40,6 +40,20 @@ func TestConfigurationDefaultsValidationAndInitializationOrder(t *testing.T) {
 	if outOfOrder.Ok || outOfOrder.Error != 20 {
 		t.Fatalf("out-of-order=%#v", outOfOrder)
 	}
+	for _, test := range []struct {
+		configured configuration.Initialized
+		prepared   policy.Initialized
+		error      int64
+	}{
+		{configuration.Initialized{Settings: configuration.Settings{NamePrefix: "x", Limit: 4}, Stage: 0}, policy.Initialized{Limit: 4, Stage: 2}, 21},
+		{configuration.Initialized{Settings: configuration.Settings{NamePrefix: "x", Limit: 4}, Stage: 1}, policy.Initialized{Limit: 4, Stage: 1}, 21},
+		{configuration.Initialized{Settings: configuration.Settings{NamePrefix: "x", Limit: 4}, Stage: 1}, policy.Initialized{Limit: 5, Stage: 2}, 22},
+	} {
+		got := Assemble(test.configured, test.prepared, state)
+		if got.Ok || got.Error != test.error || !reflect.DeepEqual(state, before) {
+			t.Fatalf("assemble=%#v mutated=%v", got, !reflect.DeepEqual(state, before))
+		}
+	}
 }
 
 func TestLifecycleGuardsAndConfiguredApply(t *testing.T) {

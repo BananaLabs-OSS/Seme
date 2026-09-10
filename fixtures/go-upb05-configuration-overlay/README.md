@@ -13,5 +13,7 @@ neutral meaning to process environment state.
 
 Initialization is observable in ordinary values. `configuration.Initialize`
 produces stage 1, `policy.Initialize` accepts only stage 1 and produces stage
-2, and `service.Initialize` finalizes stage 3 with `Ready` set. Calls made out
-of order reject without changing caller-owned values.
+2, and `service.Assemble` accepts both completed predecessor values and
+finalizes stage 3 with `Ready` set. `service.Initialize` is the sole
+orchestrator and calls those three nodes exactly once in dependency order.
+Calls made out of order reject without changing caller-owned values.
