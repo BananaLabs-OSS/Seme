@@ -1608,10 +1608,23 @@ func structuralTaggedMatchCall(function *ast.FuncLit, call *ast.CallExpr, outer 
 				return &goExpression{kind: goVariantRead}, true
 			}
 		}
+		if literal, ok := ast.Unparen(node).(*ast.CompositeLit); ok && len(literal.Elts) == 0 {
+			if named, namedOK := types.Unalias(info.TypeOf(literal)).(*types.Named); namedOK {
+				if _, recordOK := findGoRecord(records, named); recordOK {
+					// Result/option matches represent an absent aggregate arm with
+					// the canonical neutral zero placeholder. Projection realizes
+					// that placeholder as Go's exact typed zero record.
+					return &goExpression{kind: goIntegerLiteral}, true
+				}
+			}
+		}
 		result, x := analyzeGoExpressionWithProgram(node, outer, info, locals, functions, records, mutable)
 		return result, x == nil
 	}
-	boundType := info.TypeOf(bind.Lhs[0])
+	boundType := info.TypeOf(bind.Rhs[0])
+	if boundType == nil {
+		return nil, false
+	}
 	if item, option := goOptionValueType(boundType); option && condition.Sel.Name == "Some" {
 		some, a := arm(firstReturn.Results[0], "Value")
 		none, b := arm(secondReturn.Results[0], "")
