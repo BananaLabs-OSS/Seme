@@ -11,6 +11,7 @@ const ModuleID = "0000000000000000000000000000e000"
 const RevisionID = "0000000000000000000000000000e001"
 const RevisionV2ID = "0000000000000000000000000000e002"
 const RevisionV3ID = "0000000000000000000000000000e003"
+const RevisionV4ID = "0000000000000000000000000000e004"
 
 type SourceClassification uint64
 
@@ -50,12 +51,13 @@ func Emit(out io.Writer) error {
 }
 
 func EmitVersion(out io.Writer, version int) error {
-	if version != 1 && version != 2 && version != 3 {
+	if version < 1 || version > 4 {
 		return fmt.Errorf("unsupported Project Contract version %d", version)
 	}
 	b := func(value string) string { return hex.EncodeToString([]byte(value)) }
 	exports := "rf 0000000000000000000000000000e010\nrf 0000000000000000000000000000e011\nrf 0000000000000000000000000000e100\nrf 0000000000000000000000000000e110\nrf 0000000000000000000000000000e111\nrf 0000000000000000000000000000e112\nrf 0000000000000000000000000000e113\nrf 0000000000000000000000000000e114\n"
 	revision, parent, count, moduleVersion, exportCount, extraSchemas, extraFields, packageRevision := RevisionID, "pc 0", 11, 1, 8, "", "", "0000000000000000000000000000b001"
+	importCount, importRefs, dependencyImport := 2, "rf 0000000000000000000000000000e002\nrf 0000000000000000000000000000e003", ""
 	if version == 2 {
 		revision, parent, count, moduleVersion, exportCount = RevisionV2ID, "pc 1\n"+RevisionID, 33, 2, 30
 		exports = v2Exports()
@@ -68,6 +70,18 @@ func EmitVersion(out io.Writer, version int) error {
 		v3Schemas, v3Fields := v3Entities(b)
 		extraSchemas += v3Schemas
 		extraFields += v3Fields
+	}
+	if version == 4 {
+		revision, parent, count, moduleVersion, exportCount, packageRevision = RevisionV4ID, "pc 1\n"+RevisionV3ID, 46, 4, 42, "0000000000000000000000000000b002"
+		exports = v4Exports()
+		extraSchemas, extraFields = v2Entities(b)
+		s3, f3 := v3Entities(b)
+		s4, f4 := v4Entities(b)
+		extraSchemas += s3 + s4
+		extraFields += f3 + f4
+		importCount = 3
+		importRefs += "\nrf 0000000000000000000000000000e004"
+		dependencyImport = "\n\nen 0000000000000000000000000000e004 00000000000000000000000000000013 1 2\nfi 00000000000000000000000000000130 rf 0000000000000000000000000000f000\nfi 00000000000000000000000000000131 by 0000000000000000000000000000f001"
 	}
 	if version >= 2 {
 		// Preserve the established generated layout between export, schema, and
@@ -84,9 +98,8 @@ ec %d
 
 en %s 00000000000000000000000000000012 %d 3
 fi 00000000000000000000000000000120 by %s
-fi 00000000000000000000000000000121 li 2
-rf 0000000000000000000000000000e002
-rf 0000000000000000000000000000e003
+fi 00000000000000000000000000000121 li %d
+%s
 fi 00000000000000000000000000000122 li %d
 %s
 en 0000000000000000000000000000e002 00000000000000000000000000000013 1 2
@@ -95,7 +108,7 @@ fi 00000000000000000000000000000131 by %s
 
 en 0000000000000000000000000000e003 00000000000000000000000000000013 1 2
 fi 00000000000000000000000000000130 rf 00000000000000000000000000009000
-fi 00000000000000000000000000000131 by 00000000000000000000000000009023
+fi 00000000000000000000000000000131 by 00000000000000000000000000009023%s
 
 en 0000000000000000000000000000e010 00000000000000000000000000000010 1 2
 fi 00000000000000000000000000000100 by %s
@@ -111,8 +124,24 @@ rf 0000000000000000000000000000e112
 rf 0000000000000000000000000000e113
 rf 0000000000000000000000000000e114
 %s
-%s%s`, version, ModuleID, revision, parent, count, ModuleID, moduleVersion, b(fmt.Sprintf("project-contract-v%d", version)), exportCount, exports, packageRevision, b("ProjectIdentity"), b("ProjectSnapshot"), extraSchemas, fields(b), extraFields)
+%s%s`, version, ModuleID, revision, parent, count, ModuleID, moduleVersion, b(fmt.Sprintf("project-contract-v%d", version)), importCount, importRefs, exportCount, exports, packageRevision, dependencyImport, b("ProjectIdentity"), b("ProjectSnapshot"), extraSchemas, fields(b), extraFields)
 	return err
+}
+
+func v4Entities(b func(string) string) (string, string) {
+	schema := fmt.Sprintf("\nen 0000000000000000000000000000e019 00000000000000000000000000000010 1 2\nfi 00000000000000000000000000000100 by %s\nfi 00000000000000000000000000000101 li 3\nrf 0000000000000000000000000000e190\nrf 0000000000000000000000000000e191\nrf 0000000000000000000000000000e192\n", b("DependencyGraphSnapshot"))
+	field := func(id, name, target string) string {
+		constraint := ""
+		kind := 4
+		count := 1
+		if target != "" {
+			kind = 5
+			count = 2
+			constraint = fmt.Sprintf("fi 00000000000000000000000000002001 rf 0000000000000000000000000000%s\n", target)
+		}
+		return fmt.Sprintf("\nen 0000000000000000000000000000%s 00000000000000000000000000000011 1 4\nfi 00000000000000000000000000000110 by %s\nfi 00000000000000000000000000000111 rc %d\nfi 00000000000000000000000000002000 uu %d\n%sfi 00000000000000000000000000000112 uu 0\nfi 00000000000000000000000000000113 uu 1\n", id, b(name), count, kind, constraint)
+	}
+	return schema, field("e190", "dependency_graph_snapshot.project_graph_snapshot", "e018") + field("e191", "dependency_graph_snapshot.dependency_closure", "f010") + field("e192", "dependency_graph_snapshot.content_revision", "")
 }
 
 func v3Entities(b func(string) string) (string, string) {
@@ -195,6 +224,13 @@ func v3Exports() string {
 	ids := []string{"e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e100", "e110", "e111", "e112", "e113", "e114", "e120", "e121", "e122", "e123", "e130", "e140", "e150", "e151", "e152", "e153", "e154", "e155", "e160", "e161", "e162", "e163", "e164", "e170", "e171", "e172", "e180", "e181", "e182"}
 	var out string
 	for _, x := range ids {
+		out += fmt.Sprintf("rf 0000000000000000000000000000%s\n", x)
+	}
+	return out
+}
+func v4Exports() string {
+	out := ""
+	for _, x := range []string{"e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e100", "e110", "e111", "e112", "e113", "e114", "e120", "e121", "e122", "e123", "e130", "e140", "e150", "e151", "e152", "e153", "e154", "e155", "e160", "e161", "e162", "e163", "e164", "e170", "e171", "e172", "e180", "e181", "e182", "e190", "e191", "e192"} {
 		out += fmt.Sprintf("rf 0000000000000000000000000000%s\n", x)
 	}
 	return out
