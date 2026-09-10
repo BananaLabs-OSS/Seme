@@ -33,7 +33,7 @@ func declarations() []schema {
 		{0x8012, "StateVersion", []field{f(0x8120, "state_version.family", 5, 0x8011, 0), f(0x8121, "state_version.number", 2, 0, 0), f(0x8122, "state_version.state_type", 5, 0, 0)}},
 		{0x8013, "StateValidator", []field{f(0x8130, "state_validator.version", 5, 0x8012, 0), f(0x8131, "state_validator.function", 5, 0x9011, 0)}},
 		{0x8014, "StateMigration", []field{f(0x8140, "state_migration.from_version", 5, 0x8012, 0), f(0x8141, "state_migration.to_version", 5, 0x8012, 0), f(0x8142, "state_migration.function", 5, 0x9011, 0)}},
-		{0x8015, "StoragePort", []field{f(0x8150, "storage_port.identity", 4, 0, 0), f(0x8151, "storage_port.owner", 5, 0xb010, 0), f(0x8152, "storage_port.family", 5, 0x8011, 0), f(0x8153, "storage_port.load_capability", 5, 0x16, 0), f(0x8154, "storage_port.compare_exchange_capability", 5, 0x16, 0), f(0x8155, "storage_port.load_effect", 5, 0x15, 0), f(0x8156, "storage_port.compare_exchange_effect", 5, 0x15, 0), f(0x8157, "storage_port.key_type", 5, 0, 0), f(0x8158, "storage_port.maximum_payload_bytes", 2, 0, 0), f(0x8159, "storage_port.codec_identity", 4, 0, 0)}},
+		{0x8015, "StoragePort", []field{f(0x8150, "storage_port.identity", 4, 0, 0), f(0x8151, "storage_port.owner", 5, 0xb010, 0), f(0x8152, "storage_port.family", 5, 0x8011, 0), f(0x8153, "storage_port.load_capability", 5, 0x16, 0), f(0x8154, "storage_port.compare_exchange_capability", 5, 0x16, 0), f(0x8155, "storage_port.load_effect", 5, 0x15, 0), f(0x8156, "storage_port.compare_exchange_effect", 5, 0x15, 0), f(0x8157, "storage_port.key_type", 5, 0x9040, 0), f(0x8158, "storage_port.maximum_payload_bytes", 2, 0, 0), f(0x8159, "storage_port.codec_identity", 4, 0, 0), f(0x815a, "storage_port.maximum_key_bytes", 2, 0, 0)}},
 	}
 }
 

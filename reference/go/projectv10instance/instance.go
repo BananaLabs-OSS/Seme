@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/durableinstance"
+	"seme.local/reference/projectv9instance"
 	"seme.local/reference/wire"
 	"sort"
 )
 
 type Inputs struct {
 	Contracts contractcatalog.ProjectContractSetV10
-	ProjectV9 []byte
+	ProjectV9 projectv9instance.Inputs
 	Durable   durableinstance.Inputs
 	Composed  []byte
 }
@@ -34,14 +35,17 @@ func emit(in Inputs) ([]byte, error) {
 	if !in.Contracts.Validated() || in.Contracts.Project().Pin() != (contractcatalog.Pin{Module: id("e000"), Revision: id("e00e")}) {
 		return nil, fmt.Errorf("project_v10.contracts")
 	}
-	if !bytes.Equal(in.ProjectV9, in.Durable.ProjectV9) {
+	if !bytes.Equal(in.ProjectV9.Composed, in.Durable.ProjectV9.Composed) {
 		return nil, fmt.Errorf("project_v10.mixed_project")
 	}
 	in.Durable.Contracts = in.Contracts
 	if err := durableinstance.Validate(in.Durable); err != nil {
 		return nil, fmt.Errorf("project_v10.durable:%w", err)
 	}
-	p, err := wire.Decode(in.ProjectV9)
+	if err := projectv9instance.Validate(in.ProjectV9); err != nil {
+		return nil, fmt.Errorf("project_v10.project_v9:%w", err)
+	}
+	p, err := wire.Decode(in.ProjectV9.Composed)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +110,7 @@ func artifactRevision(e wire.Envelope) wire.ID {
 func stable(in Inputs, parts ...string) wire.ID {
 	h := sha256.New()
 	h.Write([]byte("seme.project-v10.identity.v1\x00"))
-	for _, b := range [][]byte{in.ProjectV9, in.Durable.Artifact} {
+	for _, b := range [][]byte{in.ProjectV9.Composed, in.Durable.Artifact} {
 		x := sha256.Sum256(b)
 		h.Write(x[:])
 	}

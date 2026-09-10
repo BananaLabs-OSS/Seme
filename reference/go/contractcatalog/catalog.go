@@ -80,7 +80,7 @@ func ResolveResourceContract(source []byte) (Contract, error) {
 }
 
 func ResolveDurableStateContract(source []byte) (Contract, error) {
-	return Resolve(source, Expectation{Pin: Pin{durableStateModule, durableStateRev}, ModuleVersion: 1, RequiredExports: ids("8010", "8011", "8012", "8013", "8014", "8015"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("6c80dfac7c4b685cafb6f36a688fb87a0d0f77bf7c9c6ec86a311ef61f8aa7f8")})
+	return Resolve(source, Expectation{Pin: Pin{durableStateModule, durableStateRev}, ModuleVersion: 1, RequiredExports: ids("8010", "8011", "8012", "8013", "8014", "8015"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("d071fad4ef9ec10f3a783868c7102012327c54bfdf4c688a7dd0d5028745cd67")})
 }
 
 // Resolve accepts only the one canonical byte representation described by e.
