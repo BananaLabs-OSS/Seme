@@ -29,7 +29,7 @@ func f(id uint64, name string, kind, target, card uint64) field {
 func declarations() []schema {
 	return []schema{
 		{0x10100, "OrderedTransportPlan", []field{f(0x11000, "ordered_transport_plan.streams", 5, 0x10101, 2), f(0x11001, "ordered_transport_plan.command_kinds", 5, 0x10103, 2), f(0x11002, "ordered_transport_plan.event_kinds", 5, 0x10104, 2), f(0x11003, "ordered_transport_plan.ports", 5, 0x1010f, 2), f(0x11004, "ordered_transport_plan.content_revision", 4, 0, 0), f(0x11005, "ordered_transport_plan.dispatch_function", 5, 0x9011, 0), f(0x11006, "ordered_transport_plan.replay_function", 5, 0x9011, 0)}},
-		{0x10101, "StreamIdentity", []field{f(0x11010, "stream_identity.value", 4, 0, 0)}},
+		{0x10101, "StreamIdentity", []field{f(0x11010, "stream_identity.value", 4, 0, 0), f(0x11011, "stream_identity.owner", 5, 0xb010, 0)}},
 		{0x10102, "CorrelationIdentity", []field{f(0x11020, "correlation_identity.bytes", 4, 0, 0)}},
 		{0x10103, "CommandKind", []field{f(0x11030, "command_kind.identity", 4, 0, 0), f(0x11031, "command_kind.owner", 5, 0xb010, 0), f(0x11032, "command_kind.payload_type", 5, 0, 0)}},
 		{0x10104, "EventKind", []field{f(0x11040, "event_kind.identity", 4, 0, 0), f(0x11041, "event_kind.owner", 5, 0xb010, 0), f(0x11042, "event_kind.payload_type", 5, 0, 0)}},
