@@ -38,6 +38,7 @@ var (
 	projectRevV9            = mustID("0000000000000000000000000000e00b")
 	projectRevV10           = mustID("0000000000000000000000000000e00e")
 	projectRevV11           = mustID("0000000000000000000000000000e030")
+	projectRevV12           = mustID("0000000000000000000000000000e031")
 	resourceModule          = mustID("00000000000000000000000000006000")
 	resourceRev             = mustID("00000000000000000000000000006001")
 	durableStateModule      = mustID("00000000000000000000000000008000")
@@ -329,6 +330,43 @@ type ProjectContractSetV10 struct {
 type ProjectContractSetV11 struct {
 	execution, packages, dependency, foundation, configuration, resource, durableState, presentation, orderedTransport, project Contract
 	validated                                                                                                                   bool
+}
+
+// ProjectContractSetV12 adds one independently authenticated neutral
+// Controlled Effects v1 authority without weakening the complete Project-v11
+// chain.
+type ProjectContractSetV12 struct {
+	execution, packages, dependency, foundation, configuration, resource, durableState, presentation, orderedTransport, controlledEffects, project Contract
+	validated                                                                                                                                      bool
+}
+
+func (s ProjectContractSetV12) Validated() bool             { return s.validated }
+func (s ProjectContractSetV12) Execution() Contract         { return s.execution }
+func (s ProjectContractSetV12) Package() Contract           { return s.packages }
+func (s ProjectContractSetV12) Dependency() Contract        { return s.dependency }
+func (s ProjectContractSetV12) Foundation() Contract        { return s.foundation }
+func (s ProjectContractSetV12) Configuration() Contract     { return s.configuration }
+func (s ProjectContractSetV12) Resource() Contract          { return s.resource }
+func (s ProjectContractSetV12) DurableState() Contract      { return s.durableState }
+func (s ProjectContractSetV12) Presentation() Contract      { return s.presentation }
+func (s ProjectContractSetV12) OrderedTransport() Contract  { return s.orderedTransport }
+func (s ProjectContractSetV12) ControlledEffects() Contract { return s.controlledEffects }
+func (s ProjectContractSetV12) Project() Contract           { return s.project }
+
+func ResolveProjectContractSetV12(foundation, execution, packages, dependency, configuration, resource, durableState, presentation, orderedTransport, controlledEffects, projectV9, projectV10, projectV11, project []byte) (ProjectContractSetV12, error) {
+	v11, err := ResolveProjectContractSetV11(foundation, execution, packages, dependency, configuration, resource, durableState, presentation, orderedTransport, projectV9, projectV10, projectV11)
+	if err != nil {
+		return ProjectContractSetV12{}, err
+	}
+	c, err := ResolveControlledEffectsContract(controlledEffects)
+	if err != nil {
+		return ProjectContractSetV12{}, fmt.Errorf("controlled_effects:%w", err)
+	}
+	p, err := Resolve(project, Expectation{Pin: Pin{projectModule, projectRevV12}, Parents: []wire.ID{projectRevV11}, ModuleVersion: 12, RequiredExports: ids("e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e020", "e021", "e022", "e023", "e024", "e025", "e026", "e029", "e253", "e261", "e291"), Imports: []Pin{{controlledEffectsModule, controlledEffectsRev}, {orderedTransportModule, orderedTransportRev}, {presentationModule, presentationRev}, {packageModule, packageRevV4}, {executionModule, executionRevV36}, {dependencyModule, dependencyRev}, {configurationModule, configurationRevV3}, {foundationModule, foundationRev}, {resourceModule, resourceRev}, {durableStateModule, durableStateRev}}, Digest: mustDigest("c5585d0f0dcc8abe38818a65ae51d3aed2d01707f4544c8f63cad0d45bc4c9aa")})
+	if err != nil {
+		return ProjectContractSetV12{}, fmt.Errorf("project:%w", err)
+	}
+	return ProjectContractSetV12{v11.execution, v11.packages, v11.dependency, v11.foundation, v11.configuration, v11.resource, v11.durableState, v11.presentation, v11.orderedTransport, c, p, true}, nil
 }
 
 func (s ProjectContractSetV11) Validated() bool            { return s.validated }
