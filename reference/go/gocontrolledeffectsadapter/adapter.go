@@ -17,6 +17,8 @@ type Bounds struct {
 	MaximumSteps, FirstClockSequence, ClockTerminalSentinel int64
 	MaximumUnixMilliseconds, MinimumSeed, MaximumSeed       int64
 	MaximumDraws, MaximumEffects                            int64
+	MaximumCommandBytes, MaximumInitialStateBytes           int64
+	MaximumTranscriptBytes                                  int64
 }
 
 type Selection struct {
@@ -128,8 +130,8 @@ func resolveEnvelope(e wire.Envelope, s Selection) (Model, error) {
 	m.Clock = controlledeffectsinstance.Clock{Identity: s.ClockIdentity, MonotonicPolicy: s.MonotonicPolicy, InjectionPolicy: s.InjectionPolicy}
 	m.Random = controlledeffectsinstance.Random{Identity: s.RandomIdentity, Algorithm: s.Algorithm, OverflowPolicy: s.OverflowPolicy}
 	m.ExternalEffect = controlledeffectsinstance.ExternalBooleanEffect{Identity: s.EffectIdentity, CapabilityIdentity: s.Capability, EffectIdentity: s.EffectIdentity, DeliveryPolicy: s.DeliveryPolicy}
-	m.Replay = controlledeffectsinstance.Replay{InitialSeed: uint64(s.Bounds.MinimumSeed), Steps: []controlledeffectsinstance.ReplayStep{}, DuplicatePolicy: s.DuplicatePolicy, RejectionPolicy: s.RejectionPolicy}
-	m.Bounds = controlledeffectsinstance.Bounds{MaximumSteps: uint64(s.Bounds.MaximumSteps), FirstClockSequence: uint64(s.Bounds.FirstClockSequence), ClockTerminalSentinel: uint64(s.Bounds.ClockTerminalSentinel), MaximumUnixMilliseconds: uint64(s.Bounds.MaximumUnixMilliseconds), MinimumSeed: uint64(s.Bounds.MinimumSeed), MaximumSeed: uint64(s.Bounds.MaximumSeed), MaximumDraws: uint64(s.Bounds.MaximumDraws), MaximumEffects: uint64(s.Bounds.MaximumEffects)}
+	m.Replay = controlledeffectsinstance.Replay{InitialSeed: s.Bounds.MinimumSeed, Steps: []controlledeffectsinstance.ReplayStep{}, DuplicatePolicy: s.DuplicatePolicy, RejectionPolicy: s.RejectionPolicy}
+	m.Bounds = controlledeffectsinstance.Bounds{MaximumSteps: uint64(s.Bounds.MaximumSteps), FirstClockSequence: uint64(s.Bounds.FirstClockSequence), ClockTerminalSentinel: uint64(s.Bounds.ClockTerminalSentinel), MaximumUnixMilliseconds: s.Bounds.MaximumUnixMilliseconds, MinimumSeed: s.Bounds.MinimumSeed, MaximumSeed: s.Bounds.MaximumSeed, MaximumDraws: uint64(s.Bounds.MaximumDraws), MaximumEffects: uint64(s.Bounds.MaximumEffects), MaximumCommandBytes: uint64(s.Bounds.MaximumCommandBytes), MaximumInitialStateBytes: uint64(s.Bounds.MaximumInitialStateBytes), MaximumTranscriptBytes: uint64(s.Bounds.MaximumTranscriptBytes)}
 	return m, nil
 }
 
@@ -140,12 +142,15 @@ func ValidateSelection(s Selection) error {
 		s.DuplicatePolicy != "cached-no-new-effects" || s.RejectionPolicy != "atomic-no-effects" {
 		return fmt.Errorf("go_controlled_effects.policy")
 	}
-	want := Bounds{256, 1, 257, 4102444800000, 1, int64(^uint64(0) >> 1), 256, 256}
+	want := Bounds{256, 1, 257, 4102444800000, 1, int64(^uint64(0) >> 1), 256, 256, 4096, 524288, 1048576}
 	if s.Bounds != want {
 		return fmt.Errorf("go_controlled_effects.bounds")
 	}
 	if s.ClockOwner == "" || s.RandomOwner == "" || s.EffectOwner == "" {
 		return fmt.Errorf("go_controlled_effects.owner")
+	}
+	if s.ClockSample.Package != s.ClockOwner || s.RandomState.Package != s.RandomOwner || s.Draw.Package != s.RandomOwner || s.Next.Package != s.RandomOwner || s.Command.Package != s.EffectOwner || s.State.Package != s.EffectOwner || s.Result.Package != s.EffectOwner || s.Dispatch.Package != s.EffectOwner || s.Replay.Package != s.EffectOwner {
+		return fmt.Errorf("go_controlled_effects.selection_owner")
 	}
 	items := []Named{s.ClockSample, s.RandomState, s.Draw, s.Next, s.Command, s.State, s.Result, s.Dispatch, s.Replay}
 	seen := map[Named]bool{}

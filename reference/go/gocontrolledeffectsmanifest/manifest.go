@@ -19,14 +19,17 @@ type named struct {
 	Name    string `json:"name"`
 }
 type bounds struct {
-	MaximumSteps            int64 `json:"maximum_steps"`
-	FirstClockSequence      int64 `json:"first_clock_sequence"`
-	ClockTerminalSentinel   int64 `json:"clock_terminal_sentinel"`
-	MaximumUnixMilliseconds int64 `json:"maximum_unix_milliseconds"`
-	MinimumSeed             int64 `json:"minimum_seed"`
-	MaximumSeed             int64 `json:"maximum_seed"`
-	MaximumDraws            int64 `json:"maximum_draws"`
-	MaximumEffects          int64 `json:"maximum_effects"`
+	MaximumSteps             int64 `json:"maximum_steps"`
+	FirstClockSequence       int64 `json:"first_clock_sequence"`
+	ClockTerminalSentinel    int64 `json:"clock_terminal_sentinel"`
+	MaximumUnixMilliseconds  int64 `json:"maximum_unix_milliseconds"`
+	MinimumSeed              int64 `json:"minimum_seed"`
+	MaximumSeed              int64 `json:"maximum_seed"`
+	MaximumDraws             int64 `json:"maximum_draws"`
+	MaximumEffects           int64 `json:"maximum_effects"`
+	MaximumCommandBytes      int64 `json:"maximum_command_bytes"`
+	MaximumInitialStateBytes int64 `json:"maximum_initial_state_bytes"`
+	MaximumTranscriptBytes   int64 `json:"maximum_transcript_bytes"`
 }
 type document struct {
 	Version string `json:"version"`
@@ -92,7 +95,7 @@ func Parse(data []byte) (gocontrolledeffectsadapter.Selection, error) {
 		EffectIdentity: x.Effect.Identity, EffectOwner: x.Effect.Owner, Capability: x.Effect.Capability, Payload: x.Effect.Payload, DeliveryPolicy: x.Effect.DeliveryPolicy,
 		Command: n(x.Application.Command), State: n(x.Application.State), Result: n(x.Application.Result), Dispatch: n(x.Application.Dispatch), Replay: n(x.Application.Replay),
 		DuplicatePolicy: x.Replay.DuplicatePolicy, RejectionPolicy: x.Replay.RejectionPolicy,
-		Bounds: gocontrolledeffectsadapter.Bounds{MaximumSteps: x.Bounds.MaximumSteps, FirstClockSequence: x.Bounds.FirstClockSequence, ClockTerminalSentinel: x.Bounds.ClockTerminalSentinel, MaximumUnixMilliseconds: x.Bounds.MaximumUnixMilliseconds, MinimumSeed: x.Bounds.MinimumSeed, MaximumSeed: x.Bounds.MaximumSeed, MaximumDraws: x.Bounds.MaximumDraws, MaximumEffects: x.Bounds.MaximumEffects},
+		Bounds: gocontrolledeffectsadapter.Bounds{MaximumSteps: x.Bounds.MaximumSteps, FirstClockSequence: x.Bounds.FirstClockSequence, ClockTerminalSentinel: x.Bounds.ClockTerminalSentinel, MaximumUnixMilliseconds: x.Bounds.MaximumUnixMilliseconds, MinimumSeed: x.Bounds.MinimumSeed, MaximumSeed: x.Bounds.MaximumSeed, MaximumDraws: x.Bounds.MaximumDraws, MaximumEffects: x.Bounds.MaximumEffects, MaximumCommandBytes: x.Bounds.MaximumCommandBytes, MaximumInitialStateBytes: x.Bounds.MaximumInitialStateBytes, MaximumTranscriptBytes: x.Bounds.MaximumTranscriptBytes},
 	}
 	if err := gocontrolledeffectsadapter.ValidateSelection(s); err != nil {
 		return gocontrolledeffectsadapter.Selection{}, fmt.Errorf("controlled_effects_manifest.selection:%w", err)

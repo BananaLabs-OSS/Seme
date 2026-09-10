@@ -29,6 +29,13 @@ command, initial-state, and total-transcript limits. `ControlledEffectsPlan`
 binds these authorities to exact apply and replay functions and a content
 revision.
 
+The v1 byte ceilings are 4,096 bytes per canonical command, 524,288 bytes for
+the canonical initial state, and 1,048,576 bytes for the complete transcript.
+The command ceiling matches Ordered Transport v1. The transcript ceiling is
+not 256 times that command ceiling: Ordered Transport globally retains at most
+4,096 meaningful payload bytes across the bounded 256-command ledger; the
+remaining space covers the initial state and fixed per-step replay evidence.
+
 An instance must reject missing, duplicated, inconsistent, malformed, or
 over-limit authority. Ambient time and randomness have no meaning under this
 contract. Capability denial occurs before observable work. Replay consumes
