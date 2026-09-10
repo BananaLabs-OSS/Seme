@@ -85,6 +85,55 @@ func TestResolutionManifestRecordsTypedOwnershipAndImportsDeterministically(t *t
 		t.Fatal("manifest was not retained copy-safely")
 	}
 }
+
+func TestResolutionIncludesDisconnectedProjectPackage(t *testing.T) {
+	session, _ := NewIncrementalSession(resolutionModule(t))
+	r := session.Apply(DocumentSnapshot{
+		Revision: 1, ModulePath: "example.test/disconnected",
+		PackagePath: "example.test/disconnected/app", Entry: "Apply",
+		Files: map[string]string{
+			"app/app.go":       "package app\nfunc Apply(v int64) int64 { return v + 1 }\n",
+			"library/value.go": "package library\nfunc Validate(v int64) int64 { return v }\n",
+		},
+	})
+	if !r.Valid {
+		t.Fatalf("diagnostics=%#v", r.Diagnostics)
+	}
+	if len(r.Resolution.Packages) != 2 || len(r.Packages) != 2 {
+		t.Fatalf("disconnected package omitted: resolution=%#v metadata=%#v", r.Resolution, r.Packages)
+	}
+	byName := map[string]ResolvedPackage{}
+	for _, p := range r.Resolution.Packages {
+		byName[p.Name] = p
+	}
+	if byName["example.test/disconnected/library"].Root || !reflect.DeepEqual(byName["example.test/disconnected/library"].Files, []string{"library/value.go"}) {
+		t.Fatalf("library ownership=%#v", byName["example.test/disconnected/library"])
+	}
+}
+
+func TestDisconnectedPackageTypeFailureRejectsWholeSnapshotAtomically(t *testing.T) {
+	session, _ := NewIncrementalSession(resolutionModule(t))
+	r := session.Apply(DocumentSnapshot{
+		Revision: 1, ModulePath: "example.test/disconnected-invalid",
+		PackagePath: "example.test/disconnected-invalid/app", Entry: "Apply",
+		Files: map[string]string{
+			"app/app.go":       "package app\nfunc Apply(v int64) int64 { return v + 1 }\n",
+			"library/value.go": "package library\nfunc Broken(v int64) int64 { return missing(v) }\n",
+		},
+	})
+	if r.Valid || r.CanonicalG1 != "" || len(r.Packages) != 0 || len(r.Resolution.Packages) != 0 {
+		t.Fatalf("invalid disconnected body leaked a partial project: %#v", r)
+	}
+	found := false
+	for _, d := range r.Diagnostics {
+		if d.Code == "go.type" && d.File == "library/value.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("missing located sibling diagnostic: %#v", r.Diagnostics)
+	}
+}
 func TestResolutionRejectsDuplicateSemanticIdentityBeforeComposition(t *testing.T) {
 	session, _ := NewIncrementalSession(resolutionModule(t))
 	identity := "8123456789abcdef0123456789abcdef"

@@ -155,7 +155,6 @@ func matchPackages(e wire.Envelope, snapshot, graph wire.ID) error {
 		packages[v.Reference] = true
 	}
 	seen := map[wire.ID]bool{}
-	adj := map[wire.ID][]wire.ID{}
 	for _, v := range dv.List {
 		if v.Tag != 6 {
 			return fmt.Errorf("project_v8.package_detail")
@@ -169,30 +168,14 @@ func matchPackages(e wire.Envelope, snapshot, graph wire.ID) error {
 			return fmt.Errorf("project_v8.package_coverage")
 		}
 		seen[p] = true
-		for _, dep := range e.Entities[p].Fields[id("b103")].List {
-			q := e.Entities[dep.Reference]
-			if q.Fields[id("b122")].Tag == 6 {
-				adj[p] = append(adj[p], q.Fields[id("b122")].Reference)
-			}
-		}
 	}
 	if len(seen) != len(packages) || !seen[root.Reference] {
 		return fmt.Errorf("project_v8.package_coverage")
 	}
-	reachable := map[wire.ID]bool{}
-	queue := []wire.ID{root.Reference}
-	for len(queue) != 0 {
-		x := queue[0]
-		queue = queue[1:]
-		if reachable[x] {
-			continue
-		}
-		reachable[x] = true
-		queue = append(queue, adj[x]...)
-	}
-	if len(reachable) != len(packages) {
-		return fmt.Errorf("project_v8.package_reachability")
-	}
+	// Project v8 authenticates the complete declared package forest. The
+	// selected executable root need not import libraries or alternate tools.
+	// Package-v4 validation proves all local edges and rejects dependency
+	// cycles; the coverage checks above prevent unowned package details.
 	return nil
 }
 
