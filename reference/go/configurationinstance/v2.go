@@ -18,6 +18,22 @@ type BoundInput struct {
 	Base      Input
 	Model     BoundModel
 	Artifact  []byte
+	v3        *V3BaseInput
+}
+type V3Input struct {
+	Contracts contractcatalog.ProjectContractSetV8
+	Base      V3BaseInput
+	Model     BoundModel
+	Artifact  []byte
+}
+
+func EmitV3(in V3Input) ([]byte, error) {
+	in.Base.Contracts = in.Contracts
+	return EmitBound(BoundInput{Model: in.Model, v3: &in.Base})
+}
+func ValidateV3(in V3Input) error {
+	in.Base.Contracts = in.Contracts
+	return ValidateBound(BoundInput{Model: in.Model, Artifact: in.Artifact, v3: &in.Base})
 }
 
 type BoundModel struct {
@@ -95,6 +111,9 @@ func EmitBound(in BoundInput) ([]byte, error) {
 		}
 	}
 	seed := in.Base.Artifact
+	if in.v3 != nil {
+		seed = in.v3.Artifact
+	}
 	runtime := map[string]wire.ID{}
 	runtimeRefs := []wire.Value{}
 	items := append([]RuntimeInput(nil), in.Model.RuntimeInputs...)
@@ -222,14 +241,20 @@ func EmitBound(in BoundInput) ([]byte, error) {
 	e.Entities[graph] = q
 	module := stableV2(seed, "module")
 	imports := []wire.Value{}
-	for _, pin := range []contractcatalog.Pin{{Module: id("3000"), Revision: id("3001")}, {Module: id("9000"), Revision: id("9023")}, {Module: id("b000"), Revision: id("b003")}, {Module: id("4000"), Revision: id("4005")}} {
+	pins := []contractcatalog.Pin{{Module: id("3000"), Revision: id("3001")}, {Module: id("9000"), Revision: id("9023")}, {Module: id("b000"), Revision: id("b003")}, {Module: id("4000"), Revision: id("4005")}}
+	label := "configuration-instance-v2"
+	if in.v3 != nil {
+		pins = []contractcatalog.Pin{{Module: id("3000"), Revision: id("3001")}, {Module: id("9000"), Revision: id("9024")}, {Module: id("b000"), Revision: id("b004")}, {Module: id("4000"), Revision: id("4006")}}
+		label = "configuration-instance-v3"
+	}
+	for _, pin := range pins {
 		x := stableV2(seed, "import", pin.Module.String())
 		e.Entities[x] = wire.Entity{ID: x, Schema: sImport, Version: 1, Fields: map[wire.ID]wire.Value{id("130"): ref(pin.Module), id("131"): blob(pin.Revision[:])}}
 		imports = append(imports, ref(x))
 	}
 	sortRefs(imports)
 	e.Module = module
-	e.Entities[module] = wire.Entity{ID: module, Schema: sModule, Version: 1, Fields: map[wire.ID]wire.Value{id("120"): blob([]byte("configuration-instance-v2")), id("121"): {Tag: 7, List: imports}, id("122"): {Tag: 7, List: []wire.Value{ref(graph)}}}}
+	e.Entities[module] = wire.Entity{ID: module, Schema: sModule, Version: 1, Fields: map[wire.ID]wire.Value{id("120"): blob([]byte(label)), id("121"): {Tag: 7, List: imports}, id("122"): {Tag: 7, List: []wire.Value{ref(graph)}}}}
 	e.Revision = BoundArtifactRevision(e)
 	out, err := wire.Encode(e)
 	if err != nil {
@@ -259,7 +284,13 @@ func ValidateBound(in BoundInput) error {
 		return fmt.Errorf("configuration_v2.artifact_revision")
 	}
 	m := e.Entities[e.Module]
-	if m.Schema != sModule || m.Version != 1 || string(m.Fields[id("120")].Bytes) != "configuration-instance-v2" || !exactPins(e, m, map[wire.ID]wire.ID{id("3000"): id("3001"), id("9000"): id("9023"), id("b000"): id("b003"), id("4000"): id("4005")}) {
+	label := "configuration-instance-v2"
+	pins := map[wire.ID]wire.ID{id("3000"): id("3001"), id("9000"): id("9023"), id("b000"): id("b003"), id("4000"): id("4005")}
+	if in.v3 != nil {
+		label = "configuration-instance-v3"
+		pins = map[wire.ID]wire.ID{id("3000"): id("3001"), id("9000"): id("9024"), id("b000"): id("b004"), id("4000"): id("4006")}
+	}
+	if m.Schema != sModule || m.Version != 1 || string(m.Fields[id("120")].Bytes) != label || !exactPins(e, m, pins) {
 		return fmt.Errorf("configuration_v2.module")
 	}
 	for x, q := range base.Entities {
@@ -485,6 +516,17 @@ func ValidateBound(in BoundInput) error {
 }
 
 func boundComponents(in BoundInput) (wire.Envelope, wire.ID, error) {
+	if in.v3 != nil {
+		if err := ValidateV3Base(*in.v3); err != nil {
+			return wire.Envelope{}, wire.ID{}, fmt.Errorf("configuration_v3.base:%w", err)
+		}
+		e, err := wire.Decode(in.v3.Artifact)
+		if err != nil {
+			return e, wire.ID{}, err
+		}
+		g, err := one(e, sGraph)
+		return e, g, err
+	}
 	if !in.Contracts.Validated() || in.Contracts.Configuration().Pin() != (contractcatalog.Pin{Module: id("4000"), Revision: id("4005")}) || in.Contracts.Project().Pin() != (contractcatalog.Pin{Module: id("e000"), Revision: id("e009")}) {
 		return wire.Envelope{}, wire.ID{}, fmt.Errorf("configuration_v2.contracts")
 	}

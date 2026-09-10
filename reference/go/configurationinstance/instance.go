@@ -12,6 +12,7 @@ import (
 	"seme.local/reference/canonicaleval"
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/executionprofile"
+	"seme.local/reference/packagev3instance"
 	"seme.local/reference/projectv5instance"
 	"seme.local/reference/wire"
 )
@@ -21,7 +22,27 @@ type Input struct {
 	ProjectV5 projectv5instance.Inputs
 	Model     Model
 	Artifact  []byte
+	v3        *v3Base
 }
+type v3Base struct {
+	contracts            contractcatalog.ProjectContractSetV8
+	packageV2, packageV4 []byte
+}
+
+type V3BaseInput struct {
+	Contracts            contractcatalog.ProjectContractSetV8
+	PackageV2, PackageV4 []byte
+	Model                Model
+	Artifact             []byte
+}
+
+func EmitV3Base(in V3BaseInput) ([]byte, error) {
+	return emit(Input{Model: in.Model, v3: &v3Base{in.Contracts, in.PackageV2, in.PackageV4}}, true)
+}
+func ValidateV3Base(in V3BaseInput) error {
+	return validate(Input{Model: in.Model, Artifact: in.Artifact, v3: &v3Base{in.Contracts, in.PackageV2, in.PackageV4}}, true)
+}
+
 type Model struct {
 	Fields       []Field
 	Values       []ResolvedValue
@@ -104,6 +125,10 @@ func emit(in Input, allowParameterized bool) ([]byte, error) {
 		return nil, err
 	}
 	e := wire.Envelope{Entities: map[wire.ID]wire.Entity{}}
+	seed := in.ProjectV5.Composed
+	if in.v3 != nil {
+		seed = in.v3.packageV4
+	}
 	for x, q := range base.Entities {
 		if q.Schema != sModule && q.Schema != sImport {
 			e.Entities[x] = clone(q)
@@ -117,7 +142,7 @@ func emit(in Input, allowParameterized bool) ([]byte, error) {
 		if f.Key == "" || !utf8.ValidString(f.Key) || i > 0 && fields[i-1].Key == f.Key {
 			return nil, fmt.Errorf("configuration.field_key")
 		}
-		x := stable(in.ProjectV5.Composed, "field", f.Key)
+		x := stable(seed, "field", f.Key)
 		fieldIDs[f.Key] = x
 		required := byte(1)
 		if f.Required {
@@ -138,8 +163,8 @@ func emit(in Input, allowParameterized bool) ([]byte, error) {
 		if !ok {
 			return nil, fmt.Errorf("configuration.value_field")
 		}
-		x := stable(in.ProjectV5.Composed, "value", v.Key)
-		oid := stable(in.ProjectV5.Composed, "resolution-origin", fmt.Sprint(v.Origin))
+		x := stable(seed, "value", v.Key)
+		oid := stable(seed, "resolution-origin", fmt.Sprint(v.Origin))
 		if _, ok := e.Entities[oid]; !ok {
 			e.Entities[oid] = wire.Entity{ID: oid, Schema: sResolutionOrigin, Version: 1, Fields: map[wire.ID]wire.Value{id("4130"): {Tag: 3, Unsigned: uint64(v.Origin)}}}
 		}
@@ -157,7 +182,7 @@ func emit(in Input, allowParameterized bool) ([]byte, error) {
 	}
 	validationRefs := []wire.Value{}
 	for _, v := range in.Model.Validations {
-		x := stable(in.ProjectV5.Composed, "validation", v.Key, fmt.Sprint(v.Order), v.Validator.String())
+		x := stable(seed, "validation", v.Key, fmt.Sprint(v.Order), v.Validator.String())
 		fs := map[wire.ID]wire.Value{id("4141"): ref(v.Validator), id("4142"): {Tag: 3, Unsigned: v.Order}}
 		if v.Key != "" {
 			fid, ok := fieldIDs[v.Key]
@@ -173,7 +198,7 @@ func emit(in Input, allowParameterized bool) ([]byte, error) {
 	}
 	initializerIDs := map[wire.ID]wire.ID{}
 	for _, v := range in.Model.Initializers {
-		initializerIDs[v.Callable] = stable(in.ProjectV5.Composed, "initializer", v.Owner.String(), v.Callable.String())
+		initializerIDs[v.Callable] = stable(seed, "initializer", v.Owner.String(), v.Callable.String())
 	}
 	initializerRefs := []wire.Value{}
 	for _, v := range in.Model.Initializers {
@@ -197,7 +222,7 @@ func emit(in Input, allowParameterized bool) ([]byte, error) {
 		if x, ok := stateIDs[code]; ok {
 			return x
 		}
-		x := stable(in.ProjectV5.Composed, "lifecycle-state", fmt.Sprint(code))
+		x := stable(seed, "lifecycle-state", fmt.Sprint(code))
 		stateIDs[code] = x
 		e.Entities[x] = wire.Entity{ID: x, Schema: sState, Version: 1, Fields: map[wire.ID]wire.Value{id("4160"): {Tag: 3, Unsigned: code}}}
 		return x
@@ -212,7 +237,7 @@ func emit(in Input, allowParameterized bool) ([]byte, error) {
 			return nil, fmt.Errorf("configuration.transition_state")
 		}
 		from, to := state(v.From), state(v.To)
-		x := stable(in.ProjectV5.Composed, "transition", init.String(), fmt.Sprint(v.Order))
+		x := stable(seed, "transition", init.String(), fmt.Sprint(v.Order))
 		if err = put(e.Entities, wire.Entity{ID: x, Schema: sTransition, Version: 1, Fields: map[wire.ID]wire.Value{id("4170"): ref(init), id("4171"): ref(from), id("4172"): ref(to), id("4173"): {Tag: 3, Unsigned: v.Order}}}); err != nil {
 			return nil, err
 		}
@@ -221,21 +246,27 @@ func emit(in Input, allowParameterized bool) ([]byte, error) {
 	for _, xs := range [][]wire.Value{fieldRefs, valueRefs, validationRefs, initializerRefs, transitionRefs} {
 		sortRefs(xs)
 	}
-	graph := stable(in.ProjectV5.Composed, "configuration-graph")
+	graph := stable(seed, "configuration-graph")
 	e.Entities[graph] = wire.Entity{ID: graph, Schema: sGraph, Version: 1, Fields: map[wire.ID]wire.Value{id("4100"): {Tag: 7, List: fieldRefs}, id("4101"): {Tag: 7, List: valueRefs}, id("4102"): {Tag: 7, List: validationRefs}, id("4103"): {Tag: 7, List: initializerRefs}, id("4104"): {Tag: 7, List: transitionRefs}, id("4105"): blob(make([]byte, 32))}}
 	q := e.Entities[graph]
 	q.Fields[id("4105")] = blob(GraphRevision(e, graph))
 	e.Entities[graph] = q
-	module := stable(in.ProjectV5.Composed, "module")
+	module := stable(seed, "module")
 	imports := []wire.Value{}
-	for _, pin := range []contractcatalog.Pin{{Module: id("3000"), Revision: id("3001")}, {Module: id("9000"), Revision: id("9023")}, {Module: id("b000"), Revision: id("b003")}, {Module: id("4000"), Revision: id("4001")}} {
-		x := stable(in.ProjectV5.Composed, "import", pin.Module.String())
+	pins := []contractcatalog.Pin{{Module: id("3000"), Revision: id("3001")}, {Module: id("9000"), Revision: id("9023")}, {Module: id("b000"), Revision: id("b003")}, {Module: id("4000"), Revision: id("4001")}}
+	label := "configuration-instance-v1"
+	if in.v3 != nil {
+		pins = []contractcatalog.Pin{{Module: id("3000"), Revision: id("3001")}, {Module: id("9000"), Revision: id("9024")}, {Module: id("b000"), Revision: id("b004")}, {Module: id("4000"), Revision: id("4006")}}
+		label = "configuration-instance-v3-base"
+	}
+	for _, pin := range pins {
+		x := stable(seed, "import", pin.Module.String())
 		e.Entities[x] = wire.Entity{ID: x, Schema: sImport, Version: 1, Fields: map[wire.ID]wire.Value{id("130"): ref(pin.Module), id("131"): blob(pin.Revision[:])}}
 		imports = append(imports, ref(x))
 	}
 	sortRefs(imports)
 	e.Module = module
-	e.Entities[module] = wire.Entity{ID: module, Schema: sModule, Version: 1, Fields: map[wire.ID]wire.Value{id("120"): blob([]byte("configuration-instance-v1")), id("121"): {Tag: 7, List: imports}, id("122"): {Tag: 7, List: []wire.Value{ref(graph)}}}}
+	e.Entities[module] = wire.Entity{ID: module, Schema: sModule, Version: 1, Fields: map[wire.ID]wire.Value{id("120"): blob([]byte(label)), id("121"): {Tag: 7, List: imports}, id("122"): {Tag: 7, List: []wire.Value{ref(graph)}}}}
 	e.Revision = ArtifactRevision(e)
 	out, err := wire.Encode(e)
 	if err != nil {
@@ -275,10 +306,16 @@ func validate(in Input, allowParameterized bool) error {
 		return fmt.Errorf("configuration.artifact_revision")
 	}
 	m := e.Entities[e.Module]
-	if m.Schema != sModule || m.Version != 1 || string(m.Fields[id("120")].Bytes) != "configuration-instance-v1" {
+	label := "configuration-instance-v1"
+	pins := map[wire.ID]wire.ID{id("3000"): id("3001"), id("9000"): id("9023"), id("b000"): id("b003"), id("4000"): id("4001")}
+	if in.v3 != nil {
+		label = "configuration-instance-v3-base"
+		pins = map[wire.ID]wire.ID{id("3000"): id("3001"), id("9000"): id("9024"), id("b000"): id("b004"), id("4000"): id("4006")}
+	}
+	if m.Schema != sModule || m.Version != 1 || string(m.Fields[id("120")].Bytes) != label {
 		return fmt.Errorf("configuration.module")
 	}
-	if !exactPins(e, m, map[wire.ID]wire.ID{id("3000"): id("3001"), id("9000"): id("9023"), id("b000"): id("b003"), id("4000"): id("4001")}) {
+	if !exactPins(e, m, pins) {
 		return fmt.Errorf("configuration.pins")
 	}
 	graph, err := one(e, sGraph)
@@ -321,6 +358,22 @@ func validate(in Input, allowParameterized bool) error {
 }
 
 func components(in Input) (wire.Envelope, error) {
+	if in.v3 != nil {
+		if !in.v3.contracts.Validated() || in.v3.contracts.Configuration().Pin() != (contractcatalog.Pin{Module: id("4000"), Revision: id("4006")}) || in.v3.contracts.Execution().Pin() != (contractcatalog.Pin{Module: id("9000"), Revision: id("9024")}) {
+			return wire.Envelope{}, fmt.Errorf("configuration.contracts")
+		}
+		if err := packagev3instance.ValidateV4(in.v3.contracts, in.v3.packageV2, in.v3.packageV4); err != nil {
+			return wire.Envelope{}, fmt.Errorf("configuration.package_v4:%w", err)
+		}
+		e, err := wire.Decode(in.v3.packageV4)
+		if err != nil {
+			return e, err
+		}
+		if err = executionprofile.ValidateConstruction(in.v3.contracts.Execution(), e); err != nil {
+			return wire.Envelope{}, fmt.Errorf("configuration.execution_profile:%w", err)
+		}
+		return e, nil
+	}
 	if !in.Contracts.Validated() || in.Contracts.Configuration().Pin() != (contractcatalog.Pin{Module: id("4000"), Revision: id("4001")}) || in.Contracts.Project().Pin() != (contractcatalog.Pin{Module: id("e000"), Revision: id("e008")}) {
 		return wire.Envelope{}, fmt.Errorf("configuration.contracts")
 	}
