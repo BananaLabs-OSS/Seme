@@ -195,12 +195,16 @@ func run(parent context.Context, args []string, stdout io.Writer) error {
 
 type probeTransformer struct{ version uint64 }
 
+const hostBoundaryProbeKey = "k"
+
+var hostBoundaryProbePayload = []byte("p")
+
 func (p probeTransformer) Prepare(*durableruntime.Payload) (durableruntime.Payload, *durableruntime.DomainError) {
-	b := []byte("seme.host-boundary.profile-probe.v1")
+	b := append([]byte(nil), hostBoundaryProbePayload...)
 	return durableruntime.Payload{Version: p.version, Bytes: b, SHA256: sha256.Sum256(b)}, nil
 }
 func (p probeTransformer) Canonical(v durableruntime.Payload) bool {
-	b := []byte("seme.host-boundary.profile-probe.v1")
+	b := hostBoundaryProbePayload
 	return v.Version == p.version && bytes.Equal(v.Bytes, b) && v.SHA256 == sha256.Sum256(b)
 }
 
@@ -227,7 +231,7 @@ func probeHostBoundary(loaded goupb07bundle.Result) (hostBoundaryProbe, error) {
 	}
 	port := &probePort{missing: durableruntime.Token("opaque-absence-probe")}
 	grants := durableruntime.Grants{profile.Load.Capability: true, profile.CompareExchange.Capability: true}
-	r, err := durableruntime.ExecuteAuthenticated(loaded.Durable, grants, durableruntime.Request{Family: profile.FamilyIdentity, Key: "profile-probe"}, port, probeTransformer{version: profile.CurrentVersion})
+	r, err := durableruntime.ExecuteAuthenticated(loaded.Durable, grants, durableruntime.Request{Family: profile.FamilyIdentity, Key: hostBoundaryProbeKey}, port, probeTransformer{version: profile.CurrentVersion})
 	if err != nil || !r.Committed || r.Failure != "" || len(r.Trace) != 2 || r.Trace[0].Sequence != profile.Load.Sequence || r.Trace[0].Operation != profile.Load.Identity || r.Trace[1].Sequence != profile.CompareExchange.Sequence || r.Trace[1].Operation != profile.CompareExchange.Identity || port.load == nil || port.compare == nil || !bytes.Equal(port.compare.ExpectedToken, port.missing) {
 		return hostBoundaryProbe{}, fmt.Errorf("host_boundary_profile_probe")
 	}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"strings"
 	"testing"
 
@@ -9,6 +10,16 @@ import (
 	"seme.local/reference/goupb07bundle"
 	"seme.local/reference/wire"
 )
+
+func TestHostBoundaryProbeFitsMinimumContractBounds(t *testing.T) {
+	if len([]byte(hostBoundaryProbeKey)) != 1 || len(hostBoundaryProbePayload) != 1 {
+		t.Fatal("profile probe exceeds a valid one-byte Durable-v1 bound")
+	}
+	p, failure := (probeTransformer{version: 1}).Prepare(nil)
+	if failure != nil || p.Version != 1 || len(p.Bytes) != 1 || p.SHA256 != sha256.Sum256(p.Bytes) || !(probeTransformer{version: 1}).Canonical(p) {
+		t.Fatal("minimum-bound probe is not canonical")
+	}
+}
 
 func TestRejectsIncompleteArgumentsWithoutOutput(t *testing.T) {
 	var out strings.Builder
