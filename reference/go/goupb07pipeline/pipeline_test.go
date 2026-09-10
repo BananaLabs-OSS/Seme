@@ -22,9 +22,9 @@ func TestPublishCreateOnlyPreservesDetachedResources(t *testing.T) {
 			set(&r, f.name, []byte(f.name))
 		}
 	}
-	data := []byte("resource")
-	sum := sha256.Sum256(data)
-	r.Base.Store.Blobs = []goresourceadapter.Blob{{SHA256: sum, Bytes: data}}
+	data, second := []byte("resource"), []byte{0, 0xff, 0x53, 0x45}
+	sum, secondSum := sha256.Sum256(data), sha256.Sum256(second)
+	r.Base.Store.Blobs = []goresourceadapter.Blob{{SHA256: sum, Bytes: data}, {SHA256: secondSum, Bytes: second}}
 	d := filepath.Join(t.TempDir(), "bundle")
 	if err := Publish(d, r); err != nil {
 		t.Fatal(err)
@@ -32,6 +32,25 @@ func TestPublishCreateOnlyPreservesDetachedResources(t *testing.T) {
 	m, err := os.ReadFile(filepath.Join(d, "COMPLETE.sha256"))
 	if err != nil || !bytes.Contains(m, []byte("durable-state-v1.seme ")) || !bytes.Contains(m, []byte("project-v10.seme ")) || !bytes.Contains(m, []byte("blobs/")) {
 		t.Fatal("manifest", err)
+	}
+	if bytes.Count(m, []byte("\n")) != 16 { // header + 13 artifacts + two blobs
+		t.Fatalf("completion entries=%q", m)
+	}
+	entries, err := os.ReadDir(d)
+	if err != nil || len(entries) != 15 { // 13 artifacts, COMPLETE, blobs directory
+		t.Fatalf("bundle shape entries=%d err=%v", len(entries), err)
+	}
+	blobs, err := os.ReadDir(filepath.Join(d, "blobs"))
+	if err != nil || len(blobs) != 2 {
+		t.Fatalf("blob count=%d err=%v", len(blobs), err)
+	}
+	repeat := filepath.Join(filepath.Dir(d), "repeat")
+	if err = Publish(repeat, r); err != nil {
+		t.Fatal(err)
+	}
+	m2, err := os.ReadFile(filepath.Join(repeat, "COMPLETE.sha256"))
+	if err != nil || !bytes.Equal(m, m2) {
+		t.Fatal("nondeterministic completion manifest", err)
 	}
 	if err = Publish(d, r); err == nil {
 		t.Fatal("overwrote")
@@ -44,6 +63,16 @@ func TestPublishCreateOnlyPreservesDetachedResources(t *testing.T) {
 	}
 	if _, err = os.Stat(p); !os.IsNotExist(err) {
 		t.Fatal("partial remained")
+	}
+	forged := r
+	forged.Base.Store.Blobs = append([]goresourceadapter.Blob(nil), r.Base.Store.Blobs...)
+	forged.Base.Store.Blobs[0].Bytes = []byte("forged")
+	badBlob := filepath.Join(filepath.Dir(d), "bad-blob")
+	if err = Publish(badBlob, forged); err == nil {
+		t.Fatal("accepted forged blob")
+	}
+	if _, err = os.Stat(badBlob); !os.IsNotExist(err) {
+		t.Fatal("forged partial remained")
 	}
 }
 func set(r *Result, n string, b []byte) {
