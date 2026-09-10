@@ -363,6 +363,10 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 	if !ok {
 		return wire.ID{}, false
 	}
+	if e.Schema == id(0x9070) {
+		t, err := field(e, 0x9701)
+		return t.Reference, err == nil && t.Tag == 6 && g.Entities[t.Reference].Schema == id(0x9010)
+	}
 	if e.Schema == id(0x9013) {
 		parameter, err := field(e, 0x9130)
 		if err != nil || parameter.Tag != 6 {
