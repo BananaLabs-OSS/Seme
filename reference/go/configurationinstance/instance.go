@@ -11,6 +11,7 @@ import (
 
 	"seme.local/reference/canonicaleval"
 	"seme.local/reference/contractcatalog"
+	"seme.local/reference/executionprofile"
 	"seme.local/reference/projectv5instance"
 	"seme.local/reference/wire"
 )
@@ -327,7 +328,13 @@ func components(in Input) (wire.Envelope, error) {
 		return wire.Envelope{}, fmt.Errorf("configuration.project_v5:%w", err)
 	}
 	e, err := wire.Decode(in.ProjectV5.Composed)
-	return e, err
+	if err != nil {
+		return e, err
+	}
+	if err = executionprofile.ValidateConstruction(in.Contracts.Execution(), e); err != nil {
+		return wire.Envelope{}, fmt.Errorf("configuration.execution_profile:%w", err)
+	}
+	return e, nil
 }
 
 func validateGraph(e, base wire.Envelope, graph wire.ID, allowParameterized bool) error {
