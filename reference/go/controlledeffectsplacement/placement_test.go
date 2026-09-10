@@ -19,6 +19,19 @@ func TestExactSplitPlacement(t *testing.T) {
 			t.Fatal(target, e)
 		}
 	}
+	if e := VerifyObservedParity(ExactObservedParity()); e != nil {
+		t.Fatal(e)
+	}
+}
+func TestObservedHarnessIsNotExternalDelivery(t *testing.T) {
+	tests := []func(*ObservedCandidate){func(c *ObservedCandidate) { c.ManifestSHA256 = PinnedManifestSHA256 }, func(c *ObservedCandidate) { c.RunnerSHA256 = "00" }, func(c *ObservedCandidate) { c.Provider = PureProvider }, func(c *ObservedCandidate) { c.Capability = "entropy.read" }, func(c *ObservedCandidate) { c.CapabilityProvider = "pulp.observability" }, func(c *ObservedCandidate) { c.Fidelity = "exact-declared-provider" }, func(c *ObservedCandidate) { c.ObservationMeaning = "external-delivery" }, func(c *ObservedCandidate) { c.Synchronous = false }}
+	for i, edit := range tests {
+		c := ExactObservedParity()
+		edit(&c)
+		if VerifyObservedParity(c) == nil {
+			t.Fatalf("adversary %d", i)
+		}
+	}
 }
 func TestHostRejectsMissingExtraAndAmbientAuthority(t *testing.T) {
 	m := model()
@@ -48,7 +61,7 @@ func TestZeroInstanceAndBuildAreAtomic(t *testing.T) {
 	if VerifyHost(controlledeffectsinstance.Inputs{}, HostCandidate{}) == nil {
 		t.Fatal("zero instance")
 	}
-	got, e := Build(controlledeffectsinstance.Inputs{}, HostCandidate{}, PureCandidate{}, PureCandidate{}, PureCandidate{})
+	got, e := Build(controlledeffectsinstance.Inputs{}, HostCandidate{}, PureCandidate{}, PureCandidate{}, PureCandidate{}, ObservedCandidate{})
 	if e == nil || !reflect.DeepEqual(got, Evidence{}) {
 		t.Fatal("partial evidence")
 	}
