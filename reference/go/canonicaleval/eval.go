@@ -69,19 +69,6 @@ func EvaluateAuthorized(g wire.Envelope, arguments []Value, authorized map[strin
 }
 
 func evaluateAuthorized(g wire.Envelope, arguments []Value, authorized map[string]bool, effects bool) (Value, []EffectObservation, error) {
-	if effects {
-		for _, entity := range g.Entities {
-			if entity.Schema == id(0x90f1) {
-				capability, _, err := observedInvocation(g, entity)
-				if err != nil {
-					return Value{}, nil, err
-				}
-				if !authorized[capability] {
-					return Value{}, nil, fmt.Errorf("canonicaleval.effect_denied")
-				}
-			}
-		}
-	}
 	programs := schemaEntities(g, 0x9015)
 	if len(programs) != 1 {
 		return Value{}, nil, fmt.Errorf("canonicaleval.program")
@@ -98,6 +85,9 @@ func evaluateAuthorized(g wire.Envelope, arguments []Value, authorized map[strin
 	body, be := field(fn, 0x9113)
 	if pe != nil || be != nil || params.Tag != 7 || len(params.List) != len(arguments) || body.Tag != 6 {
 		return Value{}, nil, fmt.Errorf("canonicaleval.arguments")
+	}
+	if err := authorizeReachable(g, body.Reference, authorized); err != nil {
+		return Value{}, nil, err
 	}
 	env := map[wire.ID]Value{}
 	runtime := &observedRuntime{}

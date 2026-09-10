@@ -65,6 +65,28 @@ func TestGenericEvaluatorExecutesAuthorizedEffects(t *testing.T) {
 	}
 }
 
+func TestGenericEvaluatorIgnoresUnreachableEffectDeclarations(t *testing.T) {
+	g := effectGraph()
+	ref := func(n uint64) wire.Value { return wire.Value{Tag: 6, Reference: id(n)} }
+	list := func(ns ...uint64) wire.Value {
+		value := wire.Value{Tag: 7}
+		for _, n := range ns {
+			value.List = append(value.List, ref(n))
+		}
+		return value
+	}
+	g.Entities[id(40)] = wire.Entity{ID: id(40), Schema: id(0x9081), Fields: map[wire.ID]wire.Value{id(0x9810): list(4)}}
+	g.Entities[id(41)] = wire.Entity{ID: id(41), Schema: id(0x9080), Fields: map[wire.ID]wire.Value{id(0x9800): list(40)}}
+	g.Entities[id(42)] = wire.Entity{ID: id(42), Schema: id(0x9011), Fields: map[wire.ID]wire.Value{id(0x9111): list(2), id(0x9113): ref(41)}}
+	program := g.Entities[id(35)]
+	program.Fields[id(0x9151)] = ref(42)
+	g.Entities[id(35)] = program
+	result, trace, err := EvaluateAuthorized(g, []Value{{Kind: "bool", Bool: true}}, nil)
+	if err != nil || !result.Bool || len(trace) != 0 {
+		t.Fatalf("result=%#v trace=%#v err=%v", result, trace, err)
+	}
+}
+
 func effectGraph() wire.Envelope {
 	ref := func(n uint64) wire.Value { return wire.Value{Tag: 6, Reference: id(n)} }
 	list := func(ns ...uint64) wire.Value {
