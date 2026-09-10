@@ -13,6 +13,8 @@ cmp "$work/corpus-a/expected.jsonl" "$work/corpus-b/expected.jsonl"
 cmp "$work/corpus-a/COMPLETE" "$work/corpus-b/COMPLETE"
 test "$(wc -l < "$work/corpus-a/requests.jsonl" | tr -d ' ')" -eq 2058
 test "$(wc -l < "$work/corpus-a/expected.jsonl" | tr -d ' ')" -eq 2058
+node "$repo/reference/js/go-upb05-native-corpus-check.mjs" "$work/corpus-a/requests.jsonl" "$work/corpus-a/expected.jsonl" > "$work/corpus-summary.json"
+grep -q '"cases":2058,"base_cases":2048,"configuration_cases":10,"arguments":3' "$work/corpus-summary.json"
 if rg -n 'os\.Getenv|os\.LookupEnv|func init\(|\btime\.|\brand\.|^var [A-Za-z_][A-Za-z0-9_]* =' "$work/project" --glob '*.go' --glob '!**/*_test.go'; then
   echo 'Go UPB-05 fixture contains an ambient or global initialization mechanism' >&2
   exit 1
