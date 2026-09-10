@@ -76,6 +76,64 @@ func TestResolveProjectContractSetV3(t *testing.T) {
 	}
 }
 
+func TestResolveProjectContractSetV4ExactImmutablePins(t *testing.T) {
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	e := read("../../../modules/execution/v35/module.seme")
+	p := read("../../../modules/package/v2/module.seme")
+	d := read("../../../modules/dependency/v1/module.seme")
+	r := read("../../../modules/project/v4/module.seme")
+	set, err := ResolveProjectContractSetV4(e, p, d, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Validated() || set.Execution().Pin() != (Pin{executionModule, executionRev}) || set.Package().Pin() != (Pin{packageModule, packageRevV2}) || set.Dependency().Pin() != (Pin{dependencyModule, dependencyRev}) || set.Project().Pin() != (Pin{projectModule, projectRevV4}) {
+		t.Fatal("unexpected v4 contract pins")
+	}
+	copy := set.Dependency().Envelope()
+	delete(copy.Entities, copy.Module)
+	if _, ok := set.Dependency().Envelope().Entities[dependencyModule]; !ok {
+		t.Fatal("mutable dependency contract escaped")
+	}
+	if (ProjectContractSetV4{}).Validated() {
+		t.Fatal("zero set authenticated")
+	}
+	if _, err = ResolveProjectContractSetV4(e, read("../../../modules/package/v1/module.seme"), d, r); err == nil {
+		t.Fatal("mixed v1 Package pin accepted")
+	}
+	if _, err = ResolveProjectContractSetV4(e, p, d, read("../../../modules/project/v3/module.seme")); err == nil {
+		t.Fatal("mixed v3 Project pin accepted")
+	}
+	badDependency, _ := wire.Decode(d)
+	badDependency.Revision = mustID("0000000000000000000000000000f002")
+	badD, _ := wire.Encode(badDependency)
+	if _, err = ResolveProjectContractSetV4(e, p, badD, r); err == nil {
+		t.Fatal("wrong Dependency revision accepted")
+	}
+	badProject, _ := wire.Decode(r)
+	m := badProject.Entities[badProject.Module]
+	for _, v := range m.Fields[fImports].List {
+		q := badProject.Entities[v.Reference]
+		if q.Fields[fImportMod].Reference == dependencyModule {
+			x := q.Fields[fImportRev]
+			x.Bytes = append([]byte(nil), x.Bytes...)
+			x.Bytes[15] ^= 1
+			q.Fields[fImportRev] = x
+			badProject.Entities[q.ID] = q
+			break
+		}
+	}
+	badR, _ := wire.Encode(badProject)
+	if _, err = ResolveProjectContractSetV4(e, p, d, badR); err == nil {
+		t.Fatal("wrong Project dependency pin accepted")
+	}
+}
+
 func TestResolveProjectContractSetV3RejectsMutations(t *testing.T) {
 	e, _, _ := artifacts(t)
 	p, _ := os.ReadFile("../../../modules/package/v2/module.seme")
