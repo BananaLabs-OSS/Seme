@@ -11,6 +11,7 @@ import (
 const ModuleID = "00000000000000000000000000004000"
 const RevisionID = "00000000000000000000000000004001"
 const RevisionV2ID = "00000000000000000000000000004005"
+const RevisionV3ID = "00000000000000000000000000004006"
 
 type Origin uint64
 
@@ -88,12 +89,15 @@ func Emit(out io.Writer) error {
 }
 
 func EmitVersion(out io.Writer, version int) error {
-	if version < 1 || version > 2 {
+	if version < 1 || version > 3 {
 		return fmt.Errorf("unsupported Configuration Contract version %d", version)
 	}
 	d, revision, parent := declarations(), RevisionID, "pc 0"
 	if version == 2 {
 		d, revision, parent = declarationsV2(), RevisionV2ID, "pc 1\n"+RevisionID
+	}
+	if version == 3 {
+		d, revision, parent = declarationsV2(), RevisionV3ID, "pc 1\n"+RevisionV2ID
 	}
 	fields := []field{}
 	for _, s := range d {
@@ -110,8 +114,12 @@ func EmitVersion(out io.Writer, version int) error {
 	for _, x := range fields {
 		fmt.Fprintf(out, "rf %s\n", id(x.id))
 	}
-	fmt.Fprintf(out, "\nen %s %s 1 2\nfi %s rf %s\nfi %s by %s\n", id(0x4002), id(0x13), id(0x130), id(0xb000), id(0x131), id(0xb003))
-	fmt.Fprintf(out, "\nen %s %s 1 2\nfi %s rf %s\nfi %s by %s\n", id(0x4003), id(0x13), id(0x130), id(0x9000), id(0x131), id(0x9023))
+	packageRevision, executionRevision := uint64(0xb003), uint64(0x9023)
+	if version == 3 {
+		packageRevision, executionRevision = 0xb004, 0x9024
+	}
+	fmt.Fprintf(out, "\nen %s %s 1 2\nfi %s rf %s\nfi %s by %s\n", id(0x4002), id(0x13), id(0x130), id(0xb000), id(0x131), id(packageRevision))
+	fmt.Fprintf(out, "\nen %s %s 1 2\nfi %s rf %s\nfi %s by %s\n", id(0x4003), id(0x13), id(0x130), id(0x9000), id(0x131), id(executionRevision))
 	fmt.Fprintf(out, "\nen %s %s 1 2\nfi %s rf %s\nfi %s by %s\n", id(0x4004), id(0x13), id(0x130), id(0x3000), id(0x131), id(0x3001))
 	for _, s := range d {
 		fmt.Fprintf(out, "\nen %s %s 1 2\nfi %s by %s\nfi %s li %d\n", id(s.id), id(0x10), id(0x100), text(s.name), id(0x101), len(s.fields))

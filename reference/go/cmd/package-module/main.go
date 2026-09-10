@@ -43,7 +43,7 @@ func declarations(version int) []schema {
 			schema{0xb026, "SourceOrigin", []field{f(0xb260, "source_origin.source_unit_identity", 5, 0, 0), f(0xb261, "source_origin.normalized_relative_path", 4, 0, 0), f(0xb262, "source_origin.content_digest", 4, 0, 0), f(0xb263, "source_origin.start_byte", 2, 0, 0), f(0xb264, "source_origin.end_byte", 2, 0, 0), f(0xb265, "source_origin.start_line", 2, 0, 0), f(0xb266, "source_origin.start_column", 2, 0, 0), f(0xb267, "source_origin.end_line", 2, 0, 0), f(0xb268, "source_origin.end_column", 2, 0, 0)}},
 		)
 	}
-	if version == 3 {
+	if version >= 3 {
 		out = append(out,
 			schema{0xb027, "SemanticDeclarationKind", []field{f(0xb270, "semantic_declaration_kind.code", 2, 0, 0)}},
 			schema{0xb028, "OwnedSemanticDeclaration", []field{
@@ -67,9 +67,9 @@ func declarations(version int) []schema {
 	return out
 }
 func main() {
-	version := flag.Int("version", 1, "Package Contract version (1, 2, or 3)")
+	version := flag.Int("version", 1, "Package Contract version (1, 2, 3, or 4)")
 	flag.Parse()
-	if *version < 1 || *version > 3 {
+	if *version < 1 || *version > 4 {
 		panic("unsupported Package Contract version")
 	}
 	schemas := declarations(*version)
@@ -86,13 +86,24 @@ func main() {
 	if parents == 1 {
 		fmt.Printf("%s\n", id(0xb000+uint64(*version)-1))
 	}
-	fmt.Printf("ec %d\n\n", 1+len(schemas)+len(fields))
-	fmt.Printf("en %s %s %d 2\nfi %s by %s\nfi %s li %d\n", id(0xb000), id(0x12), *version, id(0x120), text(fmt.Sprintf("package-contract-v%d", *version)), id(0x122), len(schemas)+len(fields))
+	extra, moduleFields := 0, 2
+	if *version == 4 {
+		extra, moduleFields = 1, 3
+	}
+	fmt.Printf("ec %d\n\n", 1+len(schemas)+len(fields)+extra)
+	fmt.Printf("en %s %s %d %d\nfi %s by %s\n", id(0xb000), id(0x12), *version, moduleFields, id(0x120), text(fmt.Sprintf("package-contract-v%d", *version)))
+	if *version == 4 {
+		fmt.Printf("fi %s li 1\nrf %s\n", id(0x121), id(0xb009))
+	}
+	fmt.Printf("fi %s li %d\n", id(0x122), len(schemas)+len(fields))
 	for _, declaration := range schemas {
 		fmt.Printf("rf %s\n", id(declaration.id))
 	}
 	for _, field := range fields {
 		fmt.Printf("rf %s\n", id(field.id))
+	}
+	if *version == 4 {
+		fmt.Printf("\nen %s %s 1 2\nfi %s rf %s\nfi %s by %s\n", id(0xb009), id(0x13), id(0x130), id(0x9000), id(0x131), id(0x9024))
 	}
 	for _, declaration := range schemas {
 		emitSchema(declaration)

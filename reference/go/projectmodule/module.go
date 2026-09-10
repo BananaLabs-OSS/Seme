@@ -15,6 +15,7 @@ const RevisionV4ID = "0000000000000000000000000000e004"
 const RevisionV5ID = "0000000000000000000000000000e005"
 const RevisionV6ID = "0000000000000000000000000000e008"
 const RevisionV7ID = "0000000000000000000000000000e009"
+const RevisionV8ID = "0000000000000000000000000000e00a"
 
 type SourceClassification uint64
 
@@ -54,12 +55,13 @@ func Emit(out io.Writer) error {
 }
 
 func EmitVersion(out io.Writer, version int) error {
-	if version < 1 || version > 7 {
+	if version < 1 || version > 8 {
 		return fmt.Errorf("unsupported Project Contract version %d", version)
 	}
 	b := func(value string) string { return hex.EncodeToString([]byte(value)) }
 	exports := "rf 0000000000000000000000000000e010\nrf 0000000000000000000000000000e011\nrf 0000000000000000000000000000e100\nrf 0000000000000000000000000000e110\nrf 0000000000000000000000000000e111\nrf 0000000000000000000000000000e112\nrf 0000000000000000000000000000e113\nrf 0000000000000000000000000000e114\n"
 	revision, parent, count, moduleVersion, exportCount, extraSchemas, extraFields, packageRevision := RevisionID, "pc 0", 11, 1, 8, "", "", "0000000000000000000000000000b001"
+	executionRevision := "00000000000000000000000000009023"
 	importCount, importRefs, dependencyImport := 2, "rf 0000000000000000000000000000e002\nrf 0000000000000000000000000000e003", ""
 	if version == 2 {
 		revision, parent, count, moduleVersion, exportCount = RevisionV2ID, "pc 1\n"+RevisionID, 33, 2, 30
@@ -128,6 +130,23 @@ func EmitVersion(out io.Writer, version int) error {
 		importRefs += "\nrf 0000000000000000000000000000e006\nrf 0000000000000000000000000000e007"
 		dependencyImport = "\n\nen 0000000000000000000000000000e006 00000000000000000000000000000013 1 2\nfi 00000000000000000000000000000130 rf 0000000000000000000000000000f000\nfi 00000000000000000000000000000131 by 0000000000000000000000000000f001\n\nen 0000000000000000000000000000e007 00000000000000000000000000000013 1 2\nfi 00000000000000000000000000000130 rf 00000000000000000000000000004000\nfi 00000000000000000000000000000131 by 00000000000000000000000000004005"
 	}
+	if version == 8 {
+		revision, parent, count, moduleVersion, exportCount = RevisionV8ID, "pc 1\n"+RevisionV7ID, 67, 8, 61
+		packageRevision, executionRevision = "0000000000000000000000000000b004", "00000000000000000000000000009024"
+		exports = v8Exports()
+		extraSchemas, extraFields = v2Entities(b)
+		s3, f3 := v3Entities(b)
+		s4, f4 := v4Entities(b)
+		s5, f5 := v5Entities(b)
+		s6, f6 := v6Entities(b)
+		s7, f7 := v7Entities(b)
+		s8, f8 := v8Entities(b)
+		extraSchemas += s3 + s4 + s5 + s6 + s7 + s8
+		extraFields += f3 + f4 + f5 + f6 + f7 + f8
+		importCount = 5
+		importRefs += "\nrf 0000000000000000000000000000e006\nrf 0000000000000000000000000000e007\nrf 0000000000000000000000000000e00b"
+		dependencyImport = "\n\nen 0000000000000000000000000000e006 00000000000000000000000000000013 1 2\nfi 00000000000000000000000000000130 rf 0000000000000000000000000000f000\nfi 00000000000000000000000000000131 by 0000000000000000000000000000f001\n\nen 0000000000000000000000000000e007 00000000000000000000000000000013 1 2\nfi 00000000000000000000000000000130 rf 00000000000000000000000000004000\nfi 00000000000000000000000000000131 by 00000000000000000000000000004006\n\nen 0000000000000000000000000000e00b 00000000000000000000000000000013 1 2\nfi 00000000000000000000000000000130 rf 00000000000000000000000000003000\nfi 00000000000000000000000000000131 by 00000000000000000000000000003001"
+	}
 	if version >= 2 {
 		// Preserve the established generated layout between export, schema, and
 		// field sections. These separators are part of the checked G1 bytes.
@@ -153,7 +172,7 @@ fi 00000000000000000000000000000131 by %s
 
 en 0000000000000000000000000000e003 00000000000000000000000000000013 1 2
 fi 00000000000000000000000000000130 rf 00000000000000000000000000009000
-fi 00000000000000000000000000000131 by 00000000000000000000000000009023%s
+fi 00000000000000000000000000000131 by %s%s
 
 en 0000000000000000000000000000e010 00000000000000000000000000000010 1 2
 fi 00000000000000000000000000000100 by %s
@@ -169,7 +188,7 @@ rf 0000000000000000000000000000e112
 rf 0000000000000000000000000000e113
 rf 0000000000000000000000000000e114
 %s
-%s%s`, version, ModuleID, revision, parent, count, ModuleID, moduleVersion, b(fmt.Sprintf("project-contract-v%d", version)), importCount, importRefs, exportCount, exports, packageRevision, dependencyImport, b("ProjectIdentity"), b("ProjectSnapshot"), extraSchemas, fields(b), extraFields)
+%s%s`, version, ModuleID, revision, parent, count, ModuleID, moduleVersion, b(fmt.Sprintf("project-contract-v%d", version)), importCount, importRefs, exportCount, exports, packageRevision, executionRevision, dependencyImport, b("ProjectIdentity"), b("ProjectSnapshot"), extraSchemas, fields(b), extraFields)
 	return err
 }
 
@@ -197,6 +216,25 @@ func v7Entities(b func(string) string) (string, string) {
 		return fmt.Sprintf("\nen 0000000000000000000000000000%s 00000000000000000000000000000011 1 4\nfi 00000000000000000000000000000110 by %s\nfi 00000000000000000000000000000111 rc %d\nfi 00000000000000000000000000002000 uu %d\n%sfi 00000000000000000000000000000112 uu 0\nfi 00000000000000000000000000000113 uu 1\n", id, b(name), count, kind, constraint)
 	}
 	return schema, field("e220", "bound_configured_project_snapshot.configured_project_snapshot", "e021") + field("e221", "bound_configured_project_snapshot.bound_configuration_graph", "401f") + field("e222", "bound_configured_project_snapshot.content_revision", "")
+}
+
+func v8Entities(b func(string) string) (string, string) {
+	schema := fmt.Sprintf("\nen 0000000000000000000000000000e023 00000000000000000000000000000010 1 2\nfi 00000000000000000000000000000100 by %s\nfi 00000000000000000000000000000101 li 6\nrf 0000000000000000000000000000e230\nrf 0000000000000000000000000000e231\nrf 0000000000000000000000000000e232\nrf 0000000000000000000000000000e233\nrf 0000000000000000000000000000e234\nrf 0000000000000000000000000000e235\n", b("FullConfiguredProjectSnapshot"))
+	field := func(id, name, target string) string {
+		kind, count, constraint := 4, 1, ""
+		if target != "" {
+			kind, count = 5, 2
+			constraint = fmt.Sprintf("fi 00000000000000000000000000002001 rf 0000000000000000000000000000%s\n", target)
+		}
+		return fmt.Sprintf("\nen 0000000000000000000000000000%s 00000000000000000000000000000011 1 4\nfi 00000000000000000000000000000110 by %s\nfi 00000000000000000000000000000111 rc %d\nfi 00000000000000000000000000002000 uu %d\n%sfi 00000000000000000000000000000112 uu 0\nfi 00000000000000000000000000000113 uu 1\n", id, b(name), count, kind, constraint)
+	}
+	fields := field("e230", "full_configured_project_snapshot.source_inventory", "e016")
+	fields += field("e231", "full_configured_project_snapshot.dependency_closure", "f010")
+	fields += field("e232", "full_configured_project_snapshot.package_graph", "b029")
+	fields += field("e233", "full_configured_project_snapshot.program", "9015")
+	fields += field("e234", "full_configured_project_snapshot.bound_configuration_graph", "401f")
+	fields += field("e235", "full_configured_project_snapshot.content_revision", "")
+	return schema, fields
 }
 
 func v5Entities(b func(string) string) (string, string) {
@@ -337,6 +375,14 @@ func v6Exports() string {
 func v7Exports() string {
 	out := v6Exports()
 	for _, x := range []string{"e022", "e220", "e221", "e222"} {
+		out += fmt.Sprintf("rf 0000000000000000000000000000%s\n", x)
+	}
+	return out
+}
+
+func v8Exports() string {
+	out := v7Exports()
+	for _, x := range []string{"e023", "e230", "e231", "e232", "e233", "e234", "e235"} {
 		out += fmt.Sprintf("rf 0000000000000000000000000000%s\n", x)
 	}
 	return out

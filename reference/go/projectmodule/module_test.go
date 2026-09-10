@@ -54,8 +54,20 @@ func TestEmitV2ExtendsV1WithExactAncestryAndNeutralSources(t *testing.T) {
 			t.Fatalf("language/project-specific contamination %q", bad)
 		}
 	}
-	if err := EmitVersion(&bytes.Buffer{}, 8); err == nil {
+	if err := EmitVersion(&bytes.Buffer{}, 9); err == nil {
 		t.Fatal("accepted unknown version")
+	}
+}
+
+func TestEmitV8BindsOneFullExecutionV36Snapshot(t *testing.T) {
+	var out bytes.Buffer
+	if err := EmitVersion(&out, 8); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{RevisionV8ID, "pc 1\n" + RevisionV7ID, "0000000000000000000000000000b004", "00000000000000000000000000009024", "00000000000000000000000000004006", "00000000000000000000000000003001", "0000000000000000000000000000e023", "0000000000000000000000000000e230", "0000000000000000000000000000e235"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("v8 missing %s", want)
+		}
 	}
 }
 
