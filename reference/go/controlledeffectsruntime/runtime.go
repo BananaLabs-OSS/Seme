@@ -13,6 +13,7 @@ import (
 type Operation struct{ Identity, Capability string }
 type Profile struct {
 	Clock, Log                                              Operation
+	RandomIdentity, RandomAlgorithm, RandomOverflowPolicy   string
 	MaximumSteps, FirstClockSequence, ClockTerminalSentinel uint64
 	MaximumUnixMilliseconds                                 int64
 	MaximumDraws, MaximumEffects                            uint64
@@ -24,8 +25,8 @@ func Authenticate(in controlledeffectsinstance.Inputs) (Profile, error) {
 		return Profile{}, fmt.Errorf("seme.effects.profile.instance:%w", err)
 	}
 	m := in.Model
-	p := Profile{Clock: Operation{m.Clock.Identity, m.Clock.Identity}, Log: Operation{m.ExternalEffect.Identity, m.ExternalEffect.CapabilityIdentity}, MaximumSteps: m.Bounds.MaximumSteps, FirstClockSequence: m.Bounds.FirstClockSequence, ClockTerminalSentinel: m.Bounds.ClockTerminalSentinel, MaximumUnixMilliseconds: m.Bounds.MaximumUnixMilliseconds, MaximumDraws: m.Bounds.MaximumDraws, MaximumEffects: m.Bounds.MaximumEffects}
-	if m.Clock.InjectionPolicy != "explicit-replayable-input" || m.Clock.MonotonicPolicy != "nondecreasing" || m.ExternalEffect.Identity != "observability.log" || m.ExternalEffect.EffectIdentity != "observability.log" || m.ExternalEffect.DeliveryPolicy != "request-not-delivery" || m.Bounds.MaximumEffects == 0 {
+	p := Profile{Clock: Operation{m.Clock.Identity, m.Clock.Identity}, Log: Operation{m.ExternalEffect.Identity, m.ExternalEffect.CapabilityIdentity}, RandomIdentity: m.Random.Identity, RandomAlgorithm: m.Random.Algorithm, RandomOverflowPolicy: m.Random.OverflowPolicy, MaximumSteps: m.Bounds.MaximumSteps, FirstClockSequence: m.Bounds.FirstClockSequence, ClockTerminalSentinel: m.Bounds.ClockTerminalSentinel, MaximumUnixMilliseconds: m.Bounds.MaximumUnixMilliseconds, MaximumDraws: m.Bounds.MaximumDraws, MaximumEffects: m.Bounds.MaximumEffects}
+	if m.Clock.InjectionPolicy != "explicit-replayable-input" || m.Clock.MonotonicPolicy != "nondecreasing" || m.Random.Identity != "random.seeded.lcg-48271-plus-1.v1" || m.Random.Algorithm != "state*48271+1" || m.Random.OverflowPolicy != "signed-i64-modular" || m.Replay.DuplicatePolicy != "cached-no-new-effects" || m.Replay.RejectionPolicy != "atomic-no-effects" || m.ExternalEffect.Identity != "observability.log" || m.ExternalEffect.EffectIdentity != "observability.log" || m.ExternalEffect.DeliveryPolicy != "request-not-delivery" || m.Bounds.MaximumEffects == 0 {
 		return Profile{}, fmt.Errorf("seme.effects.profile.selection")
 	}
 	p.authentication = digestProfile(p)
@@ -113,13 +114,16 @@ func Execute(p Profile, grants Grants, clock ClockPort, effects EffectPort, h Ha
 	if c != New {
 		return Result{Failure: "seme.effects.classification.invalid"}
 	}
+	if random.Draws >= p.MaximumDraws {
+		return Result{Failure: "seme.effects.random.exhausted"}
+	}
 	// Every selected host operation is authorized before either port is called.
 	if !grants[p.Clock.Capability] || !grants[p.Log.Capability] {
 		return Result{Failure: "seme.effects.unauthorized"}
 	}
 	co := cloneClock(clock.Sample(p.Clock))
 	trace := []Observation{{Sequence: 1, Operation: p.Clock.Identity, Clock: &co}}
-	if co.Error != nil || co.Sample.Sequence < p.FirstClockSequence || co.Sample.Sequence >= p.ClockTerminalSentinel || co.Sample.UnixMilliseconds < 0 || co.Sample.UnixMilliseconds > p.MaximumUnixMilliseconds {
+	if co.Error != nil || co.Sample.Sequence != p.FirstClockSequence+random.Draws || co.Sample.Sequence >= p.ClockTerminalSentinel || co.Sample.UnixMilliseconds < 0 || co.Sample.UnixMilliseconds > p.MaximumUnixMilliseconds {
 		return Result{Failure: "seme.effects.clock.invalid", Trace: trace}
 	}
 	s := h.Handle(bytes.Clone(command), co.Sample, random)
@@ -132,7 +136,7 @@ func Execute(p Profile, grants Grants, clock ClockPort, effects EffectPort, h Ha
 		}
 		return base
 	}
-	if !s.Committed || len(s.Effects) != 1 {
+	if !s.Committed || len(s.Effects) != 1 || s.Random.Draws != random.Draws+1 || s.Random.Draws > p.MaximumDraws || s.Random.Value != random.Value*48271+1 {
 		base.Failure = "seme.effects.semantic.invalid"
 		return base
 	}
@@ -185,11 +189,11 @@ func Replay(p Profile, h ReplayHandler, initial []byte, steps []ReplayStep) Resu
 	state := bytes.Clone(initial)
 	var random RandomState
 	for i, x := range steps {
-		if x.Clock.Sequence < p.FirstClockSequence || x.Clock.Sequence >= p.ClockTerminalSentinel || x.Clock.UnixMilliseconds < 0 || x.Clock.UnixMilliseconds > p.MaximumUnixMilliseconds || (i > 0 && x.Clock.Sequence <= steps[i-1].Clock.Sequence) {
+		if x.RandomBefore.Draws >= p.MaximumDraws || x.Clock.Sequence != p.FirstClockSequence+x.RandomBefore.Draws || x.Clock.Sequence >= p.ClockTerminalSentinel || x.Clock.UnixMilliseconds < 0 || x.Clock.UnixMilliseconds > p.MaximumUnixMilliseconds || (i > 0 && (x.Clock.Sequence <= steps[i-1].Clock.Sequence || x.RandomBefore != random)) {
 			return Result{Failure: "seme.effects.replay.invalid"}
 		}
 		s := h.Fold(bytes.Clone(state), bytes.Clone(x.Command), x.Clock, x.RandomBefore)
-		if !s.Committed || s.Failure != "" || len(s.Effects) != 1 {
+		if !s.Committed || s.Failure != "" || len(s.Effects) != 1 || s.Random.Draws != x.RandomBefore.Draws+1 || s.Random.Value != x.RandomBefore.Value*48271+1 {
 			return Result{Failure: "seme.effects.replay.semantic"}
 		}
 		state = bytes.Clone(s.State)
@@ -199,10 +203,10 @@ func Replay(p Profile, h ReplayHandler, initial []byte, steps []ReplayStep) Resu
 }
 
 func validProfile(p Profile) bool {
-	return p.Clock.Identity != "" && p.Clock.Capability != "" && p.Log.Identity == "observability.log" && p.Log.Capability != "" && p.MaximumSteps > 0 && p.FirstClockSequence < p.ClockTerminalSentinel && p.MaximumUnixMilliseconds >= 0 && p.MaximumEffects > 0 && p.authentication == digestProfile(p)
+	return p.Clock.Identity != "" && p.Clock.Capability != "" && p.Log.Identity == "observability.log" && p.Log.Capability != "" && p.RandomIdentity == "random.seeded.lcg-48271-plus-1.v1" && p.RandomAlgorithm == "state*48271+1" && p.RandomOverflowPolicy == "signed-i64-modular" && p.MaximumSteps > 0 && p.FirstClockSequence < p.ClockTerminalSentinel && p.MaximumUnixMilliseconds >= 0 && p.MaximumDraws > 0 && p.MaximumEffects > 0 && p.authentication == digestProfile(p)
 }
 func digestProfile(p Profile) [32]byte {
-	return sha256.Sum256([]byte(fmt.Sprintf("seme.effects.profile.v1\x00%s\x00%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d", p.Clock.Identity, p.Clock.Capability, p.Log.Identity, p.Log.Capability, p.MaximumSteps, p.FirstClockSequence, p.ClockTerminalSentinel, p.MaximumUnixMilliseconds, p.MaximumDraws, p.MaximumEffects)))
+	return sha256.Sum256([]byte(fmt.Sprintf("seme.effects.profile.v1\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%s\x00%d\x00%d\x00%d\x00%d\x00%d\x00%d", p.Clock.Identity, p.Clock.Capability, p.Log.Identity, p.Log.Capability, p.RandomIdentity, p.RandomAlgorithm, p.RandomOverflowPolicy, p.MaximumSteps, p.FirstClockSequence, p.ClockTerminalSentinel, p.MaximumUnixMilliseconds, p.MaximumDraws, p.MaximumEffects)))
 }
 func idempotency(c []byte, s ClockSample, r RandomState) []byte {
 	h := sha256.New()
