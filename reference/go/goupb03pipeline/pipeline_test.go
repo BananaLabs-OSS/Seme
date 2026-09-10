@@ -7,15 +7,21 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"seme.local/reference/contractcatalog"
+	"seme.local/reference/dependencyemitter"
 	"seme.local/reference/dependencyinstance"
+	"seme.local/reference/dependencyresolution"
+	"seme.local/reference/goofflineclosure"
+	"seme.local/reference/goprojectdependency"
 	"seme.local/reference/goprojectpipeline"
 	"seme.local/reference/goprovider"
 	"seme.local/reference/projectdependencyinstance"
 	"seme.local/reference/projectgraphinstance"
 	"seme.local/reference/projectsource"
+	"seme.local/reference/projectv4emitter"
 )
 
 func TestBuildDeterministicValidatedUPB03(t *testing.T) {
@@ -31,11 +37,30 @@ func TestBuildDeterministicValidatedUPB03(t *testing.T) {
 	if !bytes.Equal(a.DependencyV1, b.DependencyV1) || !bytes.Equal(a.ProjectV4, b.ProjectV4) {
 		t.Fatal("nondeterministic")
 	}
-	if _, err = dependencyinstance.Validate(in.Contracts.Dependency(), a.DependencyV1); err != nil {
+	closure, err := dependencyinstance.Validate(in.Contracts.Dependency(), a.DependencyV1)
+	if err != nil {
 		t.Fatal(err)
 	}
+	bindings := map[string]bool{}
+	for _, r := range closure.Requirements {
+		for _, m := range r.Metadata {
+			bindings[m.Key] = true
+		}
+	}
+	if !bindings["go.mod.path"] || !bindings["go.mod.source"] || !bindings["go.mod.sha256"] {
+		t.Fatalf("external applicability missing: %#v", bindings)
+	}
+	sourceBinding := false
+	for key := range bindings {
+		if strings.HasPrefix(key, "go.source.") {
+			sourceBinding = true
+		}
+	}
+	if !sourceBinding {
+		t.Fatal("local source applicability missing")
+	}
 	v3 := projectgraphinstance.Inputs{Contracts: in.Base.Contracts.V3, ProjectV2: in.Base.Contracts.V2.Project(), Project: a.Base.ProjectV1, Inventory: a.Base.InventoryV2, PackageGraph: a.Base.PackageV2, Composed: a.Base.ProjectV3}
-	if err = projectdependencyinstance.Validate(projectdependencyinstance.Inputs{Contracts: in.Contracts, ProjectV3: v3, Dependency: a.DependencyV1, Composed: a.ProjectV4}); err != nil {
+	if err = goprojectdependency.Validate(projectdependencyinstance.Inputs{Contracts: in.Contracts, ProjectV3: v3, Dependency: a.DependencyV1, Composed: a.ProjectV4}); err != nil {
 		t.Fatal(err)
 	}
 	a.ProjectV4[0] ^= 1
@@ -51,6 +76,84 @@ func TestBuildDeterministicValidatedUPB03(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestApplicabilityRejectsArbitraryValidUnrelatedClosureAndMetadata(t *testing.T) {
+	in := fixture(t)
+	base, err := goprojectpipeline.Build(context.Background(), in.Base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v3 := projectgraphinstance.Inputs{Contracts: in.Base.Contracts.V3, ProjectV2: in.Base.Contracts.V2.Project(), Project: base.ProjectV1, Inventory: base.InventoryV2, PackageGraph: base.PackageV2, Composed: base.ProjectV3}
+	neutral, err := goofflineclosure.Load(goofflineclosure.Input{ProjectRoot: in.Dependency.ProjectRoot, ProxyRoot: in.Dependency.ProxyRoot, Module: in.Dependency.Module, Version: in.Dependency.Version, LocalFrom: in.Dependency.LocalFrom, LocalTo: in.Dependency.LocalTo, Resolution: base.Resolution})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertRejected := func(t *testing.T, c dependencyresolution.Closure) {
+		t.Helper()
+		dep, er := dependencyemitter.Emit(in.Contracts.Dependency(), c)
+		if er != nil {
+			t.Fatal(er)
+		}
+		v4, er := projectv4emitter.Emit(projectv4emitter.Input{Contracts: in.Contracts, ProjectV3: v3, Dependency: dep})
+		if er != nil {
+			t.Fatal(er)
+		}
+		boundary := projectdependencyinstance.Inputs{Contracts: in.Contracts, ProjectV3: v3, Dependency: dep, Composed: v4}
+		if er = projectdependencyinstance.Validate(boundary); er != nil {
+			t.Fatalf("neutral composition should remain valid: %v", er)
+		}
+		if er = goprojectdependency.Validate(boundary); er == nil {
+			t.Fatal("unrelated Go closure accepted")
+		}
+	}
+	// A fully valid neutral closure has no claim that it applies to this exact
+	// Go project until the adapter bindings are present.
+	assertRejected(t, neutral)
+
+	bound, err := goprojectdependency.BindMetadata(neutral, base.ProjectV3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutate := func(c *dependencyresolution.Closure, key, value string) {
+		for i := range c.Requirements {
+			for j := range c.Requirements[i].Metadata {
+				if c.Requirements[i].Metadata[j].Key == key {
+					c.Requirements[i].Metadata[j].Value = value
+				}
+			}
+		}
+		for i := range c.Entries {
+			for j := range c.Entries[i].Metadata {
+				if c.Entries[i].Metadata[j].Key == key {
+					c.Entries[i].Metadata[j].Value = value
+				}
+			}
+		}
+	}
+	mutate(&bound, "go.mod.sha256", strings.Repeat("0", 64))
+	assertRejected(t, bound)
+	bound, err = goprojectdependency.BindMetadata(neutral, base.ProjectV3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutate(&bound, "go.import.from", "example.test/unrelated")
+	assertRejected(t, bound)
+	bound, err = goprojectdependency.BindMetadata(neutral, base.ProjectV3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range bound.Requirements {
+		for _, m := range r.Metadata {
+			if strings.HasPrefix(m.Key, "go.source.") {
+				mutate(&bound, m.Key, strings.Repeat("f", 64))
+				assertRejected(t, bound)
+				return
+			}
+		}
+	}
+	t.Fatal("missing source binding")
 }
 
 func TestRejectsDependencyAndContractFailuresAtomically(t *testing.T) {
