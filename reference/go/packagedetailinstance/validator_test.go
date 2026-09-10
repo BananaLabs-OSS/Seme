@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"os"
 	"sort"
+	"strings"
 	"testing"
 
 	"seme.local/reference/contractcatalog"
@@ -52,6 +53,21 @@ func TestValidateAcceptsV2PinWithoutRedundantV1Pin(t *testing.T) {
 	}
 	if err = Validate(raw); err != nil {
 		t.Fatalf("v2-only pin rejected: %v", err)
+	}
+}
+
+func TestPackageDependenciesRejectDuplicateTargetAndName(t *testing.T) {
+	pid, d1, d2, target1, target2 := id("d100"), id("d101"), id("d102"), id("d103"), id("d104")
+	dep := func(x, target wire.ID, name string) wire.Entity {
+		return wire.Entity{ID: x, Schema: dependencySchema, Version: 1, Fields: map[wire.ID]wire.Value{id("b120"): {Tag: 5, Bytes: []byte(name)}, id("b121"): {Tag: 5, Bytes: []byte("local")}, id("b122"): {Tag: 6, Reference: target}}}
+	}
+	base := wire.Envelope{Entities: map[wire.ID]wire.Entity{pid: {ID: pid, Schema: packageSchema, Version: 1, Fields: map[wire.ID]wire.Value{id("b103"): {Tag: 7, List: []wire.Value{{Tag: 6, Reference: d1}, {Tag: 6, Reference: d2}}}}}, d1: dep(d1, target1, "one"), d2: dep(d2, target1, "two")}}
+	if _, err := packageDependencies(base, pid); err == nil || !strings.Contains(err.Error(), "dependency_target_duplicate") {
+		t.Fatalf("got %v", err)
+	}
+	base.Entities[d2] = dep(d2, target2, "one")
+	if _, err := packageDependencies(base, pid); err == nil || !strings.Contains(err.Error(), "dependency_name_duplicate") {
+		t.Fatalf("got %v", err)
 	}
 }
 
@@ -139,6 +155,32 @@ func TestRejectsAdversarialPackageDetailGraphs(t *testing.T) {
 			delete(q.Fields, id("b243"))
 			e.Entities[x] = q
 		},
+		"requested-identity": func(e *wire.Envelope) {
+			x := idsWithSchema(*e, bindingSchema)[0]
+			q := e.Entities[x]
+			q.Fields[id("b241")] = wire.Value{Tag: 5, Bytes: []byte("model")}
+			e.Entities[x] = q
+		},
+		"duplicate-dependency-target": func(e *wire.Envelope) {
+			var root wire.ID
+			for x, q := range e.Entities {
+				if q.Schema == packageSchema && len(q.Fields[id("b103")].List) == 1 {
+					root = x
+					break
+				}
+			}
+			p := e.Entities[root]
+			original := p.Fields[id("b103")].List[0].Reference
+			duplicate := e.Entities[original]
+			duplicate.ID = id("f003")
+			duplicate.Fields[id("b120")] = wire.Value{Tag: 5, Bytes: []byte("second-name")}
+			e.Entities[duplicate.ID] = duplicate
+			deps := p.Fields[id("b103")]
+			deps.List = append(deps.List, wire.Value{Tag: 6, Reference: duplicate.ID})
+			sort.Slice(deps.List, func(i, j int) bool { return deps.List[i].Reference.String() < deps.List[j].Reference.String() })
+			p.Fields[id("b103")] = deps
+			e.Entities[root] = p
+		},
 		"orphan": func(e *wire.Envelope) {
 			x := idsWithSchema(*e, visibilitySchema)[0]
 			q := e.Entities[x]
@@ -215,7 +257,7 @@ func validArtifact(t *testing.T) []byte {
 		Identity: "example.test/tool", RootPackage: "example.test/tool/root", Execution: ex,
 		Packages: []projectemitter.Package{
 			{Name: "example.test/tool/model", Interfaces: []projectemitter.Interface{{Name: "Normalize", Function: f1, Parameters: []wire.ID{typ}, Result: typ}}},
-			{Name: "example.test/tool/root", Dependencies: []projectemitter.Dependency{{Name: "model", Package: "example.test/tool/model"}}, Interfaces: []projectemitter.Interface{{Name: "Apply", Function: f2, Parameters: []wire.ID{typ}, Result: typ}}},
+			{Name: "example.test/tool/root", Dependencies: []projectemitter.Dependency{{Name: "example.test/tool/model", Package: "example.test/tool/model"}}, Interfaces: []projectemitter.Interface{{Name: "Apply", Function: f2, Parameters: []wire.ID{typ}, Result: typ}}},
 		},
 	})
 	if e != nil {
