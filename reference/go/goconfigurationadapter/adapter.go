@@ -46,6 +46,7 @@ type FieldSelection struct {
 	Type              TypeSelection
 	Origin            TypeSelection
 	Default           *wire.ID
+	DefaultProvider   *FunctionSelection
 	Required          bool
 	Resolution        ResolutionSelection
 	Validator         *FunctionSelection
@@ -82,6 +83,7 @@ type SourceSelection struct {
 	Kind                        SourceKind
 	Field, Runtime, Predecessor string
 	Static                      *wire.ID
+	StaticProvider              *FunctionSelection
 	Record                      *RecordSelection
 }
 type RecordSelection struct {
@@ -156,9 +158,9 @@ type evidence struct {
 	types     map[string]ownedType
 }
 type function struct {
-	id, owner  wire.ID
-	parameters []wire.ID
-	result     wire.ID
+	id, owner    wire.ID
+	parameters   []wire.ID
+	result, body wire.ID
 }
 type ownedType struct{ id, owner, origin wire.ID }
 
@@ -246,7 +248,8 @@ func authenticate(ctx context.Context, in Input) (evidence, error) {
 			if _, exists := ev.functions[key]; exists {
 				return evidence{}, fmt.Errorf("go_configuration.function_duplicate")
 			}
-			ev.functions[key] = function{fid, owner, params, result}
+			body, _ := reference(q, id("9113"))
+			ev.functions[key] = function{fid, owner, params, result, body}
 		}
 	}
 	if len(packages) == 0 {
@@ -275,7 +278,8 @@ func authenticate(ctx context.Context, in Input) (evidence, error) {
 				if _, exists := ev.functions[key]; exists {
 					return evidence{}, fmt.Errorf("go_configuration.function_duplicate")
 				}
-				ev.functions[key] = function{fid, q.ID, params, result}
+				body, _ := reference(fq, id("9113"))
+				ev.functions[key] = function{fid, q.ID, params, result, body}
 			}
 		}
 	}
@@ -329,19 +333,33 @@ func resolve(in Input, ev evidence) (Plan, error) {
 		if owner == (wire.ID{}) || owner != o.owner {
 			return Plan{}, fmt.Errorf("go_configuration.field_owner")
 		}
-		if s.Default != nil {
-			if typ, ok := canonicaleval.ExpressionType(ev.graph, *s.Default); !ok || typ != t.id {
+		defaultValue := cloneID(s.Default)
+		if s.DefaultProvider != nil {
+			if defaultValue != nil {
+				return Plan{}, fmt.Errorf("go_configuration.default_union")
+			}
+			x, er := providerValue(ev, *s.DefaultProvider, t.id)
+			if er != nil {
+				return Plan{}, er
+			}
+			defaultValue = &x
+		}
+		if defaultValue != nil {
+			if typ, ok := canonicaleval.ExpressionType(ev.graph, *defaultValue); !ok || typ != t.id {
 				return Plan{}, fmt.Errorf("go_configuration.default_type")
 			}
 		}
 		resolution := Resolution{Kind: s.Resolution.Kind, Value: cloneID(s.Resolution.Value), Capability: cloneID(s.Resolution.Capability)}
+		if resolution.Kind == DefaultValue && resolution.Value == nil && defaultValue != nil {
+			resolution.Value = cloneID(defaultValue)
+		}
 		switch resolution.Kind {
 		case ExplicitValue:
 			if resolution.Value == nil || resolution.Capability != nil {
 				return Plan{}, fmt.Errorf("go_configuration.resolution_explicit")
 			}
 		case DefaultValue:
-			if s.Default == nil || resolution.Value == nil || *resolution.Value != *s.Default || resolution.Capability != nil {
+			if defaultValue == nil || resolution.Value == nil || *resolution.Value != *defaultValue || resolution.Capability != nil {
 				return Plan{}, fmt.Errorf("go_configuration.resolution_default")
 			}
 		case CapabilityValue:
@@ -364,7 +382,7 @@ func resolve(in Input, ev evidence) (Plan, error) {
 			}
 			validator = cloneID(&f.id)
 		}
-		out.Fields = append(out.Fields, Field{s.Key, owner, t.id, o.origin, cloneID(s.Default), s.Required, resolution, validator, s.ValidationOrder})
+		out.Fields = append(out.Fields, Field{s.Key, owner, t.id, o.origin, cloneID(defaultValue), s.Required, resolution, validator, s.ValidationOrder})
 		fieldTypes[s.Key] = t.id
 	}
 	runtimeTypes := map[string]wire.ID{}
@@ -448,6 +466,9 @@ func resolveSource(s SourceSelection, want wire.ID, current string, ev evidence,
 	if s.Static != nil {
 		set++
 	}
+	if s.StaticProvider != nil {
+		set++
+	}
 	if s.Record != nil {
 		set++
 	}
@@ -484,14 +505,22 @@ func resolveSource(s SourceSelection, want wire.ID, current string, ev evidence,
 		}
 		out.Predecessor = s.Predecessor
 	case StaticCanonical:
-		if s.Static == nil {
+		value := cloneID(s.Static)
+		if s.StaticProvider != nil {
+			x, er := providerValue(ev, *s.StaticProvider, want)
+			if er != nil {
+				return Source{}, er
+			}
+			value = &x
+		}
+		if value == nil {
 			return Source{}, fmt.Errorf("go_configuration.source_static")
 		}
-		typ, ok := canonicaleval.ExpressionType(ev.graph, *s.Static)
+		typ, ok := canonicaleval.ExpressionType(ev.graph, *value)
 		if !ok || typ != want {
 			return Source{}, fmt.Errorf("go_configuration.source_static_type")
 		}
-		out.Static = cloneID(s.Static)
+		out.Static = cloneID(value)
 	case RecordConstruction:
 		if s.Record == nil {
 			return Source{}, fmt.Errorf("go_configuration.source_record")
@@ -571,6 +600,36 @@ func resolveType(ev evidence, s TypeSelection) (ownedType, bool) {
 		}
 		return ownedType{id: x}, true
 	}
+	if s.Package == "" {
+		var schema wire.ID
+		switch s.Name {
+		case "i64":
+			schema = id("9010")
+		case "bool":
+			schema = id("9020")
+		case "string":
+			schema = id("9040")
+		default:
+			return ownedType{}, false
+		}
+		var found wire.ID
+		for x, q := range ev.graph.Entities {
+			if q.Schema != schema {
+				continue
+			}
+			if s.Name == "i64" && (q.Fields[id("9100")].Unsigned != 64 || q.Fields[id("9101")].Tag != 2) {
+				continue
+			}
+			if found != (wire.ID{}) {
+				return ownedType{}, false
+			}
+			found = x
+		}
+		if found == (wire.ID{}) {
+			return ownedType{}, false
+		}
+		return ownedType{id: found}, true
+	}
 	x, ok := ev.types[selectKey(s.Package, s.Name)]
 	return x, ok
 }
@@ -588,6 +647,34 @@ func validatorSignature(e wire.Envelope, f function, typ wire.ID) bool {
 	}
 	r := e.Entities[f.result]
 	return r.Schema == id("9042") && r.Fields[id("9400")].Tag == 6 && r.Fields[id("9400")].Reference == typ
+}
+func providerValue(ev evidence, s FunctionSelection, typ wire.ID) (wire.ID, error) {
+	f, ok := ev.functions[selectKey(s.Package, s.Name)]
+	if !ok || len(f.parameters) != 0 || f.result != typ || !pure(ev.graph, f.id) {
+		return wire.ID{}, fmt.Errorf("go_configuration.value_provider")
+	}
+	x := f.body
+	q := ev.graph.Entities[x]
+	if q.Schema == id("9080") {
+		items := refs(q, id("9800"))
+		if len(items) != 1 {
+			return wire.ID{}, fmt.Errorf("go_configuration.value_provider_body")
+		}
+		r := ev.graph.Entities[items[0]]
+		if r.Schema != id("9081") {
+			return wire.ID{}, fmt.Errorf("go_configuration.value_provider_return")
+		}
+		values := refs(r, id("9810"))
+		if len(values) != 1 {
+			return wire.ID{}, fmt.Errorf("go_configuration.value_provider_return")
+		}
+		x = values[0]
+	}
+	got, typed := canonicaleval.ExpressionType(ev.graph, x)
+	if !typed || got != typ {
+		return wire.ID{}, fmt.Errorf("go_configuration.value_provider_type")
+	}
+	return x, nil
 }
 func pure(e wire.Envelope, root wire.ID) bool {
 	seen, todo := map[wire.ID]bool{}, []wire.ID{root}

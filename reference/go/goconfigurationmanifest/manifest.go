@@ -34,6 +34,7 @@ type field struct {
 	Type            typ        `json:"type"`
 	Origin          typ        `json:"origin"`
 	Default         string     `json:"default,omitempty"`
+	DefaultProvider *function  `json:"default_provider,omitempty"`
 	Required        bool       `json:"required"`
 	Resolution      resolution `json:"resolution"`
 	Validator       *function  `json:"validator,omitempty"`
@@ -56,12 +57,13 @@ type unit struct {
 	Arguments    []source `json:"arguments"`
 }
 type source struct {
-	Kind        string  `json:"kind"`
-	Field       string  `json:"field,omitempty"`
-	Runtime     string  `json:"runtime,omitempty"`
-	Predecessor string  `json:"predecessor,omitempty"`
-	Static      string  `json:"static,omitempty"`
-	Record      *record `json:"record,omitempty"`
+	Kind           string    `json:"kind"`
+	Field          string    `json:"field,omitempty"`
+	Runtime        string    `json:"runtime,omitempty"`
+	Predecessor    string    `json:"predecessor,omitempty"`
+	Static         string    `json:"static,omitempty"`
+	StaticProvider *function `json:"static_provider,omitempty"`
+	Record         *record   `json:"record,omitempty"`
 }
 type record struct {
 	Type    typ      `json:"type"`
@@ -107,7 +109,11 @@ func Parse(data []byte) (goconfigurationadapter.Selection, error) {
 		if f.Validator != nil {
 			validator = &goconfigurationadapter.FunctionSelection{Package: f.Validator.Package, Name: f.Validator.Name}
 		}
-		out.Fields = append(out.Fields, goconfigurationadapter.FieldSelection{Key: f.Key, OwnerPackage: f.OwnerPackage, Type: convertType(f.Type), Origin: convertType(f.Origin), Default: def, Required: f.Required, Resolution: goconfigurationadapter.ResolutionSelection{Kind: kind, Value: value, Capability: capability}, Validator: validator, ValidationOrder: f.ValidationOrder})
+		var defaultProvider *goconfigurationadapter.FunctionSelection
+		if f.DefaultProvider != nil {
+			defaultProvider = &goconfigurationadapter.FunctionSelection{Package: f.DefaultProvider.Package, Name: f.DefaultProvider.Name}
+		}
+		out.Fields = append(out.Fields, goconfigurationadapter.FieldSelection{Key: f.Key, OwnerPackage: f.OwnerPackage, Type: convertType(f.Type), Origin: convertType(f.Origin), Default: def, DefaultProvider: defaultProvider, Required: f.Required, Resolution: goconfigurationadapter.ResolutionSelection{Kind: kind, Value: value, Capability: capability}, Validator: validator, ValidationOrder: f.ValidationOrder})
 	}
 	for _, r := range x.Runtime {
 		capability, err := optionalID(r.Capability)
@@ -145,6 +151,9 @@ func convertSource(x source, depth int) (goconfigurationadapter.SourceSelection,
 		return goconfigurationadapter.SourceSelection{}, err
 	}
 	out := goconfigurationadapter.SourceSelection{Kind: k, Field: x.Field, Runtime: x.Runtime, Predecessor: x.Predecessor, Static: static}
+	if x.StaticProvider != nil {
+		out.StaticProvider = &goconfigurationadapter.FunctionSelection{Package: x.StaticProvider.Package, Name: x.StaticProvider.Name}
+	}
 	if x.Record != nil {
 		r := &goconfigurationadapter.RecordSelection{Type: convertType(x.Record.Type)}
 		for _, m := range x.Record.Members {

@@ -1,0 +1,80 @@
+{
+  "fields": [
+    {
+      "key": "NamePrefix",
+      "owner_package": "example.test/go-uab-11/configuration",
+      "type": { "name": "string" },
+      "origin": { "package": "example.test/go-uab-11/configuration", "name": "Input" },
+      "default_provider": { "package": "example.test/go-uab-11/configuration", "name": "DefaultNamePrefix" },
+      "required": true,
+      "resolution": { "kind": "default" },
+      "validator": { "package": "example.test/go-uab-11/configuration", "name": "ValidateNamePrefix" },
+      "validation_order": 0
+    },
+    {
+      "key": "Limit",
+      "owner_package": "example.test/go-uab-11/configuration",
+      "type": { "name": "i64" },
+      "origin": { "package": "example.test/go-uab-11/configuration", "name": "Input" },
+      "default_provider": { "package": "example.test/go-uab-11/configuration", "name": "DefaultLimit" },
+      "required": true,
+      "resolution": { "kind": "default" },
+      "validator": { "package": "example.test/go-uab-11/configuration", "name": "ValidateLimit" },
+      "validation_order": 1
+    },
+    {
+      "key": "UseDefaultLimit",
+      "owner_package": "example.test/go-uab-11/configuration",
+      "type": { "name": "bool" },
+      "origin": { "package": "example.test/go-uab-11/configuration", "name": "Input" },
+      "default_provider": { "package": "example.test/go-uab-11/configuration", "name": "InternalDefaultDisabled" },
+      "required": true,
+      "resolution": { "kind": "default" },
+      "validation_order": 0
+    }
+  ],
+  "runtime_inputs": [
+    {
+      "identity": "application-state",
+      "type": { "package": "example.test/go-uab-11/application", "name": "State" }
+    }
+  ],
+  "initializers": [
+    {
+      "key": "configuration",
+      "callable": { "package": "example.test/go-uab-11/configuration", "name": "Initialize" },
+      "dependencies": [],
+      "arguments": [
+        {
+          "kind": "record",
+          "record": {
+            "type": { "package": "example.test/go-uab-11/configuration", "name": "Input" },
+            "members": [
+              { "name": "NamePrefix", "source": { "kind": "resolved-field", "field": "NamePrefix" } },
+              { "name": "Limit", "source": { "kind": "resolved-field", "field": "Limit" } },
+              { "name": "UseDefaultLimit", "source": { "kind": "resolved-field", "field": "UseDefaultLimit" } }
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "key": "policy",
+      "callable": { "package": "example.test/go-uab-11/policy", "name": "Initialize" },
+      "dependencies": ["configuration"],
+      "arguments": [
+        { "kind": "predecessor-ok", "predecessor": "configuration" }
+      ]
+    },
+    {
+      "key": "service",
+      "callable": { "package": "example.test/go-uab-11/service", "name": "Assemble" },
+      "dependencies": ["configuration", "policy"],
+      "arguments": [
+        { "kind": "predecessor-ok", "predecessor": "configuration" },
+        { "kind": "predecessor-ok", "predecessor": "policy" },
+        { "kind": "runtime-input", "runtime": "application-state" }
+      ]
+    }
+  ]
+}
