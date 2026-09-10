@@ -6,7 +6,7 @@ import (
 )
 
 func profile() Profile {
-	p := Profile{Clock: Operation{"clock.injected.unix-milliseconds.v1", "clock.injected.unix-milliseconds.v1"}, Log: Operation{"observability.log", "observability.log"}, RandomIdentity: "random.seeded.lcg-48271-plus-1.v1", RandomAlgorithm: "state*48271+1", RandomOverflowPolicy: "signed-i64-modular", MaximumSteps: 256, FirstClockSequence: 1, ClockTerminalSentinel: 257, MaximumUnixMilliseconds: 4102444800000, MaximumDraws: 256, MaximumEffects: 256}
+	p := Profile{Clock: Operation{"clock.injected.unix-milliseconds.v1", "clock.injected.unix-milliseconds.v1"}, Log: Operation{"observability.log", "observability.log"}, RandomIdentity: "random.seeded.lcg-48271-plus-1.v1", RandomAlgorithm: "state*48271+1", RandomOverflowPolicy: "signed-i64-modular", MaximumSteps: 256, FirstClockSequence: 1, ClockTerminalSentinel: 257, MaximumUnixMilliseconds: 4102444800000, MinimumSeed: 1, MaximumSeed: 9223372036854775807, MaximumDraws: 256, MaximumEffects: 256}
 	p.authentication = digestProfile(p)
 	return p
 }
@@ -68,13 +68,13 @@ func TestMalformedDeliveryAndUncommittedDeliverNone(t *testing.T) {
 	p := profile()
 	ports, h := good()
 	ports.outcome = EffectOutcome{}
-	r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{})
+	r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{Value: 1})
 	if r.Failure != "seme.effects.delivery.failed" || r.Retry == nil {
 		t.Fatal(r)
 	}
 	ports, h = good()
 	h.result = SemanticResult{Committed: false, Effects: nil, Failure: "domain.reject"}
-	r = Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{})
+	r = Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{Value: 1})
 	if r.Failure != "domain.reject" || ports.effect != 0 {
 		t.Fatal(r)
 	}
@@ -83,20 +83,20 @@ func TestDenialNilAndStrictProfile(t *testing.T) {
 	p := profile()
 	ports, h := good()
 	for _, g := range []Grants{{}, {p.Clock.Capability: true}} {
-		r := Execute(p, g, ports, ports, h, []byte("c"), RandomState{})
+		r := Execute(p, g, ports, ports, h, []byte("c"), RandomState{Value: 1})
 		if r.Failure != "seme.effects.unauthorized" || ports.clock != 0 || ports.effect != 0 {
 			t.Fatal(r)
 		}
 	}
-	if Execute(Profile{}, grants(p), ports, ports, h, []byte("c"), RandomState{}).Failure == "" {
+	if Execute(Profile{}, grants(p), ports, ports, h, []byte("c"), RandomState{Value: 1}).Failure == "" {
 		t.Fatal("zero profile")
 	}
 	q := p
 	q.MaximumSteps++
-	if Execute(q, grants(p), ports, ports, h, []byte("c"), RandomState{}).Failure == "" {
+	if Execute(q, grants(p), ports, ports, h, []byte("c"), RandomState{Value: 1}).Failure == "" {
 		t.Fatal("tampered profile")
 	}
-	if Execute(p, grants(p), nil, ports, h, []byte("c"), RandomState{}).Failure == "" {
+	if Execute(p, grants(p), nil, ports, h, []byte("c"), RandomState{Value: 1}).Failure == "" {
 		t.Fatal("nil")
 	}
 }
@@ -105,7 +105,7 @@ func TestDuplicateAndRejectedHaveNoCalls(t *testing.T) {
 	for _, c := range []Classification{Duplicate, Rejected} {
 		ports, h := good()
 		h.class = c
-		r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{})
+		r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{Value: 1})
 		if ports.clock+ports.effect+h.calls != 0 || (!r.Duplicate && !r.Rejected) {
 			t.Fatalf("%d %#v", c, r)
 		}
@@ -116,7 +116,7 @@ func TestMalformedClockAndSemanticEffects(t *testing.T) {
 	for _, sample := range []ClockOutcome{{Sample: ClockSample{-1, 1}}, {Sample: ClockSample{1, 257}}, {Sample: ClockSample{1, 1}, Error: &PortError{Identity: "x"}}} {
 		ports, h := good()
 		ports.sample = sample
-		r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{})
+		r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{Value: 1})
 		if r.Failure != "seme.effects.clock.invalid" || ports.effect != 0 || h.calls != 0 {
 			t.Fatal(r)
 		}
@@ -124,7 +124,7 @@ func TestMalformedClockAndSemanticEffects(t *testing.T) {
 	for _, effects := range [][]bool{nil, {true, false}} {
 		ports, h := good()
 		h.result.Effects = effects
-		r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{})
+		r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{Value: 1})
 		if r.Failure != "seme.effects.semantic.invalid" || ports.effect != 0 {
 			t.Fatal(r)
 		}
@@ -137,6 +137,22 @@ func TestExhaustedRandomRejectsBeforePorts(t *testing.T) {
 	r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{Value: 1, Draws: p.MaximumDraws})
 	if r.Failure != "seme.effects.random.exhausted" || ports.clock+ports.effect+h.calls != 0 {
 		t.Fatalf("%#v", r)
+	}
+}
+
+func TestInvalidInitialSeedRejectsBeforePorts(t *testing.T) {
+	p := profile()
+	for _, seed := range []int64{p.MinimumSeed - 1} {
+		ports, h := good()
+		r := Execute(p, grants(p), ports, ports, h, []byte("c"), RandomState{Value: seed})
+		if r.Failure != "seme.effects.random.invalid" || ports.clock+ports.effect+h.calls != 0 {
+			t.Fatalf("seed %d: %#v", seed, r)
+		}
+		replayHandler := &replay{}
+		r = Replay(p, replayHandler, []byte("state"), []ReplayStep{{Command: []byte("c"), Clock: ClockSample{Sequence: 1}, RandomBefore: RandomState{Value: seed}}})
+		if r.Failure != "seme.effects.replay.invalid" || replayHandler.calls != 0 {
+			t.Fatalf("replay seed %d: %#v", seed, r)
+		}
 	}
 }
 func TestDeliveryFailureRetryIsExactAndIdempotent(t *testing.T) {
