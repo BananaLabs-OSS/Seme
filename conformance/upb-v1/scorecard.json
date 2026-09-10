@@ -3,7 +3,7 @@
   "evidence": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"],
   "languages": {
     "go": {
-      "UPB-01": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"], "UPB-02": [], "UPB-03": [], "UPB-04": [],
+      "UPB-01": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"], "UPB-02": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"], "UPB-03": [], "UPB-04": [],
       "UPB-05": [], "UPB-06": [], "UPB-07": [], "UPB-08": [],
       "UPB-09": [], "UPB-10": [], "UPB-11": [], "UPB-12": []
     },

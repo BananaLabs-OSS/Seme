@@ -1,0 +1,3 @@
+{"arguments":[{"kind":"i64","i64":"0"}],"capabilities":["observability.log"]}
+{"arguments":[{"kind":"i64","i64":"4"}],"capabilities":["observability.log"]}
+{"arguments":[{"kind":"i64","i64":"-3"}],"capabilities":["observability.log"]}

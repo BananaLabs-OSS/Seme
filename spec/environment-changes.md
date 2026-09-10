@@ -356,3 +356,14 @@ checked K0 bootstrap/G1 compiler, Foundation validator, Node.js registry
 generator, and standard checksum tools. Tests used a temporary Go build cache
 under `/tmp`. No software was installed and no persistent machine, shell, or
 network configuration was changed.
+
+## 2026-09-10 — Go UPB-02 completion
+
+Package v2 extraction and projection, Project v3 composition and reporting,
+the production multi-package build/publish commands, and the seven-evidence
+acceptance gate reused the installed Go 1.25.6 and 1.26.0 toolchains, Node 22,
+the checked Seme bootstrap, and pinned Pulp source at
+`acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. Builds, projected trees, copied
+Pulp sources, and caches lived only in automatically removed directories under
+`/tmp`. No software or dependency was installed, and no shell, SSH, editor,
+toolchain, global, workstation, or persistent environment setting was changed.

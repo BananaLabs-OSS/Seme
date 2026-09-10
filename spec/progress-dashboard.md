@@ -1,6 +1,6 @@
 # Seme progress dashboard
 
-Snapshot: 2026-09-09 after the UAB-v1 exact cross-language application proof.
+Snapshot: 2026-09-10 after the bounded Go UPB-02 package-graph proof.
 
 Percentages answer different questions and must not be conflated:
 
@@ -12,8 +12,8 @@ Percentages answer different questions and must not be conflated:
 | Bounded Go/JavaScript semantic bridge | about 82% | Estimate for the deliberately supported, tested language subset—not either complete language. |
 | Useful small-application subset | about 75% | Estimate against the semantics needed for modest deterministic applications. |
 | Useful Application Bridge Profile v1 | 36/36 cells (100%) | UAB-01 through UAB-11 pass all five evidence classes independently for Go, JavaScript, and Lua. UAB-12 projects one shared application into all three languages, requires byte-identical re-lift, and passes 2,048 observations through native, canonical, Wasm, and pinned-Pulp realizations. This is 100% of the frozen bounded profile, not complete language support. |
-| Useful Project Bridge Profile v1 | 1/36 cells (2.8%); Go 1/12 (8.3%) | Go UPB-01 passes all seven mapped evidence classes: native project, canonical inventory/lift, canonical parity, checked resolution fidelity, Wasm/Pulp target parity, semantic multi-package projection/re-lift with detached preserved regions, and atomic rejection. JavaScript and Lua project cells remain unclaimed. |
-| Go UPB-02 package graph | foundation in progress; unclaimed | Typed provider resolution now records file/package ownership, declarations, visibility, imports, aliases, and locations; projection owns private helpers without exporting them and rejects illegal cross-package access; a validated Package v1 graph inspector reports canonical dependencies/exports. Full membership and provenance still need a neutral contract evolution and end-to-end gate. |
+| Useful Project Bridge Profile v1 | 2/36 cells (5.6%); Go 2/12 (16.7%) | Go UPB-01 and UPB-02 each pass all seven mapped evidence classes. JavaScript and Lua project cells remain unclaimed. |
+| Go UPB-02 package graph | complete for the bounded profile | Package v2 and Project v3 commit full membership, native visibility, import bindings, aliases, source ownership, spans, and digests. The production three-package pipeline, strict projection, authenticated report, native/canonical/Wasm/Pulp parity, deterministic re-lift, and fail-closed adversaries pass. |
 | UAB-02 exact value bridge | complete | All three languages pass shared scalar, aggregate-collection, and tagged-composite observations through original and projected native source, structural canonical evaluation, standalone Wasm, and pinned Pulp, with representation-appropriate rejection evidence. |
 | UAB-03 compositional control flow | complete | All three languages pass shared locals, mutation, modular arithmetic, comparison, hazardous short-circuit, conditional, loop, and early-return observations through all five evidence paths. |
 | UAB-04 collection operations | Go/JavaScript/Lua complete | All three languages pass construction, length, checked indexing, traversal, immutable update/append/removal, and map lookup/insert/removal through original/projected native code, canonical evaluation, standalone Wasm, and pinned Pulp with direct rejection evidence. |
