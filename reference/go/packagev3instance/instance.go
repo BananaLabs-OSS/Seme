@@ -265,12 +265,18 @@ func Validate(contracts contractcatalog.ProjectContractSetV5, baseRaw, outRaw []
 			return fmt.Errorf("package_v3.export_visibility")
 		}
 		if member, ok := v2member[decl]; ok {
-			if string(member.Fields[id("b221")].Bytes) != name || member.Fields[id("b222")].Reference != vid || member.Fields[id("b224")].Reference != oid {
+			if member.Fields[id("b222")].Reference != vid || member.Fields[id("b224")].Reference != oid {
 				return fmt.Errorf("package_v3.annotation_mismatch")
 			}
 			mv, mexported := member.Fields[id("b223")]
 			dv, dexported := q.Fields[id("b285")]
-			if mexported != dexported || mexported && !bytes.Equal(mv.Bytes, dv.Bytes) {
+			// Package v2 ownership names receiver callables and concrete
+			// realizations uniquely; Package v3 supplies their canonical semantic
+			// names. Data/interface declarations retain identical source names.
+			if (kindWant == DataType || kindWant == BehavioralInterface) && string(member.Fields[id("b221")].Bytes) != name {
+				return fmt.Errorf("package_v3.annotation_mismatch")
+			}
+			if mexported != dexported || mexported && (kindWant == DataType || kindWant == BehavioralInterface) && !bytes.Equal(mv.Bytes, dv.Bytes) {
 				return fmt.Errorf("package_v3.annotation_export")
 			}
 		}
@@ -321,7 +327,13 @@ func Validate(contracts contractcatalog.ProjectContractSetV5, baseRaw, outRaw []
 	for _, v := range items {
 		q := e.Entities[v.Reference]
 		decl, owner := q.Fields[id("b280")].Reference, q.Fields[id("b281")].Reference
-		targets := referencedOwners(e, decl, declarations, declarationOwner, owner)
+		targets := map[wire.ID]bool{}
+		// Execution v35 represents concrete generic arguments directly but has
+		// no generic-definition entity. Those references are instantiation
+		// parameters, not imports made by the declaring family package.
+		if relevant[e.Entities[decl].Schema] != GenericRealization {
+			targets = referencedOwners(e, decl, declarations, declarationOwner, owner)
+		}
 		want := []wire.ID{}
 		for target := range targets {
 			binding, ok := bindingsByEdge[owner][detailPackage[target]]

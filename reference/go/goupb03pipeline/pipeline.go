@@ -158,8 +158,32 @@ func cloneBase(x goprojectpipeline.Result) goprojectpipeline.Result {
 		p.Files = append([]string(nil), p.Files...)
 		p.Declarations = append([]goprovider.ResolvedDeclaration(nil), p.Declarations...)
 		p.Imports = append([]goprovider.ResolvedImport(nil), p.Imports...)
+		p.Supplemental = cloneSupplemental(p.Supplemental)
+	}
+	x.Packages = append([]goprovider.PackageMetadata(nil), x.Packages...)
+	for i := range x.Packages {
+		p := &x.Packages[i]
+		p.Dependencies = append([]string(nil), p.Dependencies...)
+		p.Members = cloneFunctions(p.Members)
+		p.Functions = cloneFunctions(p.Functions)
+		p.Supplemental = cloneSupplemental(p.Supplemental)
 	}
 	return x
+}
+func cloneSupplemental(in []goprovider.SemanticDeclarationMetadata) []goprovider.SemanticDeclarationMetadata {
+	out := append([]goprovider.SemanticDeclarationMetadata(nil), in...)
+	for i := range out {
+		out[i].ReferencedImports = append([]string(nil), in[i].ReferencedImports...)
+		out[i].ImportReferences = append([]goprovider.SemanticImportReference(nil), in[i].ImportReferences...)
+	}
+	return out
+}
+func cloneFunctions(in []goprovider.PackageFunctionMetadata) []goprovider.PackageFunctionMetadata {
+	out := append([]goprovider.PackageFunctionMetadata(nil), in...)
+	for i := range out {
+		out[i].Parameters = append([]string(nil), in[i].Parameters...)
+	}
+	return out
 }
 func clone(x []byte) []byte { return append([]byte(nil), x...) }
 

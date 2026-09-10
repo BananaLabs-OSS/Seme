@@ -36,6 +36,9 @@ type Input struct {
 type Result struct {
 	CanonicalG1, ProjectV1, InventoryV2, PackageV2, ProjectV3 []byte
 	Resolution                                                goprovider.ResolutionManifest
+	// Packages is immutable same-run typed ownership evidence. Consumers must
+	// not reconstruct it by lifting the source a second time.
+	Packages []goprovider.PackageMetadata
 }
 
 func Build(ctx context.Context, in Input) (Result, error) {
@@ -79,7 +82,7 @@ func Build(ctx context.Context, in Input) (Result, error) {
 	if err != nil {
 		return Result{}, fmt.Errorf("go_project_pipeline.compose:%w", err)
 	}
-	return Result{CanonicalG1: clone(project.CanonicalG1), ProjectV1: clone(project.Artifact), InventoryV2: clone(inventory), PackageV2: clone(packageArtifact), ProjectV3: clone(composed), Resolution: cloneResolution(project.Resolution)}, nil
+	return Result{CanonicalG1: clone(project.CanonicalG1), ProjectV1: clone(project.Artifact), InventoryV2: clone(inventory), PackageV2: clone(packageArtifact), ProjectV3: clone(composed), Resolution: cloneResolution(project.Resolution), Packages: clonePackages(project.Packages)}, nil
 }
 
 func validateContracts(c Contracts) error {
@@ -199,6 +202,33 @@ func cloneResolution(in goprovider.ResolutionManifest) goprovider.ResolutionMani
 		out.Packages[i].Files = append([]string(nil), p.Files...)
 		out.Packages[i].Declarations = append([]goprovider.ResolvedDeclaration(nil), p.Declarations...)
 		out.Packages[i].Imports = append([]goprovider.ResolvedImport(nil), p.Imports...)
+		out.Packages[i].Supplemental = cloneSupplemental(p.Supplemental)
+	}
+	return out
+}
+
+func clonePackages(in []goprovider.PackageMetadata) []goprovider.PackageMetadata {
+	out := append([]goprovider.PackageMetadata(nil), in...)
+	for i := range out {
+		out[i].Dependencies = append([]string(nil), in[i].Dependencies...)
+		out[i].Members = append([]goprovider.PackageFunctionMetadata(nil), in[i].Members...)
+		out[i].Functions = append([]goprovider.PackageFunctionMetadata(nil), in[i].Functions...)
+		for j := range out[i].Members {
+			out[i].Members[j].Parameters = append([]string(nil), in[i].Members[j].Parameters...)
+		}
+		for j := range out[i].Functions {
+			out[i].Functions[j].Parameters = append([]string(nil), in[i].Functions[j].Parameters...)
+		}
+		out[i].Supplemental = cloneSupplemental(in[i].Supplemental)
+	}
+	return out
+}
+
+func cloneSupplemental(in []goprovider.SemanticDeclarationMetadata) []goprovider.SemanticDeclarationMetadata {
+	out := append([]goprovider.SemanticDeclarationMetadata(nil), in...)
+	for i := range out {
+		out[i].ReferencedImports = append([]string(nil), in[i].ReferencedImports...)
+		out[i].ImportReferences = append([]goprovider.SemanticImportReference(nil), in[i].ImportReferences...)
 	}
 	return out
 }
