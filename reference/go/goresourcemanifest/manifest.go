@@ -33,6 +33,34 @@ type item struct {
 	SHA256      string `json:"sha256"`
 }
 
+// Encode emits the sole deterministic JSON representation used when a
+// canonical resource plan is projected back into an ordinary project.
+func Encode(resources []Selection) ([]byte, error) {
+	if len(resources) == 0 || len(resources) > 1024 {
+		return nil, fmt.Errorf("resource_manifest.count")
+	}
+	x := append([]Selection(nil), resources...)
+	sort.Slice(x, func(i, j int) bool { return x[i].Identity < x[j].Identity })
+	doc := document{Version: Version, Resources: make([]item, len(x))}
+	for i, r := range x {
+		doc.Resources[i] = item{Identity: r.Identity, Path: r.Path, Destination: r.Destination, MediaType: r.MediaType, Size: r.Size, SHA256: hex.EncodeToString(r.SHA256[:])}
+	}
+	b, err := json.Marshal(doc)
+	if err != nil {
+		return nil, err
+	}
+	parsed, err := Parse(b)
+	if err != nil || len(parsed) != len(x) {
+		return nil, fmt.Errorf("resource_manifest.encode:%w", err)
+	}
+	for i := range x {
+		if parsed[i] != x[i] {
+			return nil, fmt.Errorf("resource_manifest.encode_roundtrip")
+		}
+	}
+	return b, nil
+}
+
 func Parse(data []byte) ([]Selection, error) {
 	if len(data) == 0 || len(data) > MaxBytes {
 		return nil, fmt.Errorf("resource_manifest.size")
