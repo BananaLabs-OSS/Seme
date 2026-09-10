@@ -93,9 +93,12 @@ func TestSemanticOwnershipRejectsUnemittedIdentity(t *testing.T) {
 
 func TestSemanticOwnershipRetainsPrivateRecordAndMethodVisibility(t *testing.T) {
 	session, _ := NewIncrementalSession(resolutionModule(t))
-	result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/private", PackagePath: "example.test/private", Entry: "Apply", Files: map[string]string{"private.go": `package private
+	result := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/private", PackagePath: "example.test/private", Entry: "Apply", Files: map[string]string{"dep/dep.go": `package dep
+func Inc(v int64) int64 { return v + 1 }
+`, "private.go": `package private
+import helper "example.test/private/dep"
 type counter struct { Value int64 }
-func (counter) add(v int64) int64 { return v + 1 }
+func (counter) add(v int64) int64 { return helper.Inc(v) }
 func Apply(v int64) int64 { return counter{Value: v}.add(v) }
 `}})
 	if !result.Valid {
@@ -108,6 +111,11 @@ func Apply(v int64) int64 { return counter{Value: v}.add(v) }
 				t.Fatalf("private visibility lost: %#v", item)
 			}
 			delete(want, item.Name)
+			if item.Name == "add" {
+				if len(item.ImportReferences) != 1 || item.ImportReferences[0].Alias != "helper" || item.ImportReferences[0].Requested != "example.test/private/dep" || item.ImportReferences[0].Resolved != "example.test/private/dep" || !item.ImportReferences[0].Local || item.ImportReferences[0].Location.File != "private.go" {
+					t.Fatalf("exact typed import reference lost: %#v", item.ImportReferences)
+				}
+			}
 		}
 	}
 	if len(want) != 0 {
