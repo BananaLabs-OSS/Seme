@@ -24,10 +24,17 @@ func Initialize(input configuration.Input, state application.State) model.Result
 	if !prepared.Ok {
 		return model.Result[Runtime, int64]{Error: prepared.Error}
 	}
-	if prepared.Value.Stage != 2 {
+	return Assemble(configured.Value, prepared.Value, state)
+}
+
+func Assemble(configured configuration.Initialized, prepared policy.Initialized, state application.State) model.Result[Runtime, int64] {
+	if configured.Stage != 1 || prepared.Stage != 2 {
 		return model.Result[Runtime, int64]{Error: 21}
 	}
-	return model.Result[Runtime, int64]{Ok: true, Value: Runtime{Ready: true, Stage: 3, Settings: configured.Value.Settings, Policy: prepared.Value, State: state}}
+	if configured.Settings.Limit != prepared.Limit {
+		return model.Result[Runtime, int64]{Error: 22}
+	}
+	return model.Result[Runtime, int64]{Ok: true, Value: Runtime{Ready: true, Stage: 3, Settings: configured.Settings, Policy: prepared, State: state}}
 }
 
 func Apply(runtime Runtime, command application.Command) application.Outcome {
