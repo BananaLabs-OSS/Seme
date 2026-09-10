@@ -30,10 +30,20 @@ var (
 )
 
 func Emit(contract contractcatalog.Contract, project []byte, source projectsource.Snapshot) ([]byte, error) {
-	if !contract.Validated() || contract.Pin() != projectV2 {
+	return emit(contract, projectV2, project, source)
+}
+
+// EmitV8 binds source evidence directly to a ProjectSnapshot emitted under
+// Project v8 authority. Older project revisions are not accepted.
+func EmitV8(contract contractcatalog.Contract, project []byte, source projectsource.Snapshot) ([]byte, error) {
+	return emit(contract, contractcatalog.Pin{Module: id("e000"), Revision: id("e00a")}, project, source)
+}
+
+func emit(contract contractcatalog.Contract, expected contractcatalog.Pin, project []byte, source projectsource.Snapshot) ([]byte, error) {
+	if !contract.Validated() || contract.Pin() != expected {
 		return nil, fmt.Errorf("source_inventory.contract")
 	}
-	if err := projectinstance.Validate(project); err != nil {
+	if err := validateProject(expected, project); err != nil {
 		return nil, fmt.Errorf("source_inventory.project:%w", err)
 	}
 	if err := projectsource.ValidateSnapshot(source); err != nil {
@@ -92,7 +102,7 @@ func Emit(contract contractcatalog.Contract, project []byte, source projectsourc
 	entities[inventory] = wire.Entity{ID: inventory, Schema: inventorySchema, Version: 1, Fields: map[wire.ID]wire.Value{id("e160"): bytesValue(revisionBytes), id("e161"): ref(snapshot), id("e162"): semanticRevision, id("e163"): list(toolRefs), id("e164"): list(unitRefs)}}
 	module := stable("module", source.RootIdentity)
 	imp := stable("import", module.String())
-	entities[imp] = wire.Entity{ID: imp, Schema: importSchema, Version: 1, Fields: map[wire.ID]wire.Value{id("130"): ref(projectV2.Module), id("131"): bytesValue(projectV2.Revision[:])}}
+	entities[imp] = wire.Entity{ID: imp, Schema: importSchema, Version: 1, Fields: map[wire.ID]wire.Value{id("130"): ref(expected.Module), id("131"): bytesValue(expected.Revision[:])}}
 	exports := []wire.Value{ref(inventory), ref(toolchain)}
 	for _, x := range classIDs {
 		exports = append(exports, ref(x))
@@ -113,17 +123,25 @@ func Emit(contract contractcatalog.Contract, project []byte, source projectsourc
 	if err != nil {
 		return nil, err
 	}
-	if err = Validate(contract, project, out); err != nil {
+	if err = validate(contract, expected, project, out); err != nil {
 		return nil, err
 	}
 	return out, nil
 }
 
 func Validate(contract contractcatalog.Contract, project, source []byte) error {
-	if !contract.Validated() || contract.Pin() != projectV2 {
+	return validate(contract, projectV2, project, source)
+}
+
+func ValidateV8(contract contractcatalog.Contract, project, source []byte) error {
+	return validate(contract, contractcatalog.Pin{Module: id("e000"), Revision: id("e00a")}, project, source)
+}
+
+func validate(contract contractcatalog.Contract, expected contractcatalog.Pin, project, source []byte) error {
+	if !contract.Validated() || contract.Pin() != expected {
 		return fmt.Errorf("source_inventory.contract")
 	}
-	if err := projectinstance.Validate(project); err != nil {
+	if err := validateProject(expected, project); err != nil {
 		return err
 	}
 	semantic, _ := wire.Decode(project)
@@ -156,7 +174,7 @@ func Validate(contract contractcatalog.Contract, project, source []byte) error {
 		return fmt.Errorf("source_inventory.import")
 	}
 	im := e.Entities[imports.List[0].Reference]
-	if imports.List[0].Tag != 6 || im.Schema != importSchema || im.Version != 1 || len(im.Fields) != 2 || im.Fields[id("130")].Tag != 6 || im.Fields[id("131")].Tag != 5 || im.Fields[id("130")].Reference != projectV2.Module || !bytes.Equal(im.Fields[id("131")].Bytes, projectV2.Revision[:]) {
+	if imports.List[0].Tag != 6 || im.Schema != importSchema || im.Version != 1 || len(im.Fields) != 2 || im.Fields[id("130")].Tag != 6 || im.Fields[id("131")].Tag != 5 || im.Fields[id("130")].Reference != expected.Module || !bytes.Equal(im.Fields[id("131")].Bytes, expected.Revision[:]) {
 		return fmt.Errorf("source_inventory.import_pin")
 	}
 	snapshot, err := one(e, snapshotSchema)
@@ -280,6 +298,13 @@ func Validate(contract contractcatalog.Contract, project, source []byte) error {
 		return err
 	}
 	return nil
+}
+
+func validateProject(expected contractcatalog.Pin, project []byte) error {
+	if expected.Revision == id("e00a") {
+		return projectinstance.ValidateV8(project)
+	}
+	return projectinstance.Validate(project)
 }
 
 func reachable(all map[wire.ID]wire.Entity, root wire.ID) (map[wire.ID]wire.Entity, error) {

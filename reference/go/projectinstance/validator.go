@@ -38,6 +38,20 @@ var requiredPins = []pin{
 // Validate accepts only the canonical encoding of a complete Project-instance
 // envelope with the exact contract pins and a content-derived artifact revision.
 func Validate(source []byte) error {
+	return validate(source, requiredPins)
+}
+
+// ValidateV8 authenticates the inherited ProjectSnapshot shape under the
+// additive Project-v8, Package-v4, and Execution-v36 authorities.
+func ValidateV8(source []byte) error {
+	return validate(source, []pin{
+		{mustID("00000000000000000000000000009000"), mustID("00000000000000000000000000009024")},
+		{mustID("0000000000000000000000000000b000"), mustID("0000000000000000000000000000b004")},
+		{mustID("0000000000000000000000000000e000"), mustID("0000000000000000000000000000e00a")},
+	})
+}
+
+func validate(source []byte, pins []pin) error {
 	e, err := wire.Decode(source)
 	if err != nil {
 		return fmt.Errorf("project_instance.wire:%w", err)
@@ -46,7 +60,7 @@ func Validate(source []byte) error {
 	if err != nil || !bytes.Equal(canonical, source) {
 		return fmt.Errorf("project_instance.noncanonical")
 	}
-	if err := validateModule(e); err != nil {
+	if err := validateModule(e, pins); err != nil {
 		return err
 	}
 	expected, err := ArtifactRevision(e)
@@ -56,8 +70,14 @@ func Validate(source []byte) error {
 	if e.Revision != expected {
 		return fmt.Errorf("project_instance.artifact_revision")
 	}
-	if err := projectsnapshot.Validate(source); err != nil {
-		return fmt.Errorf("project_instance.snapshot:%w", err)
+	var snapshotErr error
+	if len(pins) == 3 && pins[2].revision == mustID("0000000000000000000000000000e00a") {
+		snapshotErr = projectsnapshot.ValidateV8(source)
+	} else {
+		snapshotErr = projectsnapshot.Validate(source)
+	}
+	if snapshotErr != nil {
+		return fmt.Errorf("project_instance.snapshot:%w", snapshotErr)
 	}
 	return nil
 }
@@ -78,7 +98,7 @@ func ArtifactRevision(e wire.Envelope) (wire.ID, error) {
 	return revision, nil
 }
 
-func validateModule(e wire.Envelope) error {
+func validateModule(e wire.Envelope, required []pin) error {
 	module, ok := e.Entities[e.Module]
 	if !ok || module.Schema != moduleSchema || module.Version != 1 {
 		return fmt.Errorf("project_instance.module_declaration")
@@ -99,7 +119,7 @@ func validateModule(e wire.Envelope) error {
 		return err
 	}
 	imports, ok := module.Fields[fImports]
-	if !ok || imports.Tag != 7 || len(imports.List) != len(requiredPins) {
+	if !ok || imports.Tag != 7 || len(imports.List) != len(required) {
 		return fmt.Errorf("project_instance.import_count")
 	}
 	ids := make([]wire.ID, 0, len(imports.List))
@@ -131,7 +151,7 @@ func validateModule(e wire.Envelope) error {
 	if !sort.SliceIsSorted(ids, func(i, j int) bool { return bytes.Compare(ids[i][:], ids[j][:]) < 0 }) {
 		return fmt.Errorf("project_instance.import_order")
 	}
-	for _, p := range requiredPins {
+	for _, p := range required {
 		if !seenPins[p] {
 			return fmt.Errorf("project_instance.import_pin")
 		}

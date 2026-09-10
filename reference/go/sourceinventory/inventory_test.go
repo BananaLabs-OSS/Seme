@@ -42,6 +42,34 @@ func semanticProject(t *testing.T, set contractcatalog.ProjectContractSet) []byt
 	}
 	return out
 }
+
+func semanticProjectV8(t *testing.T) (contractcatalog.ProjectContractSetV8, []byte) {
+	t.Helper()
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	set, err := contractcatalog.ResolveProjectContractSetV8(read("../../../modules/foundation/v1/module.seme"), read("../../../modules/execution/v36/module.seme"), read("../../../modules/package/v4/module.seme"), read("../../../modules/dependency/v1/module.seme"), read("../../../modules/configuration/v3/module.seme"), read("../../../modules/project/v8/module.seme"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	typ, param, body, fn, program := id("8001"), id("8002"), id("8003"), id("8004"), id("8005")
+	execution := wire.Envelope{Module: id("9000"), Revision: id("9024"), Entities: map[wire.ID]wire.Entity{
+		typ:     {ID: typ, Schema: id("9010"), Version: 1, Fields: map[wire.ID]wire.Value{id("9100"): unsigned(64), id("9101"): {Tag: 2}, id("9102"): unsigned(0)}},
+		param:   {ID: param, Schema: id("9012"), Version: 1, Fields: map[wire.ID]wire.Value{id("9120"): blob("v"), id("9121"): ref(typ), id("9122"): unsigned(0)}},
+		body:    {ID: body, Schema: id("9013"), Version: 1, Fields: map[wire.ID]wire.Value{id("9130"): ref(param)}},
+		fn:      {ID: fn, Schema: id("9011"), Version: 1, Fields: map[wire.ID]wire.Value{id("9110"): blob("Apply"), id("9111"): list([]wire.Value{ref(param)}), id("9112"): ref(typ), id("9113"): ref(body)}},
+		program: {ID: program, Schema: id("9015"), Version: 1, Fields: map[wire.ID]wire.Value{id("9150"): list([]wire.Value{ref(fn)}), id("9151"): ref(fn)}},
+	}}
+	out, err := projectemitter.EmitV8Base(set, projectemitter.Input{Identity: "example.test/inventory", RootPackage: "example.test/inventory", Execution: execution, Packages: []projectemitter.Package{{Name: "example.test/inventory", Interfaces: []projectemitter.Interface{{Name: "Apply", Function: fn, Parameters: []wire.ID{typ}, Result: typ}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set, out
+}
 func source(t *testing.T) projectsource.Snapshot {
 	t.Helper()
 	root := t.TempDir()
@@ -79,6 +107,26 @@ func TestDetachedInventoryRoundTripDeterministic(t *testing.T) {
 		if contains(a, needle) {
 			t.Fatal("raw source bytes embedded")
 		}
+	}
+}
+
+func TestV8InventoryBindsOneV36SemanticSnapshot(t *testing.T) {
+	set, project := semanticProjectV8(t)
+	snapshot := source(t)
+	a, err := EmitV8(set.Project(), project, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := EmitV8(set.Project(), project, snapshot)
+	if err != nil || string(a) != string(b) {
+		t.Fatal("v8 inventory is not deterministic")
+	}
+	if err = ValidateV8(set.Project(), project, a); err != nil {
+		t.Fatal(err)
+	}
+	_, old := contracts(t)
+	if err = Validate(old, project, a); err == nil {
+		t.Fatal("v35/v2 authority accepted v8 inventory")
 	}
 }
 func TestInventoryRejectsMutations(t *testing.T) {

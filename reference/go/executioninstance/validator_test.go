@@ -24,6 +24,21 @@ func contract(t *testing.T) contractcatalog.Contract {
 	}
 	return set.Execution()
 }
+func contractV36(t *testing.T) contractcatalog.Contract {
+	t.Helper()
+	read := func(p string) []byte {
+		b, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	set, err := contractcatalog.ResolveProjectContractSetV8(read("../../../modules/foundation/v1/module.seme"), read("../../../modules/execution/v36/module.seme"), read("../../../modules/package/v4/module.seme"), read("../../../modules/dependency/v1/module.seme"), read("../../../modules/configuration/v3/module.seme"), read("../../../modules/project/v8/module.seme"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set.Execution()
+}
 func valid() wire.Envelope {
 	typ, param, body, function, program := id(0x8001), id(0x8002), id(0x8003), id(0x8004), id(0x8005)
 	return wire.Envelope{Module: executionModule, Revision: id(0x8123), Entities: map[wire.ID]wire.Entity{
@@ -38,6 +53,28 @@ func clone(e wire.Envelope) wire.Envelope { b, _ := wire.Encode(e); x, _ := wire
 func TestValidateExecutionV35Instance(t *testing.T) {
 	if e := Validate(contract(t), valid()); e != nil {
 		t.Fatal(e)
+	}
+}
+
+func TestValidateExecutionV36AuthorityIsAdditive(t *testing.T) {
+	e := valid()
+	booleanType, literal, not := id(0x8100), id(0x8101), id(0x8102)
+	e.Entities[booleanType] = wire.Entity{ID: booleanType, Schema: id(0x9020), Version: 1, Fields: map[wire.ID]wire.Value{}}
+	e.Entities[literal] = wire.Entity{ID: literal, Schema: id(0x90b0), Version: 1, Fields: map[wire.ID]wire.Value{id(0x9b00): {Tag: 1, Unsigned: 1}}}
+	e.Entities[not] = wire.Entity{ID: not, Schema: id(0xa069), Version: 1, Fields: map[wire.ID]wire.Value{id(0xa0690): {Tag: 6, Reference: literal}}}
+	fn := e.Entities[id(0x8004)]
+	fn.Fields[id(0x9112)] = wire.Value{Tag: 6, Reference: booleanType}
+	fn.Fields[id(0x9113)] = wire.Value{Tag: 6, Reference: not}
+	e.Entities[fn.ID] = fn
+	delete(e.Entities, id(0x8003))
+	if err := ValidateV36(contractV36(t), e); err != nil {
+		t.Fatal(err)
+	}
+	if err := Validate(contract(t), e); err == nil {
+		t.Fatal("Execution v35 accepted v36 BooleanNot")
+	}
+	if err := ValidateV36(contract(t), e); err == nil {
+		t.Fatal("v36 validator accepted v35 authority")
 	}
 }
 func TestFoundationEffectAndCapabilityAreStrictRuntimeBoundaryValues(t *testing.T) {
