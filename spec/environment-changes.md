@@ -392,6 +392,18 @@ Pulp sources, and caches lived only in automatically removed directories under
 toolchain, global, workstation, network, or persistent environment setting was
 changed.
 
+## 2026-09-10 — Go UPB-06 project-resource completion
+
+Resource v1, Project v9, strict detached-resource loading, source-free
+reporting, ordinary-Go projection, native/canonical/Wasm/Pulp parity, and the
+seven-evidence gate reused the installed Go toolchains, Node 22, the checked
+Seme bootstrap, repository-local offline proxy, and pinned Pulp source at
+`acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. Builds, projected trees, copied
+Pulp sources, content-addressed blobs, and caches lived only in automatically
+removed directories under `/tmp`. No software or dependency was installed,
+and no shell, SSH, editor, toolchain, global, workstation, network, or
+persistent environment setting was changed.
+
 ## 2026-09-10 — Go UPB-05 configured-project completion
 
 Execution v36, Package v4, Configuration v3, Project v8, the authenticated

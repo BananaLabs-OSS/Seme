@@ -303,8 +303,8 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 5/36 (13.9%): bounded Go UPB-01 through UPB-05 are the claimed
-project-level cells, placing the Go column at 5/12 (41.7%).
+is now 6/36 (16.7%): bounded Go UPB-01 through UPB-06 are the claimed
+project-level cells, placing the Go column at 6/12 (50%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -337,6 +337,14 @@ authenticated configuration executor; the cumulative 2,058-case corpus agrees
 across native Go, canonical execution, standalone Wasm, and pinned Pulp.
 Authenticated ordinary-Go projection passes its native tests and re-lifts to
 the exact v36 execution graph. Run `./scripts/check-go-upb-05.sh`.
+
+Go UPB-06 adds strict project-owned resources without adding filesystem
+semantics to Core. Resource v1 authenticates detached UTF-8 and binary blobs;
+Project v9 binds that manifest to the cumulative configured project. All 2,066
+native/canonical/Wasm/Pulp observations agree, authenticated projection copies
+resource bytes exactly, and hostile paths, digests, symlinks, limits, bundle
+mixing, and output collisions reject atomically. Run
+`./scripts/check-go-upb-06.sh`.
 
 The first bounded foundation is now executable: [`Go Project Build v1`](spec/go-project-build-v1.md)
 lifts a native three-package Go fixture, compiles its canonical G1 with the
