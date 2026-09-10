@@ -17,6 +17,7 @@ import (
 	"seme.local/reference/projectv5instance"
 	"seme.local/reference/projectv5report"
 	"seme.local/reference/projectv6instance"
+	"seme.local/reference/projectv7instance"
 	"seme.local/reference/wire"
 )
 
@@ -142,6 +143,86 @@ func TestPackageV3AndProjectV5InstancesRepeatValidateAndRejectTamper(t *testing.
 		t.Fatal("nondeterministic project v6")
 	}
 	p6input.Composed = p6a
+	v7, err := contractcatalog.ResolveProjectContractSetV7(read("modules/foundation/v1/module.seme"), read("modules/execution/v35/module.seme"), read("modules/package/v3/module.seme"), read("modules/dependency/v1/module.seme"), read("modules/configuration/v2/module.seme"), read("modules/project/v7/module.seme"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	bound := configurationinstance.BoundInput{Contracts: v7, Base: configuration, Model: configurationinstance.BoundModel{}}
+	boundA, err := configurationinstance.EmitBound(bound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	boundB, err := configurationinstance.EmitBound(bound)
+	if err != nil || !bytes.Equal(boundA, boundB) {
+		t.Fatal("nondeterministic bound configuration")
+	}
+	bound.Artifact = boundA
+	if err = configurationinstance.ValidateBound(bound); err != nil {
+		t.Fatal(err)
+	}
+	staleBound, err := wire.Decode(boundA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for x, entity := range staleBound.Entities {
+		if entity.Schema == testID("401f") {
+			entity.Fields[testID("41f3")] = wire.Value{Tag: 5, Bytes: make([]byte, 32)}
+			staleBound.Entities[x] = entity
+			break
+		}
+	}
+	staleBound.Revision = configurationinstance.BoundArtifactRevision(staleBound)
+	bound.Artifact, err = wire.Encode(staleBound)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configurationinstance.ValidateBound(bound) == nil {
+		t.Fatal("stale bound-configuration revision accepted")
+	}
+	bound.Artifact = boundA
+	p7input := projectv7instance.Inputs{Contracts: v7, ProjectV6: p6input, BoundConfiguration: bound}
+	p7a, err := projectv7instance.Emit(p7input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p7b, err := projectv7instance.Emit(p7input)
+	if err != nil || !bytes.Equal(p7a, p7b) {
+		t.Fatal("nondeterministic Project v7")
+	}
+	p7input.Composed = p7a
+	if err = projectv7instance.Validate(p7input); err != nil {
+		t.Fatal(err)
+	}
+	staleP7, err := wire.Decode(p7a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for x, entity := range staleP7.Entities {
+		if entity.Schema == testID("e022") {
+			entity.Fields[testID("e222")] = wire.Value{Tag: 5, Bytes: make([]byte, 32)}
+			staleP7.Entities[x] = entity
+			break
+		}
+	}
+	staleP7.Revision = projectv7instance.ArtifactRevision(staleP7)
+	p7input.Composed, err = wire.Encode(staleP7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if projectv7instance.Validate(p7input) == nil {
+		t.Fatal("stale Project v7 snapshot revision accepted")
+	}
+	p7input.Composed = p7a
+	badBound := bound
+	badBound.Contracts = contractcatalog.ProjectContractSetV7{}
+	if out, e := configurationinstance.EmitBound(badBound); e == nil || out != nil {
+		t.Fatal("untrusted bound configuration contracts accepted")
+	}
+	badP7 := p7input
+	badP7.Contracts = contractcatalog.ProjectContractSetV7{}
+	if out, e := projectv7instance.Emit(badP7); e == nil || out != nil {
+		t.Fatal("untrusted Project v7 contracts accepted")
+	}
 	if err = projectv6instance.Validate(p6input); err != nil {
 		t.Fatal(err)
 	}
