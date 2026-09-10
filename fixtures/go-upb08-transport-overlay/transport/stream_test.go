@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"errors"
 	"reflect"
 	"testing"
 
@@ -10,14 +9,9 @@ import (
 	"example.test/go-uab-11/state"
 )
 
-type handlerFunc func(PlannerPayload) (DomainOutcome, error)
-
-func (f handlerFunc) Handle(payload PlannerPayload) (DomainOutcome, error) { return f(payload) }
-
-func correlation(value byte) Correlation {
-	var result Correlation
-	result[15] = value
-	return result
+func correlation(value int64) Correlation { return Correlation{High: value / 251, Low: value + 1} }
+func digest(value int64) Digest {
+	return Digest{A: value + 1, B: value + 2, C: value + 3, D: value + 4}
 }
 
 func payload() PlannerPayload {
@@ -25,191 +19,177 @@ func payload() PlannerPayload {
 	return PlannerPayload{Grants: persistence.Grants{Read: true, CompareExchange: true}, Loaded: persistence.Loaded{Found: true, Version: 2, Token: "opaque", V2: state.V2{State: base, Revision: 2}}, Initial: state.V2{State: base, Revision: 1}, NextDigest: "sha256:next", Key: "slot"}
 }
 
-func command(t *testing.T, sequence int64, id byte) Command {
-	t.Helper()
-	var digest [32]byte
-	digest[0], digest[31] = id, byte(sequence)
-	return NewCommand("match", sequence, correlation(id), "planner.update.v1", payload(), digest)
-}
-
-func accepting(events int, calls *int) handlerFunc {
-	return func(got PlannerPayload) (DomainOutcome, error) {
-		*calls++
-		if !equalPayload(got, payload()) {
-			return DomainOutcome{}, errors.New("payload changed")
-		}
-		out := DomainOutcome{Accepted: true, Receipt: persistence.Plan{Ok: true}, Events: make([]DomainEvent, events)}
-		for index := range out.Events {
-			out.Events[index] = DomainEvent{Kind: "changed", Payload: persistence.Plan{Ok: true}}
-		}
-		return out, nil
+func command(sequence int64, identity int64) Command {
+	canonical := make([]byte, 16)
+	for index := range canonical {
+		canonical[index] = byte(identity + int64(index))
 	}
+	return Command{Stream: "match", Sequence: sequence, Correlation: correlation(identity), Kind: PlannerCommand, Payload: payload(), CanonicalPayload: canonical, Digest: digest(identity)}
 }
 
-func TestOrderingDuplicateConflictGapAndCorrelation(t *testing.T) {
-	calls := 0
-	handler := accepting(2, &calls)
+func TestClassifyCommitCachedConflictGapAndCorrelation(t *testing.T) {
 	initial := NewState("match")
-	firstCommand := command(t, 1, 1)
-	first := Dispatch(initial, firstCommand, handler)
-	if !first.OK || first.Duplicate || calls != 1 || first.State.NextCommand != 2 || first.State.NextEvent != 3 || len(first.Response.Events) != 2 || first.Response.Events[0].Sequence != 1 || first.Response.Events[1].Ordinal != 1 {
-		t.Fatalf("first=%#v calls=%d", first, calls)
+	firstCommand := command(1, 1)
+	if classified := Classify(initial, firstCommand); classified.Kind != ClassificationNew || classified.Error != 0 {
+		t.Fatalf("classification=%#v", classified)
 	}
-	beforeDuplicate := cloneState(first.State)
-	duplicate := Dispatch(first.State, firstCommand, handler)
-	if !duplicate.OK || !duplicate.Duplicate || calls != 1 || !reflect.DeepEqual(duplicate.State, beforeDuplicate) || !reflect.DeepEqual(duplicate.Response, first.Response) {
-		t.Fatalf("duplicate=%#v calls=%d", duplicate, calls)
+	first := Commit(initial, firstCommand, true, 0, 3, 2)
+	if !first.OK || first.State.NextCommand != 2 || first.State.NextEvent != 3 || first.Response.EventCount != 2 || first.Response.Event0.Sequence != 1 || first.Response.Event1.Ordinal != 1 {
+		t.Fatalf("first=%#v", first)
 	}
-	conflict := firstCommand
-	conflict.Kind = "other"
-	if got := Dispatch(first.State, conflict, handler); got.OK || got.Error != SequenceConflict || !reflect.DeepEqual(got.State, first.State) || calls != 1 {
+	cachedClass := Classify(first.State, firstCommand)
+	if cachedClass.Kind != ClassificationCached || !reflect.DeepEqual(cachedClass.Response, first.Response) {
+		t.Fatalf("cached classification=%#v", cachedClass)
+	}
+	cached := Commit(first.State, firstCommand, true, 0, 99, 4)
+	if !cached.OK || !cached.Duplicate || !reflect.DeepEqual(cached.State, first.State) || !reflect.DeepEqual(cached.Response, first.Response) {
+		t.Fatalf("cached=%#v", cached)
+	}
+	changed := firstCommand
+	changed.Digest.A++
+	if got := Classify(first.State, changed); got.Error != SequenceConflict {
 		t.Fatalf("conflict=%#v", got)
 	}
-	payloadConflict := firstCommand
-	payloadConflict.Payload.Key = "different"
-	if got := Dispatch(first.State, payloadConflict, handler); got.OK || got.Error != SequenceConflict || calls != 1 {
-		t.Fatalf("payload conflict=%#v", got)
+	collision := firstCommand
+	collision.CanonicalPayload = append([]byte{}, firstCommand.CanonicalPayload...)
+	collision.CanonicalPayload[0]++
+	if got := Classify(first.State, collision); got.Error != SequenceConflict {
+		t.Fatalf("payload collision=%#v", got)
 	}
-	if got := Dispatch(first.State, command(t, 3, 3), handler); got.OK || got.Error != OutOfOrder || got.State.NextCommand != 2 || calls != 1 {
+	if got := Classify(first.State, command(3, 3)); got.Error != OutOfOrder {
 		t.Fatalf("gap=%#v", got)
 	}
-	reused := command(t, 2, 1)
-	if got := Dispatch(first.State, reused, handler); got.OK || got.Error != CorrelationReused || got.State.NextCommand != 2 || calls != 1 {
+	reused := command(2, 1)
+	if got := Classify(first.State, reused); got.Error != CorrelationReused {
 		t.Fatalf("reuse=%#v", got)
 	}
-	second := Dispatch(first.State, command(t, 2, 2), handler)
-	if !second.OK || calls != 2 || second.Response.Events[0].Sequence != 3 || second.State.NextCommand != 3 {
-		t.Fatalf("second=%#v calls=%d", second, calls)
+	second := Commit(first.State, command(2, 2), false, 71, 0, 1)
+	if !second.OK || second.Response.Accepted || second.Response.Code != 71 || second.Response.Event0.Sequence != 3 || second.Response.Event0.Kind != RejectedEvent || second.State.NextCommand != 3 {
+		t.Fatalf("second=%#v", second)
 	}
 }
 
-func TestDomainRejectionIsRecordedAndConsumesSequence(t *testing.T) {
-	calls := 0
-	handler := handlerFunc(func(PlannerPayload) (DomainOutcome, error) {
-		calls++
-		plan := persistence.Plan{Error: 71}
-		return DomainOutcome{Code: 71, Receipt: plan, Events: []DomainEvent{{Kind: "rejected", Payload: plan}}}, nil
-	})
-	cmd := command(t, 1, 1)
-	result := Dispatch(NewState("match"), cmd, handler)
-	if !result.OK || result.Response.Accepted || result.Response.Code != 71 || result.State.NextCommand != 2 || len(result.State.Ledger) != 1 || calls != 1 {
-		t.Fatalf("result=%#v", result)
-	}
-	again := Dispatch(result.State, cmd, handler)
-	if !again.OK || !again.Duplicate || !reflect.DeepEqual(again.Response, result.Response) || calls != 1 {
-		t.Fatalf("again=%#v calls=%d", again, calls)
-	}
-}
-
-func TestInvalidInputsAndHandlerFailureAreAtomic(t *testing.T) {
+func TestInvalidInputsAndOutcomesAreAtomic(t *testing.T) {
 	initial := NewState("match")
-	valid := command(t, 1, 1)
-	badDigest := valid
-	badDigest.Digest = [32]byte{}
-	for name, cmd := range map[string]Command{
-		"zero-sequence":    {Stream: "match", Correlation: correlation(1), Kind: "planner.update.v1", Payload: payload()},
-		"zero-correlation": func() Command { x := valid; x.Correlation = Correlation{}; return x }(),
-		"bad-digest":       badDigest,
-		"gap":              command(t, 2, 2),
-		"invalid-utf8": func() Command {
-			x := valid
-			x.Stream = string([]byte{0xff})
-			return x
-		}(),
-	} {
+	zeroCorrelation := command(1, 1)
+	zeroCorrelation.Correlation = Correlation{}
+	zeroDigest := command(1, 1)
+	zeroDigest.Digest = Digest{}
+	wrongKind := command(1, 1)
+	wrongKind.Kind = 2
+	wrongStream := command(1, 1)
+	wrongStream.Stream = "other"
+	for name, value := range map[string]Command{"sequence": command(0, 1), "correlation": zeroCorrelation, "digest": zeroDigest, "kind": wrongKind, "stream": wrongStream, "gap": command(2, 2)} {
 		t.Run(name, func(t *testing.T) {
-			calls := 0
-			got := Dispatch(initial, cmd, accepting(1, &calls))
-			if got.OK || !reflect.DeepEqual(got.State, initial) || calls != 0 {
-				t.Fatalf("got=%#v calls=%d", got, calls)
+			classified := Classify(initial, value)
+			if classified.Error == 0 {
+				t.Fatalf("accepted=%#v", classified)
 			}
 		})
 	}
-	calls := 0
-	failed := Dispatch(initial, valid, handlerFunc(func(PlannerPayload) (DomainOutcome, error) { calls++; return DomainOutcome{}, errors.New("failure") }))
-	if failed.OK || failed.Error != DispatchFailed || !reflect.DeepEqual(failed.State, initial) || calls != 1 {
-		t.Fatalf("failed=%#v calls=%d", failed, calls)
+	for _, input := range []struct {
+		accepted   bool
+		code       int64
+		eventCount int64
+	}{{true, 1, 1}, {false, 0, 1}, {true, 0, 5}, {true, 0, -1}} {
+		got := Commit(initial, command(1, 1), input.accepted, input.code, 1, input.eventCount)
+		if got.OK || got.Error != InvalidDomainOutcome || !reflect.DeepEqual(got.State, initial) {
+			t.Fatalf("outcome=%#v", got)
+		}
 	}
-	invalidOutcome := Dispatch(initial, valid, handlerFunc(func(PlannerPayload) (DomainOutcome, error) { return DomainOutcome{Accepted: true, Code: 1}, nil }))
-	if invalidOutcome.OK || invalidOutcome.Error != InvalidDomainOutcome || !reflect.DeepEqual(invalidOutcome.State, initial) {
-		t.Fatalf("invalid outcome=%#v", invalidOutcome)
+	tampered := NewState("match")
+	tampered.Codes = []int64{1}
+	if ValidState(tampered) || Classify(tampered, command(1, 1)).Error != InvalidState {
+		t.Fatal("accepted malformed column ledger")
 	}
-}
-
-func TestReplayReproducesStateAndResponses(t *testing.T) {
-	commands := []Command{command(t, 1, 1), command(t, 2, 2), command(t, 3, 3)}
-	firstCalls, secondCalls := 0, 0
-	first := Replay(NewState("match"), commands, accepting(1, &firstCalls))
-	second := Replay(NewState("match"), commands, accepting(1, &secondCalls))
-	if !first.OK || !second.OK || firstCalls != 3 || secondCalls != 3 || !reflect.DeepEqual(first, second) {
-		t.Fatalf("first=%#v second=%#v", first, second)
-	}
-	bad := []Command{commands[0], commands[2]}
-	if got := Replay(NewState("match"), bad, accepting(1, &firstCalls)); got.OK || got.Error != OutOfOrder || len(got.Responses) != 1 {
-		t.Fatalf("bad replay=%#v", got)
+	malformed := Commit(initial, command(1, 1), true, 0, 1, 0).State
+	malformed.PayloadStarts[0] = 1
+	if ValidState(malformed) {
+		t.Fatal("accepted malformed payload segment")
 	}
 }
 
-func TestCommandAndEventBounds(t *testing.T) {
+func TestZeroAndFourEventResponses(t *testing.T) {
+	zero := Commit(NewState("match"), command(1, 1), true, 0, 3, 0)
+	if !zero.OK || zero.Response.EventCount != 0 || zero.State.NextEvent != 1 {
+		t.Fatalf("zero=%#v", zero)
+	}
+	four := Commit(zero.State, command(2, 2), true, 0, 4, 4)
+	if !four.OK || four.Response.EventCount != 4 || four.Response.Event0.Sequence != 1 || four.Response.Event3.Sequence != 4 || four.Response.Event3.Ordinal != 3 || four.State.NextEvent != 5 {
+		t.Fatalf("four=%#v", four)
+	}
+}
+
+func TestBoundedLedgerAndOwnedColumns(t *testing.T) {
 	current := NewState("match")
-	calls := 0
-	for index := 1; index <= MaximumCommands; index++ {
-		var id Correlation
-		id[14], id[15] = byte(index>>8), byte(index)
-		var digest [32]byte
-		digest[30], digest[31] = id[14], id[15]
-		result := Dispatch(current, NewCommand("match", int64(index), id, "planner.update.v1", payload(), digest), accepting(0, &calls))
+	for index := int64(1); index <= MaximumCommands; index++ {
+		result := Commit(current, command(index, index), true, 0, index, 0)
 		if !result.OK {
 			t.Fatalf("command %d: %#v", index, result)
 		}
 		current = result.State
 	}
-	if current.NextCommand != MaximumCommands+1 || len(current.Ledger) != MaximumCommands || calls != MaximumCommands {
-		t.Fatalf("terminal state=%#v calls=%d", current, calls)
+	if current.NextCommand != MaximumCommands+1 || len(current.Codes) != MaximumCommands {
+		t.Fatalf("terminal=%#v", current)
 	}
-	first := NewCommand("match", 1, current.Ledger[0].Correlation, current.Ledger[0].Kind, current.Ledger[0].Payload, current.Ledger[0].Digest)
-	if duplicate := Dispatch(current, first, accepting(0, &calls)); !duplicate.OK || !duplicate.Duplicate || calls != MaximumCommands {
-		t.Fatalf("terminal duplicate=%#v calls=%d", duplicate, calls)
+	duplicate := Commit(current, command(1, 1), true, 0, 999, 4)
+	if !duplicate.OK || !duplicate.Duplicate || duplicate.Response.Revision != 1 {
+		t.Fatalf("duplicate=%#v", duplicate)
 	}
-	var nextID Correlation
-	nextID[0] = 1
-	var nextDigest [32]byte
-	nextDigest[0] = 1
-	if over := Dispatch(current, NewCommand("match", MaximumCommands+1, nextID, "planner.update.v1", payload(), nextDigest), accepting(0, &calls)); over.OK || over.Error != InvalidSequence || calls != MaximumCommands {
-		t.Fatalf("over=%#v calls=%d", over, calls)
+	over := command(MaximumCommands+1, 300)
+	if got := Classify(current, over); got.Error != InvalidSequence {
+		t.Fatalf("over=%#v", got)
 	}
-	tooMany := Dispatch(NewState("match"), command(t, 1, 1), accepting(MaximumEventsPerReply+1, new(int)))
-	if tooMany.OK || tooMany.Error != InvalidDomainOutcome {
-		t.Fatalf("too many events=%#v", tooMany)
+	copy := CloneState(current)
+	copy.Codes[0] = 99
+	copy.PayloadBytes[0]++
+	if current.Codes[0] != 0 {
+		t.Fatal("clone retained ledger aliases")
+	}
+	if copy.PayloadBytes[0] == current.PayloadBytes[0] {
+		t.Fatal("clone retained payload alias")
+	}
+	largeFirst := command(1, 1001)
+	largeFirst.CanonicalPayload = make([]byte, 3072)
+	largeFirst.CanonicalPayload[0] = 1
+	largeState := Commit(NewState("match"), largeFirst, true, 0, 1, 0).State
+	largeSecond := command(2, 1002)
+	largeSecond.CanonicalPayload = make([]byte, 1024)
+	largeSecond.CanonicalPayload[0] = 2
+	exact := Commit(largeState, largeSecond, true, 0, 2, 0)
+	if !exact.OK || len(exact.State.PayloadBytes) != MaximumEncodedFrameBytes {
+		t.Fatalf("exact payload bound=%#v", exact)
+	}
+	largeThird := command(3, 1003)
+	largeThird.CanonicalPayload = []byte{3}
+	got := Commit(exact.State, largeThird, true, 0, 3, 0)
+	if got.OK || got.Error != InvalidPayload || !reflect.DeepEqual(got.State, exact.State) {
+		t.Fatalf("payload overflow=%#v", got)
 	}
 }
 
-func TestPayloadMapKeyPresenceParticipatesInDuplicateIdentity(t *testing.T) {
-	first := command(t, 1, 1)
-	first.Payload.Initial.State.Counters = map[int64]int64{1: 0}
-	calls := 0
-	handler := handlerFunc(func(PlannerPayload) (DomainOutcome, error) {
-		calls++
-		return DomainOutcome{Accepted: true, Receipt: persistence.Plan{Ok: true}}, nil
-	})
-	accepted := Dispatch(NewState("match"), first, handler)
-	if !accepted.OK {
-		t.Fatal(accepted.Error)
+func TestReplayByAcceptedCommandsIsDeterministic(t *testing.T) {
+	replay := func() (State, []Response) {
+		current := NewState("match")
+		responses := []Response{}
+		for index := int64(1); index <= 32; index++ {
+			accepted := index%3 != 0
+			code := int64(0)
+			if !accepted {
+				code = 71
+			}
+			result := Commit(current, command(index, index), accepted, code, index, index%5)
+			if !result.OK {
+				t.Fatal(result.Error)
+			}
+			current = result.State
+			responses = append(responses, result.Response)
+		}
+		return current, responses
 	}
-	changed := first
-	changed.Payload = clonePayload(first.Payload)
-	changed.Payload.Initial.State.Counters = map[int64]int64{2: 0}
-	if result := Dispatch(accepted.State, changed, handler); result.OK || result.Error != SequenceConflict || calls != 1 {
-		t.Fatalf("result=%#v calls=%d", result, calls)
-	}
-}
-
-func TestDispatchOwnsTypedPayloadCopies(t *testing.T) {
-	cmd := command(t, 1, 1)
-	result := Dispatch(NewState("match"), cmd, accepting(1, new(int)))
-	cmd.Payload.Initial.State.Values[0] = 99
-	cmd.Payload.Initial.State.Counters[1] = 99
-	if result.State.Ledger[0].Payload.Initial.State.Values[0] != 1 || result.State.Ledger[0].Payload.Initial.State.Counters[1] != 2 {
-		t.Fatal("ledger retained caller aliases")
+	firstState, firstResponses := replay()
+	secondState, secondResponses := replay()
+	if !reflect.DeepEqual(firstState, secondState) || !reflect.DeepEqual(firstResponses, secondResponses) {
+		t.Fatal("accepted transcript did not replay exactly")
 	}
 }
