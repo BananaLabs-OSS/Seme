@@ -2,13 +2,14 @@ package controlledeffectsinstance
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"testing"
 
 	"seme.local/reference/wire"
 )
 
 func TestReplayDigestIsDeterministicAndMeaningSensitive(t *testing.T) {
-	r := Replay{InitialSeed: 7, Steps: []ReplayStep{{CommandSequence: 1, UnixMilliseconds: 2, ClockSequence: 3, RandomDraw: 4, EffectValue: true}}, DuplicatePolicy: "exact", RejectionPolicy: "atomic"}
+	r := Replay{InitialSeed: 7, InitialState: make([]byte, 8), Steps: []ReplayStep{{CommandSequence: 1, UnixMilliseconds: 2, ClockSequence: 3, RandomBefore: 4, RandomAfter: 5, RandomValue: 5, RandomDrawOrdinal: 1, EffectValue: true, CanonicalCommand: []byte{1}}}, DuplicatePolicy: "exact", RejectionPolicy: "atomic"}
 	a, b := replayDigest(r), replayDigest(r)
 	if len(a) != 32 || !bytes.Equal(a, b) {
 		t.Fatal("nondeterministic replay digest")
@@ -111,6 +112,11 @@ func validModelFixture() (wire.Envelope, Model) {
 	for _, x := range []wire.ID{clockSample, randomState, draw, command, state, result} {
 		e.Entities[x] = entity(x, "9030", nil)
 	}
+	i64, stateField := id("dd01"), id("dd02")
+	e.Entities[i64] = entity(i64, "9010", map[string]wire.Value{"9100": u(64), "9101": {Tag: 2}, "9102": u(0)})
+	e.Entities[stateField] = entity(stateField, "9031", map[string]wire.Value{"9310": blob("value"), "9311": ref(i64), "9312": u(0)})
+	e.Entities[state] = entity(state, "9030", map[string]wire.Value{"9300": blob("State"), "9301": {Tag: 7, List: []wire.Value{ref(stateField)}}})
+	e.Entities[command] = entity(command, "9030", map[string]wire.Value{"9300": blob("Command"), "9301": {Tag: 7, List: []wire.Value{ref(stateField)}}})
 	addFunction := func(x wire.ID, params []wire.ID, out wire.ID) {
 		refs := make([]wire.Value, len(params))
 		for i, typ := range params {
@@ -146,14 +152,21 @@ func validModelFixture() (wire.Envelope, Model) {
 		}
 		e.Entities[detail] = entity(detail, "b021", map[string]wire.Value{"b210": ref(owner), "b211": {Tag: 7, List: members}})
 	}
+	initial := make([]byte, 8)
+	initialSHA := sha256.Sum256(initial)
+	response1, events1, after1 := sha256.Sum256([]byte("response-1")), sha256.Sum256([]byte("events-1")), sha256.Sum256([]byte("state-1"))
+	response2, events2, after2 := sha256.Sum256([]byte("response-2")), sha256.Sum256([]byte("events-2")), sha256.Sum256([]byte("state-2"))
 	m := Model{
 		ClockOwner: clockOwner, ClockSample: clockSample,
 		RandomOwner: randomOwner, RandomState: randomState, Draw: draw, NextFunction: next,
 		EffectOwner: effectOwner, Command: command, State: state, Result: result, DispatchFunction: dispatch, ReplayFunction: replay,
 		Clock: Clock{"clock.injected", "nondecreasing", "explicit"}, Random: Random{"random.seeded", "lcg", "modular"},
 		ExternalEffect: ExternalBooleanEffect{"log", "log-capability", "log-effect", "request"},
-		Replay:         Replay{InitialSeed: 1, DuplicatePolicy: "cached", RejectionPolicy: "atomic", Steps: []ReplayStep{{1, 2, 1, 0, false}, {2, 3, 2, 1, true}}},
-		Bounds:         Bounds{MaximumSteps: 2, FirstClockSequence: 1, ClockTerminalSentinel: 3, MaximumUnixMilliseconds: 3, MinimumSeed: 1, MaximumSeed: 99, MaximumDraws: 2, MaximumEffects: 2},
+		Replay: Replay{InitialSeed: 1, InitialState: initial, DuplicatePolicy: "cached", RejectionPolicy: "atomic", Steps: []ReplayStep{
+			{CommandSequence: 1, UnixMilliseconds: 2, ClockSequence: 1, RandomBefore: 1, RandomAfter: 48272, RandomValue: 48272, RandomDrawOrdinal: 1, CanonicalCommand: make([]byte, 8), ResponseSHA256: response1, EventsSHA256: events1, StateBeforeSHA256: initialSHA, StateAfterSHA256: after1},
+			{CommandSequence: 2, UnixMilliseconds: 3, ClockSequence: 2, RandomBefore: 48272, RandomAfter: 48272*48271 + 1, RandomValue: 48272*48271 + 1, RandomDrawOrdinal: 2, EffectValue: true, CanonicalCommand: []byte{1, 0, 0, 0, 0, 0, 0, 0}, ResponseSHA256: response2, EventsSHA256: events2, StateBeforeSHA256: after1, StateAfterSHA256: after2},
+		}},
+		Bounds: Bounds{MaximumSteps: 2, FirstClockSequence: 1, ClockTerminalSentinel: 3, MaximumUnixMilliseconds: 3, MinimumSeed: 1, MaximumSeed: 99, MaximumDraws: 2, MaximumEffects: 2, MaximumCommandBytes: 8, MaximumInitialStateBytes: 8, MaximumTranscriptBytes: 1024},
 	}
 	return e, m
 }
