@@ -69,7 +69,7 @@ func transitionControlled(current ControlledState, command ControlledCommand) Co
 	}
 	// Every condition that could prevent the transport commit is checked before
 	// consuming the explicit clock/random values or requesting the log effect.
-	count := len(current.Draws)
+	count := int64(len(current.Draws))
 	validRandom := controlled.ValidState(command.Random)
 	if count == 0 {
 		validRandom = controlled.ValidSeed(command.Random)
@@ -92,29 +92,31 @@ func transitionControlled(current ControlledState, command ControlledCommand) Co
 	if !committed.OK || committed.Duplicate {
 		return controlledFailure(current, committed.Error)
 	}
-	next := cloneControlled(current)
-	next.Transport = committed.State
-	next.ClockSequences = append(next.ClockSequences, command.Clock.Sequence)
-	next.ClockMilliseconds = append(next.ClockMilliseconds, command.Clock.UnixMilliseconds)
-	next.RandomBeforeValues = append(next.RandomBeforeValues, draw.Before.Value)
-	next.RandomBeforeDraws = append(next.RandomBeforeDraws, draw.Before.Draws)
-	next.RandomAfterValues = append(next.RandomAfterValues, draw.After.Value)
-	next.RandomAfterDraws = append(next.RandomAfterDraws, draw.After.Draws)
-	next.Draws = append(next.Draws, draw.Value)
+	next := ControlledState{
+		Transport:          committed.State,
+		ClockSequences:     append(slices.Clone(current.ClockSequences), command.Clock.Sequence),
+		ClockMilliseconds:  append(slices.Clone(current.ClockMilliseconds), command.Clock.UnixMilliseconds),
+		RandomBeforeValues: append(slices.Clone(current.RandomBeforeValues), draw.Before.Value),
+		RandomBeforeDraws:  append(slices.Clone(current.RandomBeforeDraws), draw.Before.Draws),
+		RandomAfterValues:  append(slices.Clone(current.RandomAfterValues), draw.After.Value),
+		RandomAfterDraws:   append(slices.Clone(current.RandomAfterDraws), draw.After.Draws),
+		Draws:              append(slices.Clone(current.Draws), draw.Value),
+	}
 	return ControlledResult{OK: true, State: next, Response: committed.Response}
 }
 
 func validControlledState(value ControlledState) bool {
-	count := len(value.Transport.CorrelationHigh)
-	if !transport.ValidState(value.Transport) || len(value.ClockSequences) != count || len(value.ClockMilliseconds) != count || len(value.RandomBeforeValues) != count || len(value.RandomBeforeDraws) != count || len(value.RandomAfterValues) != count || len(value.RandomAfterDraws) != count || len(value.Draws) != count {
+	count := int64(len(value.Transport.CorrelationHigh))
+	if !transport.ValidState(value.Transport) || int64(len(value.ClockSequences)) != count || int64(len(value.ClockMilliseconds)) != count || int64(len(value.RandomBeforeValues)) != count || int64(len(value.RandomBeforeDraws)) != count || int64(len(value.RandomAfterValues)) != count || int64(len(value.RandomAfterDraws)) != count || int64(len(value.Draws)) != count {
 		return false
 	}
-	for index := 0; index < count; index++ {
+	valid := true
+	for index := int64(0); index < count; index++ {
 		if value.ClockSequences[index] != int64(index)+1 || value.RandomBeforeDraws[index] != int64(index) || value.RandomAfterDraws[index] != int64(index)+1 || value.RandomAfterValues[index] != value.Draws[index] || 0 < index && (value.ClockMilliseconds[index] < value.ClockMilliseconds[index-1] || value.RandomBeforeValues[index] != value.RandomAfterValues[index-1] || value.RandomBeforeDraws[index] != value.RandomAfterDraws[index-1]) {
-			return false
+			valid = false
 		}
 	}
-	return true
+	return valid
 }
 func cloneControlled(value ControlledState) ControlledState {
 	return ControlledState{Transport: transport.CloneState(value.Transport), ClockSequences: slices.Clone(value.ClockSequences), ClockMilliseconds: slices.Clone(value.ClockMilliseconds), RandomBeforeValues: slices.Clone(value.RandomBeforeValues), RandomBeforeDraws: slices.Clone(value.RandomBeforeDraws), RandomAfterValues: slices.Clone(value.RandomAfterValues), RandomAfterDraws: slices.Clone(value.RandomAfterDraws), Draws: slices.Clone(value.Draws)}
