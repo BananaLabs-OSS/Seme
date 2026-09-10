@@ -204,6 +204,9 @@ func TestProfileCannotBeCallerForgedOrMutated(t *testing.T) {
 	if _, err := AuthenticatedProfile(durableinstance.Inputs{}); err == nil {
 		t.Fatal("unauthenticated instance produced runtime profile")
 	}
+	if got, err := ExecuteAuthenticated(durableinstance.Inputs{}, grants(), request(), &memoryPort{token: Token("absence")}, &testTransform{}); err == nil || got.Committed || len(got.Trace) != 0 {
+		t.Fatal("unauthenticated instance reached host executor")
+	}
 }
 
 func TestPortAndTransformerAliasesCannotRewriteTraceOrToken(t *testing.T) {

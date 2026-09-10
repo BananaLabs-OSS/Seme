@@ -7,6 +7,8 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"unicode/utf8"
+
+	"seme.local/reference/durableinstance"
 )
 
 type Operation struct {
@@ -109,6 +111,18 @@ type Result struct {
 type Request struct {
 	Family string
 	Key    string
+}
+
+// ExecuteAuthenticated is the convenience path from authenticated
+// Durable-State-v1 metadata into the host boundary. It derives the sealed
+// profile from the exact instance before delegating to Execute; it does not
+// assert that transform implements the declared codec or domain semantics.
+func ExecuteAuthenticated(in durableinstance.Inputs, grants Grants, request Request, port Port, transform Transformer) (Result, error) {
+	profile, err := AuthenticatedProfile(in)
+	if err != nil {
+		return Result{}, err
+	}
+	return Execute(profile, grants, request, port, transform), nil
 }
 
 func Execute(profile Profile, grants Grants, request Request, port Port, transform Transformer) Result {
