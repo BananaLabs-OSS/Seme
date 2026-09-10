@@ -20,12 +20,12 @@ func TestConsumedImportRealizationsAreClosedAndConstructBacked(t *testing.T) {
 		testID("102"): {ID: testID("102"), Schema: testID("90fc"), Version: 1},
 		testID("103"): {ID: testID("103"), Schema: testID("15"), Version: 1, Fields: map[wire.ID]wire.Value{testID("150"): {Tag: 5, Bytes: []byte("observability.log")}}},
 	}}
-	for _, name := range []string{"go-consumed:bytes:Equal", "go-consumed:maps:Clone", "go-consumed:slices:Clone,Replace", "go-consumed:log:Print"} {
+	for _, name := range []string{"go-consumed:bytes:Equal", "go-consumed:maps:Clone", "go-consumed:slices:Clone", "go-consumed:slices:Clone,Replace", "go-consumed:log:Print"} {
 		if !realizationPresent(e, name) {
 			t.Fatalf("valid realization absent: %s", name)
 		}
 	}
-	for _, name := range []string{"go-consumed:maps:Delete", "go-consumed:slices:Clone", "go-consumed:log:Printf", "go-consumed:strings:Clone"} {
+	for _, name := range []string{"go-consumed:maps:Delete", "go-consumed:slices:Delete", "go-consumed:log:Printf", "go-consumed:strings:Clone"} {
 		if realizationPresent(e, name) {
 			t.Fatalf("unknown realization accepted: %s", name)
 		}

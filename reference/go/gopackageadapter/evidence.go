@@ -131,6 +131,12 @@ func EvidenceFromV8(snapshot goprovider.DocumentSnapshot, resolution goprovider.
 func realizationPresent(e wire.Envelope, realization string) bool {
 	wantSchema := wire.ID{}
 	switch realization {
+	case "go-consumed:slices:Clone":
+		// Go needs Clone to break backing-array aliasing. Canonical Seme slices
+		// are structural immutable values, so this source operation refines to
+		// identity; the resolution manifest and source presentation retain its
+		// provenance without inventing a CollectionUpdate entity.
+		return true
 	case "go-consumed:bytes:Equal":
 		wantSchema = mustID("a065")
 	case "go-consumed:maps:Clone":
