@@ -97,7 +97,12 @@ func Resolve(project projectv9instance.Inputs, packages []goprovider.PackageMeta
 			var sum [32]byte
 			copy(sum[:], digest.Bytes)
 			refs := make([]wire.ID, 0, len(a.ReferencedImports))
+			seenImports := map[string]bool{}
 			for _, path := range a.ReferencedImports {
+				if seenImports[path] {
+					return presentationinstance.Model{}, fmt.Errorf("go_presentation.import_duplicate:%s:%s", a.Name, path)
+				}
+				seenImports[path] = true
 				x := bindings[owner][a.Document][path]
 				if x == (wire.ID{}) {
 					return presentationinstance.Model{}, fmt.Errorf("go_presentation.import:%s:%s", a.Name, path)
