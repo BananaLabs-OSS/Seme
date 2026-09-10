@@ -138,6 +138,12 @@ func tree(files map[string][]byte) (string, string, error) {
 	return hex.EncodeToString(raw.Sum(nil)), "h1:" + base64.StdEncoding.EncodeToString(lines.Sum(nil)), nil
 }
 
+// AnalyzeTree exposes the resolver's exact bounded content/integrity
+// calculation so filesystem loaders cannot silently drift from it.
+func AnalyzeTree(files map[string][]byte) (digest, integrity string, err error) {
+	return tree(files)
+}
+
 var stableVersion = regexp.MustCompile(`^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$`)
 
 func validTreePath(n string) bool {
