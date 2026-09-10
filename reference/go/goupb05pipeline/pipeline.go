@@ -21,11 +21,7 @@ import (
 	"seme.local/reference/projectv7instance"
 )
 
-type Selection struct {
-	Fields  []goconfigurationadapter.FieldSelection
-	Runtime []goconfigurationadapter.RuntimeInputSelection
-	Units   []goconfigurationadapter.UnitSelection
-}
+type Selection = goconfigurationadapter.Selection
 type Input struct {
 	Base      goupb04pipeline.Input
 	V6        contractcatalog.ProjectContractSetV6
