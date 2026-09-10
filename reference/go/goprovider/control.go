@@ -631,8 +631,8 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if object == nil {
 				return nil, fmt.Errorf("control.local_binding_type")
 			}
-			named, isRecord := object.Type().(*types.Named)
-			_, recordSupported := records[named]
+			named, isRecord := types.Unalias(object.Type()).(*types.Named)
+			record, recordSupported := findGoRecord(records, named)
 			_, _, isResult := goResultTypes(object.Type())
 			functionSignature, isFunction := goFunctionSignature(object.Type())
 			isFunction = isFunction && isUnaryI64Function(functionSignature)
@@ -661,7 +661,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				localType = "string"
 			}
 			if isRecord && recordSupported {
-				localType = records[named].id
+				localType = record.id
 			}
 			if isI64Slice(object.Type()) {
 				localType = stableID("execution", "type", "slice", "i64")
