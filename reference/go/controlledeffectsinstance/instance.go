@@ -180,7 +180,66 @@ func validateModel(e wire.Envelope, m Model) error {
 	if q, ok := e.Entities[m.DispatchFunction]; !ok || q.Schema != id("9011") {
 		return fmt.Errorf("controlled_effects.dispatch_function")
 	}
+	if !exactDispatchEffect(e, m.DispatchFunction, m.ExternalEffect.EffectIdentity, m.ExternalEffect.CapabilityIdentity) {
+		return fmt.Errorf("controlled_effects.dispatch_effect")
+	}
 	return nil
+}
+
+func exactDispatchEffect(e wire.Envelope, fn wire.ID, effectName, capabilityName string) bool {
+	q := e.Entities[fn]
+	seen, effects := map[wire.ID]bool{}, map[wire.ID]bool{}
+	var walk func(wire.ID)
+	walk = func(x wire.ID) {
+		if seen[x] {
+			return
+		}
+		seen[x] = true
+		z, ok := e.Entities[x]
+		if !ok {
+			return
+		}
+		if z.Schema == id("90f1") {
+			effects[x] = true
+			return
+		}
+		for _, v := range z.Fields {
+			collectEffectRefs(v, walk)
+		}
+	}
+	walk(q.Fields[id("9113")].Reference)
+	if len(effects) != 1 {
+		return false
+	}
+	for x := range effects {
+		invoke := e.Entities[x]
+		effectRef, args := invoke.Fields[id("9f10")], invoke.Fields[id("9f11")]
+		if effectRef.Tag != 6 || args.Tag != 7 || len(args.List) != 1 || args.List[0].Tag != 6 {
+			return false
+		}
+		effect, ok := e.Entities[effectRef.Reference]
+		if !ok || effect.Schema != id("15") || string(effect.Fields[id("150")].Bytes) != effectName {
+			return false
+		}
+		capRef := effect.Fields[id("151")]
+		capability, ok := e.Entities[capRef.Reference]
+		if capRef.Tag != 6 || !ok || capability.Schema != id("16") || string(capability.Fields[id("160")].Bytes) != capabilityName {
+			return false
+		}
+	}
+	return true
+}
+
+func collectEffectRefs(v wire.Value, walk func(wire.ID)) {
+	if v.Tag == 6 {
+		walk(v.Reference)
+	}
+	for _, x := range v.List {
+		collectEffectRefs(x, walk)
+	}
+	for _, x := range v.Record {
+		collectEffectRefs(x, walk)
+	}
 }
 
 func declarationOwners(e wire.Envelope) map[wire.ID]wire.ID {
