@@ -8,3 +8,4 @@ cp "$repo/fixtures/go-upb07-durable-overlay/state/state.go" "$destination/state/
 cp "$repo/fixtures/go-upb07-durable-overlay/state/state_test.go" "$destination/state/state_test.go"
 cp "$repo/fixtures/go-upb07-durable-overlay/persistence/planner.go" "$destination/persistence/planner.go"
 cp "$repo/fixtures/go-upb07-durable-overlay/persistence/planner_test.go" "$destination/persistence/planner_test.go"
+cp "$repo/fixtures/go-upb07-durable-overlay/persistence/native_corpus_test.go" "$destination/persistence/native_corpus_test.go"
