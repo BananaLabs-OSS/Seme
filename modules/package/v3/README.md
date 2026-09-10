@@ -1,7 +1,8 @@
 # Package Contract v3
 
-Package v3 adds language-neutral ownership for canonical semantic declarations
-that are not function members in the v2 detail graph. Records, interfaces,
+Package v3 adds language-neutral annotations for canonical non-function
+declarations already owned by v2 and ownership for concrete realizations that
+have no source member. Records, interfaces,
 receiver-associated callables, and concrete generic realizations retain their
 Execution identities; this contract does not redefine their structure.
 
