@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"seme.local/reference/contractcatalog"
+	"seme.local/reference/executionprofile"
 	"seme.local/reference/goprovider"
 	"seme.local/reference/projectemitter"
 	"seme.local/reference/wire"
@@ -50,6 +51,9 @@ func Build(ctx context.Context, snapshot goprovider.DocumentSnapshot, contracts 
 	canonical, err := wire.Encode(execution)
 	if err != nil || !bytes.Equal(canonical, compiled) {
 		return Result{}, fmt.Errorf("project_build.execution_noncanonical")
+	}
+	if err = executionprofile.ValidateConstruction(contracts.Execution(), execution); err != nil {
+		return Result{}, fmt.Errorf("project_build.execution_profile:%w", err)
 	}
 
 	input := projectemitter.Input{

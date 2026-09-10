@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	"seme.local/reference/contractcatalog"
+	"seme.local/reference/executionprofile"
 	"seme.local/reference/packagedetail"
 	"seme.local/reference/packagedetailinstance"
 	"seme.local/reference/wire"
@@ -167,6 +168,9 @@ func Validate(contracts contractcatalog.ProjectContractSetV5, baseRaw, outRaw []
 		return fmt.Errorf("package_v3.base:%w", err)
 	}
 	base, _ := wire.Decode(baseRaw)
+	if err := executionprofile.ValidateConstruction(contracts.Execution(), base); err != nil {
+		return fmt.Errorf("package_v3.execution_profile:%w", err)
+	}
 	e, err := wire.Decode(outRaw)
 	if err != nil {
 		return fmt.Errorf("package_v3.wire:%w", err)
