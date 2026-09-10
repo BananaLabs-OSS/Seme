@@ -102,6 +102,18 @@ func TestRichOwnershipValidatesUAB11WithoutGuessingIDs(t *testing.T) {
 	if strings.Count(policySource, "func (self Offset) Adjust") != 1 || strings.Contains(appSource, "func (self Offset) Adjust") || strings.Contains(modelSource, "func (self Offset) Adjust") {
 		t.Fatal("method ownership flattened or duplicated")
 	}
+	badFamily := in
+	badFamily.Families = append([]OwnedFamily(nil), in.Families...)
+	badFamily.Families[0].Name = "ForgedOption"
+	if err = ValidateRichPackageOwnership([]byte(result.CanonicalG1), badFamily); err == nil {
+		t.Fatal("arbitrary family name accepted")
+	}
+	badFamily = in
+	badFamily.Families = append([]OwnedFamily(nil), in.Families...)
+	badFamily.Families[0].Package = "example.test/missing"
+	if err = ValidateRichPackageOwnership([]byte(result.CanonicalG1), badFamily); err == nil {
+		t.Fatal("arbitrary family package accepted")
+	}
 	dir := t.TempDir()
 	if err = os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.test/go-uab-11\n\ngo 1.26\n"), 0644); err != nil {
 		t.Fatal(err)
@@ -157,6 +169,15 @@ func TestRichOwnershipValidatesUAB11WithoutGuessingIDs(t *testing.T) {
 	}
 	if err = ValidateRichPackageOwnership([]byte(result.CanonicalG1), wrong); err == nil {
 		t.Fatal("method/receiver owner mismatch accepted")
+	}
+}
+
+func TestRichImportAliasesExpandCollisionsDeterministically(t *testing.T) {
+	packages := []RichPackage{{Identity: "a", Name: "maps"}, {Identity: "b", Name: "maps"}, {Identity: "c", Name: "policy"}}
+	a := richImportAliases(packages)
+	b := richImportAliases([]RichPackage{packages[2], packages[1], packages[0]})
+	if !reflect.DeepEqual(a, b) || a["a"] != "maps2" || a["b"] != "maps3" || a["c"] != "policy" {
+		t.Fatalf("a=%v b=%v", a, b)
 	}
 }
 

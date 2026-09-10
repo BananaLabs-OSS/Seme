@@ -30,10 +30,7 @@ func ProjectPackagesRich(g1 []byte, ownership RichPackageOwnership) (map[string]
 	for _, f := range ownership.Families {
 		family[f.Name] = f
 	}
-	aliases := map[string]string{}
-	for _, p := range ownership.Packages {
-		aliases[p.Identity] = p.Name
-	}
+	aliases := richImportAliases(ownership.Packages)
 	out := map[string][]byte{}
 	for _, pkg := range ownership.Packages {
 		fset := token.NewFileSet()
