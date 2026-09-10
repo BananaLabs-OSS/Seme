@@ -8,7 +8,7 @@ import (
 )
 
 func fixture() (goprovider.ResolutionManifest, []goprovider.PackageMetadata, Evidence) {
-	l := goprovider.ProjectLocation{File: "a.go", Line: 1, Column: 1}
+	l := goprovider.ProjectLocation{File: "a.go", Line: 1, Column: 1, ByteStart: 0, ByteEnd: 1, EndLine: 1, EndColumn: 2}
 	r := goprovider.ResolutionManifest{Packages: []goprovider.ResolvedPackage{{Name: "app", Root: true, Files: []string{"a.go"}, Declarations: []goprovider.ResolvedDeclaration{{ID: "fn", Name: "Run", Exported: true, Location: l}}}}}
 	m := []goprovider.PackageMetadata{{Name: "app", Root: true, Members: []goprovider.PackageFunctionMetadata{{ID: "fn", Name: "Run", Result: "i64", Exported: true, Document: "a.go", Line: 1, Column: 1}}}}
 	d := sha256.Sum256([]byte("x"))

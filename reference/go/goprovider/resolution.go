@@ -2,6 +2,7 @@ package goprovider
 
 import (
 	"go/ast"
+	"go/token"
 	"go/types"
 	"path/filepath"
 	"sort"
@@ -29,8 +30,10 @@ type ResolvedImport struct {
 	Location                  ProjectLocation
 }
 type ProjectLocation struct {
-	File         string
-	Line, Column int
+	File               string
+	Line, Column       int
+	ByteStart, ByteEnd int
+	EndLine, EndColumn int
 }
 
 func resolveSnapshot(snapshot DocumentSnapshot) (ResolutionManifest, []SessionDiagnostic) {
@@ -58,14 +61,14 @@ func resolveSnapshot(snapshot DocumentSnapshot) (ResolutionManifest, []SessionDi
 				if err != nil {
 					continue
 				}
-				position := u.fset.Position(spec.Pos())
+				position, end := u.fset.Position(spec.Pos()), u.fset.Position(spec.End())
 				alias := ""
 				if spec.Name != nil {
 					alias = spec.Name.Name
 				} else if dependency := importsByPath[path]; dependency != nil {
 					alias = dependency.Name()
 				}
-				p.Imports = append(p.Imports, ResolvedImport{Alias: alias, Path: path, ResolvedPath: path, Local: local[path], Location: location(position.Filename, position.Line, position.Column)})
+				p.Imports = append(p.Imports, ResolvedImport{Alias: alias, Path: path, ResolvedPath: path, Local: local[path], Location: locationSpan(position, end)})
 			}
 			for _, item := range file.Decls {
 				fn, ok := item.(*ast.FuncDecl)
@@ -80,8 +83,8 @@ func resolveSnapshot(snapshot DocumentSnapshot) (ResolutionManifest, []SessionDi
 				if declarationID == "" {
 					declarationID = stableID("session-declaration", u.path, fn.Name.Name)
 				}
-				position := u.fset.Position(fn.Name.Pos())
-				where := location(position.Filename, position.Line, position.Column)
+				position, end := u.fset.Position(fn.Name.Pos()), u.fset.Position(fn.Name.End())
+				where := locationSpan(position, end)
 				if prior, exists := seenIDs[declarationID]; exists {
 					diagnostics = append(diagnostics, SessionDiagnostic{Code: "go.duplicate_semantic_identity", Message: "semantic declaration identity duplicates " + prior.File + ":" + strconv.Itoa(prior.Line) + ":" + strconv.Itoa(prior.Column), File: where.File, Line: where.Line, Column: where.Column, Severity: "error"})
 					continue
@@ -113,8 +116,8 @@ func resolveSnapshot(snapshot DocumentSnapshot) (ResolutionManifest, []SessionDi
 	sort.Slice(out.Packages, func(i, j int) bool { return out.Packages[i].Name < out.Packages[j].Name })
 	return out, sortedDiagnostics(diagnostics)
 }
-func location(file string, line, column int) ProjectLocation {
-	return ProjectLocation{File: filepath.ToSlash(file), Line: line, Column: column}
+func locationSpan(start, end token.Position) ProjectLocation {
+	return ProjectLocation{File: filepath.ToSlash(start.Filename), Line: start.Line, Column: start.Column, ByteStart: start.Offset, ByteEnd: end.Offset, EndLine: end.Line, EndColumn: end.Column}
 }
 func cloneResolutionManifest(in ResolutionManifest) ResolutionManifest {
 	out := ResolutionManifest{Packages: make([]ResolvedPackage, len(in.Packages))}
