@@ -166,8 +166,8 @@ and use the same provider, patch, target-contract, and conformance boundaries.
 
 ## 7. Useful Project Bridge v1
 
-Status: 7/36 cells (19.4%); Go UPB-01 through UPB-07 pass all seven evidence
-classes, placing the Go column at 7/12 (58.3%).
+Status: 8/36 cells (22.2%); Go UPB-01 through UPB-08 pass all seven evidence
+classes, placing the Go column at 8/12 (66.7%).
 
 The completed UAB-v1 proves a bounded application semantic vocabulary. It does
 not by itself prove that Seme can preserve an ordinary project's source closure,
@@ -252,3 +252,15 @@ opaque-token port traces. Pinned Pulp has no conforming CAS provider, so no
 Pulp DurablePort claim is made. Deterministic bundles, source-free reporting,
 ordinary projection, normalized semantic re-lift, honest source-bound
 revisions, a second-cycle fixed point, and atomic adversaries pass.
+
+Go UPB-08 is complete for one bounded ordered request/response transport.
+Ordered Transport v1 and Project v11 authenticate commands, events, sequence
+and correlation rules, replay bounds, exact whole-frame payload limits, and a
+selected TransportPort. The 4,096-observation corpus agrees across native Go,
+canonical Seme, standalone Wasm, and pinned Pulp. Separately, the authenticated
+Go host port proves strict framing, fragmentation/coalescing, external
+exact-byte evidence, post-commit send failure, and exact retry. Pinned Pulp is
+verified only as a synchronous opaque pure-call carrier and rejects the
+authoritative TransportPort. Deterministic bundles, source-free reporting,
+ordinary projection, exact semantic re-lift, fixed point, and atomic
+adversaries pass.

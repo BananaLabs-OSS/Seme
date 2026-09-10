@@ -3,6 +3,18 @@
 This file records development-environment changes made while advancing Seme.
 It is not part of Seme's runtime or trusted bootstrap.
 
+## 2026-09-10 — Go UPB-08 ordered-transport completion
+
+Ordered Transport v1, Project v11, authenticated host framing and placement,
+source-free reporting, ordinary-Go projection, native/canonical/Wasm/Pulp
+parity, and the seven-evidence gate reused the installed Go toolchains, Node
+22, the checked Seme bootstrap, repository-local offline proxy, and pinned
+Pulp source at `acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. Builds, projected
+trees, copied Pulp sources, reports, payload corpora, and caches lived only in
+automatically removed directories under `/tmp`. No software or dependency was
+installed, and no shell, SSH, editor, toolchain, global, workstation, network,
+or persistent environment setting was changed.
+
 ## 2026-09-07
 
 - No software or language toolchain was installed.
