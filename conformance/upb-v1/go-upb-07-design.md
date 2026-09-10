@@ -234,7 +234,9 @@ Runtime and codec:
 - CAS without Load, two Loads, two CAS attempts, unconditional retry, wrong key
   or family, wrong expected token, and wrong CAS payload;
 - CAS conflict that mutates state or emits a success effect;
-- storage provider returning success without committing the exact bytes;
+- provider-realization evidence whose backing store did not commit the exact
+  requested bytes after reporting success (the executor cannot infer this from
+  the contract response alone);
 - request replay from the same initial store producing different trace/state;
 - malformed Wasm ABI, denied capability, target trap, and partial output for
   the pure planner target;
