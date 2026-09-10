@@ -75,10 +75,10 @@ type PackageMetadata struct {
 // whose runtime meaning is exactly its canonical Execution target. Aliases do
 // not become Core or Execution types.
 type SourceAliasMetadata struct {
-	Name, Package, Target, Document string
-	Exported, Generic               bool
-	Start, End, Line, Column        int
-	ReferencedImports               []string
+	Name, Package, Target, Document              string
+	Exported, Generic                            bool
+	Start, End, Line, Column, EndLine, EndColumn int
+	ReferencedImports                            []string
 }
 type PackageFunctionMetadata struct {
 	ID, Name     string
@@ -829,7 +829,7 @@ func buildPackageMetadata(root string, units []*checkedSessionPackage, functions
 			start := u.fset.Position(identifier.Pos())
 			end := u.fset.Position(identifier.End())
 			imports := typePackagePaths(typeName.Type(), u.path)
-			p.Aliases = append(p.Aliases, SourceAliasMetadata{Name: identifier.Name, Package: u.path, Target: target, Document: filepath.ToSlash(start.Filename), Exported: ast.IsExported(identifier.Name), Generic: false, Start: start.Offset, End: end.Offset, Line: start.Line, Column: start.Column, ReferencedImports: imports})
+			p.Aliases = append(p.Aliases, SourceAliasMetadata{Name: identifier.Name, Package: u.path, Target: target, Document: filepath.ToSlash(start.Filename), Exported: ast.IsExported(identifier.Name), Generic: false, Start: start.Offset, End: end.Offset, Line: start.Line, Column: start.Column, EndLine: end.Line, EndColumn: end.Column, ReferencedImports: imports})
 		}
 		sort.Slice(p.Members, func(i, j int) bool { return p.Members[i].ID < p.Members[j].ID })
 		sort.Slice(p.Functions, func(i, j int) bool { return p.Functions[i].ID < p.Functions[j].ID })
