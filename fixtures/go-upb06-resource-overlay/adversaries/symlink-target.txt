@@ -1,0 +1,1 @@
+This file exists only as a target for a gate-created resource symlink.
