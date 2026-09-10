@@ -12,7 +12,7 @@ import (
 
 func command(sequence int64, identity int64) transport.Command {
 	base := application.State{Name: "pilot", Counters: map[int64]int64{}}
-	return transport.Command{Stream: "match", Sequence: sequence, Correlation: transport.Correlation{Low: identity}, Kind: transport.PlannerCommand, Digest: transport.Digest{A: identity}, CanonicalPayload: []byte{byte(identity)}, Payload: transport.PlannerPayload{Grants: persistence.Grants{Read: true, CompareExchange: true}, Loaded: persistence.Loaded{Found: true, Version: 2, Token: "opaque", V2: state.V2{State: base, Revision: 4}}, Initial: state.V2{State: base, Revision: 1}, NextDigest: "sha256:next", Key: "slot"}}
+	return transport.Command{Stream: "match", Sequence: sequence, Correlation: transport.Correlation{Low: identity}, Kind: transport.PlannerCommand, Digest: transport.Digest{A: identity}, PayloadWords: []int64{identity}, PayloadByteLength: 1, Payload: transport.PlannerPayload{Grants: persistence.Grants{Read: true, CompareExchange: true}, Loaded: persistence.Loaded{Found: true, Version: 2, Token: "opaque", V2: state.V2{State: base, Revision: 4}}, Initial: state.V2{State: base, Revision: 1}, NextDigest: "sha256:next", Key: "slot"}}
 }
 
 func TestDispatchUsesPlannerOnlyForNewCommands(t *testing.T) {
