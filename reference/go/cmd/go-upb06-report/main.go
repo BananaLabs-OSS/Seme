@@ -29,9 +29,13 @@ type report struct {
 	Resources        []resource `json:"resources"`
 }
 type resource struct {
-	Identity, Path, Destination, MediaType, SHA256 string
-	Size                                           uint64
-	Kind                                           uint64
+	Identity    string `json:"identity"`
+	Path        string `json:"path"`
+	Destination string `json:"destination"`
+	MediaType   string `json:"media_type"`
+	SHA256      string `json:"sha256"`
+	Size        uint64 `json:"size"`
+	Kind        uint64 `json:"kind"`
 }
 
 func main() {
