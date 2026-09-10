@@ -1,7 +1,6 @@
 package transport
 
 import (
-	"bytes"
 	"slices"
 
 	"example.test/go-uab-11/persistence"
@@ -52,13 +51,16 @@ type PlannerPayload struct {
 }
 
 type Command struct {
-	Stream           string
-	Sequence         int64
-	Correlation      Correlation
-	Kind             int64
-	Payload          PlannerPayload
-	CanonicalPayload []byte
-	Digest           Digest
+	Stream      string
+	Sequence    int64
+	Correlation Correlation
+	Kind        int64
+	Payload     PlannerPayload
+	// The host packs canonical payload bytes into little-endian words and
+	// requires unused bytes in the final word to be zero.
+	PayloadWords      []int64
+	PayloadByteLength int64
+	Digest            Digest
 }
 
 type Event struct {
@@ -89,24 +91,25 @@ type Response struct {
 // State is a bounded columnar ledger. Every column has exactly one item per
 // accepted unique command, so cached replies require no domain re-execution.
 type State struct {
-	Stream          string
-	NextCommand     int64
-	NextEvent       int64
-	CorrelationHigh []int64
-	CorrelationLow  []int64
-	DigestA         []int64
-	DigestB         []int64
-	DigestC         []int64
-	DigestD         []int64
-	PayloadBytes    []byte
-	PayloadStarts   []int64
-	PayloadLengths  []int64
-	Kinds           []int64
-	Accepted        []int64
-	Codes           []int64
-	Revisions       []int64
-	EventCounts     []int64
-	EventStarts     []int64
+	Stream             string
+	NextCommand        int64
+	NextEvent          int64
+	CorrelationHigh    []int64
+	CorrelationLow     []int64
+	DigestA            []int64
+	DigestB            []int64
+	DigestC            []int64
+	DigestD            []int64
+	PayloadWords       []int64
+	PayloadStarts      []int64
+	PayloadLengths     []int64
+	PayloadWordLengths []int64
+	Kinds              []int64
+	Accepted           []int64
+	Codes              []int64
+	Revisions          []int64
+	EventCounts        []int64
+	EventStarts        []int64
 }
 
 type Classification struct {
@@ -125,7 +128,7 @@ type Result struct {
 }
 
 func NewState(stream string) State {
-	return State{Stream: stream, NextCommand: 1, NextEvent: 1, CorrelationHigh: []int64{}, CorrelationLow: []int64{}, DigestA: []int64{}, DigestB: []int64{}, DigestC: []int64{}, DigestD: []int64{}, PayloadBytes: []byte{}, PayloadStarts: []int64{}, PayloadLengths: []int64{}, Kinds: []int64{}, Accepted: []int64{}, Codes: []int64{}, Revisions: []int64{}, EventCounts: []int64{}, EventStarts: []int64{}}
+	return State{Stream: stream, NextCommand: 1, NextEvent: 1, CorrelationHigh: []int64{}, CorrelationLow: []int64{}, DigestA: []int64{}, DigestB: []int64{}, DigestC: []int64{}, DigestD: []int64{}, PayloadWords: []int64{}, PayloadStarts: []int64{}, PayloadLengths: []int64{}, PayloadWordLengths: []int64{}, Kinds: []int64{}, Accepted: []int64{}, Codes: []int64{}, Revisions: []int64{}, EventCounts: []int64{}, EventStarts: []int64{}}
 }
 
 func Classify(current State, command Command) Classification {
@@ -144,14 +147,22 @@ func Classify(current State, command Command) Classification {
 	if !EqualI64(command.Kind, 1) {
 		return Classification{Error: 84}
 	}
-	if ZeroDigest(command.Digest) || len(command.CanonicalPayload) == 0 || 3072 < len(command.CanonicalPayload) {
+	if ZeroDigest(command.Digest) || command.PayloadByteLength < 1 || 3072 < command.PayloadByteLength || len(command.PayloadWords) < 1 || 384 < len(command.PayloadWords) {
 		return Classification{Error: 85}
 	}
 	if command.Sequence < current.NextCommand {
 		index := command.Sequence - 1
 		start := current.PayloadStarts[index]
-		length := current.PayloadLengths[index]
-		if !EqualI64(current.CorrelationHigh[index], command.Correlation.High) || !EqualI64(current.CorrelationLow[index], command.Correlation.Low) || !EqualI64(current.Kinds[index], command.Kind) || !EqualDigestAt(current, index, command.Digest) || !EqualI64(length, int64(len(command.CanonicalPayload))) || !bytes.Equal(current.PayloadBytes[start:start+length], command.CanonicalPayload) {
+		wordLength := current.PayloadWordLengths[index]
+		equalPayload := EqualI64(current.PayloadLengths[index], command.PayloadByteLength) && EqualI64(wordLength, int64(len(command.PayloadWords)))
+		wordIndex := int64(0)
+		for wordIndex < wordLength {
+			if !EqualI64(current.PayloadWords[start+wordIndex], command.PayloadWords[wordIndex]) {
+				equalPayload = false
+			}
+			wordIndex = wordIndex + 1
+		}
+		if !EqualI64(current.CorrelationHigh[index], command.Correlation.High) || !EqualI64(current.CorrelationLow[index], command.Correlation.Low) || !EqualI64(current.Kinds[index], command.Kind) || !EqualDigestAt(current, index, command.Digest) || !equalPayload {
 			return Classification{Error: 86}
 		}
 		return Classification{Kind: 2, Index: index, Response: ResponseAt(current, index)}
@@ -184,18 +195,24 @@ func Commit(current State, command Command, accepted bool, code int64, revision 
 	if eventCount < 0 || 4 < eventCount || 1024 < current.NextEvent+eventCount-1 || accepted && !EqualI64(code, 0) || !accepted && EqualI64(code, 0) {
 		return Failure(current, 89)
 	}
-	if 4096 < len(current.PayloadBytes)+len(command.CanonicalPayload) {
+	if 512 < len(current.PayloadWords)+len(command.PayloadWords) {
 		return Failure(current, 85)
 	}
 	acceptedValue := int64(0)
 	if accepted {
 		acceptedValue = 1
 	}
+	payloadWords := slices.Clone(current.PayloadWords)
+	payloadIndex := int64(0)
+	for payloadIndex < int64(len(command.PayloadWords)) {
+		payloadWords = append(payloadWords, command.PayloadWords[payloadIndex])
+		payloadIndex = payloadIndex + 1
+	}
 	next := State{
 		Stream: current.Stream, NextCommand: current.NextCommand + 1, NextEvent: current.NextEvent + eventCount,
 		CorrelationHigh: append(slices.Clone(current.CorrelationHigh), command.Correlation.High), CorrelationLow: append(slices.Clone(current.CorrelationLow), command.Correlation.Low),
 		DigestA: append(slices.Clone(current.DigestA), command.Digest.A), DigestB: append(slices.Clone(current.DigestB), command.Digest.B), DigestC: append(slices.Clone(current.DigestC), command.Digest.C), DigestD: append(slices.Clone(current.DigestD), command.Digest.D),
-		PayloadBytes: append(slices.Clone(current.PayloadBytes), command.CanonicalPayload...), PayloadStarts: append(slices.Clone(current.PayloadStarts), int64(len(current.PayloadBytes))), PayloadLengths: append(slices.Clone(current.PayloadLengths), int64(len(command.CanonicalPayload))),
+		PayloadWords: payloadWords, PayloadStarts: append(slices.Clone(current.PayloadStarts), int64(len(current.PayloadWords))), PayloadLengths: append(slices.Clone(current.PayloadLengths), command.PayloadByteLength), PayloadWordLengths: append(slices.Clone(current.PayloadWordLengths), int64(len(command.PayloadWords))),
 		Kinds: append(slices.Clone(current.Kinds), command.Kind), Accepted: append(slices.Clone(current.Accepted), acceptedValue), Codes: append(slices.Clone(current.Codes), code), Revisions: append(slices.Clone(current.Revisions), revision),
 		EventCounts: append(slices.Clone(current.EventCounts), eventCount), EventStarts: append(slices.Clone(current.EventStarts), current.NextEvent),
 	}
@@ -211,7 +228,7 @@ func Cached(current State, response Response) Result {
 
 func ValidState(value State) bool {
 	count := int64(len(value.CorrelationHigh))
-	if value.Stream == "" || 4096 < len(value.PayloadBytes) || !EqualI64(value.NextCommand, count+1) || value.NextCommand < 1 || 257 < value.NextCommand || value.NextEvent < 1 || 1025 < value.NextEvent || !EqualI64(int64(len(value.CorrelationLow)), count) || !EqualI64(int64(len(value.DigestA)), count) || !EqualI64(int64(len(value.DigestB)), count) || !EqualI64(int64(len(value.DigestC)), count) || !EqualI64(int64(len(value.DigestD)), count) || !EqualI64(int64(len(value.PayloadStarts)), count) || !EqualI64(int64(len(value.PayloadLengths)), count) || !EqualI64(int64(len(value.Kinds)), count) || !EqualI64(int64(len(value.Accepted)), count) || !EqualI64(int64(len(value.Codes)), count) || !EqualI64(int64(len(value.Revisions)), count) || !EqualI64(int64(len(value.EventCounts)), count) || !EqualI64(int64(len(value.EventStarts)), count) {
+	if value.Stream == "" || 512 < len(value.PayloadWords) || !EqualI64(value.NextCommand, count+1) || value.NextCommand < 1 || 257 < value.NextCommand || value.NextEvent < 1 || 1025 < value.NextEvent || !EqualI64(int64(len(value.CorrelationLow)), count) || !EqualI64(int64(len(value.DigestA)), count) || !EqualI64(int64(len(value.DigestB)), count) || !EqualI64(int64(len(value.DigestC)), count) || !EqualI64(int64(len(value.DigestD)), count) || !EqualI64(int64(len(value.PayloadStarts)), count) || !EqualI64(int64(len(value.PayloadLengths)), count) || !EqualI64(int64(len(value.PayloadWordLengths)), count) || !EqualI64(int64(len(value.Kinds)), count) || !EqualI64(int64(len(value.Accepted)), count) || !EqualI64(int64(len(value.Codes)), count) || !EqualI64(int64(len(value.Revisions)), count) || !EqualI64(int64(len(value.EventCounts)), count) || !EqualI64(int64(len(value.EventStarts)), count) {
 		return false
 	}
 	nextEvent := int64(1)
@@ -219,7 +236,7 @@ func ValidState(value State) bool {
 	index := int64(0)
 	valid := true
 	for index < count {
-		if !EqualI64(value.PayloadStarts[index], payloadEnd) || value.PayloadLengths[index] < 1 || 3072 < value.PayloadLengths[index] || int64(len(value.PayloadBytes)) < value.PayloadStarts[index]+value.PayloadLengths[index] || !EqualI64(value.EventStarts[index], nextEvent) || value.EventCounts[index] < 0 || 4 < value.EventCounts[index] || value.Accepted[index] < 0 || 1 < value.Accepted[index] || EqualI64(value.Accepted[index], 1) && !EqualI64(value.Codes[index], 0) || EqualI64(value.Accepted[index], 0) && EqualI64(value.Codes[index], 0) {
+		if !EqualI64(value.PayloadStarts[index], payloadEnd) || value.PayloadLengths[index] < 1 || 3072 < value.PayloadLengths[index] || value.PayloadWordLengths[index] < 1 || 384 < value.PayloadWordLengths[index] || int64(len(value.PayloadWords)) < value.PayloadStarts[index]+value.PayloadWordLengths[index] || !EqualI64(value.EventStarts[index], nextEvent) || value.EventCounts[index] < 0 || 4 < value.EventCounts[index] || value.Accepted[index] < 0 || 1 < value.Accepted[index] || EqualI64(value.Accepted[index], 1) && !EqualI64(value.Codes[index], 0) || EqualI64(value.Accepted[index], 0) && EqualI64(value.Codes[index], 0) {
 			valid = false
 		}
 		prior := int64(0)
@@ -230,10 +247,10 @@ func ValidState(value State) bool {
 			prior = prior + 1
 		}
 		nextEvent = nextEvent + value.EventCounts[index]
-		payloadEnd = payloadEnd + value.PayloadLengths[index]
+		payloadEnd = payloadEnd + value.PayloadWordLengths[index]
 		index = index + 1
 	}
-	return valid && EqualI64(value.NextEvent, nextEvent) && EqualI64(payloadEnd, int64(len(value.PayloadBytes)))
+	return valid && EqualI64(value.NextEvent, nextEvent) && EqualI64(payloadEnd, int64(len(value.PayloadWords)))
 }
 
 func ResponseAt(value State, index int64) Response {
@@ -268,7 +285,7 @@ func MakeEvent(sequence int64, commandSequence int64, ordinal int64, correlation
 }
 
 func CloneState(value State) State {
-	return State{Stream: value.Stream, NextCommand: value.NextCommand, NextEvent: value.NextEvent, CorrelationHigh: slices.Clone(value.CorrelationHigh), CorrelationLow: slices.Clone(value.CorrelationLow), DigestA: slices.Clone(value.DigestA), DigestB: slices.Clone(value.DigestB), DigestC: slices.Clone(value.DigestC), DigestD: slices.Clone(value.DigestD), PayloadBytes: slices.Clone(value.PayloadBytes), PayloadStarts: slices.Clone(value.PayloadStarts), PayloadLengths: slices.Clone(value.PayloadLengths), Kinds: slices.Clone(value.Kinds), Accepted: slices.Clone(value.Accepted), Codes: slices.Clone(value.Codes), Revisions: slices.Clone(value.Revisions), EventCounts: slices.Clone(value.EventCounts), EventStarts: slices.Clone(value.EventStarts)}
+	return State{Stream: value.Stream, NextCommand: value.NextCommand, NextEvent: value.NextEvent, CorrelationHigh: slices.Clone(value.CorrelationHigh), CorrelationLow: slices.Clone(value.CorrelationLow), DigestA: slices.Clone(value.DigestA), DigestB: slices.Clone(value.DigestB), DigestC: slices.Clone(value.DigestC), DigestD: slices.Clone(value.DigestD), PayloadWords: slices.Clone(value.PayloadWords), PayloadStarts: slices.Clone(value.PayloadStarts), PayloadLengths: slices.Clone(value.PayloadLengths), PayloadWordLengths: slices.Clone(value.PayloadWordLengths), Kinds: slices.Clone(value.Kinds), Accepted: slices.Clone(value.Accepted), Codes: slices.Clone(value.Codes), Revisions: slices.Clone(value.Revisions), EventCounts: slices.Clone(value.EventCounts), EventStarts: slices.Clone(value.EventStarts)}
 }
 
 func EqualI64(left int64, right int64) bool { return left <= right && right <= left }

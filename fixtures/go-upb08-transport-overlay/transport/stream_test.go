@@ -2,6 +2,7 @@ package transport
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"example.test/go-uab-11/application"
@@ -20,11 +21,7 @@ func payload() PlannerPayload {
 }
 
 func command(sequence int64, identity int64) Command {
-	canonical := make([]byte, 16)
-	for index := range canonical {
-		canonical[index] = byte(identity + int64(index))
-	}
-	return Command{Stream: "match", Sequence: sequence, Correlation: correlation(identity), Kind: PlannerCommand, Payload: payload(), CanonicalPayload: canonical, Digest: digest(identity)}
+	return Command{Stream: "match", Sequence: sequence, Correlation: correlation(identity), Kind: PlannerCommand, Payload: payload(), PayloadWords: []int64{identity, identity + 1}, PayloadByteLength: 16, Digest: digest(identity)}
 }
 
 func TestClassifyCommitCachedConflictGapAndCorrelation(t *testing.T) {
@@ -51,8 +48,8 @@ func TestClassifyCommitCachedConflictGapAndCorrelation(t *testing.T) {
 		t.Fatalf("conflict=%#v", got)
 	}
 	collision := firstCommand
-	collision.CanonicalPayload = append([]byte{}, firstCommand.CanonicalPayload...)
-	collision.CanonicalPayload[0]++
+	collision.PayloadWords = slices.Clone(firstCommand.PayloadWords)
+	collision.PayloadWords[0]++
 	if got := Classify(first.State, collision); got.Error != SequenceConflict {
 		t.Fatalf("payload collision=%#v", got)
 	}
@@ -142,26 +139,29 @@ func TestBoundedLedgerAndOwnedColumns(t *testing.T) {
 	}
 	copy := CloneState(current)
 	copy.Codes[0] = 99
-	copy.PayloadBytes[0]++
+	copy.PayloadWords[0]++
 	if current.Codes[0] != 0 {
 		t.Fatal("clone retained ledger aliases")
 	}
-	if copy.PayloadBytes[0] == current.PayloadBytes[0] {
+	if copy.PayloadWords[0] == current.PayloadWords[0] {
 		t.Fatal("clone retained payload alias")
 	}
 	largeFirst := command(1, 1001)
-	largeFirst.CanonicalPayload = make([]byte, 3072)
-	largeFirst.CanonicalPayload[0] = 1
+	largeFirst.PayloadWords = make([]int64, 384)
+	largeFirst.PayloadWords[0] = 1
+	largeFirst.PayloadByteLength = 3072
 	largeState := Commit(NewState("match"), largeFirst, true, 0, 1, 0).State
 	largeSecond := command(2, 1002)
-	largeSecond.CanonicalPayload = make([]byte, 1024)
-	largeSecond.CanonicalPayload[0] = 2
+	largeSecond.PayloadWords = make([]int64, 128)
+	largeSecond.PayloadWords[0] = 2
+	largeSecond.PayloadByteLength = 1024
 	exact := Commit(largeState, largeSecond, true, 0, 2, 0)
-	if !exact.OK || len(exact.State.PayloadBytes) != MaximumEncodedFrameBytes {
+	if !exact.OK || len(exact.State.PayloadWords) != 512 {
 		t.Fatalf("exact payload bound=%#v", exact)
 	}
 	largeThird := command(3, 1003)
-	largeThird.CanonicalPayload = []byte{3}
+	largeThird.PayloadWords = []int64{3}
+	largeThird.PayloadByteLength = 1
 	got := Commit(exact.State, largeThird, true, 0, 3, 0)
 	if got.OK || got.Error != InvalidPayload || !reflect.DeepEqual(got.State, exact.State) {
 		t.Fatalf("payload overflow=%#v", got)
