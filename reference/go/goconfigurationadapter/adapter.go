@@ -33,6 +33,18 @@ type Input struct {
 	Runtime     []RuntimeInputSelection
 	Units       []UnitSelection
 }
+type InputV8 struct {
+	Session     goprovider.SessionResult
+	CanonicalG1 []byte
+	Packages    []goprovider.PackageMetadata
+	Compile     Compile
+	Contracts   contractcatalog.ProjectContractSetV8
+	PackageV2   []byte
+	PackageV4   []byte
+	Fields      []FieldSelection
+	Runtime     []RuntimeInputSelection
+	Units       []UnitSelection
+}
 type Selection struct {
 	Fields  []FieldSelection
 	Runtime []RuntimeInputSelection
@@ -165,18 +177,43 @@ type function struct {
 type ownedType struct{ id, owner, origin wire.ID }
 
 func Resolve(ctx context.Context, in Input) (Plan, error) {
-	ev, err := authenticate(ctx, in)
+	core := coreInput{in.Session, in.CanonicalG1, in.Packages, in.Compile, in.PackageV2, in.PackageV3, in.Fields, in.Runtime, in.Units}
+	ev, err := authenticate(ctx, core, func() error { return packagev3instance.Validate(in.Contracts, in.PackageV2, in.PackageV3) })
 	if err != nil {
 		return Plan{}, err
 	}
-	p, err := resolve(in, ev)
+	p, err := resolveCore(core, ev)
 	if err == nil {
 		Deterministic(&p)
 	}
 	return p, err
 }
 
-func authenticate(ctx context.Context, in Input) (evidence, error) {
+func ResolveV8(ctx context.Context, in InputV8) (Plan, error) {
+	core := coreInput{in.Session, in.CanonicalG1, in.Packages, in.Compile, in.PackageV2, in.PackageV4, in.Fields, in.Runtime, in.Units}
+	ev, err := authenticate(ctx, core, func() error { return packagev3instance.ValidateV4(in.Contracts, in.PackageV2, in.PackageV4) })
+	if err != nil {
+		return Plan{}, err
+	}
+	p, err := resolveCore(core, ev)
+	if err == nil {
+		Deterministic(&p)
+	}
+	return p, err
+}
+
+type coreInput struct {
+	Session              goprovider.SessionResult
+	CanonicalG1          []byte
+	Packages             []goprovider.PackageMetadata
+	Compile              Compile
+	PackageV2, PackageV3 []byte
+	Fields               []FieldSelection
+	Runtime              []RuntimeInputSelection
+	Units                []UnitSelection
+}
+
+func authenticate(ctx context.Context, in coreInput, validatePackage func() error) (evidence, error) {
 	construction, packages := []byte(in.Session.CanonicalG1), in.Session.Packages
 	if len(in.CanonicalG1) != 0 {
 		if len(construction) != 0 {
@@ -201,7 +238,7 @@ func authenticate(ctx context.Context, in Input) (evidence, error) {
 	if err != nil || !bytes.Equal(canonical, compiled) {
 		return evidence{}, fmt.Errorf("go_configuration.execution_noncanonical")
 	}
-	if err = packagev3instance.Validate(in.Contracts, in.PackageV2, in.PackageV3); err != nil {
+	if err = validatePackage(); err != nil {
 		return evidence{}, fmt.Errorf("go_configuration.package_v3:%w", err)
 	}
 	p, err := wire.Decode(in.PackageV3)
@@ -315,6 +352,10 @@ func authenticate(ctx context.Context, in Input) (evidence, error) {
 }
 
 func resolve(in Input, ev evidence) (Plan, error) {
+	return resolveCore(coreInput{in.Session, in.CanonicalG1, in.Packages, in.Compile, in.PackageV2, in.PackageV3, in.Fields, in.Runtime, in.Units}, ev)
+}
+
+func resolveCore(in coreInput, ev evidence) (Plan, error) {
 	out := Plan{}
 	fieldTypes := map[string]wire.ID{}
 	for _, s := range in.Fields {
