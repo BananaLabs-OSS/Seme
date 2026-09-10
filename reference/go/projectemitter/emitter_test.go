@@ -26,6 +26,22 @@ func contracts(t *testing.T) contractcatalog.ProjectContractSet {
 	return set
 }
 
+func contractsV8(t *testing.T) contractcatalog.ProjectContractSetV8 {
+	t.Helper()
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	set, err := contractcatalog.ResolveProjectContractSetV8(read("../../../modules/foundation/v1/module.seme"), read("../../../modules/execution/v36/module.seme"), read("../../../modules/package/v4/module.seme"), read("../../../modules/dependency/v1/module.seme"), read("../../../modules/configuration/v3/module.seme"), read("../../../modules/project/v8/module.seme"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set
+}
+
 func execution() (wire.Envelope, wire.ID, wire.ID) {
 	program := stableID("test", "program")
 	function := stableID("test", "function")
@@ -86,6 +102,37 @@ func TestEmitIsCanonicalAndOrderIndependent(t *testing.T) {
 	encoded, e := wire.Encode(decoded)
 	if e != nil || !bytes.Equal(first, encoded) {
 		t.Fatal("not canonical")
+	}
+}
+
+func TestEmitV8BaseUsesOnlyExecutionV36Authority(t *testing.T) {
+	in := input()
+	first, err := EmitV8Base(contractsV8(t), in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := EmitV8Base(contractsV8(t), in)
+	if err != nil || !bytes.Equal(first, second) {
+		t.Fatal("v8 base is not deterministic")
+	}
+	e, err := wire.Decode(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	module := e.Entities[e.Module]
+	foundV36 := false
+	v36 := id("00000000000000000000000000009024")
+	for _, value := range module.Fields[id("00000000000000000000000000000121")].List {
+		imp := e.Entities[value.Reference]
+		if imp.Fields[id("00000000000000000000000000000130")].Reference == id("00000000000000000000000000009000") {
+			foundV36 = bytes.Equal(imp.Fields[id("00000000000000000000000000000131")].Bytes, v36[:])
+		}
+	}
+	if !foundV36 {
+		t.Fatal("v8 base omitted exact Execution v36 pin")
+	}
+	if _, err = EmitV8Base(contractcatalog.ProjectContractSetV8{}, in); err == nil {
+		t.Fatal("accepted unvalidated v8 authority")
 	}
 }
 

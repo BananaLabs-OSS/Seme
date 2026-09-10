@@ -1,4 +1,4 @@
-// Package executioninstance validates a compiled Core Execution v35 program
+// Package executioninstance validates a compiled Core Execution program
 // against an independently resolved, immutable contract.
 package executioninstance
 
@@ -15,13 +15,23 @@ import (
 var executionModule = id(0x9000)
 
 func Validate(contract contractcatalog.Contract, input wire.Envelope) error {
-	if !contract.Validated() || contract.Pin() != (contractcatalog.Pin{Module: executionModule, Revision: id(0x9023)}) {
+	return validate(contract, input, 35, id(0x9023))
+}
+
+// ValidateV36 is an additive authority boundary. It does not permit a v35
+// contract to authorize v36-only schemas.
+func ValidateV36(contract contractcatalog.Contract, input wire.Envelope) error {
+	return validate(contract, input, 36, id(0x9024))
+}
+
+func validate(contract contractcatalog.Contract, input wire.Envelope, version int, revision wire.ID) error {
+	if !contract.Validated() || contract.Pin() != (contractcatalog.Pin{Module: executionModule, Revision: revision}) {
 		return fmt.Errorf("execution_instance.contract")
 	}
 	if input.Module != executionModule {
 		return fmt.Errorf("execution_instance.module")
 	}
-	declarations, err := executionmodule.Declarations(35)
+	declarations, err := executionmodule.Declarations(version)
 	if err != nil {
 		return err
 	}

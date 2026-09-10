@@ -60,6 +60,27 @@ var (
 )
 
 func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error) {
+	return emit(contractView{contracts.Validated(), contracts.Execution(), contracts.Package(), contracts.Project()}, in)
+}
+
+// EmitV8Base emits the inherited ProjectSnapshot shape under the exact v36
+// authorities authenticated by Project v8. It does not route through or
+// reinterpret an older ProjectContractSet.
+func EmitV8Base(contracts contractcatalog.ProjectContractSetV8, in Input) ([]byte, error) {
+	return emit(contractView{contracts.Validated(), contracts.Execution(), contracts.Package(), contracts.Project()}, in)
+}
+
+type contractView struct {
+	validated                    bool
+	execution, packages, project contractcatalog.Contract
+}
+
+func (c contractView) Validated() bool                     { return c.validated }
+func (c contractView) Execution() contractcatalog.Contract { return c.execution }
+func (c contractView) Package() contractcatalog.Contract   { return c.packages }
+func (c contractView) Project() contractcatalog.Contract   { return c.project }
+
+func emit(contracts contractView, in Input) ([]byte, error) {
 	if !contracts.Validated() {
 		return nil, fmt.Errorf("project_emitter.contracts_unvalidated")
 	}
@@ -75,8 +96,14 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 		return nil, err
 	}
 	closedExecution := wire.Envelope{Module: in.Execution.Module, Revision: in.Execution.Revision, Entities: entities}
-	if err := executioninstance.Validate(contracts.Execution(), closedExecution); err != nil {
-		return nil, fmt.Errorf("project_emitter.execution:%w", err)
+	var executionErr error
+	if contracts.Execution().Pin().Revision == id("00000000000000000000000000009024") {
+		executionErr = executioninstance.ValidateV36(contracts.Execution(), closedExecution)
+	} else {
+		executionErr = executioninstance.Validate(contracts.Execution(), closedExecution)
+	}
+	if executionErr != nil {
+		return nil, fmt.Errorf("project_emitter.execution:%w", executionErr)
 	}
 
 	packages := append([]Package(nil), in.Packages...)
@@ -258,10 +285,20 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 	if err != nil {
 		return nil, err
 	}
-	if err = projectinstance.Validate(out); err != nil {
+	if contracts.Project().Pin().Revision == id("0000000000000000000000000000e00a") {
+		err = projectinstance.ValidateV8(out)
+	} else {
+		err = projectinstance.Validate(out)
+	}
+	if err != nil {
 		return nil, err
 	}
-	if err = packageinstance.Validate(out); err != nil {
+	if contracts.Package().Pin().Revision == id("0000000000000000000000000000b004") {
+		err = packageinstance.ValidateV4(out)
+	} else {
+		err = packageinstance.Validate(out)
+	}
+	if err != nil {
 		return nil, err
 	}
 	return out, nil

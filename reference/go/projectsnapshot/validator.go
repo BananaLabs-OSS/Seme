@@ -43,6 +43,18 @@ func Validate(source []byte) error {
 	return ValidateEnvelope(e)
 }
 func ValidateEnvelope(e wire.Envelope) error {
+	return validateEnvelope(e, projectRevision)
+}
+
+func ValidateV8(source []byte) error {
+	e, err := wire.Decode(source)
+	if err != nil {
+		return err
+	}
+	return validateEnvelope(e, id("0000000000000000000000000000e00a"))
+}
+
+func validateEnvelope(e wire.Envelope, requiredRevision wire.ID) error {
 	module, ok := e.Entities[e.Module]
 	if !ok || module.Schema != moduleSchema {
 		return fmt.Errorf("project_snapshot.module_declaration")
@@ -59,7 +71,7 @@ func ValidateEnvelope(e wire.Envelope) error {
 		}
 		m, x := ref(imp, fImportModule)
 		r, y := blob(imp, fImportRevision)
-		if x == nil && y == nil && m == projectModule && bytes.Equal(r, projectRevision[:]) {
+		if x == nil && y == nil && m == projectModule && bytes.Equal(r, requiredRevision[:]) {
 			pinned = true
 		}
 	}
