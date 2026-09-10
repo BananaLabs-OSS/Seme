@@ -9,3 +9,4 @@ cp "$repo/fixtures/go-upb08-transport-overlay/transport/stream_test.go" "$destin
 cp "$repo/fixtures/go-upb08-transport-overlay/transport/native_corpus_test.go" "$destination/transport/native_corpus_test.go"
 cp "$repo/fixtures/go-upb08-transport-overlay/streamservice/adapter.go" "$destination/streamservice/adapter.go"
 cp "$repo/fixtures/go-upb08-transport-overlay/streamservice/adapter_test.go" "$destination/streamservice/adapter_test.go"
+cp "$repo/fixtures/go-upb08-transport-overlay/streamservice/native_runtime_corpus_test.go" "$destination/streamservice/native_runtime_corpus_test.go"
