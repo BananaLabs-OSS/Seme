@@ -641,7 +641,7 @@ func buildPackageMetadata(root string, units []*checkedSessionPackage, functions
 			if f.packagePath != u.path || f.method || !supported[f.id] {
 				continue
 			}
-			position := f.fset.Position(f.fn.Pos())
+			position := f.fset.Position(f.fn.Name.Pos())
 			m := PackageFunctionMetadata{ID: f.id, Name: f.name, Result: goSemanticTypeIdentity(f.sig.Results().At(0).Type()), Exported: ast.IsExported(f.name), Document: f.file, Line: position.Line, Column: position.Column}
 			for i := 0; i < f.sig.Params().Len(); i++ {
 				m.Parameters = append(m.Parameters, goSemanticTypeIdentity(f.sig.Params().At(i).Type()))

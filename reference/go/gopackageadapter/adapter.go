@@ -139,7 +139,7 @@ func Convert(r goprovider.ResolutionManifest, metadata []goprovider.PackageMetad
 }
 func key(x goprovider.ProjectLocation) Key { return Key{x.File, x.Line, x.Column} }
 func matches(o packagedetail.Origin, l goprovider.ProjectLocation, s packagedetail.Source) bool {
-	return o.Path == l.File && o.StartLine == uint32(l.Line) && o.StartColumn == uint32(l.Column) && o.SourceIdentity == s.Identity && o.ContentDigest == s.ContentDigest
+	return o.Path == l.File && o.ByteStart == uint64(l.ByteStart) && o.ByteEnd == uint64(l.ByteEnd) && o.StartLine == uint32(l.Line) && o.StartColumn == uint32(l.Column) && o.EndLine == uint32(l.EndLine) && o.EndColumn == uint32(l.EndColumn) && o.SourceIdentity == s.Identity && o.ContentDigest == s.ContentDigest
 }
 func eq(a, b []string) bool {
 	if len(a) != len(b) {
