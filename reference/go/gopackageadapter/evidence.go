@@ -28,6 +28,10 @@ func EvidenceFrom(snapshot goprovider.DocumentSnapshot, resolution goprovider.Re
 	if err := sourceinventory.Validate(contract, project, inventory); err != nil {
 		return Evidence{}, fmt.Errorf("go_package_adapter.inventory:%w", err)
 	}
+	return evidence(snapshot, resolution, project, inventory)
+}
+
+func evidence(snapshot goprovider.DocumentSnapshot, resolution goprovider.ResolutionManifest, project, inventory []byte) (Evidence, error) {
 	envelope, err := wire.Decode(inventory)
 	if err != nil {
 		return Evidence{}, err
@@ -113,6 +117,15 @@ func EvidenceFrom(snapshot goprovider.DocumentSnapshot, resolution goprovider.Re
 		}
 	}
 	return e, nil
+}
+
+// EvidenceFromV8 derives the identical neutral provenance model from a source
+// inventory authenticated directly by Project v8.
+func EvidenceFromV8(snapshot goprovider.DocumentSnapshot, resolution goprovider.ResolutionManifest, contract contractcatalog.Contract, project, inventory []byte) (Evidence, error) {
+	if err := sourceinventory.ValidateV8(contract, project, inventory); err != nil {
+		return Evidence{}, fmt.Errorf("go_package_adapter.inventory:%w", err)
+	}
+	return evidence(snapshot, resolution, project, inventory)
 }
 
 func realizationPresent(e wire.Envelope, realization string) bool {
