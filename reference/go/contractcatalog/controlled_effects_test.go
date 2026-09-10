@@ -14,7 +14,7 @@ func TestResolveControlledEffectsContractExactPins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !contract.Validated() || contract.Pin() != (Pin{controlledEffectsModule, controlledEffectsRev}) || len(contract.Exports()) != 52 || len(contract.Imports()) != 3 {
+	if !contract.Validated() || contract.Pin() != (Pin{controlledEffectsModule, controlledEffectsRev}) || len(contract.Exports()) != 65 || len(contract.Imports()) != 3 {
 		t.Fatalf("contract=%#v exports=%d imports=%d", contract.Pin(), len(contract.Exports()), len(contract.Imports()))
 	}
 	tampered := append([]byte(nil), raw...)
