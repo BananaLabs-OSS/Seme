@@ -167,10 +167,16 @@ func ValidateRichPackageOwnership(g1 []byte, in RichPackageOwnership) error {
 	if graphHasSchema(g, sTransitionType) {
 		required["transition"] = true
 	}
+	expectedFamilyNames := map[string]string{"option": "Option", "result": "Result", "transition": "Transition"}
 	seenFamilies := map[string]bool{}
 	for _, f := range in.Families {
-		if !required[f.Kind] || seenFamilies[f.Kind] || packages[f.Package].Identity == "" || !identifier(f.Name) {
+		if !required[f.Kind] || seenFamilies[f.Kind] || packages[f.Package].Identity == "" || f.Name != expectedFamilyNames[f.Kind] {
 			return fmt.Errorf("go_projection.rich_family")
+		}
+		for _, d := range in.Declarations {
+			if d.Package == f.Package && d.Name == f.Name {
+				return fmt.Errorf("go_projection.rich_family_name_collision:%s", f.Name)
+			}
 		}
 		seenFamilies[f.Kind] = true
 	}
@@ -207,10 +213,9 @@ func planRichPackages(g1 []byte, in RichPackageOwnership) (map[string]richPackag
 		return nil, err
 	}
 	packages := map[string]RichPackage{}
-	aliases := map[string]string{}
+	aliases := richImportAliases(in.Packages)
 	for _, p := range in.Packages {
 		packages[p.Identity] = p
-		aliases[p.Identity] = p.Name
 	}
 	owners := map[string]OwnedDeclaration{}
 	plans := map[string]richPackagePlan{}
@@ -294,6 +299,22 @@ func planRichPackages(g1 []byte, in RichPackageOwnership) (map[string]richPackag
 		plans[pkg] = p
 	}
 	return plans, nil
+}
+
+func richImportAliases(packages []RichPackage) map[string]string {
+	ordered := append([]RichPackage(nil), packages...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Identity < ordered[j].Identity })
+	used := map[string]bool{"bytes": true, "log": true, "maps": true, "slices": true}
+	out := map[string]string{}
+	for _, p := range ordered {
+		alias := p.Name
+		for n := 2; used[alias]; n++ {
+			alias = p.Name + fmt.Sprint(n)
+		}
+		used[alias] = true
+		out[p.Identity] = alias
+	}
+	return out
 }
 
 func contains(xs []string, x string) bool {
