@@ -86,6 +86,18 @@ var (
 )
 
 func Emit(in Input) ([]byte, error) {
+	return emit(in, false)
+}
+
+// EmitBindableBase emits a Configuration v1 structural base that may contain
+// parameterized initializers. It is not a valid standalone v1 execution plan;
+// it is accepted only as input to Configuration v2, which must bind every
+// parameter exactly.
+func EmitBindableBase(in Input) ([]byte, error) {
+	return emit(in, true)
+}
+
+func emit(in Input, allowParameterized bool) ([]byte, error) {
 	base, err := components(in)
 	if err != nil {
 		return nil, err
@@ -229,13 +241,23 @@ func Emit(in Input) ([]byte, error) {
 		return nil, err
 	}
 	in.Artifact = out
-	if err = Validate(in); err != nil {
+	if err = validate(in, allowParameterized); err != nil {
 		return nil, fmt.Errorf("configuration.emit_validate:%w", err)
 	}
 	return out, nil
 }
 
 func Validate(in Input) error {
+	return validate(in, false)
+}
+
+// ValidateBindableBase validates the complete v1 structure while deferring
+// only the zero-parameter initializer restriction to Configuration v2.
+func ValidateBindableBase(in Input) error {
+	return validate(in, true)
+}
+
+func validate(in Input, allowParameterized bool) error {
 	base, err := components(in)
 	if err != nil {
 		return err
@@ -273,7 +295,7 @@ func Validate(in Input) error {
 			return fmt.Errorf("configuration.component:%s", x)
 		}
 	}
-	if err = validateGraph(e, base, graph); err != nil {
+	if err = validateGraph(e, base, graph, allowParameterized); err != nil {
 		return err
 	}
 	if !bytes.Equal(e.Entities[graph].Fields[id("4105")].Bytes, GraphRevision(e, graph)) {
@@ -308,7 +330,7 @@ func components(in Input) (wire.Envelope, error) {
 	return e, err
 }
 
-func validateGraph(e, base wire.Envelope, graph wire.ID) error {
+func validateGraph(e, base wire.Envelope, graph wire.ID, allowParameterized bool) error {
 	g := e.Entities[graph]
 	if g.Schema != sGraph || g.Version != 1 || !shape(g, map[wire.ID]byte{id("4100"): 7, id("4101"): 7, id("4102"): 7, id("4103"): 7, id("4104"): 7, id("4105"): 5}) {
 		return fmt.Errorf("configuration.graph_shape")
@@ -427,7 +449,7 @@ func validateGraph(e, base wire.Envelope, graph wire.ID) error {
 		}
 		owner, call := q.Fields[id("4150")].Reference, q.Fields[id("4151")].Reference
 		member, owned := members[call]
-		if !owners[owner] || !owned || member.owner != owner || member.visibility == 0 || callableInit[call] != (wire.ID{}) || !pure(base, call) || !initializerSignature(base, call) {
+		if !owners[owner] || !owned || member.owner != owner || member.visibility == 0 || callableInit[call] != (wire.ID{}) || !pure(base, call) || !initializerSignature(base, call, allowParameterized) {
 			return fmt.Errorf("configuration.initializer_owner")
 		}
 		order := q.Fields[id("4153")].Unsigned
@@ -567,9 +589,9 @@ func canonicalType(e wire.Envelope, x wire.ID) bool {
 	}
 	return false
 }
-func initializerSignature(e wire.Envelope, fn wire.ID) bool {
+func initializerSignature(e wire.Envelope, fn wire.ID, allowParameterized bool) bool {
 	q := e.Entities[fn]
-	if q.Schema != sFunction || len(q.Fields[id("9111")].List) != 0 {
+	if q.Schema != sFunction || (!allowParameterized && len(q.Fields[id("9111")].List) != 0) {
 		return false
 	}
 	r, ok := q.Fields[id("9112")]

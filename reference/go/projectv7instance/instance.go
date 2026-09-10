@@ -130,7 +130,7 @@ func components(in Inputs) error {
 	if !in.Contracts.Validated() || in.Contracts.Project().Pin() != (contractcatalog.Pin{Module: id("e000"), Revision: id("e009")}) || in.Contracts.Configuration().Pin() != (contractcatalog.Pin{Module: id("4000"), Revision: id("4005")}) {
 		return fmt.Errorf("project_v7.contracts")
 	}
-	if err := projectv6instance.Validate(in.ProjectV6); err != nil {
+	if err := projectv6instance.ValidateBindable(in.ProjectV6); err != nil {
 		return fmt.Errorf("project_v7.project_v6:%w", err)
 	}
 	if !bytes.Equal(in.BoundConfiguration.Base.ProjectV5.Composed, in.ProjectV6.ProjectV5.Composed) || !bytes.Equal(in.BoundConfiguration.Base.Artifact, in.ProjectV6.Configuration.Artifact) {
