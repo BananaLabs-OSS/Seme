@@ -15,6 +15,7 @@ var (
 	importSchema     = id("00000000000000000000000000000013")
 	packageModule    = id("0000000000000000000000000000b000")
 	packageRevision  = id("0000000000000000000000000000b001")
+	packageRevision2 = id("0000000000000000000000000000b002")
 	packageSchema    = id("0000000000000000000000000000b010")
 	interfaceSchema  = id("0000000000000000000000000000b011")
 	dependencySchema = id("0000000000000000000000000000b012")
@@ -60,7 +61,7 @@ func ValidateEnvelope(e wire.Envelope) error {
 		if q.Schema == importSchema {
 			a, ae := ref(q, fImportModule)
 			b, be := blob(q, fImportRevision)
-			if ae == nil && be == nil && a == packageModule && bytes.Equal(b, packageRevision[:]) {
+			if ae == nil && be == nil && a == packageModule && (bytes.Equal(b, packageRevision[:]) || bytes.Equal(b, packageRevision2[:])) {
 				pinned = true
 			}
 		}
