@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"seme.local/reference/goresourcemanifest"
 	"seme.local/reference/goupb09bundle"
 	"seme.local/reference/goupb09cmdload"
 )
@@ -100,12 +101,34 @@ func run(parent context.Context, args []string) error {
 			return err
 		}
 	}
+	placements := map[string]string{}
+	for _, item := range loaded.Bundle.Base.Base.Base.Resource.Model.Placements {
+		if item.Resource == "" || item.Destination == "" || placements[item.Resource] != "" {
+			return fmt.Errorf("resource_placement")
+		}
+		placements[item.Resource] = item.Destination
+	}
+	resourceSelection := make([]goresourcemanifest.Selection, 0, len(loaded.Bundle.Base.Base.Base.Resource.Model.Resources))
+	for _, item := range loaded.Bundle.Base.Base.Base.Resource.Model.Resources {
+		destination := placements[item.Identity]
+		if destination == "" {
+			return fmt.Errorf("resource_placement_missing:%s", item.Identity)
+		}
+		resourceSelection = append(resourceSelection, goresourcemanifest.Selection{Identity: item.Identity, Path: item.Path, Destination: destination, MediaType: item.MediaType, Size: item.Size, SHA256: item.SHA256})
+	}
+	resourceManifest, err := goresourcemanifest.Encode(resourceSelection)
+	if err != nil {
+		return err
+	}
+	if err = write("resources.json", resourceManifest); err != nil {
+		return err
+	}
 	for name, data := range map[string][]byte{"configuration-selection.json": loaded.ConfigurationSelection, "durable-selection.json": loaded.DurableSelection, "ordered-transport-selection.json": loaded.TransportSelection, "controlled-effects-selection.json": loaded.EffectsSelection} {
 		if err = write(name, data); err != nil {
 			return err
 		}
 	}
-	if err = write("go.mod", []byte("module "+*module+"\n\ngo 1.25\n")); err != nil {
+	if err = write("go.mod", []byte("module "+*module+"\n\ngo 1.26\n")); err != nil {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, *goTool, "test", "./...")
