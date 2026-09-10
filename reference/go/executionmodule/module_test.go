@@ -414,8 +414,26 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(36); err == nil {
+	if _, err := Declarations(37); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersion36AddsBooleanNot(t *testing.T) {
+	previous, err := Declarations(35)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(36)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa069 || current[len(previous)].Name != "BooleanNot" {
+		t.Fatalf("v36 declarations = %#v", current[len(previous):])
+	}
+	fields := current[len(previous)].Fields
+	if len(fields) != 1 || fields[0].ID != 0xa0690 || fields[0].Kind != 5 {
+		t.Fatalf("BooleanNot fields = %#v", fields)
 	}
 }
 
