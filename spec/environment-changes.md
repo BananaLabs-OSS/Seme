@@ -348,3 +348,11 @@ reference toolchain and Go 1.25.6 fixture toolchain. Test caches were redirected
 to disposable directories under `/tmp`. No software or dependency was
 installed, and no shell, SSH, editor, toolchain, global, workstation, or
 persistent environment setting was changed.
+
+## 2026-09-10 — Project Contract v3 graph-binding declarations
+
+Generated Project Contract v3 with the existing repository Go toolchain,
+checked K0 bootstrap/G1 compiler, Foundation validator, Node.js registry
+generator, and standard checksum tools. Tests used a temporary Go build cache
+under `/tmp`. No software was installed and no persistent machine, shell, or
+network configuration was changed.

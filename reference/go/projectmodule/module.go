@@ -10,6 +10,7 @@ import (
 const ModuleID = "0000000000000000000000000000e000"
 const RevisionID = "0000000000000000000000000000e001"
 const RevisionV2ID = "0000000000000000000000000000e002"
+const RevisionV3ID = "0000000000000000000000000000e003"
 
 type SourceClassification uint64
 
@@ -49,16 +50,30 @@ func Emit(out io.Writer) error {
 }
 
 func EmitVersion(out io.Writer, version int) error {
-	if version != 1 && version != 2 {
+	if version != 1 && version != 2 && version != 3 {
 		return fmt.Errorf("unsupported Project Contract version %d", version)
 	}
 	b := func(value string) string { return hex.EncodeToString([]byte(value)) }
 	exports := "rf 0000000000000000000000000000e010\nrf 0000000000000000000000000000e011\nrf 0000000000000000000000000000e100\nrf 0000000000000000000000000000e110\nrf 0000000000000000000000000000e111\nrf 0000000000000000000000000000e112\nrf 0000000000000000000000000000e113\nrf 0000000000000000000000000000e114\n"
-	revision, parent, count, moduleVersion, exportCount, extraSchemas, extraFields := RevisionID, "pc 0", 11, 1, 8, "", ""
+	revision, parent, count, moduleVersion, exportCount, extraSchemas, extraFields, packageRevision := RevisionID, "pc 0", 11, 1, 8, "", "", "0000000000000000000000000000b001"
 	if version == 2 {
 		revision, parent, count, moduleVersion, exportCount = RevisionV2ID, "pc 1\n"+RevisionID, 33, 2, 30
 		exports = v2Exports()
 		extraSchemas, extraFields = v2Entities(b)
+	}
+	if version == 3 {
+		revision, parent, count, moduleVersion, exportCount, packageRevision = RevisionV3ID, "pc 1\n"+RevisionV2ID, 41, 3, 38, "0000000000000000000000000000b002"
+		exports = v3Exports()
+		extraSchemas, extraFields = v2Entities(b)
+		v3Schemas, v3Fields := v3Entities(b)
+		extraSchemas += v3Schemas
+		extraFields += v3Fields
+	}
+	if version >= 2 {
+		// Preserve the established generated layout between export, schema, and
+		// field sections. These separators are part of the checked G1 bytes.
+		exports += "\n"
+		extraSchemas = "\n" + extraSchemas + "\n"
 	}
 	_, err := fmt.Fprintf(out, `# Generated construction projection for Project Contract v%d.
 ve 1
@@ -74,10 +89,9 @@ rf 0000000000000000000000000000e002
 rf 0000000000000000000000000000e003
 fi 00000000000000000000000000000122 li %d
 %s
-
 en 0000000000000000000000000000e002 00000000000000000000000000000013 1 2
 fi 00000000000000000000000000000130 rf 0000000000000000000000000000b000
-fi 00000000000000000000000000000131 by 0000000000000000000000000000b001
+fi 00000000000000000000000000000131 by %s
 
 en 0000000000000000000000000000e003 00000000000000000000000000000013 1 2
 fi 00000000000000000000000000000130 rf 00000000000000000000000000009000
@@ -96,11 +110,41 @@ rf 0000000000000000000000000000e111
 rf 0000000000000000000000000000e112
 rf 0000000000000000000000000000e113
 rf 0000000000000000000000000000e114
-
 %s
-
-%s%s`, version, ModuleID, revision, parent, count, ModuleID, moduleVersion, b(fmt.Sprintf("project-contract-v%d", version)), exportCount, exports, b("ProjectIdentity"), b("ProjectSnapshot"), extraSchemas, fields(b), extraFields)
+%s%s`, version, ModuleID, revision, parent, count, ModuleID, moduleVersion, b(fmt.Sprintf("project-contract-v%d", version)), exportCount, exports, packageRevision, b("ProjectIdentity"), b("ProjectSnapshot"), extraSchemas, fields(b), extraFields)
 	return err
+}
+
+func v3Entities(b func(string) string) (string, string) {
+	type field struct {
+		id, name, schema string
+		kind, card       int
+	}
+	schemas := []struct {
+		id, name string
+		fields   []field
+	}{
+		{"e017", "PackageGraphBinding", []field{{"e170", "package_graph_binding.package_graph", "b020", 5, 0}, {"e171", "package_graph_binding.source_inventory", "e016", 5, 0}, {"e172", "package_graph_binding.content_revision", "", 4, 0}}},
+		{"e018", "ProjectGraphSnapshot", []field{{"e180", "project_graph_snapshot.snapshot", "e011", 5, 0}, {"e181", "project_graph_snapshot.package_graph_binding", "e017", 5, 0}, {"e182", "project_graph_snapshot.content_revision", "", 4, 0}}},
+	}
+	var schemaOut, fieldOut string
+	for _, s := range schemas {
+		schemaOut += fmt.Sprintf("\nen 0000000000000000000000000000%s 00000000000000000000000000000010 1 2\nfi 00000000000000000000000000000100 by %s\nfi 00000000000000000000000000000101 li %d\n", s.id, b(s.name), len(s.fields))
+		for _, f := range s.fields {
+			schemaOut += fmt.Sprintf("rf 0000000000000000000000000000%s\n", f.id)
+		}
+	}
+	for _, s := range schemas {
+		for _, f := range s.fields {
+			rc, constraint := 1, ""
+			if f.schema != "" {
+				rc = 2
+				constraint = fmt.Sprintf("fi 00000000000000000000000000002001 rf 0000000000000000000000000000%s\n", f.schema)
+			}
+			fieldOut += fmt.Sprintf("\nen 0000000000000000000000000000%s 00000000000000000000000000000011 1 4\nfi 00000000000000000000000000000110 by %s\nfi 00000000000000000000000000000111 rc %d\nfi 00000000000000000000000000002000 uu %d\n%sfi 00000000000000000000000000000112 uu %d\nfi 00000000000000000000000000000113 uu 1\n", f.id, b(f.name), rc, f.kind, constraint, f.card)
+		}
+	}
+	return schemaOut, fieldOut
 }
 
 func v2Entities(b func(string) string) (string, string) {
@@ -140,6 +184,15 @@ func v2Entities(b func(string) string) (string, string) {
 
 func v2Exports() string {
 	ids := []string{"e010", "e011", "e012", "e013", "e014", "e015", "e016", "e100", "e110", "e111", "e112", "e113", "e114", "e120", "e121", "e122", "e123", "e130", "e140", "e150", "e151", "e152", "e153", "e154", "e155", "e160", "e161", "e162", "e163", "e164"}
+	var out string
+	for _, x := range ids {
+		out += fmt.Sprintf("rf 0000000000000000000000000000%s\n", x)
+	}
+	return out
+}
+
+func v3Exports() string {
+	ids := []string{"e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e100", "e110", "e111", "e112", "e113", "e114", "e120", "e121", "e122", "e123", "e130", "e140", "e150", "e151", "e152", "e153", "e154", "e155", "e160", "e161", "e162", "e163", "e164", "e170", "e171", "e172", "e180", "e181", "e182"}
 	var out string
 	for _, x := range ids {
 		out += fmt.Sprintf("rf 0000000000000000000000000000%s\n", x)
