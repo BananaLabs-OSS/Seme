@@ -35,9 +35,17 @@ func TestBuildDeterministicMultiPackageV3Chain(t *testing.T) {
 	wantG1First := a.CanonicalG1[0]
 	a.ProjectV3[0] ^= 1
 	a.CanonicalG1[0] ^= 1
+	a.Resolution.Packages[0].Files[0] = "forged.go"
 	again, err := Build(context.Background(), in)
 	if err != nil || again.ProjectV3[0] != 'S' || again.CanonicalG1[0] != wantG1First {
 		t.Fatal("result aliases pipeline state")
+	}
+	for _, p := range again.Resolution.Packages {
+		for _, name := range p.Files {
+			if name == "forged.go" {
+				t.Fatal("resolution result aliases pipeline state")
+			}
+		}
 	}
 }
 
