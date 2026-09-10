@@ -303,8 +303,8 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 7/36 (19.4%): bounded Go UPB-01 through UPB-07 are the claimed
-project-level cells, placing the Go column at 7/12 (58.3%).
+is now 8/36 (22.2%): bounded Go UPB-01 through UPB-08 are the claimed
+project-level cells, placing the Go column at 8/12 (66.7%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -355,6 +355,17 @@ Presentation v1 preserves native Go aliases without turning them into Core
 types. The source-free report, deterministic 14-artifact bundle, ordinary-Go
 projection, semantic re-lift, source-bound revision changes, fixed point, and
 atomic adversaries pass. Run `./scripts/check-go-upb-07.sh`.
+
+Go UPB-08 adds a neutral ordered request/response transport contract with
+bounded whole-frame authority, sequencing, correlation, retained replay, and
+capability-authenticated host placement. A deterministic 4,096-observation
+corpus agrees across native Go, canonical Seme, standalone Wasm, and pinned
+Pulp. The authoritative stream port separately proves exact bytes, strict
+framing under fragmentation/coalescing, retry after post-commit send failure,
+and rejection by pinned Pulp, whose synchronous opaque call carrier is not a
+TransportPort. Deterministic 16-artifact bundles, source-free reports, native
+projection, exact re-lift, fixed point, and atomic adversaries pass. Run
+`./scripts/check-go-upb-08.sh`.
 
 The first bounded foundation is now executable: [`Go Project Build v1`](spec/go-project-build-v1.md)
 lifts a native three-package Go fixture, compiles its canonical G1 with the

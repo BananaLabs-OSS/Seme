@@ -1,6 +1,5 @@
 #!/bin/sh
-# Unclaimed cumulative UPB-08 development gate. This script intentionally
-# requires the scorecard cell and evidence-gate mapping to remain empty.
+# Cumulative Go UPB-08 authority gate.
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-go-upb08.XXXXXX")
@@ -25,10 +24,4 @@ GOCACHE="$work/go-cache"; XDG_CACHE_HOME="$work/cache"; export GOCACHE XDG_CACHE
   ./goupb08pipeline ./goupb08bundle ./goupb08report ./goupb08portruntime \
   ./cmd/go-upb08-build ./cmd/go-upb08-project ./cmd/go-upb08-report)
 
-# A development gate cannot silently convert itself into a mapped claim.
-node - "$repo/conformance/upb-v1/scorecard.json" "$repo/conformance/upb-v1/evidence-gates.json" <<'NODE'
-const fs=require("fs"),score=JSON.parse(fs.readFileSync(process.argv[2])),gates=JSON.parse(fs.readFileSync(process.argv[3]));
-if(JSON.stringify(score.languages.go["UPB-08"])!=="[]")throw Error("unreviewed UPB-08 scorecard claim");
-if(Object.prototype.hasOwnProperty.call(gates.claims,"go/UPB-08"))throw Error("unreviewed UPB-08 gate mapping");
-NODE
-printf 'Go UPB-08 unclaimed cumulative development gate passes; scorecard and evidence mapping remain unchanged\n'
+printf 'Go UPB-08 seven-class authority gate passes\n'
