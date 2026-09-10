@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 )
 
 // ResolutionManifest is a provider-level record of decisions already proven
@@ -22,6 +23,38 @@ type ResolvedPackage struct {
 	// declaration was emitted into the canonical construction graph.
 	Supplemental []SemanticDeclarationMetadata
 }
+
+func consumedImport(unit *checkedSessionPackage, file *ast.File, importPath string) (bool, string) {
+	allowed := map[string]map[string]bool{
+		"maps":   {"Clone": true},
+		"slices": {"Clone": true, "Replace": true},
+		"log":    {"Print": true},
+	}
+	names, candidate := allowed[importPath]
+	if !candidate {
+		return false, ""
+	}
+	used := map[string]bool{}
+	for identifier, object := range unit.info.Uses {
+		if identifier.Pos() < file.Pos() || identifier.Pos() >= file.End() || object == nil || object.Pkg() == nil || object.Pkg().Path() != importPath {
+			continue
+		}
+		if !names[object.Name()] {
+			return false, ""
+		}
+		used[object.Name()] = true
+	}
+	if len(used) == 0 {
+		return false, ""
+	}
+	keys := make([]string, 0, len(used))
+	for name := range used {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	return true, "go-consumed:" + importPath + ":" + strings.Join(keys, ",")
+}
+
 type ResolvedDeclaration struct {
 	ID, Name string
 	Exported bool
@@ -30,6 +63,8 @@ type ResolvedDeclaration struct {
 type ResolvedImport struct {
 	Alias, Path, ResolvedPath string
 	Local                     bool
+	Consumed                  bool
+	Realization               string
 	Location                  ProjectLocation
 }
 type ProjectLocation struct {
@@ -71,7 +106,8 @@ func resolveSnapshot(snapshot DocumentSnapshot) (ResolutionManifest, []SessionDi
 				} else if dependency := importsByPath[path]; dependency != nil {
 					alias = dependency.Name()
 				}
-				p.Imports = append(p.Imports, ResolvedImport{Alias: alias, Path: path, ResolvedPath: path, Local: local[path], Location: locationSpan(position, end)})
+				consumed, realization := consumedImport(u, file, path)
+				p.Imports = append(p.Imports, ResolvedImport{Alias: alias, Path: path, ResolvedPath: path, Local: local[path], Consumed: consumed, Realization: realization, Location: locationSpan(position, end)})
 			}
 			for _, item := range file.Decls {
 				fn, ok := item.(*ast.FuncDecl)

@@ -32,6 +32,10 @@ func EvidenceFrom(snapshot goprovider.DocumentSnapshot, resolution goprovider.Re
 	if err != nil {
 		return Evidence{}, err
 	}
+	projectEnvelope, err := wire.Decode(project)
+	if err != nil {
+		return Evidence{}, err
+	}
 	tracked := map[string]packagedetail.Source{}
 	for id, entity := range envelope.Entities {
 		if entity.Schema != unitSchema {
@@ -69,7 +73,7 @@ func EvidenceFrom(snapshot goprovider.DocumentSnapshot, resolution goprovider.Re
 	if len(wanted) != len(snapshot.Files) || len(tracked) != len(snapshot.Files) {
 		return Evidence{}, fmt.Errorf("go_package_adapter.source_set")
 	}
-	e := Evidence{Sources: map[string]packagedetail.Source{}, Origins: map[Key]packagedetail.Origin{}}
+	e := Evidence{Sources: map[string]packagedetail.Source{}, Origins: map[Key]packagedetail.Origin{}, ConsumedImports: map[Key]string{}}
 	for path, data := range snapshot.Files {
 		if !wanted[path] {
 			return Evidence{}, fmt.Errorf("go_package_adapter.snapshot_extra")
@@ -94,9 +98,46 @@ func EvidenceFrom(snapshot goprovider.DocumentSnapshot, resolution goprovider.Re
 			if err := addOrigin(e, im.Location); err != nil {
 				return Evidence{}, err
 			}
+			if im.Consumed {
+				if im.Local || im.Realization == "" || !realizationPresent(projectEnvelope, im.Realization) {
+					return Evidence{}, fmt.Errorf("go_package_adapter.consumed_realization:%s", im.Path)
+				}
+				k := key(im.Location)
+				if _, exists := e.ConsumedImports[k]; exists {
+					return Evidence{}, fmt.Errorf("go_package_adapter.consumed_duplicate")
+				}
+				e.ConsumedImports[k] = im.Realization
+			} else if im.Realization != "" {
+				return Evidence{}, fmt.Errorf("go_package_adapter.realization_without_consumption")
+			}
 		}
 	}
 	return e, nil
+}
+
+func realizationPresent(e wire.Envelope, realization string) bool {
+	wantSchema := wire.ID{}
+	switch realization {
+	case "go-consumed:maps:Clone":
+		wantSchema = mustID("a043")
+	case "go-consumed:slices:Clone,Replace":
+		wantSchema = mustID("90fc")
+	case "go-consumed:log:Print":
+		for _, q := range e.Entities {
+			if q.Schema == mustID("15") && string(q.Fields[mustID("150")].Bytes) == "observability.log" {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
+	for _, q := range e.Entities {
+		if q.Schema == wantSchema {
+			return true
+		}
+	}
+	return false
 }
 func addOrigin(e Evidence, l goprovider.ProjectLocation) error {
 	s, ok := e.Sources[l.File]
@@ -107,10 +148,16 @@ func addOrigin(e Evidence, l goprovider.ProjectLocation) error {
 		return fmt.Errorf("go_package_adapter.origin_span")
 	}
 	k := key(l)
-	if _, ok = e.Origins[k]; ok {
-		return fmt.Errorf("go_package_adapter.origin_duplicate")
+	origin := packagedetail.Origin{SourceIdentity: s.Identity, Path: s.Path, ContentDigest: s.ContentDigest, ByteStart: uint64(l.ByteStart), ByteEnd: uint64(l.ByteEnd), StartLine: uint32(l.Line), StartColumn: uint32(l.Column), EndLine: uint32(l.EndLine), EndColumn: uint32(l.EndColumn)}
+	if prior, exists := e.Origins[k]; exists {
+		// Several concrete generic realizations may truthfully originate at the
+		// same generic TypeSpec. Only byte-identical provenance may be shared.
+		if prior != origin {
+			return fmt.Errorf("go_package_adapter.origin_duplicate")
+		}
+		return nil
 	}
-	e.Origins[k] = packagedetail.Origin{SourceIdentity: s.Identity, Path: s.Path, ContentDigest: s.ContentDigest, ByteStart: uint64(l.ByteStart), ByteEnd: uint64(l.ByteEnd), StartLine: uint32(l.Line), StartColumn: uint32(l.Column), EndLine: uint32(l.EndLine), EndColumn: uint32(l.EndColumn)}
+	e.Origins[k] = origin
 	return nil
 }
 func mustID(short string) wire.ID {

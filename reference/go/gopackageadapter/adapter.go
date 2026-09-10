@@ -11,8 +11,9 @@ import (
 )
 
 type Evidence struct {
-	Sources map[string]packagedetail.Source
-	Origins map[Key]packagedetail.Origin
+	Sources         map[string]packagedetail.Source
+	Origins         map[Key]packagedetail.Origin
+	ConsumedImports map[Key]string
 }
 type Key struct {
 	File         string
@@ -109,6 +110,15 @@ func Convert(r goprovider.ResolutionManifest, metadata []goprovider.PackageMetad
 			org, ok := evidence.Origins[key(im.Location)]
 			if !ok || !matches(org, im.Location, evidence.Sources[im.Location.File]) {
 				return packagedetail.Graph{}, fmt.Errorf("go_package_adapter.provenance_missing")
+			}
+			if im.Consumed {
+				if im.Local || im.Realization == "" || evidence.ConsumedImports[key(im.Location)] != im.Realization {
+					return packagedetail.Graph{}, fmt.Errorf("go_package_adapter.consumed_import")
+				}
+				continue
+			}
+			if im.Realization != "" {
+				return packagedetail.Graph{}, fmt.Errorf("go_package_adapter.import_realization")
 			}
 			class := packagedetail.External
 			if im.Local {
