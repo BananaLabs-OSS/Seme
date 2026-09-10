@@ -131,6 +131,8 @@ type context struct {
 	receivers   map[string]string
 	captures    map[string]string
 	transitions map[string]string
+	typeNames   map[string]string
+	familyNames map[string]string
 }
 type record struct {
 	name   string
@@ -846,7 +848,7 @@ func projectMutableClosureReturn(closure entity, c context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	typ, err := typeName(c.graph, typeID)
+	typ, err := typeNameRelative(c.graph, typeID, c.typeNames, c.familyNames)
 	if err != nil {
 		return "", err
 	}
@@ -1240,7 +1242,7 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		typ, err := typeName(c.graph, typeID)
+		typ, err := typeNameRelative(c.graph, typeID, c.typeNames, c.familyNames)
 		if err != nil {
 			return "", err
 		}
@@ -1254,7 +1256,7 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		typ, err := typeName(c.graph, typeID)
+		typ, err := typeNameRelative(c.graph, typeID, c.typeNames, c.familyNames)
 		if err != nil {
 			return "", err
 		}
@@ -1276,7 +1278,7 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		typ, err := typeName(c.graph, typeID)
+		typ, err := typeNameRelative(c.graph, typeID, c.typeNames, c.familyNames)
 		if err != nil {
 			return "", err
 		}
@@ -1324,7 +1326,7 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		typ, err := typeName(c.graph, typeID)
+		typ, err := typeNameRelative(c.graph, typeID, c.typeNames, c.familyNames)
 		if err != nil {
 			return "", err
 		}
@@ -1375,7 +1377,7 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		typ, err := typeName(c.graph, typeID)
+		typ, err := typeNameRelative(c.graph, typeID, c.typeNames, c.familyNames)
 		if err != nil {
 			return "", err
 		}
@@ -1570,7 +1572,7 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		result, err := typeName(c.graph, resultID)
+		result, err := typeNameRelative(c.graph, resultID, c.typeNames, c.familyNames)
 		if err != nil {
 			return "", err
 		}
@@ -1587,7 +1589,7 @@ func expr(id string, c context) (string, error) {
 			if er != nil || !identifier(name) {
 				return "", fmt.Errorf("go_projection.closure_parameter")
 			}
-			typ, er := typeName(c.graph, typeParams[i])
+			typ, er := typeNameRelative(c.graph, typeParams[i], c.typeNames, c.familyNames)
 			if er != nil {
 				return "", er
 			}
@@ -1689,7 +1691,7 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		typ, err := typeName(c.graph, typeID)
+		typ, err := typeNameRelative(c.graph, typeID, c.typeNames, c.familyNames)
 		if err != nil {
 			return "", err
 		}
@@ -1772,7 +1774,7 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("go_projection.empty_map_type: %w", err)
 		}
-		typ, err := typeName(c.graph, typeID)
+		typ, err := typeNameRelative(c.graph, typeID, c.typeNames, c.familyNames)
 		if err != nil {
 			return "", fmt.Errorf("go_projection.empty_map_type: %w", err)
 		}
@@ -1989,6 +1991,15 @@ func expressionTypeName(expressionID, bindingID string, graph map[string]entity)
 }
 
 func typeName(g map[string]entity, id string) (string, error) {
+	return typeNameRelative(g, id, nil, nil)
+}
+
+// typeNameRelative renders declaration and generic-family names relative to
+// one package without changing their canonical identities.
+func typeNameRelative(g map[string]entity, id string, names, families map[string]string) (string, error) {
+	if name := names[id]; name != "" {
+		return name, nil
+	}
 	e, ok := g[id]
 	if !ok {
 		return "", fmt.Errorf("go_projection.missing_type:%s", id)
@@ -2007,11 +2018,15 @@ func typeName(g map[string]entity, id string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		typ, err := typeName(g, value)
+		typ, err := typeNameRelative(g, value, names, families)
 		if err != nil {
 			return "", err
 		}
-		return "Option[" + typ + "]", nil
+		family := "Option"
+		if families["option"] != "" {
+			family = families["option"]
+		}
+		return family + "[" + typ + "]", nil
 	case sResultType:
 		success, err := ref(e, "00000000000000000000000000009400")
 		if err != nil {
@@ -2021,15 +2036,19 @@ func typeName(g map[string]entity, id string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		st, err := typeName(g, success)
+		st, err := typeNameRelative(g, success, names, families)
 		if err != nil {
 			return "", err
 		}
-		ft, err := typeName(g, failure)
+		ft, err := typeNameRelative(g, failure, names, families)
 		if err != nil {
 			return "", err
 		}
-		return "Result[" + st + ", " + ft + "]", nil
+		family := "Result"
+		if families["result"] != "" {
+			family = families["result"]
+		}
+		return family + "[" + st + ", " + ft + "]", nil
 	case sRecordType:
 		name, err := text(e, "00000000000000000000000000009300")
 		if err != nil || !identifier(name) {
@@ -2053,12 +2072,12 @@ func typeName(g map[string]entity, id string) (string, error) {
 		}
 		rendered := make([]string, len(parameters))
 		for i, p := range parameters {
-			rendered[i], err = typeName(g, p)
+			rendered[i], err = typeNameRelative(g, p, names, families)
 			if err != nil {
 				return "", err
 			}
 		}
-		result, err := typeName(g, resultID)
+		result, err := typeNameRelative(g, resultID, names, families)
 		if err != nil {
 			return "", err
 		}
@@ -2072,21 +2091,25 @@ func typeName(g map[string]entity, id string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		state, err := typeName(g, stateID)
+		state, err := typeNameRelative(g, stateID, names, families)
 		if err != nil {
 			return "", err
 		}
-		result, err := typeName(g, resultID)
+		result, err := typeNameRelative(g, resultID, names, families)
 		if err != nil {
 			return "", err
 		}
-		return "Transition[" + state + ", " + result + "]", nil
+		family := "Transition"
+		if families["transition"] != "" {
+			family = families["transition"]
+		}
+		return family + "[" + state + ", " + result + "]", nil
 	case sFixedArrayType:
 		element, err := ref(e, "00000000000000000000000000009f20")
 		if err != nil {
 			return "", err
 		}
-		if typ, err := typeName(g, element); err != nil || typ != "int64" {
+		if typ, err := typeNameRelative(g, element, names, families); err != nil || typ != "int64" {
 			return "", fmt.Errorf("go_projection.unsupported_array_element")
 		}
 		length, err := unsigned(e, "00000000000000000000000000009f21")
@@ -2099,7 +2122,7 @@ func typeName(g map[string]entity, id string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if typ, err := typeName(g, element); err != nil || typ != "int64" {
+		if typ, err := typeNameRelative(g, element, names, families); err != nil || typ != "int64" {
 			return "", fmt.Errorf("go_projection.unsupported_slice_element")
 		}
 		return "[]int64", nil
@@ -2112,8 +2135,8 @@ func typeName(g map[string]entity, id string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		kt, ke := typeName(g, key)
-		vt, ve := typeName(g, value)
+		kt, ke := typeNameRelative(g, key, names, families)
+		vt, ve := typeNameRelative(g, value, names, families)
 		if ke != nil || ve != nil || kt != "int64" || vt != "int64" {
 			return "", fmt.Errorf("go_projection.unsupported_map_type")
 		}

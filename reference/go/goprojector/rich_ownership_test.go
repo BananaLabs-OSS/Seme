@@ -86,3 +86,20 @@ func TestRichOwnershipValidatesUAB11WithoutGuessingIDs(t *testing.T) {
 		t.Fatal("method/receiver owner mismatch accepted")
 	}
 }
+
+func TestTypeNamesArePackageRelativeAcrossRichFamilies(t *testing.T) {
+	g := map[string]entity{
+		"state": {schema: sRecordType, fields: map[string][]string{"00000000000000000000000000009300": {"by 5 5374617465"}}},
+		"i64":   {schema: sInteger},
+		"transition": {schema: sTransitionType, fields: map[string][]string{
+			"000000000000000000000000000a0040": {"rf state"}, "000000000000000000000000000a0041": {"rf i64"},
+		}},
+		"result": {schema: sResultType, fields: map[string][]string{
+			"00000000000000000000000000009400": {"rf transition"}, "00000000000000000000000000009401": {"rf i64"},
+		}},
+	}
+	name, err := typeNameRelative(g, "result", map[string]string{"state": "application.State"}, map[string]string{"result": "model.Result", "transition": "model.Transition"})
+	if err != nil || name != "model.Result[model.Transition[application.State, int64], int64]" {
+		t.Fatalf("name=%q err=%v", name, err)
+	}
+}
