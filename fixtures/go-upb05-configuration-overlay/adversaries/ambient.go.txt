@@ -1,0 +1,10 @@
+package configuration
+
+import "os"
+
+// This nearby project state is intentionally unsupported. A future UPB-05
+// rejection gate copies it to configuration/ambient.go and requires the Go
+// provider to reject rather than invent neutral meaning for process state.
+func AmbientNamePrefix() string {
+	return os.Getenv("SEME_NAME_PREFIX")
+}

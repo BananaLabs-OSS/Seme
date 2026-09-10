@@ -6,6 +6,11 @@ remains unchanged. Configuration is explicit typed input: no environment,
 filesystem, clock, random source, package initializer, or mutable global is
 consulted.
 
+`adversaries/ambient.go.txt` is not part of the valid materialized project. It
+is a checked nearby mutation for the eventual atomic-rejection gate: copying it
+to `configuration/ambient.go` must reject rather than assigning implicit
+neutral meaning to process environment state.
+
 Initialization is observable in ordinary values. `configuration.Initialize`
 produces stage 1, `policy.Initialize` accepts only stage 1 and produces stage
 2, and `service.Initialize` finalizes stage 3 with `Ready` set. Calls made out
