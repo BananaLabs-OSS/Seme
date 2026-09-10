@@ -303,8 +303,8 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 3/36 (8.3%): bounded Go UPB-01 through UPB-03 are the claimed
-project-level cells, placing the Go column at 3/12 (25%).
+is now 4/36 (11.1%): bounded Go UPB-01 through UPB-04 are the claimed
+project-level cells, placing the Go column at 4/12 (33.3%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -321,6 +321,13 @@ evidence agree. The ecosystem dependency is intentionally metadata-only in
 this cell. UPB-04 covers typed local package boundaries; it does not by itself
 claim calls into arbitrary ecosystem packages. Run
 `./scripts/check-go-upb-03.sh`.
+
+Go UPB-04 adds complete typed declaration ownership and authenticated local
+cross-package calls without flattening the three-package project. The full
+UAB-11 application passes 2,048 canonical, standalone-Wasm, and pinned-Pulp
+observations; Package v3 projection rebuilds natively and re-lifts to exact
+canonical meaning. Arbitrary ecosystem-package calls remain outside this
+bounded claim. Run `./scripts/check-go-upb-04.sh`.
 
 The first bounded foundation is now executable: [`Go Project Build v1`](spec/go-project-build-v1.md)
 lifts a native three-package Go fixture, compiles its canonical G1 with the

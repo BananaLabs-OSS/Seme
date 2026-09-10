@@ -166,8 +166,8 @@ and use the same provider, patch, target-contract, and conformance boundaries.
 
 ## 7. Useful Project Bridge v1
 
-Status: 3/36 cells (8.3%); Go UPB-01 through UPB-03 pass all seven evidence
-classes.
+Status: 4/36 cells (11.1%); Go UPB-01 through UPB-04 pass all seven evidence
+classes, placing the Go column at 4/12 (33.3%).
 
 The completed UAB-v1 proves a bounded application semantic vocabulary. It does
 not by itself prove that Seme can preserve an ordinary project's source closure,
@@ -216,3 +216,12 @@ but deliberately not called. UPB-04 begins with typed behavior across
 authenticated local package boundaries; ecosystem-package call interoperability
 requires separate provider and realization evidence and is not implied by that
 cell.
+
+Go UPB-04 is complete for typed behavior across bounded local package
+boundaries. Package Contract v3 owns the complete canonical declaration set,
+Project Contract v5 authenticates that ownership above the pinned Project v4
+dependency graph, and strict call validation preserves arity, types, imports,
+visibility, and body containment. The full three-package UAB-11 application
+passes 2,048 observations through canonical execution, standalone Wasm, and
+pinned Pulp; authenticated projection rebuilds natively and re-lifts to exact
+canonical meaning. Ecosystem calls remain unclaimed.

@@ -379,3 +379,15 @@ projected trees, copied Pulp sources, and acceptance artifacts lived only in
 automatically removed directories under `/tmp`. No software or dependency was
 installed, and no shell, SSH, editor, toolchain, global, workstation, network,
 or persistent environment setting was changed.
+
+## 2026-09-10 — Go UPB-04 typed package completion
+
+Package v3 and Project v5 ownership, typed local cross-package validation,
+authenticated projection, deterministic reporting, and the seven-evidence
+acceptance gate reused the installed Go toolchains, Node 22, the checked Seme
+bootstrap, repository-local offline proxy, and pinned Pulp source at
+`acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. Builds, projected trees, copied
+Pulp sources, and caches lived only in automatically removed directories under
+`/tmp`. No software or dependency was installed, and no shell, SSH, editor,
+toolchain, global, workstation, network, or persistent environment setting was
+changed.
