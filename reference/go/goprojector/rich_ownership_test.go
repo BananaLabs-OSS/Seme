@@ -93,6 +93,22 @@ func TestRichOwnershipValidatesUAB11WithoutGuessingIDs(t *testing.T) {
 	if len(projected) != 3 {
 		t.Fatalf("projected packages=%d", len(projected))
 	}
+	var offsetID string
+	for _, d := range in.Declarations {
+		if d.Package == "example.test/go-uab-11/policy" && d.Name == "Offset" {
+			offsetID = d.ID
+		}
+	}
+	withAlias, err := ProjectPackagesRichWithAliases([]byte(result.CanonicalG1), in, []AliasPresentation{{Package: "example.test/go-uab-11/application", Name: "PolicyOffset", Target: offsetID, Imports: []string{"example.test/go-uab-11/policy"}}})
+	if err != nil || !strings.Contains(string(withAlias["example.test/go-uab-11/application"]), "type PolicyOffset = policy.Offset") {
+		t.Fatalf("authenticated alias projection missing: %v\n%s", err, withAlias["example.test/go-uab-11/application"])
+	}
+	if output, err := ProjectPackagesRichWithAliases([]byte(result.CanonicalG1), in, []AliasPresentation{{Package: "example.test/go-uab-11/application", Name: "State", Target: offsetID, Imports: []string{"example.test/go-uab-11/policy"}}}); err == nil || output != nil {
+		t.Fatal("alias/declaration collision accepted")
+	}
+	if output, err := ProjectPackagesRichWithAliases([]byte(result.CanonicalG1), in, []AliasPresentation{{Package: "example.test/go-uab-11/application", Name: "Forged", Target: offsetID, Imports: []string{"example.test/undeclared"}}}); err == nil || output != nil {
+		t.Fatal("alias import mismatch accepted")
+	}
 	appSource, policySource, modelSource := string(projected["example.test/go-uab-11/application"]), string(projected["example.test/go-uab-11/policy"]), string(projected["example.test/go-uab-11/model"])
 	if strings.Count(appSource, "type State struct") != 1 || strings.Contains(policySource, "type State struct") || strings.Contains(modelSource, "type State struct") {
 		t.Fatal("State ownership flattened or duplicated")
