@@ -144,6 +144,30 @@ func TestExplicitInputsReplayDeterministically(t *testing.T) {
 	}
 }
 
+func TestReplayControlledMatchesDispatchWithoutPhysicalEffects(t *testing.T) {
+	oldWriter := log.Writer()
+	oldFlags := log.Flags()
+	defer log.SetOutput(oldWriter)
+	defer log.SetFlags(oldFlags)
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	log.SetFlags(0)
+	command := controlledCommand(1, 41)
+	live := DispatchControlled(NewControlledState("match"), command)
+	if output.String() != "true\n" {
+		t.Fatalf("live effect=%q", output.String())
+	}
+	output.Reset()
+	replayed := ReplayControlled(NewControlledState("match"), command)
+	if !reflect.DeepEqual(replayed, live) || output.Len() != 0 {
+		t.Fatalf("replay=%#v live=%#v effect=%q", replayed, live, output.String())
+	}
+	duplicate := ReplayControlled(replayed.State, command)
+	if !duplicate.OK || !duplicate.Duplicate || output.Len() != 0 {
+		t.Fatalf("duplicate replay=%#v effect=%q", duplicate, output.String())
+	}
+}
+
 func TestDraw256IsTerminal(t *testing.T) {
 	oldWriter := log.Writer()
 	defer log.SetOutput(oldWriter)
