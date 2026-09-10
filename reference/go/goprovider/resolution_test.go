@@ -121,14 +121,14 @@ func TestResolutionRejectsExternalNonStandardImportWithLocation(t *testing.T) {
 
 func TestResolutionClassifiesOnlyClosedConsumedStandardImports(t *testing.T) {
 	snapshot := DocumentSnapshot{Revision: 1, ModulePath: "example.test/consumed", PackagePath: "example.test/consumed", Entry: "Apply", Files: map[string]string{"main.go": `package consumed
-import ("maps"; "slices"; "log")
-func Apply(v int64) int64 { _ = maps.Clone(map[int64]int64{1:v}); _ = slices.Replace(slices.Clone([]int64{v}),0,1,v); log.Print(true); return v }
+	import ("bytes"; "maps"; "slices"; "log")
+	func Apply(v int64) int64 { _ = bytes.Equal([]byte{0}, []byte{0}); _ = maps.Clone(map[int64]int64{1:v}); _ = slices.Replace(slices.Clone([]int64{v}),0,1,v); log.Print(true); return v }
 `}}
 	r, diagnostics := resolveSnapshot(snapshot)
 	if len(diagnostics) != 0 {
 		t.Fatalf("%#v", diagnostics)
 	}
-	want := map[string]string{"maps": "go-consumed:maps:Clone", "slices": "go-consumed:slices:Clone,Replace", "log": "go-consumed:log:Print"}
+	want := map[string]string{"bytes": "go-consumed:bytes:Equal", "maps": "go-consumed:maps:Clone", "slices": "go-consumed:slices:Clone,Replace", "log": "go-consumed:log:Print"}
 	for _, im := range r.Packages[0].Imports {
 		if !im.Consumed || im.Realization != want[im.Path] {
 			t.Fatalf("not exactly classified: %#v", im)

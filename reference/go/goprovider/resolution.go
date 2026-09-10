@@ -26,6 +26,7 @@ type ResolvedPackage struct {
 
 func consumedImport(unit *checkedSessionPackage, file *ast.File, importPath string) (bool, string) {
 	allowed := map[string]map[string]bool{
+		"bytes":  {"Equal": true},
 		"maps":   {"Clone": true},
 		"slices": {"Clone": true, "Replace": true},
 		"log":    {"Print": true},

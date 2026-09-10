@@ -127,6 +127,21 @@ func Convert(r goprovider.ResolutionManifest, metadata []goprovider.PackageMetad
 			}
 			p.Imports = append(p.Imports, packagedetail.Import{Alias: im.Alias, Requested: im.Path, Resolved: im.ResolvedPath, Class: class, Origin: org})
 		}
+		// Package-detail order is provenance order, which can differ from the
+		// provider's resolution order when one source imports several packages.
+		sort.Slice(p.Imports, func(i, j int) bool {
+			a, b := p.Imports[i], p.Imports[j]
+			if a.Origin.SourceIdentity != b.Origin.SourceIdentity {
+				return a.Origin.SourceIdentity < b.Origin.SourceIdentity
+			}
+			if a.Origin.ByteStart != b.Origin.ByteStart {
+				return a.Origin.ByteStart < b.Origin.ByteStart
+			}
+			if a.Requested != b.Requested {
+				return a.Requested < b.Requested
+			}
+			return a.Alias < b.Alias
+		})
 		want := append([]string(nil), mp.Dependencies...)
 		sort.Strings(want)
 		got := []string{}

@@ -131,6 +131,8 @@ func EvidenceFromV8(snapshot goprovider.DocumentSnapshot, resolution goprovider.
 func realizationPresent(e wire.Envelope, realization string) bool {
 	wantSchema := wire.ID{}
 	switch realization {
+	case "go-consumed:bytes:Equal":
+		wantSchema = mustID("a065")
 	case "go-consumed:maps:Clone":
 		wantSchema = mustID("a043")
 	case "go-consumed:slices:Clone,Replace":
