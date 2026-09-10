@@ -9,6 +9,7 @@ cmp "$repo/modules/ordered-transport/v1/module.g1" "$work/module.g1"
 cmp "$repo/modules/ordered-transport/v1/module.seme" "$work/module.seme"
 (cd "$repo/modules/ordered-transport/v1" && sha256sum -c module.g1.sha256 && sha256sum -c module.seme.sha256)
 "$repo/bootstrap/seme-k0-linux-amd64" "$repo/modules/foundation/v1/validator.k0" "$repo/modules/ordered-transport/v1/module.seme"
+node "$repo/scripts/semantic-module-registry.mjs" --root "$repo/modules" --out "$work/registry.json"
 if rg -qi 'http|websocket|socket|sse|messagepack|tcp|udp|filesystem|database|javascript|golang' "$repo/modules/ordered-transport/v1/module.g1"; then
 	echo 'Ordered Transport contract contains mechanism-specific vocabulary' >&2
 	exit 1

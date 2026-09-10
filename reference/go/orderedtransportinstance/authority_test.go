@@ -35,7 +35,7 @@ func TestCatalogRejectsAuthorityMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := e.Entities[id("21ec")]
+	f := e.Entities[id("110ec")]
 	n := f.Fields[id("110")]
 	n.Bytes = []byte("ordered_transport.maximum_frame_bytes.8192")
 	f.Fields[id("110")] = n

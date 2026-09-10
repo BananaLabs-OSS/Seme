@@ -34,11 +34,11 @@ type Authority struct {
 }
 
 func Authenticate(c contractcatalog.Contract) (Authority, error) {
-	if !c.Validated() || c.Pin() != (contractcatalog.Pin{Module: id("2000"), Revision: id("2001")}) {
+	if !c.Validated() || c.Pin() != (contractcatalog.Pin{Module: id("10000"), Revision: id("10001")}) {
 		return Authority{}, fmt.Errorf("ordered_transport.authority_contract")
 	}
 	e := c.Envelope()
-	schema, ok := e.Entities[id("201e")]
+	schema, ok := e.Entities[id("1010e")]
 	if !ok || schema.Schema != id("10") || schema.Version != 1 {
 		return Authority{}, fmt.Errorf("ordered_transport.authority_schema")
 	}
@@ -56,25 +56,25 @@ func Authenticate(c contractcatalog.Contract) (Authority, error) {
 		names[item.Reference] = string(n.Bytes)
 	}
 	wantNames := map[string]string{
-		"21e0": "seme.transport.receive.v1", "21e1": "seme.transport.send.v1", "21e2": "seme.transport.receive.v1.capability", "21e3": "seme.transport.send.v1.capability",
-		"21e4": "seme.transport.sequence.0.receive", "21e5": "seme.transport.sequence.1.send", "21e6": CodecIdentity, "21e7": DigestIdentity,
-		"21e8": "ordered_transport.maximum_commands.256", "21e9": "ordered_transport.maximum_events.1024", "21ea": "ordered_transport.maximum_events_per_command.4", "21eb": "ordered_transport.maximum_payload_bytes.3072", "21ec": "ordered_transport.maximum_frame_bytes.4096", "21ed": "ordered_transport.correlation_bytes.16", "21ee": "ordered_transport.maximum_stream_bytes.128",
-		"21ef": "ordered_transport.first_command_sequence.1", "21f0": "ordered_transport.first_event_sequence.1", "21f1": "ordered_transport.command_terminal_sentinel.257", "21f2": "ordered_transport.event_terminal_sentinel.1025", "21f3": "ordered_transport.duplicate_policy.exact_cached_response", "21f4": "ordered_transport.gap_policy.reject_without_buffering", "21f5": "ordered_transport.correlation_policy.unique_per_command",
-		"21f6": "ordered_transport.codec.u32le_body_length_excluding_prefix", "21f7": "ordered_transport.codec.magic.SEMEOT01", "21f8": "ordered_transport.codec.u8_frame_kind_then_pure_value_v1", "21f9": "ordered_transport.codec.exact_length_no_trailing_bytes",
+		"110e0": "seme.transport.receive.v1", "110e1": "seme.transport.send.v1", "110e2": "seme.transport.receive.v1.capability", "110e3": "seme.transport.send.v1.capability",
+		"110e4": "seme.transport.sequence.0.receive", "110e5": "seme.transport.sequence.1.send", "110e6": CodecIdentity, "110e7": DigestIdentity,
+		"110e8": "ordered_transport.maximum_commands.256", "110e9": "ordered_transport.maximum_events.1024", "110ea": "ordered_transport.maximum_events_per_command.4", "110eb": "ordered_transport.maximum_payload_bytes.3072", "110ec": "ordered_transport.maximum_frame_bytes.4096", "110ed": "ordered_transport.correlation_bytes.16", "110ee": "ordered_transport.maximum_stream_bytes.128",
+		"110ef": "ordered_transport.first_command_sequence.1", "110f0": "ordered_transport.first_event_sequence.1", "110f1": "ordered_transport.command_terminal_sentinel.257", "110f2": "ordered_transport.event_terminal_sentinel.1025", "110f3": "ordered_transport.duplicate_policy.exact_cached_response", "110f4": "ordered_transport.gap_policy.reject_without_buffering", "110f5": "ordered_transport.correlation_policy.unique_per_command",
+		"110f6": "ordered_transport.codec.u32le_body_length_excluding_prefix", "110f7": "ordered_transport.codec.magic.SEMEOT01", "110f8": "ordered_transport.codec.u8_frame_kind_then_pure_value_v1", "110f9": "ordered_transport.codec.exact_length_no_trailing_bytes",
 	}
 	for field, want := range wantNames {
 		if names[id(field)] != want {
 			return Authority{}, fmt.Errorf("ordered_transport.authority_value:%s", field)
 		}
 	}
-	for field, target := range map[string]string{"21fa": "2024", "21fb": "2020", "21fc": "2021", "21fd": "2023", "21fe": "2022"} {
+	for field, target := range map[string]string{"110fa": "10114", "110fb": "10110", "110fc": "10111", "110fd": "10113", "110fe": "10112"} {
 		f := e.Entities[id(field)]
 		constraint := f.Fields[id("111")]
 		if names[id(field)] == "" || constraint.Tag != 8 || constraint.Record[id("2001")].Tag != 6 || constraint.Record[id("2001")].Reference != id("10") || e.Entities[id(target)].Schema != id("10") {
 			return Authority{}, fmt.Errorf("ordered_transport.authority_reference:%s", field)
 		}
 	}
-	return Authority{ReceiveIdentity: names[id("21e0")], SendIdentity: names[id("21e1")], ReceiveCapability: names[id("21e2")], SendCapability: names[id("21e3")], CodecIdentity: names[id("21e6")], DigestIdentity: names[id("21e7")], MaximumCommands: MaximumCommands, MaximumEvents: MaximumEvents, MaximumEventsPerCommand: MaximumEventsPerCommand, MaximumPayloadBytes: MaximumPayloadBytes, MaximumFrameBytes: MaximumFrameBytes, CorrelationBytes: CorrelationBytes, MaximumStreamBytes: MaximumStreamBytes, FirstCommandSequence: 1, FirstEventSequence: 1, CommandTerminalSentinel: 257, EventTerminalSentinel: 1025, DuplicatePolicy: names[id("21f3")], GapPolicy: names[id("21f4")], CorrelationPolicy: names[id("21f5")], CodecLayout: [4]string{names[id("21f6")], names[id("21f7")], names[id("21f8")], names[id("21f9")]}}, nil
+	return Authority{ReceiveIdentity: names[id("110e0")], SendIdentity: names[id("110e1")], ReceiveCapability: names[id("110e2")], SendCapability: names[id("110e3")], CodecIdentity: names[id("110e6")], DigestIdentity: names[id("110e7")], MaximumCommands: MaximumCommands, MaximumEvents: MaximumEvents, MaximumEventsPerCommand: MaximumEventsPerCommand, MaximumPayloadBytes: MaximumPayloadBytes, MaximumFrameBytes: MaximumFrameBytes, CorrelationBytes: CorrelationBytes, MaximumStreamBytes: MaximumStreamBytes, FirstCommandSequence: 1, FirstEventSequence: 1, CommandTerminalSentinel: 257, EventTerminalSentinel: 1025, DuplicatePolicy: names[id("110f3")], GapPolicy: names[id("110f4")], CorrelationPolicy: names[id("110f5")], CodecLayout: [4]string{names[id("110f6")], names[id("110f7")], names[id("110f8")], names[id("110f9")]}}, nil
 }
 
 func id(s string) wire.ID {
