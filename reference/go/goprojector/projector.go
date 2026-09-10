@@ -570,7 +570,7 @@ func projectBlock(id string, c context) (string, error) {
 			}
 			name, err := text(binding, "00000000000000000000000000009d00")
 			if err != nil || !identifier(name) {
-				return "", fmt.Errorf("go_projection.invalid_local_name")
+				return "", fmt.Errorf("go_projection.invalid_local_name:%s:%q", bindingID, name)
 			}
 			name = availableLocalName(name, c)
 			initializerID, err := ref(binding, "00000000000000000000000000009d02")

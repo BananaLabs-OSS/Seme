@@ -112,6 +112,9 @@ func Apply(v int64) int64 {
 	if !result.Valid {
 		t.Fatalf("parallel assignment rejected: %#v", result.Diagnostics)
 	}
+	if strings.Contains(result.CanonicalG1, "706172616c6c656c2e") || !strings.Contains(result.CanonicalG1, "73656d655f706172616c6c656c5f") {
+		t.Fatal("parallel temporaries are not identifier-safe canonical bindings")
+	}
 	seen := map[string]bool{}
 	for _, line := range strings.Split(result.CanonicalG1, "\n") {
 		fields := strings.Fields(line)
