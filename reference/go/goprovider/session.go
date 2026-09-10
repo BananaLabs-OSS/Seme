@@ -65,6 +65,9 @@ type PackageMetadata struct {
 	Dependencies []string
 	Members      []PackageFunctionMetadata
 	Functions    []PackageFunctionMetadata
+	// Supplemental owns canonical declarations represented by Package v3 but
+	// not by the Package v2 function-member surface.
+	Supplemental []SemanticDeclarationMetadata
 }
 type PackageFunctionMetadata struct {
 	ID, Name     string
@@ -73,6 +76,26 @@ type PackageFunctionMetadata struct {
 	Exported     bool
 	Document     string
 	Line, Column int
+}
+
+type SemanticDeclarationKind string
+
+const (
+	SemanticRecord             SemanticDeclarationKind = "record"
+	SemanticInterface          SemanticDeclarationKind = "interface"
+	SemanticMethod             SemanticDeclarationKind = "method"
+	SemanticGenericRealization SemanticDeclarationKind = "generic-realization"
+)
+
+// SemanticDeclarationMetadata is derived from the same typed objects and AST
+// positions used to emit CanonicalG1. Declaration is the emitted canonical
+// identity; Package is the Go package path, not a guessed wire identity.
+type SemanticDeclarationMetadata struct {
+	Declaration, Package, Name, GenericDefinition string
+	Kind                                          SemanticDeclarationKind
+	Exported                                      bool
+	Origin                                        ProjectLocation
+	ReferencedImports                             []string
 }
 
 // IncrementalSession retains only the most recent valid canonical graph while
@@ -117,6 +140,7 @@ func (session *IncrementalSession) Apply(snapshot DocumentSnapshot) SessionResul
 	}
 	valid := graph != ""
 	if valid {
+		attachResolutionOwnership(&resolution, packages)
 		session.lastValidRevision = snapshot.Revision
 		session.lastValidGraph = graph
 		session.lastValidSources = cloneSources(sources)
@@ -133,6 +157,16 @@ func (session *IncrementalSession) Apply(snapshot DocumentSnapshot) SessionResul
 	}
 }
 
+func attachResolutionOwnership(resolution *ResolutionManifest, packages []PackageMetadata) {
+	byName := make(map[string][]SemanticDeclarationMetadata, len(packages))
+	for _, item := range packages {
+		byName[item.Name] = item.Supplemental
+	}
+	for i := range resolution.Packages {
+		resolution.Packages[i].Supplemental = cloneSemanticDeclarations(byName[resolution.Packages[i].Name])
+	}
+}
+
 func clonePackageMetadata(in []PackageMetadata) []PackageMetadata {
 	out := make([]PackageMetadata, len(in))
 	for i, p := range in {
@@ -140,6 +174,16 @@ func clonePackageMetadata(in []PackageMetadata) []PackageMetadata {
 		out[i].Dependencies = append([]string(nil), p.Dependencies...)
 		out[i].Members = clonePackageFunctions(p.Members)
 		out[i].Functions = clonePackageFunctions(p.Functions)
+		out[i].Supplemental = cloneSemanticDeclarations(p.Supplemental)
+	}
+	return out
+}
+
+func cloneSemanticDeclarations(in []SemanticDeclarationMetadata) []SemanticDeclarationMetadata {
+	out := make([]SemanticDeclarationMetadata, len(in))
+	for i := range in {
+		out[i] = in[i]
+		out[i].ReferencedImports = append([]string(nil), in[i].ReferencedImports...)
 	}
 	return out
 }
@@ -617,6 +661,10 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	})})
 	revision := stableID("session-revision", snapshot.PackagePath, strconv.FormatUint(snapshot.Revision, 10))
 	metadata := buildPackageMetadata(snapshot.PackagePath, units, functions, supportedFunctions)
+	if diagnostic := attachSemanticOwnership(metadata, units, functions, instances); diagnostic != nil {
+		diagnostics = append(diagnostics, *diagnostic)
+		return "", nil, nil, sortedDiagnostics(diagnostics)
+	}
 	return composeExecutionG1(moduleG1, revision, instances), sources, metadata, sortedDiagnostics(diagnostics)
 }
 
