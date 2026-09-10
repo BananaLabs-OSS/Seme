@@ -75,7 +75,6 @@ func ValidateEnvelope(e wire.Envelope) error {
 		return err
 	}
 	owners := map[wire.ID]wire.ID{}
-	effectOwners := map[wire.ID]wire.ID{}
 	count := 0
 	for pid, p := range e.Entities {
 		if p.Schema != packageSchema {
@@ -135,10 +134,6 @@ func ValidateEnvelope(e wire.Envelope) error {
 					}
 				}
 				if g.schema == effectSchema {
-					if prior, yes := effectOwners[x]; yes && prior != pid {
-						return fmt.Errorf("package_instance.effect_owned_twice:%s", x)
-					}
-					effectOwners[x] = pid
 					if err := validateEffect(e, target); err != nil {
 						return at(x, err)
 					}

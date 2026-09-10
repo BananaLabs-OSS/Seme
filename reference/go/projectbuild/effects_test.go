@@ -36,7 +36,7 @@ func TestDeriveEffectsUsesDirectCallableOwnership(t *testing.T) {
 	}
 }
 
-func TestDeriveEffectsSupportsReceiverCallablesAndRejectsAmbiguity(t *testing.T) {
+func TestDeriveEffectsSupportsReceiverCallablesAndSharedRequirements(t *testing.T) {
 	methodSchema := mustID("0000000000000000000000000000a002")
 	invokeSchema := mustID("000000000000000000000000000090f1")
 	effectSchema := mustID("00000000000000000000000000000015")
@@ -60,8 +60,9 @@ func TestDeriveEffectsSupportsReceiverCallablesAndRejectsAmbiguity(t *testing.T)
 	root.Fields[effectTestID(29)] = wire.Value{Tag: 7, List: []wire.Value{{Tag: 6, Reference: method}, {Tag: 6, Reference: other}}}
 	e.Entities[program] = root
 	packages = append(packages, goprovider.PackageMetadata{Name: "example/other", Supplemental: []goprovider.SemanticDeclarationMetadata{{Declaration: other.String(), Kind: goprovider.SemanticMethod}}})
-	if _, err = deriveEffects(e, packages); err == nil || !strings.Contains(err.Error(), "effect_multiple_owners") {
-		t.Fatalf("shared effect accepted: %v", err)
+	got, err = deriveEffects(e, packages)
+	if err != nil || len(got["example/model"]) != 1 || len(got["example/other"]) != 1 || got["example/model"][0] != effect || got["example/other"][0] != effect {
+		t.Fatalf("shared effect requirements=%#v err=%v", got, err)
 	}
 }
 

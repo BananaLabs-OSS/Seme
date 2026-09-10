@@ -101,7 +101,7 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 		return nil, err
 	}
 	functionOwners := map[wire.ID]string{}
-	effectOwners := map[wire.ID]string{}
+	effectClaims := map[wire.ID]bool{}
 	for _, p := range packages {
 		for _, x := range p.Interfaces {
 			if owner, found := functionOwners[x.Function]; found && owner != p.Name {
@@ -182,13 +182,10 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 			if i > 0 && effect == effects[i-1] {
 				return nil, fmt.Errorf("project_emitter.effect_duplicate:%s", effect)
 			}
-			if owner, exists := effectOwners[effect]; exists {
-				return nil, fmt.Errorf("project_emitter.effect_multiple_owners:%s:%s:%s", effect, owner, p.Name)
-			}
 			if err := validateEffect(entities, effect); err != nil {
 				return nil, err
 			}
-			effectOwners[effect] = p.Name
+			effectClaims[effect] = true
 		}
 		if err := put(entities, wire.Entity{ID: pid, Schema: packageSchema, Version: 1, Fields: map[wire.ID]wire.Value{
 			id("0000000000000000000000000000b100"): blob([]byte(p.Name)), id("0000000000000000000000000000b101"): blob(nil),
@@ -209,7 +206,7 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 		if entity.Schema != effectSchema {
 			continue
 		}
-		if _, owned := effectOwners[eid]; !owned {
+		if !effectClaims[eid] {
 			return nil, fmt.Errorf("project_emitter.effect_unowned:%s", eid)
 		}
 	}

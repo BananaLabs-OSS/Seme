@@ -153,7 +153,7 @@ func TestRejectsFunctionOwnedByTwoPackages(t *testing.T) {
 	}
 }
 
-func TestValidatesEffectCapabilityAndUniqueOwnership(t *testing.T) {
+func TestValidatesEffectCapabilityAndSharedRequirements(t *testing.T) {
 	e := valid()
 	first := id("20000000000000000000000000000000")
 	effect := id("71000000000000000000000000000000")
@@ -189,8 +189,8 @@ func TestValidatesEffectCapabilityAndUniqueOwnership(t *testing.T) {
 	q = e.Entities[second]
 	q.Fields[fid(0xb101)] = wire.Value{Tag: 5, Bytes: r}
 	e.Entities[second] = q
-	if err := ValidateEnvelope(e); err == nil || !strings.Contains(err.Error(), "effect_owned_twice") {
-		t.Fatalf("multiply-owned effect accepted: %v", err)
+	if err := ValidateEnvelope(e); err != nil {
+		t.Fatalf("shared effect requirement rejected: %v", err)
 	}
 }
 
