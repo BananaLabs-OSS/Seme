@@ -22,7 +22,7 @@ import (
 // Keep this carrier bound synchronized with the exported Seme Pure Value ABI
 // ceiling. This runner is copied into a pinned Pulp module and therefore cannot
 // import Seme's Go package.
-const maximumPureValueHexLineSize = 2*(128<<10) + 4096
+const maximumPureValueHexLineSize = 2*(256<<10) + 4096
 
 var observations []bool
 
