@@ -178,10 +178,9 @@ func TestEmitOwnsExactCanonicalEffectsAndRejectsForgeries(t *testing.T) {
 	}
 
 	for name, mutate := range map[string]func(*Input){
-		"unowned":         func(x *Input) { x.Packages[0].Effects = nil },
-		"duplicate":       func(x *Input) { x.Packages[0].Effects = []wire.ID{effect, effect} },
-		"foreign":         func(x *Input) { x.Packages[0].Effects = []wire.ID{stableID("test", "foreign")} },
-		"multiple owners": func(x *Input) { x.Packages[1].Effects = []wire.ID{effect} },
+		"unowned":   func(x *Input) { x.Packages[0].Effects = nil },
+		"duplicate": func(x *Input) { x.Packages[0].Effects = []wire.ID{effect, effect} },
+		"foreign":   func(x *Input) { x.Packages[0].Effects = []wire.ID{stableID("test", "foreign")} },
 	} {
 		t.Run(name, func(t *testing.T) {
 			bad := in
@@ -192,4 +191,36 @@ func TestEmitOwnsExactCanonicalEffectsAndRejectsForgeries(t *testing.T) {
 			}
 		})
 	}
+	shared := in
+	shared.Packages = append([]Package(nil), in.Packages...)
+	shared.Packages[1].Effects = []wire.ID{effect}
+	sharedOut, err := Emit(set, shared)
+	if err != nil || len(sharedOut) == 0 {
+		t.Fatalf("shared package requirement rejected: %v", err)
+	}
+	sharedAgain, err := Emit(set, shared)
+	if err != nil || !bytes.Equal(sharedOut, sharedAgain) {
+		t.Fatal("shared effect requirements were not deterministic")
+	}
+	malformed := in
+	malformed.Execution.Entities = cloneExecutionEntities(in.Execution.Entities)
+	broken := malformed.Execution.Entities[effect]
+	delete(broken.Fields, id("00000000000000000000000000000151"))
+	malformed.Execution.Entities[effect] = broken
+	if out, err := Emit(set, malformed); err == nil || out != nil {
+		t.Fatalf("malformed effect accepted: %v", err)
+	}
+}
+
+func cloneExecutionEntities(in map[wire.ID]wire.Entity) map[wire.ID]wire.Entity {
+	out := make(map[wire.ID]wire.Entity, len(in))
+	for identity, entity := range in {
+		fields := make(map[wire.ID]wire.Value, len(entity.Fields))
+		for field, value := range entity.Fields {
+			fields[field] = value
+		}
+		entity.Fields = fields
+		out[identity] = entity
+	}
+	return out
 }

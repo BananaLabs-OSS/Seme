@@ -126,7 +126,7 @@ func deriveEffects(execution wire.Envelope, packages []goprovider.PackageMetadat
 		}
 	}
 	result := map[string][]wire.ID{}
-	effectOwner := map[wire.ID]string{}
+	effectClaims := map[wire.ID]map[string]bool{}
 	callables := make([]wire.ID, 0, len(functionOwners))
 	for function := range functionOwners {
 		callables = append(callables, function)
@@ -162,12 +162,13 @@ func deriveEffects(execution wire.Envelope, packages []goprovider.PackageMetadat
 				if !ok || value.Tag != 6 {
 					return nil, fmt.Errorf("project_build.effect_invoke_shape:%s", current)
 				}
-				prior, exists := effectOwner[value.Reference]
-				if exists && prior != owner {
-					return nil, fmt.Errorf("project_build.effect_multiple_owners:%s", value.Reference)
+				claims := effectClaims[value.Reference]
+				if claims == nil {
+					claims = map[string]bool{}
+					effectClaims[value.Reference] = claims
 				}
-				if !exists {
-					effectOwner[value.Reference] = owner
+				if !claims[owner] {
+					claims[owner] = true
 					result[owner] = append(result[owner], value.Reference)
 				}
 			}
@@ -182,7 +183,7 @@ func deriveEffects(execution wire.Envelope, packages []goprovider.PackageMetadat
 	}
 	sort.Slice(effects, func(i, j int) bool { return bytes.Compare(effects[i][:], effects[j][:]) < 0 })
 	for _, identity := range effects {
-		if _, ok := effectOwner[identity]; !ok {
+		if len(effectClaims[identity]) == 0 {
 			return nil, fmt.Errorf("project_build.effect_unowned:%s", identity)
 		}
 	}
