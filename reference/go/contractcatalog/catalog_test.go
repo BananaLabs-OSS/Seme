@@ -201,6 +201,35 @@ func TestResolveProjectContractSetV6AuthenticatesConfiguration(t *testing.T) {
 	}
 }
 
+func TestResolveProjectContractSetV7AuthenticatesBoundConfiguration(t *testing.T) {
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	f := read("../../../modules/foundation/v1/module.seme")
+	e := read("../../../modules/execution/v35/module.seme")
+	p := read("../../../modules/package/v3/module.seme")
+	d := read("../../../modules/dependency/v1/module.seme")
+	c := read("../../../modules/configuration/v2/module.seme")
+	r := read("../../../modules/project/v7/module.seme")
+	set, err := ResolveProjectContractSetV7(f, e, p, d, c, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Validated() || set.Configuration().Pin() != (Pin{configurationModule, configurationRevV2}) || set.Project().Pin() != (Pin{projectModule, projectRevV7}) {
+		t.Fatal("wrong v7 pins")
+	}
+	if got, err := ResolveProjectContractSetV7(f, e, p, d, read("../../../modules/configuration/v1/module.seme"), r); err == nil || got.Validated() {
+		t.Fatal("v1 configuration substitution accepted")
+	}
+	if got, err := ResolveProjectContractSetV7(f, e, p, d, c, read("../../../modules/project/v6/module.seme")); err == nil || got.Validated() {
+		t.Fatal("v6 project substitution accepted")
+	}
+}
+
 func TestResolveProjectContractSetV3RejectsMutations(t *testing.T) {
 	e, _, _ := artifacts(t)
 	p, _ := os.ReadFile("../../../modules/package/v2/module.seme")
