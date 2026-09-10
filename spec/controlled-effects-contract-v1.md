@@ -17,12 +17,17 @@ deterministic project behavior:
   corresponding Execution effect, its Boolean payload type, and a delivery
   policy.
 
-`ReplayStep` records command sequence, exact clock sample, random draw, and
-effect value. `ControlledReplay` authenticates the initial seed, ordered steps,
-transcript digest, duplicate policy, and rejection policy.
-`ControlledEffectsBounds` declares finite step, clock, seed, draw, and effect
-limits. `ControlledEffectsPlan` binds these authorities to exact apply and
-replay functions and a content revision.
+`ReplayStep` records command sequence, exact clock sample, signed random
+before/after/draw values, the unsigned draw ordinal, effect value, the exact
+canonical command, and SHA-256 evidence for the response, ordered events, and
+state before/after. `ControlledReplay` authenticates the initial seed, exact
+canonical initial state and its SHA-256, ordered steps, transcript digest,
+duplicate policy, and rejection policy. Digests authenticate derived evidence;
+they never substitute for the initial state or command bytes needed to replay.
+`ControlledEffectsBounds` declares finite step, clock, seed, draw, effect,
+command, initial-state, and total-transcript limits. `ControlledEffectsPlan`
+binds these authorities to exact apply and replay functions and a content
+revision.
 
 An instance must reject missing, duplicated, inconsistent, malformed, or
 over-limit authority. Ambient time and randomness have no meaning under this
