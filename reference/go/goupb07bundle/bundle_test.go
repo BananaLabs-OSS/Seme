@@ -126,6 +126,8 @@ func setArtifact(a *Artifacts, n string, b []byte) {
 		a.ProjectV9 = b
 	case "durable-state-v1.seme":
 		a.Durable = b
+	case "source-presentation-v1.seme":
+		a.Presentation = b
 	case "project-v10.seme":
 		a.ProjectV10 = b
 	}

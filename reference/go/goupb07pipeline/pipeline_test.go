@@ -16,9 +16,9 @@ func TestBuildRejectsUnauthenticatedWithoutPartial(t *testing.T) {
 	}
 }
 func TestPublishCreateOnlyPreservesDetachedResources(t *testing.T) {
-	r := Result{Durable: []byte("durable"), ProjectV10: []byte("v10")}
+	r := Result{Durable: []byte("durable"), Presentation: []byte("presentation"), ProjectV10: []byte("v10")}
 	for _, f := range artifacts(r) {
-		if f.name != "durable-state-v1.seme" && f.name != "project-v10.seme" {
+		if f.name != "durable-state-v1.seme" && f.name != "source-presentation-v1.seme" && f.name != "project-v10.seme" {
 			set(&r, f.name, []byte(f.name))
 		}
 	}
@@ -30,14 +30,14 @@ func TestPublishCreateOnlyPreservesDetachedResources(t *testing.T) {
 		t.Fatal(err)
 	}
 	m, err := os.ReadFile(filepath.Join(d, "COMPLETE.sha256"))
-	if err != nil || !bytes.Contains(m, []byte("durable-state-v1.seme ")) || !bytes.Contains(m, []byte("project-v10.seme ")) || !bytes.Contains(m, []byte("blobs/")) {
+	if err != nil || !bytes.Contains(m, []byte("durable-state-v1.seme ")) || !bytes.Contains(m, []byte("source-presentation-v1.seme ")) || !bytes.Contains(m, []byte("project-v10.seme ")) || !bytes.Contains(m, []byte("blobs/")) {
 		t.Fatal("manifest", err)
 	}
-	if bytes.Count(m, []byte("\n")) != 16 { // header + 13 artifacts + two blobs
+	if bytes.Count(m, []byte("\n")) != 17 { // header + 14 artifacts + two blobs
 		t.Fatalf("completion entries=%q", m)
 	}
 	entries, err := os.ReadDir(d)
-	if err != nil || len(entries) != 15 { // 13 artifacts, COMPLETE, blobs directory
+	if err != nil || len(entries) != 16 { // 14 artifacts, COMPLETE, blobs directory
 		t.Fatalf("bundle shape entries=%d err=%v", len(entries), err)
 	}
 	blobs, err := os.ReadDir(filepath.Join(d, "blobs"))
@@ -63,6 +63,15 @@ func TestPublishCreateOnlyPreservesDetachedResources(t *testing.T) {
 	}
 	if _, err = os.Stat(p); !os.IsNotExist(err) {
 		t.Fatal("partial remained")
+	}
+	missingPresentation := r
+	missingPresentation.Presentation = nil
+	missingPath := filepath.Join(filepath.Dir(d), "missing-presentation")
+	if err = Publish(missingPath, missingPresentation); err == nil {
+		t.Fatal("accepted missing presentation")
+	}
+	if _, err = os.Stat(missingPath); !os.IsNotExist(err) {
+		t.Fatal("missing-presentation partial remained")
 	}
 	forged := r
 	forged.Base.Store.Blobs = append([]goresourceadapter.Blob(nil), r.Base.Store.Blobs...)

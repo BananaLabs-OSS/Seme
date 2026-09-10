@@ -37,6 +37,10 @@ func ProjectPackagesV3(g1 []byte, contracts contractcatalog.ProjectContractSetV5
 // ProjectPackagesV4 derives projection ownership from a Package-v4 artifact
 // authenticated by the one-run Execution-v36/Project-v8 contract set.
 func ProjectPackagesV4(g1 []byte, contracts contractcatalog.ProjectContractSetV8, packageV2, packageV4 []byte) (map[string][]byte, error) {
+	return ProjectPackagesV4WithAliases(g1, contracts, packageV2, packageV4, nil)
+}
+
+func ProjectPackagesV4WithAliases(g1 []byte, contracts contractcatalog.ProjectContractSetV8, packageV2, packageV4 []byte, aliases []AliasPresentation) (map[string][]byte, error) {
 	if err := packagev3instance.ValidateV4(contracts, packageV2, packageV4); err != nil {
 		return nil, fmt.Errorf("go_projection.package_v4:%w", err)
 	}
@@ -49,7 +53,7 @@ func ProjectPackagesV4(g1 []byte, contracts contractcatalog.ProjectContractSetV8
 		return nil, err
 	}
 	NormalizeRichPackageOwnership(&ownership)
-	return ProjectPackagesRich(g1, ownership)
+	return ProjectPackagesRichWithAliases(g1, ownership, aliases)
 }
 
 func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
