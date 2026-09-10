@@ -375,6 +375,19 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 	if !ok {
 		return wire.ID{}, false
 	}
+	if e.Schema == id(0x90b0) || e.Schema == id(0x9021) || e.Schema == id(0x90b1) || e.Schema == id(0x90c1) || e.Schema == id(0xa069) {
+		var boolean wire.ID
+		for candidate, entity := range g.Entities {
+			if entity.Schema != id(0x9020) {
+				continue
+			}
+			if boolean != (wire.ID{}) {
+				return wire.ID{}, false
+			}
+			boolean = candidate
+		}
+		return boolean, boolean != (wire.ID{})
+	}
 	if e.Schema == id(0x9070) {
 		t, err := field(e, 0x9701)
 		return t.Reference, err == nil && t.Tag == 6 && g.Entities[t.Reference].Schema == id(0x9010)
@@ -1073,6 +1086,22 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			return Value{}, fmt.Errorf("canonicaleval.bool_literal")
 		}
 		return Value{Kind: "bool", Bool: v.Tag == 2}, nil
+	case id(0xa069):
+		if len(e.Fields) != 1 {
+			return Value{}, fmt.Errorf("canonicaleval.boolean_not_fields")
+		}
+		valueID, er := refField(0xa0690)
+		if er != nil {
+			return Value{}, fmt.Errorf("canonicaleval.boolean_not_fields")
+		}
+		value, er := eval(g, valueID, env, budget-1)
+		if er != nil {
+			return Value{}, fmt.Errorf("canonicaleval.boolean_not:%w", er)
+		}
+		if value.Kind != "bool" {
+			return Value{}, fmt.Errorf("canonicaleval.boolean_not_type")
+		}
+		return Value{Kind: "bool", Bool: !value.Bool}, nil
 	case id(0x9014):
 		l, r, er := bin(0x9140, 0x9141)
 		if er != nil {
