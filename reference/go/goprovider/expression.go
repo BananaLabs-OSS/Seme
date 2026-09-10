@@ -872,10 +872,21 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return &goExpression{kind: kind, local: local}, nil
 		}
-		if object, ok := info.Uses[expression].(*types.Const); ok && object.Type() == types.Typ[types.UntypedBool] {
-			return &goExpression{kind: goBooleanLiteral, boolean: constant.BoolVal(object.Val())}, nil
+		if object, ok := info.Uses[expression].(*types.Const); ok {
+			switch object.Val().Kind() {
+			case constant.Int:
+				value, exact := constant.Int64Val(object.Val())
+				if !exact {
+					return nil, fmt.Errorf("expression.constant_overflow")
+				}
+				return &goExpression{kind: goIntegerLiteral, integer: uint64(value)}, nil
+			case constant.Bool:
+				return &goExpression{kind: goBooleanLiteral, boolean: constant.BoolVal(object.Val())}, nil
+			case constant.String:
+				return &goExpression{kind: goStringLiteral, text: constant.StringVal(object.Val())}, nil
+			}
 		}
-		return nil, fmt.Errorf("expression.unresolved_parameter")
+		return nil, fmt.Errorf("expression.unresolved_parameter:%s", expression.Name)
 	case *ast.BasicLit:
 		if expression.Kind == token.STRING {
 			value, err := strconv.Unquote(expression.Value)
@@ -914,7 +925,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		case token.EQL:
 			if isGoStringExpression(left, info) && isGoStringExpression(right, info) {
 				kind = goStringEqual
-			} else if isGoIntegerExpression(left, info) && isGoIntegerExpression(right, info) && stableIntegerComparisonOperand(left) && stableIntegerComparisonOperand(right) {
+			} else if isGoIntegerExpression(left, info) && isGoIntegerExpression(right, info) && stableIntegerComparisonOperand(left, info) && stableIntegerComparisonOperand(right, info) {
 				kind = goBooleanAnd
 			} else {
 				return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
@@ -931,7 +942,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			if isGoStringExpression(left, info) && isGoStringExpression(right, info) {
 				kind = goStringEqual
 				negate = true
-			} else if !isGoIntegerExpression(left, info) || !isGoIntegerExpression(right, info) || !stableIntegerComparisonOperand(left) || !stableIntegerComparisonOperand(right) {
+			} else if !isGoIntegerExpression(left, info) || !isGoIntegerExpression(right, info) || !stableIntegerComparisonOperand(left, info) || !stableIntegerComparisonOperand(right, info) {
 				return nil, fmt.Errorf("expression.unsupported_integer_not_equal_operands")
 			}
 		default:
@@ -1102,6 +1113,9 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
 		}
 		if ok && identifier.Name == "int64" && info.Uses[identifier] == types.Universe.Lookup("int64") && len(expression.Args) == 1 {
+			if isInt64(info.TypeOf(expression.Args[0])) {
+				return analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+			}
 			if value := info.Types[expression.Args[0]].Value; value != nil && value.Kind() == constant.Int {
 				if signed, exact := constant.Int64Val(value); exact {
 					return &goExpression{kind: goIntegerLiteral, integer: uint64(signed)}, nil
@@ -1495,6 +1509,25 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 	case *ast.SelectorExpr:
 		selection := info.Selections[expression]
 		if selection == nil {
+			qualifier, qualified := ast.Unparen(expression.X).(*ast.Ident)
+			_, imported := info.Uses[qualifier].(*types.PkgName)
+			object, constantOK := info.Uses[expression.Sel].(*types.Const)
+			if qualified && imported && constantOK {
+				switch object.Val().Kind() {
+				case constant.Int:
+					value, exact := constant.Int64Val(object.Val())
+					if !exact {
+						return nil, fmt.Errorf("expression.imported_constant_overflow")
+					}
+					return &goExpression{kind: goIntegerLiteral, integer: uint64(value)}, nil
+				case constant.Bool:
+					return &goExpression{kind: goBooleanLiteral, boolean: constant.BoolVal(object.Val())}, nil
+				case constant.String:
+					return &goExpression{kind: goStringLiteral, text: constant.StringVal(object.Val())}, nil
+				default:
+					return nil, fmt.Errorf("expression.imported_constant_kind")
+				}
+			}
 			return nil, fmt.Errorf("expression.unsupported_selector")
 		}
 		field, ok := selection.Obj().(*types.Var)
@@ -1954,15 +1987,28 @@ func isGoIntegerExpression(expression ast.Expr, info *types.Info) bool {
 // Rewriting integer inequality through ordering would duplicate evaluation of
 // each operand. Until canonical let-binding is available, accept only stable
 // source operands for which that duplication is observationally exact.
-func stableIntegerComparisonOperand(expression ast.Expr) bool {
+func stableIntegerComparisonOperand(expression ast.Expr, info *types.Info) bool {
 	switch value := ast.Unparen(expression).(type) {
 	case *ast.BasicLit, *ast.Ident:
 		return true
 	case *ast.SelectorExpr:
-		return stableIntegerComparisonOperand(value.X)
+		return stableIntegerComparisonOperand(value.X, info)
+	case *ast.IndexExpr:
+		return stableIntegerComparisonOperand(value.X, info) && stableIntegerComparisonOperand(value.Index, info)
+	case *ast.BinaryExpr:
+		return (value.Op == token.ADD || value.Op == token.SUB || value.Op == token.MUL) && stableIntegerComparisonOperand(value.X, info) && stableIntegerComparisonOperand(value.Y, info)
 	case *ast.CallExpr:
 		identifier, ok := ast.Unparen(value.Fun).(*ast.Ident)
-		return ok && identifier.Name == "len" && len(value.Args) == 1 && stableIntegerComparisonOperand(value.Args[0])
+		if !ok || len(value.Args) != 1 {
+			return false
+		}
+		if identifier.Name == "len" && info.Uses[identifier] == types.Universe.Lookup("len") {
+			return stableIntegerComparisonOperand(value.Args[0], info)
+		}
+		if identifier.Name == "int64" && info.Uses[identifier] == types.Universe.Lookup("int64") {
+			return stableIntegerComparisonOperand(value.Args[0], info)
+		}
+		return false
 	default:
 		return false
 	}
