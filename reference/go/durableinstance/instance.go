@@ -21,6 +21,11 @@ const CodecIdentity = "seme.durable-state.canonical.v1"
 const LoadEffectIdentity = "seme.storage.load.v1"
 const CompareExchangeEffectIdentity = "seme.storage.compare_exchange.v1"
 
+type operationAuthority struct {
+	loadEffect, compareExchangeEffect, loadCapability, compareExchangeCapability, codec, tokenPolicy string
+	loadSequence, compareExchangeSequence                                                            uint64
+}
+
 type Model struct {
 	Identity, PortIdentity                                                                          string
 	StateOwner, PortOwner, Version1Type, Version2Type, ErrorType, Validator1, Validator2, Migration wire.ID
@@ -55,6 +60,10 @@ func emit(in Inputs) ([]byte, error) {
 	}
 	if !sameAuthorities(in.Contracts, in.ProjectV9.Contracts) {
 		return nil, fmt.Errorf("durable_instance.project_authorities")
+	}
+	authority, err := authenticatedOperationAuthority(in.Contracts.DurableState())
+	if err != nil {
+		return nil, err
 	}
 	base, err := wire.Decode(in.ProjectV9.Composed)
 	if err != nil {
@@ -103,21 +112,21 @@ func emit(in Inputs) ([]byte, error) {
 	mig := stable(baseBytes, "migration")
 	port := stable(baseBytes, "port", m.PortIdentity)
 	plan := stable(baseBytes, "plan")
-	loadCapability := stable(baseBytes, "capability", LoadEffectIdentity)
-	casCapability := stable(baseBytes, "capability", CompareExchangeEffectIdentity)
-	loadEffect := stable(baseBytes, "effect", LoadEffectIdentity)
-	casEffect := stable(baseBytes, "effect", CompareExchangeEffectIdentity)
-	e.Entities[loadCapability] = entity(loadCapability, "16", map[string]wire.Value{"160": blob(LoadEffectIdentity + ".capability")})
-	e.Entities[casCapability] = entity(casCapability, "16", map[string]wire.Value{"160": blob(CompareExchangeEffectIdentity + ".capability")})
-	e.Entities[loadEffect] = entity(loadEffect, "15", map[string]wire.Value{"150": blob(LoadEffectIdentity), "151": ref(loadCapability)})
-	e.Entities[casEffect] = entity(casEffect, "15", map[string]wire.Value{"150": blob(CompareExchangeEffectIdentity), "151": ref(casCapability)})
+	loadCapability := stable(baseBytes, "capability", authority.loadCapability)
+	casCapability := stable(baseBytes, "capability", authority.compareExchangeCapability)
+	loadEffect := stable(baseBytes, "effect", authority.loadEffect)
+	casEffect := stable(baseBytes, "effect", authority.compareExchangeEffect)
+	e.Entities[loadCapability] = entity(loadCapability, "16", map[string]wire.Value{"160": blob(authority.loadCapability)})
+	e.Entities[casCapability] = entity(casCapability, "16", map[string]wire.Value{"160": blob(authority.compareExchangeCapability)})
+	e.Entities[loadEffect] = entity(loadEffect, "15", map[string]wire.Value{"150": blob(authority.loadEffect), "151": ref(loadCapability)})
+	e.Entities[casEffect] = entity(casEffect, "15", map[string]wire.Value{"150": blob(authority.compareExchangeEffect), "151": ref(casCapability)})
 	e.Entities[v1] = entity(v1, "8012", map[string]wire.Value{"8120": ref(fam), "8121": u(1), "8122": ref(m.Version1Type)})
 	e.Entities[v2] = entity(v2, "8012", map[string]wire.Value{"8120": ref(fam), "8121": u(2), "8122": ref(m.Version2Type)})
 	e.Entities[a] = entity(a, "8013", map[string]wire.Value{"8130": ref(v1), "8131": ref(m.Validator1)})
 	e.Entities[b] = entity(b, "8013", map[string]wire.Value{"8130": ref(v2), "8131": ref(m.Validator2)})
 	e.Entities[mig] = entity(mig, "8014", map[string]wire.Value{"8140": ref(v1), "8141": ref(v2), "8142": ref(m.Migration)})
 	e.Entities[fam] = entity(fam, "8011", map[string]wire.Value{"8110": blob(m.Identity), "8111": ref(m.StateOwner), "8112": ref(v2), "8113": list(v1, v2), "8114": list(a, b), "8115": list(mig)})
-	e.Entities[port] = entity(port, "8015", map[string]wire.Value{"8150": blob(m.PortIdentity), "8151": ref(m.PortOwner), "8152": ref(fam), "8153": ref(loadCapability), "8154": ref(casCapability), "8155": ref(loadEffect), "8156": ref(casEffect), "8157": ref(m.KeyType), "8158": u(m.MaximumPayloadBytes), "8159": blob(CodecIdentity), "815a": u(m.MaximumKeyBytes)})
+	e.Entities[port] = entity(port, "8015", map[string]wire.Value{"8150": blob(m.PortIdentity), "8151": ref(m.PortOwner), "8152": ref(fam), "8153": ref(loadCapability), "8154": ref(casCapability), "8155": ref(loadEffect), "8156": ref(casEffect), "8157": ref(m.KeyType), "8158": u(m.MaximumPayloadBytes), "8159": blob(authority.codec), "815a": u(m.MaximumKeyBytes), "815b": ref(m.ErrorType), "815c": ref(id("8016"))})
 	e.Entities[plan] = entity(plan, "8010", map[string]wire.Value{"8100": list(fam), "8101": list(port), "8102": blobBytes(make([]byte, 32))})
 	q := e.Entities[plan]
 	q.Fields[id("8102")] = blobBytes(contentRevision(e, plan))
@@ -133,6 +142,47 @@ func emit(in Inputs) ([]byte, error) {
 	e.Entities[e.Module] = entity(e.Module, "12", map[string]wire.Value{"120": blob("durable-state-plan-v1"), "121": {Tag: 7, List: imports}, "122": list(plan)})
 	e.Revision = artifactRevision(e)
 	return wire.Encode(e)
+}
+
+// authenticatedOperationAuthority reads the immutable operation profile from
+// the already digest-authenticated Durable State contract. Runtime providers
+// must realize this profile; this metadata alone does not certify a provider.
+func authenticatedOperationAuthority(c contractcatalog.Contract) (operationAuthority, error) {
+	if !c.Validated() || c.Pin() != (contractcatalog.Pin{Module: id("8000"), Revision: id("8001")}) {
+		return operationAuthority{}, fmt.Errorf("durable_instance.operation_contract")
+	}
+	e := c.Envelope()
+	q, ok := e.Entities[id("8016")]
+	if !ok || q.Schema != id("10") || q.Version != 1 {
+		return operationAuthority{}, fmt.Errorf("durable_instance.operation_authority")
+	}
+	fields := q.Fields[id("101")]
+	if fields.Tag != 7 || len(fields.List) != 13 {
+		return operationAuthority{}, fmt.Errorf("durable_instance.operation_authority")
+	}
+	names := map[wire.ID]string{}
+	for _, v := range fields.List {
+		f, exists := e.Entities[v.Reference]
+		n := f.Fields[id("110")]
+		if v.Tag != 6 || !exists || f.Schema != id("11") || n.Tag != 5 {
+			return operationAuthority{}, fmt.Errorf("durable_instance.operation_authority")
+		}
+		names[v.Reference] = string(n.Bytes)
+	}
+	load, cas := names[id("8160")], names[id("8161")]
+	loadCap, casCap := names[id("8162")], names[id("8163")]
+	codec, policy := names[id("8166")], names[id("8167")]
+	if load == "" || cas == "" || load == cas || loadCap == "" || loadCap == casCap || codec != CodecIdentity || policy != "opaque-thread-only" || names[id("8164")] != "seme.storage.sequence.0.load" || names[id("8165")] != "seme.storage.sequence.1.compare_exchange" {
+		return operationAuthority{}, fmt.Errorf("durable_instance.operation_profile")
+	}
+	for field, schema := range map[string]string{"8168": "801a", "8169": "801c", "816a": "801d", "816b": "801e", "816c": "801f"} {
+		f := e.Entities[id(field)]
+		constraint := f.Fields[id("111")]
+		if constraint.Tag != 8 || constraint.Record[id("2001")].Tag != 6 || constraint.Record[id("2001")].Reference != id("10") || e.Entities[id(schema)].Schema != id("10") {
+			return operationAuthority{}, fmt.Errorf("durable_instance.operation_schema:%s", field)
+		}
+	}
+	return operationAuthority{loadEffect: load, compareExchangeEffect: cas, loadCapability: loadCap, compareExchangeCapability: casCap, codec: codec, tokenPolicy: policy, loadSequence: 0, compareExchangeSequence: 1}, nil
 }
 
 func baseAuthority(e wire.Envelope) error {
