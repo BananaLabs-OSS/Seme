@@ -166,8 +166,8 @@ and use the same provider, patch, target-contract, and conformance boundaries.
 
 ## 7. Useful Project Bridge v1
 
-Status: 5/36 cells (13.9%); Go UPB-01 through UPB-05 pass all seven evidence
-classes, placing the Go column at 5/12 (41.7%).
+Status: 6/36 cells (16.7%); Go UPB-01 through UPB-06 pass all seven evidence
+classes, placing the Go column at 6/12 (50%).
 
 The completed UAB-v1 proves a bounded application semantic vocabulary. It does
 not by itself prove that Seme can preserve an ordinary project's source closure,
@@ -232,3 +232,11 @@ dependency and package graphs, executable program, bound configuration plan,
 and deterministic revision through Project v8. The 2,058-case native,
 canonical, Wasm, and pinned-Pulp corpus agrees, and authenticated ordinary-Go
 projection re-lifts to exact execution meaning.
+
+Go UPB-06 is complete for bounded project-owned detached resources. Resource
+v1 and Project v9 authenticate exact identities, source ownership, placements,
+sizes, digests, and content-addressed blobs without introducing filesystem
+semantics into Core. The 2,066-case four-target corpus, source-free loader,
+ordinary projection, deterministic re-lift, and atomic adversaries pass.
+Transforms, streaming, broad asset pipelines, and platform packaging remain
+unclaimed.

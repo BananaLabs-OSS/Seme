@@ -1,6 +1,6 @@
 # Seme progress dashboard
 
-Snapshot: 2026-09-10 after the bounded Go UPB-05 configured-project proof.
+Snapshot: 2026-09-10 after the bounded Go UPB-06 resource proof.
 
 Percentages answer different questions and must not be conflated:
 
@@ -12,11 +12,12 @@ Percentages answer different questions and must not be conflated:
 | Bounded Go/JavaScript semantic bridge | about 82% | Estimate for the deliberately supported, tested language subset—not either complete language. |
 | Useful small-application subset | about 75% | Estimate against the semantics needed for modest deterministic applications. |
 | Useful Application Bridge Profile v1 | 36/36 cells (100%) | UAB-01 through UAB-11 pass all five evidence classes independently for Go, JavaScript, and Lua. UAB-12 projects one shared application into all three languages, requires byte-identical re-lift, and passes 2,048 observations through native, canonical, Wasm, and pinned-Pulp realizations. This is 100% of the frozen bounded profile, not complete language support. |
-| Useful Project Bridge Profile v1 | 5/36 cells (13.9%); Go 5/12 (41.7%) | Go UPB-01 through UPB-05 each pass all seven mapped evidence classes. JavaScript and Lua project cells remain unclaimed. |
+| Useful Project Bridge Profile v1 | 6/36 cells (16.7%); Go 6/12 (50%) | Go UPB-01 through UPB-06 each pass all seven mapped evidence classes. JavaScript and Lua project cells remain unclaimed. |
 | Go UPB-02 package graph | complete for the bounded profile | Package v2 and Project v3 commit full membership, native visibility, import bindings, aliases, source ownership, spans, and digests. The production three-package pipeline, strict projection, authenticated report, native/canonical/Wasm/Pulp parity, deterministic re-lift, and fail-closed adversaries pass. |
 | Go UPB-03 dependency closure | complete for the bounded profile | Dependency v1 and Project v4 commit a pinned local-plus-ecosystem closure with integrity and source evidence. Go applicability binds it to the exact package edge, source inventory, and `go.mod`; offline repeat, projection, native/canonical/Wasm/Pulp parity, and fail-closed adversaries pass. External dependency calls remain outside this cell. |
 | Go UPB-04 typed package behavior | complete for the bounded profile | Package v3 and Project v5 authenticate complete declaration ownership and typed local cross-package calls. The three-package cumulative application passes 2,048 canonical/Wasm/Pulp observations, native projection, exact semantic re-lift, deterministic reporting, and fail-closed adversaries. Ecosystem calls remain unclaimed. |
 | Go UPB-05 configuration and initialization | complete for the bounded profile | Execution v36, Package v4, Configuration v3, and Project v8 authenticate one five-package configured project. Three ordered initializers and 2,058 native/canonical/Wasm/Pulp observations agree; ordinary-Go projection re-lifts exactly and adversaries fail atomically. Ambient configuration remains unclaimed. |
+| Go UPB-06 project-owned resources | complete for the bounded profile | Resource v1 and Project v9 authenticate two detached UTF-8/binary resources and their placement without filesystem semantics in Core. All 2,066 native/canonical/Wasm/Pulp observations agree; source-free reporting, byte-exact projection, deterministic re-lift, and path/digest/symlink/limit/tamper adversaries pass. |
 | UAB-02 exact value bridge | complete | All three languages pass shared scalar, aggregate-collection, and tagged-composite observations through original and projected native source, structural canonical evaluation, standalone Wasm, and pinned Pulp, with representation-appropriate rejection evidence. |
 | UAB-03 compositional control flow | complete | All three languages pass shared locals, mutation, modular arithmetic, comparison, hazardous short-circuit, conditional, loop, and early-return observations through all five evidence paths. |
 | UAB-04 collection operations | Go/JavaScript/Lua complete | All three languages pass construction, length, checked indexing, traversal, immutable update/append/removal, and map lookup/insert/removal through original/projected native code, canonical evaluation, standalone Wasm, and pinned Pulp with direct rejection evidence. |
