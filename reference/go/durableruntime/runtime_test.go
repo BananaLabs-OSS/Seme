@@ -75,8 +75,7 @@ func (m *memoryPort) CompareExchange(r CompareExchangeRequest) CompareExchangeOu
 	p := clonePayload(r.Payload)
 	m.stored = &p
 	m.token = Token(fmt.Sprintf("token-%d", m.compares))
-	committed := clonePayload(p)
-	return CompareExchangeOutcome{Variant: CompareExchangeSaved, Token: cloneBytes(m.token), Committed: &committed}
+	return CompareExchangeOutcome{Variant: CompareExchangeSaved, Token: cloneBytes(m.token)}
 }
 
 func profile() Profile {
@@ -175,14 +174,7 @@ func TestPortFailureAndConflictAreOneAttemptAndAtomic(t *testing.T) {
 	}
 }
 
-func TestProviderLiesAndMalformedVariantsReject(t *testing.T) {
-	t.Run("saved-wrong-bytes", func(t *testing.T) {
-		p := &lyingPort{}
-		got := Execute(profile(), grants(), request(), p, &testTransform{})
-		if got.Committed || got.Failure != "seme.durable.compare_exchange.invalid" || p.compares != 1 {
-			t.Fatalf("%#v", got)
-		}
-	})
+func TestMalformedLoadVariantRejects(t *testing.T) {
 	t.Run("load-mixed-variant", func(t *testing.T) {
 		p := &mixedLoadPort{}
 		got := Execute(profile(), grants(), request(), p, &testTransform{})
@@ -213,7 +205,7 @@ func TestPortAndTransformerAliasesCannotRewriteTraceOrToken(t *testing.T) {
 	p := &aliasPort{token: Token("opaque-original")}
 	x := &aliasTransform{}
 	got := Execute(profile(), grants(), request(), p, x)
-	if !got.Committed || string(got.Trace[1].CompareRequest.ExpectedToken) != "opaque-original" || string(got.Payload.Bytes) != "v2:4" {
+	if !got.Committed || string(got.Trace[1].CompareRequest.ExpectedToken) != "opaque-original" || string(got.Payload.Bytes) != "v2:4" || p.stored == nil || !samePayload(*p.stored, got.Payload) {
 		t.Fatalf("alias escaped: %#v", got)
 	}
 	p.seen.ExpectedToken[0] = 'X'
@@ -234,8 +226,9 @@ func (*aliasTransform) Prepare(found *Payload) (Payload, *DomainError) {
 }
 
 type aliasPort struct {
-	token Token
-	seen  CompareExchangeRequest
+	token  Token
+	seen   CompareExchangeRequest
+	stored *Payload
 }
 
 func (p *aliasPort) Load(LoadRequest) LoadOutcome {
@@ -244,18 +237,8 @@ func (p *aliasPort) Load(LoadRequest) LoadOutcome {
 func (p *aliasPort) CompareExchange(r CompareExchangeRequest) CompareExchangeOutcome {
 	p.seen = r
 	committed := clonePayload(r.Payload)
-	return CompareExchangeOutcome{Variant: CompareExchangeSaved, Token: Token("next"), Committed: &committed}
-}
-
-type lyingPort struct{ compares int }
-
-func (*lyingPort) Load(LoadRequest) LoadOutcome {
-	return LoadOutcome{Variant: LoadMissing, MissingToken: Token("opaque")}
-}
-func (p *lyingPort) CompareExchange(r CompareExchangeRequest) CompareExchangeOutcome {
-	p.compares++
-	wrong := payload(2, "v2:999")
-	return CompareExchangeOutcome{Variant: CompareExchangeSaved, Token: Token("next"), Committed: &wrong}
+	p.stored = &committed
+	return CompareExchangeOutcome{Variant: CompareExchangeSaved, Token: Token("next")}
 }
 
 type mixedLoadPort struct{}

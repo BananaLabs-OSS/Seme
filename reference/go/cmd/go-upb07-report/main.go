@@ -212,6 +212,7 @@ type probePort struct {
 	missing durableruntime.Token
 	load    *durableruntime.LoadRequest
 	compare *durableruntime.CompareExchangeRequest
+	stored  *durableruntime.Payload
 }
 
 func (p *probePort) Load(r durableruntime.LoadRequest) durableruntime.LoadOutcome {
@@ -221,7 +222,9 @@ func (p *probePort) Load(r durableruntime.LoadRequest) durableruntime.LoadOutcom
 func (p *probePort) CompareExchange(r durableruntime.CompareExchangeRequest) durableruntime.CompareExchangeOutcome {
 	p.compare = &r
 	committed := r.Payload
-	return durableruntime.CompareExchangeOutcome{Variant: durableruntime.CompareExchangeSaved, Token: durableruntime.Token("opaque-saved-probe"), Committed: &committed}
+	committed.Bytes = append([]byte(nil), committed.Bytes...)
+	p.stored = &committed
+	return durableruntime.CompareExchangeOutcome{Variant: durableruntime.CompareExchangeSaved, Token: durableruntime.Token("opaque-saved-probe")}
 }
 
 func probeHostBoundary(loaded goupb07bundle.Result) (hostBoundaryProbe, error) {
@@ -232,7 +235,7 @@ func probeHostBoundary(loaded goupb07bundle.Result) (hostBoundaryProbe, error) {
 	port := &probePort{missing: durableruntime.Token("opaque-absence-probe")}
 	grants := durableruntime.Grants{profile.Load.Capability: true, profile.CompareExchange.Capability: true}
 	r, err := durableruntime.ExecuteAuthenticated(loaded.Durable, grants, durableruntime.Request{Family: profile.FamilyIdentity, Key: hostBoundaryProbeKey}, port, probeTransformer{version: profile.CurrentVersion})
-	if err != nil || !r.Committed || r.Failure != "" || len(r.Trace) != 2 || r.Trace[0].Sequence != profile.Load.Sequence || r.Trace[0].Operation != profile.Load.Identity || r.Trace[1].Sequence != profile.CompareExchange.Sequence || r.Trace[1].Operation != profile.CompareExchange.Identity || port.load == nil || port.compare == nil || !bytes.Equal(port.compare.ExpectedToken, port.missing) {
+	if err != nil || !r.Committed || r.Failure != "" || len(r.Trace) != 2 || r.Trace[0].Sequence != profile.Load.Sequence || r.Trace[0].Operation != profile.Load.Identity || r.Trace[1].Sequence != profile.CompareExchange.Sequence || r.Trace[1].Operation != profile.CompareExchange.Identity || port.load == nil || port.compare == nil || port.stored == nil || !bytes.Equal(port.compare.ExpectedToken, port.missing) || port.stored.Version != r.Payload.Version || port.stored.SHA256 != r.Payload.SHA256 || !bytes.Equal(port.stored.Bytes, r.Payload.Bytes) {
 		return hostBoundaryProbe{}, fmt.Errorf("host_boundary_profile_probe")
 	}
 	return hostBoundaryProbe{Family: profile.FamilyIdentity, LoadIdentity: profile.Load.Identity, CompareExchangeIdentity: profile.CompareExchange.Identity, LoadSequence: profile.Load.Sequence, CompareExchangeSequence: profile.CompareExchange.Sequence, Committed: true}, nil
