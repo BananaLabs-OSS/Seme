@@ -2,7 +2,9 @@ package projectv3emitter
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 
 	"seme.local/reference/contractcatalog"
@@ -11,6 +13,7 @@ import (
 	"seme.local/reference/projectdependencyinstance"
 	"seme.local/reference/projectgraphinstance"
 	"seme.local/reference/projectv4emitter"
+	"seme.local/reference/projectv4report"
 	"seme.local/reference/wire"
 )
 
@@ -47,6 +50,39 @@ func v4Fixture(t *testing.T) (projectv4emitter.Input, projectdependencyinstance.
 	}
 	input := projectv4emitter.Input{Contracts: contracts, ProjectV3: projectgraphInputs(v3in, v3), Dependency: dependency}
 	return input, projectdependencyinstance.Inputs{Contracts: contracts, ProjectV3: input.ProjectV3, Dependency: dependency}
+}
+
+func TestProjectV4ReportStableLinkedAndSourceByteFree(t *testing.T) {
+	in, validation := v4Fixture(t)
+	out, err := projectv4emitter.Emit(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validation.Composed = out
+	a, err := projectv4report.Inspect(validation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, err := projectv4report.Inspect(validation)
+	if err != nil || !reflect.DeepEqual(a, b) {
+		t.Fatal("report is nondeterministic")
+	}
+	if a.ContractRevision != id("e004").String() || a.Snapshot.ProjectGraphSnapshot == "" || a.Snapshot.DependencyClosure == "" || a.Snapshot.ContentRevision == "" || a.Snapshot.ProjectArtifactRevision == "" || a.Snapshot.DependencyArtifactRevision == "" || len(a.Dependency.Resolutions) != 2 || a.Project.Root != "example.test/v3" {
+		t.Fatalf("incomplete report: %#v", a)
+	}
+	raw, err := json.Marshal(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(raw, []byte("func Apply")) || bytes.Contains(raw, []byte("package v3")) {
+		t.Fatalf("source bytes leaked: %s", raw)
+	}
+	bad := validation
+	bad.Composed = append([]byte(nil), out...)
+	bad.Composed[len(bad.Composed)-1] ^= 1
+	if got, er := projectv4report.Inspect(bad); er == nil || !reflect.DeepEqual(got, projectv4report.Report{}) {
+		t.Fatalf("tamper report=%#v err=%v", got, er)
+	}
 }
 
 func projectgraphInputs(in Input, composed []byte) projectgraphinstance.Inputs {
