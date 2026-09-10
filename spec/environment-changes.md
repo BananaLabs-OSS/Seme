@@ -349,6 +349,19 @@ to disposable directories under `/tmp`. No software or dependency was
 installed, and no shell, SSH, editor, toolchain, global, workstation, or
 persistent environment setting was changed.
 
+## 2026-09-10 — Go UPB-07 durable-state completion
+
+Durable State v1, Source Presentation v1, Project v10, authenticated host-port
+execution, source-free reporting, ordinary-Go projection, native/canonical/
+Wasm/Pulp pure-planner parity, and the seven-evidence gate reused the installed
+Go toolchains, Node 22, the checked Seme bootstrap, repository-local offline
+proxy, and pinned Pulp source at
+`acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. Builds, projected trees, copied
+Pulp sources, content-addressed blobs, reports, and caches lived only in
+automatically removed directories under `/tmp`. No software or dependency was
+installed, and no shell, SSH, editor, toolchain, global, workstation, network,
+or persistent environment setting was changed.
+
 ## 2026-09-10 — Project Contract v3 graph-binding declarations
 
 Generated Project Contract v3 with the existing repository Go toolchain,
