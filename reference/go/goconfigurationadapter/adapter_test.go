@@ -33,9 +33,9 @@ func TestResolveBuildsExactThreeStageBoundPlan(t *testing.T) {
 	}
 	p := wire.Envelope{Entities: map[wire.ID]wire.Entity{}}
 	for name, owner := range map[string]wire.ID{"configuration": configOwner, "policy": policyOwner, "service": serviceOwner} {
-		pid := id("5" + owner.String()[31:])
-		p.Entities[pid] = wire.Entity{ID: pid, Schema: id("b010"), Version: 1, Fields: map[wire.ID]wire.Value{id("b100"): {Tag: 5, Bytes: []byte(name)}}}
-		p.Entities[owner] = wire.Entity{ID: owner, Schema: id("b021"), Version: 1, Fields: map[wire.ID]wire.Value{id("b210"): {Tag: 6, Reference: pid}}}
+		detail := id("5" + owner.String()[31:])
+		p.Entities[owner] = wire.Entity{ID: owner, Schema: id("b010"), Version: 1, Fields: map[wire.ID]wire.Value{id("b100"): {Tag: 5, Bytes: []byte(name)}}}
+		p.Entities[detail] = wire.Entity{ID: detail, Schema: id("b021"), Version: 1, Fields: map[wire.ID]wire.Value{id("b210"): {Tag: 6, Reference: owner}}}
 	}
 	origin := id("400")
 	ev := evidence{graph: g, packages: p, functions: functions, types: map[string]ownedType{

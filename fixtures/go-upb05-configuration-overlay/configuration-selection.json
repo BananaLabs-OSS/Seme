@@ -6,7 +6,7 @@
       "type": { "name": "string" },
       "origin": { "package": "example.test/go-uab-11/configuration", "name": "Input" },
       "default_provider": { "package": "example.test/go-uab-11/configuration", "name": "DefaultNamePrefix" },
-      "required": true,
+      "required": false,
       "resolution": { "kind": "default" },
       "validator": { "package": "example.test/go-uab-11/configuration", "name": "ValidateNamePrefix" },
       "validation_order": 0
@@ -17,7 +17,7 @@
       "type": { "name": "i64" },
       "origin": { "package": "example.test/go-uab-11/configuration", "name": "Input" },
       "default_provider": { "package": "example.test/go-uab-11/configuration", "name": "DefaultLimit" },
-      "required": true,
+      "required": false,
       "resolution": { "kind": "default" },
       "validator": { "package": "example.test/go-uab-11/configuration", "name": "ValidateLimit" },
       "validation_order": 1
@@ -28,7 +28,7 @@
       "type": { "name": "bool" },
       "origin": { "package": "example.test/go-uab-11/configuration", "name": "Input" },
       "default_provider": { "package": "example.test/go-uab-11/configuration", "name": "InternalDefaultDisabled" },
-      "required": true,
+      "required": false,
       "resolution": { "kind": "default" },
       "validation_order": 0
     }

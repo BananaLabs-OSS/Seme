@@ -137,10 +137,13 @@ func Validate(g Graph) error {
 				return fmt.Errorf("package_detail.import_order")
 			}
 			if im.Alias != "" {
-				if aliases[im.Alias] {
+				// Import aliases are scoped to a source unit, not an entire
+				// package. Preserve every occurrence and its exact origin.
+				key := im.Origin.SourceIdentity + "\x00" + im.Alias
+				if aliases[key] {
 					return fmt.Errorf("package_detail.import_alias_duplicate")
 				}
-				aliases[im.Alias] = true
+				aliases[key] = true
 			}
 			if im.Class == Local && im.Resolved == p.Identity {
 				return fmt.Errorf("package_detail.local_self_import")

@@ -392,6 +392,19 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 		t, err := field(e, 0x9701)
 		return t.Reference, err == nil && t.Tag == 6 && g.Entities[t.Reference].Schema == id(0x9010)
 	}
+	if e.Schema == id(0x9050) {
+		var stringType wire.ID
+		for candidate, entity := range g.Entities {
+			if entity.Schema != id(0x9040) {
+				continue
+			}
+			if stringType != (wire.ID{}) {
+				return wire.ID{}, false
+			}
+			stringType = candidate
+		}
+		return stringType, stringType != (wire.ID{})
+	}
 	if e.Schema == id(0x9013) {
 		parameter, err := field(e, 0x9130)
 		if err != nil || parameter.Tag != 6 {
