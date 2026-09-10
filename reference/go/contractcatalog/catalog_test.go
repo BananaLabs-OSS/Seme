@@ -170,6 +170,37 @@ func TestResolveProjectContractSetV5ExactImmutablePins(t *testing.T) {
 	}
 }
 
+func TestResolveProjectContractSetV6AuthenticatesConfiguration(t *testing.T) {
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	f := read("../../../modules/foundation/v1/module.seme")
+	e := read("../../../modules/execution/v35/module.seme")
+	p := read("../../../modules/package/v3/module.seme")
+	d := read("../../../modules/dependency/v1/module.seme")
+	c := read("../../../modules/configuration/v1/module.seme")
+	r := read("../../../modules/project/v6/module.seme")
+	set, err := ResolveProjectContractSetV6(f, e, p, d, c, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Validated() || set.Configuration().Pin() != (Pin{configurationModule, configurationRev}) || set.Project().Pin() != (Pin{projectModule, projectRevV6}) {
+		t.Fatal("wrong v6 pins")
+	}
+	bad := append([]byte(nil), c...)
+	bad[len(bad)-1] ^= 1
+	if got, err := ResolveProjectContractSetV6(f, e, p, d, bad, r); err == nil || got.Validated() {
+		t.Fatal("tampered configuration accepted")
+	}
+	if got, err := ResolveProjectContractSetV6(f, e, p, d, c, read("../../../modules/project/v5/module.seme")); err == nil || got.Validated() {
+		t.Fatal("wrong Project accepted")
+	}
+}
+
 func TestResolveProjectContractSetV3RejectsMutations(t *testing.T) {
 	e, _, _ := artifacts(t)
 	p, _ := os.ReadFile("../../../modules/package/v2/module.seme")
