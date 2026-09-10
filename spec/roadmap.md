@@ -166,8 +166,8 @@ and use the same provider, patch, target-contract, and conformance boundaries.
 
 ## 7. Useful Project Bridge v1
 
-Status: 4/36 cells (11.1%); Go UPB-01 through UPB-04 pass all seven evidence
-classes, placing the Go column at 4/12 (33.3%).
+Status: 5/36 cells (13.9%); Go UPB-01 through UPB-05 pass all seven evidence
+classes, placing the Go column at 5/12 (41.7%).
 
 The completed UAB-v1 proves a bounded application semantic vocabulary. It does
 not by itself prove that Seme can preserve an ordinary project's source closure,
@@ -225,3 +225,10 @@ visibility, and body containment. The full three-package UAB-11 application
 passes 2,048 observations through canonical execution, standalone Wasm, and
 pinned Pulp; authenticated projection rebuilds natively and re-lifts to exact
 canonical meaning. Ecosystem calls remain unclaimed.
+
+Go UPB-05 is complete for explicit typed configuration and ordered service
+initialization. One v36 project snapshot authenticates its source inventory,
+dependency and package graphs, executable program, bound configuration plan,
+and deterministic revision through Project v8. The 2,058-case native,
+canonical, Wasm, and pinned-Pulp corpus agrees, and authenticated ordinary-Go
+projection re-lifts to exact execution meaning.
