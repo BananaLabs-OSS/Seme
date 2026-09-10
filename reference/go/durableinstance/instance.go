@@ -11,21 +11,27 @@ import (
 	"unicode/utf8"
 
 	"seme.local/reference/contractcatalog"
+	"seme.local/reference/projectv9instance"
 	"seme.local/reference/wire"
 )
 
 const MaxPayloadBytes = 1 << 20
+const MaxKeyBytes = 512
+const CodecIdentity = "seme.durable-state.canonical.v1"
+const LoadEffectIdentity = "seme.storage.load.v1"
+const CompareExchangeEffectIdentity = "seme.storage.compare_exchange.v1"
 
 type Model struct {
-	Identity, PortIdentity, CodecIdentity                                                 string
-	Owner, Version1Type, Version2Type, Validator1, Validator2, Migration                  wire.ID
-	LoadCapability, CompareExchangeCapability, LoadEffect, CompareExchangeEffect, KeyType wire.ID
-	MaximumPayloadBytes                                                                   uint64
+	Identity, PortIdentity                                                                          string
+	StateOwner, PortOwner, Version1Type, Version2Type, ErrorType, Validator1, Validator2, Migration wire.ID
+	LoadCapability, CompareExchangeCapability, LoadEffect, CompareExchangeEffect, KeyType           wire.ID
+	MaximumPayloadBytes, MaximumKeyBytes                                                            uint64
 }
 type Inputs struct {
-	Contracts           contractcatalog.ProjectContractSetV10
-	ProjectV9, Artifact []byte
-	Model               Model
+	Contracts contractcatalog.ProjectContractSetV10
+	ProjectV9 projectv9instance.Inputs
+	Artifact  []byte
+	Model     Model
 }
 
 func Emit(in Inputs) ([]byte, error) { return emit(in) }
@@ -44,7 +50,13 @@ func emit(in Inputs) ([]byte, error) {
 	if !in.Contracts.Validated() || in.Contracts.Project().Pin() != (contractcatalog.Pin{Module: id("e000"), Revision: id("e00e")}) || in.Contracts.DurableState().Pin() != (contractcatalog.Pin{Module: id("8000"), Revision: id("8001")}) {
 		return nil, fmt.Errorf("durable_instance.contracts")
 	}
-	base, err := wire.Decode(in.ProjectV9)
+	if err := projectv9instance.Validate(in.ProjectV9); err != nil {
+		return nil, fmt.Errorf("durable_instance.project_v9:%w", err)
+	}
+	if !sameAuthorities(in.Contracts, in.ProjectV9.Contracts) {
+		return nil, fmt.Errorf("durable_instance.project_authorities")
+	}
+	base, err := wire.Decode(in.ProjectV9.Composed)
 	if err != nil {
 		return nil, fmt.Errorf("durable_instance.project_v9:%w", err)
 	}
@@ -52,17 +64,20 @@ func emit(in Inputs) ([]byte, error) {
 		return nil, err
 	}
 	m := in.Model
-	if !name(m.Identity) || !name(m.PortIdentity) || !name(m.CodecIdentity) || m.MaximumPayloadBytes == 0 || m.MaximumPayloadBytes > MaxPayloadBytes {
+	if !name(m.Identity) || !name(m.PortIdentity) || m.MaximumPayloadBytes == 0 || m.MaximumPayloadBytes > MaxPayloadBytes || m.MaximumKeyBytes == 0 || m.MaximumKeyBytes > MaxKeyBytes {
 		return nil, fmt.Errorf("durable_instance.metadata")
 	}
 	owners, effects, functions := ownership(base)
-	if !owners[m.Owner] {
+	if !owners[m.StateOwner] || !owners[m.PortOwner] {
 		return nil, fmt.Errorf("durable_instance.owner")
 	}
-	for _, x := range []wire.ID{m.Version1Type, m.Version2Type, m.KeyType} {
+	for _, x := range []wire.ID{m.Version1Type, m.Version2Type, m.ErrorType} {
 		if !typeEntity(base.Entities[x]) {
 			return nil, fmt.Errorf("durable_instance.type:%s", x)
 		}
+	}
+	if base.Entities[m.KeyType].Schema != id("9040") {
+		return nil, fmt.Errorf("durable_instance.key_type")
 	}
 	if m.Version1Type == m.Version2Type {
 		return nil, fmt.Errorf("durable_instance.version_type_mix")
@@ -70,15 +85,17 @@ func emit(in Inputs) ([]byte, error) {
 	if m.Validator1 == m.Validator2 || m.Validator1 == m.Migration || m.Validator2 == m.Migration {
 		return nil, fmt.Errorf("durable_instance.function_mix")
 	}
-	if !pureFunction(base, m.Validator1, m.Version1Type, id("9020"), functions[m.Validator1] == m.Owner) || !pureFunction(base, m.Validator2, m.Version2Type, id("9020"), functions[m.Validator2] == m.Owner) || !pureFunction(base, m.Migration, m.Version1Type, m.Version2Type, functions[m.Migration] == m.Owner) {
+	if !pureResultFunction(base, m.Validator1, m.Version1Type, m.Version1Type, m.ErrorType, functions[m.Validator1] == m.StateOwner) || !pureResultFunction(base, m.Validator2, m.Version2Type, m.Version2Type, m.ErrorType, functions[m.Validator2] == m.StateOwner) || !pureResultFunction(base, m.Migration, m.Version1Type, m.Version2Type, m.ErrorType, functions[m.Migration] == m.StateOwner) {
 		return nil, fmt.Errorf("durable_instance.function")
 	}
 	if m.LoadCapability == m.CompareExchangeCapability || m.LoadEffect == m.CompareExchangeEffect {
 		return nil, fmt.Errorf("durable_instance.authorization_mix")
 	}
-	for _, p := range [][2]wire.ID{{m.LoadEffect, m.LoadCapability}, {m.CompareExchangeEffect, m.CompareExchangeCapability}} {
+	for i, p := range [][2]wire.ID{{m.LoadEffect, m.LoadCapability}, {m.CompareExchangeEffect, m.CompareExchangeCapability}} {
 		q, ok := base.Entities[p[0]]
-		if !ok || q.Schema != id("15") || q.Fields[id("151")].Tag != 6 || q.Fields[id("151")].Reference != p[1] || base.Entities[p[1]].Schema != id("16") || !effects[m.Owner][p[0]] {
+		want := []string{LoadEffectIdentity, CompareExchangeEffectIdentity}[i]
+		cap := base.Entities[p[1]]
+		if !ok || q.Schema != id("15") || string(q.Fields[id("150")].Bytes) != want || q.Fields[id("151")].Tag != 6 || q.Fields[id("151")].Reference != p[1] || cap.Schema != id("16") || string(cap.Fields[id("160")].Bytes) != want+".capability" || !effects[m.PortOwner][p[0]] {
 			return nil, fmt.Errorf("durable_instance.effect")
 		}
 	}
@@ -88,33 +105,34 @@ func emit(in Inputs) ([]byte, error) {
 			e.Entities[x] = q
 		}
 	}
-	fam := stable(in.ProjectV9, "family", m.Identity)
-	v1 := stable(in.ProjectV9, "version", "1")
-	v2 := stable(in.ProjectV9, "version", "2")
-	a := stable(in.ProjectV9, "validator", "1")
-	b := stable(in.ProjectV9, "validator", "2")
-	mig := stable(in.ProjectV9, "migration")
-	port := stable(in.ProjectV9, "port", m.PortIdentity)
-	plan := stable(in.ProjectV9, "plan")
+	baseBytes := in.ProjectV9.Composed
+	fam := stable(baseBytes, "family", m.Identity)
+	v1 := stable(baseBytes, "version", "1")
+	v2 := stable(baseBytes, "version", "2")
+	a := stable(baseBytes, "validator", "1")
+	b := stable(baseBytes, "validator", "2")
+	mig := stable(baseBytes, "migration")
+	port := stable(baseBytes, "port", m.PortIdentity)
+	plan := stable(baseBytes, "plan")
 	e.Entities[v1] = entity(v1, "8012", map[string]wire.Value{"8120": ref(fam), "8121": u(1), "8122": ref(m.Version1Type)})
 	e.Entities[v2] = entity(v2, "8012", map[string]wire.Value{"8120": ref(fam), "8121": u(2), "8122": ref(m.Version2Type)})
 	e.Entities[a] = entity(a, "8013", map[string]wire.Value{"8130": ref(v1), "8131": ref(m.Validator1)})
 	e.Entities[b] = entity(b, "8013", map[string]wire.Value{"8130": ref(v2), "8131": ref(m.Validator2)})
 	e.Entities[mig] = entity(mig, "8014", map[string]wire.Value{"8140": ref(v1), "8141": ref(v2), "8142": ref(m.Migration)})
-	e.Entities[fam] = entity(fam, "8011", map[string]wire.Value{"8110": blob(m.Identity), "8111": ref(m.Owner), "8112": ref(v2), "8113": list(v1, v2), "8114": list(a, b), "8115": list(mig)})
-	e.Entities[port] = entity(port, "8015", map[string]wire.Value{"8150": blob(m.PortIdentity), "8151": ref(m.Owner), "8152": ref(fam), "8153": ref(m.LoadCapability), "8154": ref(m.CompareExchangeCapability), "8155": ref(m.LoadEffect), "8156": ref(m.CompareExchangeEffect), "8157": ref(m.KeyType), "8158": u(m.MaximumPayloadBytes), "8159": blob(m.CodecIdentity)})
+	e.Entities[fam] = entity(fam, "8011", map[string]wire.Value{"8110": blob(m.Identity), "8111": ref(m.StateOwner), "8112": ref(v2), "8113": list(v1, v2), "8114": list(a, b), "8115": list(mig)})
+	e.Entities[port] = entity(port, "8015", map[string]wire.Value{"8150": blob(m.PortIdentity), "8151": ref(m.PortOwner), "8152": ref(fam), "8153": ref(m.LoadCapability), "8154": ref(m.CompareExchangeCapability), "8155": ref(m.LoadEffect), "8156": ref(m.CompareExchangeEffect), "8157": ref(m.KeyType), "8158": u(m.MaximumPayloadBytes), "8159": blob(CodecIdentity), "815a": u(m.MaximumKeyBytes)})
 	e.Entities[plan] = entity(plan, "8010", map[string]wire.Value{"8100": list(fam), "8101": list(port), "8102": blobBytes(make([]byte, 32))})
 	q := e.Entities[plan]
 	q.Fields[id("8102")] = blobBytes(contentRevision(e, plan))
 	e.Entities[plan] = q
 	imports := []wire.Value{}
 	for _, pin := range []contractcatalog.Pin{{Module: id("3000"), Revision: id("3001")}, {Module: id("8000"), Revision: id("8001")}, {Module: id("9000"), Revision: id("9024")}, {Module: id("b000"), Revision: id("b004")}, {Module: id("e000"), Revision: id("e00b")}} {
-		x := stable(in.ProjectV9, "import", pin.Module.String())
+		x := stable(baseBytes, "import", pin.Module.String())
 		e.Entities[x] = entity(x, "13", map[string]wire.Value{"130": ref(pin.Module), "131": blobBytes(pin.Revision[:])})
 		imports = append(imports, ref(x))
 	}
 	sort.Slice(imports, func(i, j int) bool { return bytes.Compare(imports[i].Reference[:], imports[j].Reference[:]) < 0 })
-	e.Module = stable(in.ProjectV9, "module")
+	e.Module = stable(baseBytes, "module")
 	e.Entities[e.Module] = entity(e.Module, "12", map[string]wire.Value{"120": blob("durable-state-plan-v1"), "121": {Tag: 7, List: imports}, "122": list(plan)})
 	e.Revision = artifactRevision(e)
 	return wire.Encode(e)
@@ -186,13 +204,15 @@ func ownership(e wire.Envelope) (map[wire.ID]bool, map[wire.ID]map[wire.ID]bool,
 	}
 	return owners, eff, fn
 }
-func pureFunction(e wire.Envelope, x, arg, result wire.ID, owned bool) bool {
+func pureResultFunction(e wire.Envelope, x, arg, okType, errorType wire.ID, owned bool) bool {
 	q, ok := e.Entities[x]
 	if !ok || !owned || q.Schema != id("9011") {
 		return false
 	}
 	ps := q.Fields[id("9111")]
-	if ps.Tag != 7 || len(ps.List) != 1 || q.Fields[id("9112")].Reference != result {
+	result := q.Fields[id("9112")]
+	r, rok := e.Entities[result.Reference]
+	if ps.Tag != 7 || len(ps.List) != 1 || result.Tag != 6 || !rok || r.Schema != id("9042") || r.Fields[id("9400")].Tag != 6 || r.Fields[id("9400")].Reference != okType || r.Fields[id("9401")].Tag != 6 || r.Fields[id("9401")].Reference != errorType {
 		return false
 	}
 	p, ok := e.Entities[ps.List[0].Reference]
@@ -220,6 +240,9 @@ func pureFunction(e wire.Envelope, x, arg, result wire.ID, owned bool) bool {
 		}
 	}
 	return true
+}
+func sameAuthorities(a contractcatalog.ProjectContractSetV10, b contractcatalog.ProjectContractSetV9) bool {
+	return a.Foundation().Pin() == b.Foundation().Pin() && a.Execution().Pin() == b.Execution().Pin() && a.Package().Pin() == b.Package().Pin() && a.Dependency().Pin() == b.Dependency().Pin() && a.Configuration().Pin() == b.Configuration().Pin() && a.Resource().Pin() == b.Resource().Pin() && b.Project().Pin() == (contractcatalog.Pin{Module: id("e000"), Revision: id("e00b")})
 }
 func typeEntity(q wire.Entity) bool {
 	switch q.Schema.String() {

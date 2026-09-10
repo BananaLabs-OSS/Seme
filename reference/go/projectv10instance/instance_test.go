@@ -2,6 +2,7 @@ package projectv10instance
 
 import (
 	"seme.local/reference/durableinstance"
+	"seme.local/reference/projectv9instance"
 	"seme.local/reference/wire"
 	"testing"
 )
@@ -19,8 +20,8 @@ func TestOneRejectsMissingAndDuplicateRoots(t *testing.T) {
 	}
 }
 func TestStableIdentityBindsBothInputs(t *testing.T) {
-	a := stable(Inputs{ProjectV9: []byte("p"), Durable: durable([]byte("d"))}, "x")
-	b := stable(Inputs{ProjectV9: []byte("p"), Durable: durable([]byte("e"))}, "x")
+	a := stable(Inputs{ProjectV9: projectv9instance.Inputs{Composed: []byte("p")}, Durable: durable([]byte("d"))}, "x")
+	b := stable(Inputs{ProjectV9: projectv9instance.Inputs{Composed: []byte("p")}, Durable: durable([]byte("e"))}, "x")
 	if a == b {
 		t.Fatal("durable artifact not bound")
 	}
