@@ -57,7 +57,7 @@ func Apply(v int64) int64 { return lib.AddOne(v) }`,
 	if e != nil {
 		t.Fatal(e)
 	}
-	if len(result.Artifact) == 0 || result.SourceDigest == "" || len(result.Packages) != 2 {
+	if len(result.Artifact) == 0 || result.SourceDigest == "" || len(result.Packages) != 2 || len(result.Resolution.Packages) != 2 {
 		t.Fatalf("result=%#v", result)
 	}
 	privateFound := false
@@ -74,6 +74,7 @@ func Apply(v int64) int64 { return lib.AddOne(v) }`,
 	result.Artifact[0] ^= 1
 	result.Packages[0].Dependencies = append(result.Packages[0].Dependencies, "mutation")
 	result.Packages[0].Members[0].Parameters[0] = "mutation"
+	result.Resolution.Packages[0].Files[0] = "mutation"
 	again, e := Build(context.Background(), snapshot, testContracts(t), g1, compile)
 	if e != nil {
 		t.Fatal(e)
@@ -87,6 +88,13 @@ func Apply(v int64) int64 { return lib.AddOne(v) }`,
 				if parameter == "mutation" {
 					t.Fatal("member metadata was not copy safe")
 				}
+			}
+		}
+	}
+	for _, p := range again.Resolution.Packages {
+		for _, file := range p.Files {
+			if file == "mutation" {
+				t.Fatal("resolution metadata was not copy safe")
 			}
 		}
 	}
