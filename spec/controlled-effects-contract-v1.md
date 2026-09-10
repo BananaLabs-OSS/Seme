@@ -11,7 +11,8 @@ deterministic project behavior:
 - `ClockSample` supplies an integer Unix-millisecond value and an explicit
   sequence. `ClockAuthority` names its injection and monotonicity policies.
 - `SeededRandomState` supplies an integer state and draw count.
-  `SeededRandomAuthority` names the exact algorithm and overflow policy.
+  `SeededRandomAuthority` names the exact algorithm and overflow policy and
+  binds the exact project-owned function that realizes its next draw.
 - `ExternalBooleanEffect` binds one effect identity, one capability, the
   corresponding Execution effect, its Boolean payload type, and a delivery
   policy.
