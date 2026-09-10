@@ -4,7 +4,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"flag"
@@ -17,6 +19,7 @@ import (
 	"time"
 
 	"seme.local/reference/contractcatalog"
+	"seme.local/reference/durableruntime"
 	"seme.local/reference/goconfigurationmanifest"
 	"seme.local/reference/godurablemanifest"
 	"seme.local/reference/goupb07bundle"
@@ -35,6 +38,15 @@ type report struct {
 	Resources                       []resourceAuthority    `json:"resources"`
 	NormalizedAliases               []aliasAuthority       `json:"normalized_alias_authority"`
 	AliasSources                    []aliasSourceAuthority `json:"source_bound_alias_authority"`
+	HostBoundaryProfileProbe        hostBoundaryProbe      `json:"host_boundary_profile_probe"`
+}
+type hostBoundaryProbe struct {
+	Family                  string `json:"family"`
+	LoadIdentity            string `json:"load_identity"`
+	CompareExchangeIdentity string `json:"compare_exchange_identity"`
+	LoadSequence            uint64 `json:"load_sequence"`
+	CompareExchangeSequence uint64 `json:"compare_exchange_sequence"`
+	Committed               bool   `json:"committed"`
 }
 type resourceAuthority struct {
 	Identity    string `json:"identity"`
@@ -167,13 +179,59 @@ func run(parent context.Context, args []string, stdout io.Writer) error {
 	if err != nil {
 		return err
 	}
+	probe, err := probeHostBoundary(loaded)
+	if err != nil {
+		return err
+	}
 	out, err := makeReport(v10, loaded)
 	if err != nil {
 		return err
 	}
+	out.HostBoundaryProfileProbe = probe
 	encoder := json.NewEncoder(stdout)
 	encoder.SetEscapeHTML(false)
 	return encoder.Encode(out)
+}
+
+type probeTransformer struct{ version uint64 }
+
+func (p probeTransformer) Prepare(*durableruntime.Payload) (durableruntime.Payload, *durableruntime.DomainError) {
+	b := []byte("seme.host-boundary.profile-probe.v1")
+	return durableruntime.Payload{Version: p.version, Bytes: b, SHA256: sha256.Sum256(b)}, nil
+}
+func (p probeTransformer) Canonical(v durableruntime.Payload) bool {
+	b := []byte("seme.host-boundary.profile-probe.v1")
+	return v.Version == p.version && bytes.Equal(v.Bytes, b) && v.SHA256 == sha256.Sum256(b)
+}
+
+type probePort struct {
+	missing durableruntime.Token
+	load    *durableruntime.LoadRequest
+	compare *durableruntime.CompareExchangeRequest
+}
+
+func (p *probePort) Load(r durableruntime.LoadRequest) durableruntime.LoadOutcome {
+	p.load = &r
+	return durableruntime.LoadOutcome{Variant: durableruntime.LoadMissing, MissingToken: append(durableruntime.Token(nil), p.missing...)}
+}
+func (p *probePort) CompareExchange(r durableruntime.CompareExchangeRequest) durableruntime.CompareExchangeOutcome {
+	p.compare = &r
+	committed := r.Payload
+	return durableruntime.CompareExchangeOutcome{Variant: durableruntime.CompareExchangeSaved, Token: durableruntime.Token("opaque-saved-probe"), Committed: &committed}
+}
+
+func probeHostBoundary(loaded goupb07bundle.Result) (hostBoundaryProbe, error) {
+	profile, err := durableruntime.AuthenticatedProfile(loaded.Durable)
+	if err != nil {
+		return hostBoundaryProbe{}, err
+	}
+	port := &probePort{missing: durableruntime.Token("opaque-absence-probe")}
+	grants := durableruntime.Grants{profile.Load.Capability: true, profile.CompareExchange.Capability: true}
+	r, err := durableruntime.ExecuteAuthenticated(loaded.Durable, grants, durableruntime.Request{Family: profile.FamilyIdentity, Key: "profile-probe"}, port, probeTransformer{version: profile.CurrentVersion})
+	if err != nil || !r.Committed || r.Failure != "" || len(r.Trace) != 2 || r.Trace[0].Sequence != profile.Load.Sequence || r.Trace[0].Operation != profile.Load.Identity || r.Trace[1].Sequence != profile.CompareExchange.Sequence || r.Trace[1].Operation != profile.CompareExchange.Identity || port.load == nil || port.compare == nil || !bytes.Equal(port.compare.ExpectedToken, port.missing) {
+		return hostBoundaryProbe{}, fmt.Errorf("host_boundary_profile_probe")
+	}
+	return hostBoundaryProbe{Family: profile.FamilyIdentity, LoadIdentity: profile.Load.Identity, CompareExchangeIdentity: profile.CompareExchange.Identity, LoadSequence: profile.Load.Sequence, CompareExchangeSequence: profile.CompareExchange.Sequence, Committed: true}, nil
 }
 
 func compile(ctx context.Context, k0, compiler string, source []byte) ([]byte, error) {
