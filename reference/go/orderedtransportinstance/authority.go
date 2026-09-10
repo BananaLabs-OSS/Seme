@@ -10,27 +10,28 @@ import (
 )
 
 const (
-	CodecIdentity                  = "seme.ordered-transport.binary.v1"
-	DigestIdentity                 = "sha256"
-	MaximumCommands         uint64 = 256
-	MaximumEvents           uint64 = 1024
-	MaximumEventsPerCommand uint64 = 4
-	MaximumPayloadBytes     uint64 = 3072
-	MaximumFrameBytes       uint64 = 4096
-	CorrelationBytes        uint64 = 16
-	MaximumStreamBytes      uint64 = 128
+	CodecIdentity                      = "seme.ordered-transport.binary.v1"
+	DigestIdentity                     = "sha256"
+	MaximumCommands             uint64 = 256
+	MaximumEvents               uint64 = 1024
+	MaximumEventsPerCommand     uint64 = 4
+	MaximumPayloadBytes         uint64 = 3072
+	MaximumRetainedPayloadBytes uint64 = 4096
+	MaximumFrameBytes           uint64 = 4096
+	CorrelationBytes            uint64 = 16
+	MaximumStreamBytes          uint64 = 128
 )
 
 type Authority struct {
-	ReceiveIdentity, SendIdentity                                                string
-	ReceiveCapability, SendCapability                                            string
-	CodecIdentity, DigestIdentity                                                string
-	MaximumCommands, MaximumEvents, MaximumEventsPerCommand                      uint64
-	MaximumPayloadBytes, MaximumFrameBytes, CorrelationBytes, MaximumStreamBytes uint64
-	FirstCommandSequence, FirstEventSequence                                     uint64
-	CommandTerminalSentinel, EventTerminalSentinel                               uint64
-	DuplicatePolicy, GapPolicy, CorrelationPolicy                                string
-	CodecLayout                                                                  [4]string
+	ReceiveIdentity, SendIdentity                                                                             string
+	ReceiveCapability, SendCapability                                                                         string
+	CodecIdentity, DigestIdentity                                                                             string
+	MaximumCommands, MaximumEvents, MaximumEventsPerCommand                                                   uint64
+	MaximumPayloadBytes, MaximumRetainedPayloadBytes, MaximumFrameBytes, CorrelationBytes, MaximumStreamBytes uint64
+	FirstCommandSequence, FirstEventSequence                                                                  uint64
+	CommandTerminalSentinel, EventTerminalSentinel                                                            uint64
+	DuplicatePolicy, GapPolicy, CorrelationPolicy                                                             string
+	CodecLayout                                                                                               [4]string
 }
 
 func Authenticate(c contractcatalog.Contract) (Authority, error) {
@@ -43,7 +44,7 @@ func Authenticate(c contractcatalog.Contract) (Authority, error) {
 		return Authority{}, fmt.Errorf("ordered_transport.authority_schema")
 	}
 	listed := schema.Fields[id("101")]
-	if listed.Tag != 7 || len(listed.List) != 31 {
+	if listed.Tag != 7 || len(listed.List) != 32 {
 		return Authority{}, fmt.Errorf("ordered_transport.authority_fields")
 	}
 	names := map[wire.ID]string{}
@@ -61,6 +62,7 @@ func Authenticate(c contractcatalog.Contract) (Authority, error) {
 		"110e8": "ordered_transport.maximum_commands.256", "110e9": "ordered_transport.maximum_events.1024", "110ea": "ordered_transport.maximum_events_per_command.4", "110eb": "ordered_transport.maximum_payload_bytes.3072", "110ec": "ordered_transport.maximum_frame_bytes.4096", "110ed": "ordered_transport.correlation_bytes.16", "110ee": "ordered_transport.maximum_stream_bytes.128",
 		"110ef": "ordered_transport.first_command_sequence.1", "110f0": "ordered_transport.first_event_sequence.1", "110f1": "ordered_transport.command_terminal_sentinel.257", "110f2": "ordered_transport.event_terminal_sentinel.1025", "110f3": "ordered_transport.duplicate_policy.exact_cached_response", "110f4": "ordered_transport.gap_policy.reject_without_buffering", "110f5": "ordered_transport.correlation_policy.unique_per_command",
 		"110f6": "ordered_transport.codec.u32le_body_length_excluding_prefix", "110f7": "ordered_transport.codec.magic.SEMEOT01", "110f8": "ordered_transport.codec.u8_frame_kind_then_pure_value_v1", "110f9": "ordered_transport.codec.exact_length_no_trailing_bytes",
+		"110ff": "ordered_transport.maximum_retained_payload_bytes.4096",
 	}
 	for field, want := range wantNames {
 		if names[id(field)] != want {
@@ -74,7 +76,7 @@ func Authenticate(c contractcatalog.Contract) (Authority, error) {
 			return Authority{}, fmt.Errorf("ordered_transport.authority_reference:%s", field)
 		}
 	}
-	return Authority{ReceiveIdentity: names[id("110e0")], SendIdentity: names[id("110e1")], ReceiveCapability: names[id("110e2")], SendCapability: names[id("110e3")], CodecIdentity: names[id("110e6")], DigestIdentity: names[id("110e7")], MaximumCommands: MaximumCommands, MaximumEvents: MaximumEvents, MaximumEventsPerCommand: MaximumEventsPerCommand, MaximumPayloadBytes: MaximumPayloadBytes, MaximumFrameBytes: MaximumFrameBytes, CorrelationBytes: CorrelationBytes, MaximumStreamBytes: MaximumStreamBytes, FirstCommandSequence: 1, FirstEventSequence: 1, CommandTerminalSentinel: 257, EventTerminalSentinel: 1025, DuplicatePolicy: names[id("110f3")], GapPolicy: names[id("110f4")], CorrelationPolicy: names[id("110f5")], CodecLayout: [4]string{names[id("110f6")], names[id("110f7")], names[id("110f8")], names[id("110f9")]}}, nil
+	return Authority{ReceiveIdentity: names[id("110e0")], SendIdentity: names[id("110e1")], ReceiveCapability: names[id("110e2")], SendCapability: names[id("110e3")], CodecIdentity: names[id("110e6")], DigestIdentity: names[id("110e7")], MaximumCommands: MaximumCommands, MaximumEvents: MaximumEvents, MaximumEventsPerCommand: MaximumEventsPerCommand, MaximumPayloadBytes: MaximumPayloadBytes, MaximumRetainedPayloadBytes: MaximumRetainedPayloadBytes, MaximumFrameBytes: MaximumFrameBytes, CorrelationBytes: CorrelationBytes, MaximumStreamBytes: MaximumStreamBytes, FirstCommandSequence: 1, FirstEventSequence: 1, CommandTerminalSentinel: 257, EventTerminalSentinel: 1025, DuplicatePolicy: names[id("110f3")], GapPolicy: names[id("110f4")], CorrelationPolicy: names[id("110f5")], CodecLayout: [4]string{names[id("110f6")], names[id("110f7")], names[id("110f8")], names[id("110f9")]}}, nil
 }
 
 func id(s string) wire.ID {
