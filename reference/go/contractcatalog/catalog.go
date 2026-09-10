@@ -36,8 +36,11 @@ var (
 	projectRevV7        = mustID("0000000000000000000000000000e009")
 	projectRevV8        = mustID("0000000000000000000000000000e00a")
 	projectRevV9        = mustID("0000000000000000000000000000e00b")
+	projectRevV10       = mustID("0000000000000000000000000000e00e")
 	resourceModule      = mustID("00000000000000000000000000006000")
 	resourceRev         = mustID("00000000000000000000000000006001")
+	durableStateModule  = mustID("00000000000000000000000000008000")
+	durableStateRev     = mustID("00000000000000000000000000008001")
 	dependencyModule    = mustID("0000000000000000000000000000f000")
 	dependencyRev       = mustID("0000000000000000000000000000f001")
 	configurationModule = mustID("00000000000000000000000000004000")
@@ -55,6 +58,7 @@ type Expectation struct {
 	ModuleVersion   uint64
 	RequiredExports []wire.ID
 	Imports         []Pin
+	Parents         []wire.ID
 	Digest          [sha256.Size]byte
 }
 
@@ -75,6 +79,10 @@ func ResolveResourceContract(source []byte) (Contract, error) {
 	return Resolve(source, Expectation{Pin: Pin{resourceModule, resourceRev}, ModuleVersion: 1, RequiredExports: ids("6010", "6011", "6012", "6013"), Imports: []Pin{{packageModule, packageRevV4}}, Digest: mustDigest("d34fd3c9f089f80011c729ce743c8888e6d0e19b1ed97c66bf68befe9dec6792")})
 }
 
+func ResolveDurableStateContract(source []byte) (Contract, error) {
+	return Resolve(source, Expectation{Pin: Pin{durableStateModule, durableStateRev}, ModuleVersion: 1, RequiredExports: ids("8010", "8011", "8012", "8013", "8014", "8015"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("6c80dfac7c4b685cafb6f36a688fb87a0d0f77bf7c9c6ec86a311ef61f8aa7f8")})
+}
+
 // Resolve accepts only the one canonical byte representation described by e.
 func Resolve(source []byte, e Expectation) (Contract, error) {
 	graph, err := wire.Decode(source)
@@ -91,6 +99,9 @@ func Resolve(source []byte, e Expectation) (Contract, error) {
 	}
 	if graph.Module != e.Module || graph.Revision != e.Revision {
 		return Contract{}, fmt.Errorf("contract_catalog.pin")
+	}
+	if e.Parents != nil && !sameIDs(graph.Parents, e.Parents) {
+		return Contract{}, fmt.Errorf("contract_catalog.parents")
 	}
 	module, ok := graph.Entities[e.Module]
 	if !ok || module.Schema != moduleSchema || module.Version != e.ModuleVersion {
@@ -229,6 +240,17 @@ func samePins(a, b []Pin) bool {
 	}
 	return true
 }
+func sameIDs(a, b []wire.ID) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
 
 type ProjectContractSet struct {
 	execution Contract
@@ -272,6 +294,37 @@ type ProjectContractSetV8 struct {
 type ProjectContractSetV9 struct {
 	execution, packages, dependency, foundation, configuration, resource, project Contract
 	validated                                                                     bool
+}
+
+type ProjectContractSetV10 struct {
+	execution, packages, dependency, foundation, configuration, resource, durableState, project Contract
+	validated                                                                                   bool
+}
+
+func (s ProjectContractSetV10) Validated() bool         { return s.validated }
+func (s ProjectContractSetV10) Execution() Contract     { return s.execution }
+func (s ProjectContractSetV10) Package() Contract       { return s.packages }
+func (s ProjectContractSetV10) Dependency() Contract    { return s.dependency }
+func (s ProjectContractSetV10) Foundation() Contract    { return s.foundation }
+func (s ProjectContractSetV10) Configuration() Contract { return s.configuration }
+func (s ProjectContractSetV10) Resource() Contract      { return s.resource }
+func (s ProjectContractSetV10) DurableState() Contract  { return s.durableState }
+func (s ProjectContractSetV10) Project() Contract       { return s.project }
+
+func ResolveProjectContractSetV10(foundation, execution, packages, dependency, configuration, resource, durableState, projectV9, project []byte) (ProjectContractSetV10, error) {
+	v9, err := ResolveProjectContractSetV9(foundation, execution, packages, dependency, configuration, resource, projectV9)
+	if err != nil {
+		return ProjectContractSetV10{}, err
+	}
+	d, err := ResolveDurableStateContract(durableState)
+	if err != nil {
+		return ProjectContractSetV10{}, fmt.Errorf("durable_state:%w", err)
+	}
+	p, err := Resolve(project, Expectation{Pin: Pin{projectModule, projectRevV10}, Parents: []wire.ID{projectRevV9}, ModuleVersion: 10, RequiredExports: ids("e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e020", "e021", "e022", "e023", "e024", "e025"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {dependencyModule, dependencyRev}, {configurationModule, configurationRevV3}, {foundationModule, foundationRev}, {resourceModule, resourceRev}, {durableStateModule, durableStateRev}}, Digest: mustDigest("6343a342eff057db7804ae6d6d6a06efd58c3ee11507f388822c7d66f1234032")})
+	if err != nil {
+		return ProjectContractSetV10{}, fmt.Errorf("project:%w", err)
+	}
+	return ProjectContractSetV10{v9.execution, v9.packages, v9.dependency, v9.foundation, v9.configuration, v9.resource, d, p, true}, nil
 }
 
 func (s ProjectContractSetV9) Validated() bool         { return s.validated }

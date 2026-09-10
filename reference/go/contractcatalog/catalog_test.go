@@ -456,3 +456,23 @@ func TestResolveRejectsDigestMutationAndDuplicateTypedReference(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 }
+
+func TestResolveProjectContractSetV10ExactPins(t *testing.T) {
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	s, err := ResolveProjectContractSetV10(read("../../../modules/foundation/v1/module.seme"), read("../../../modules/execution/v36/module.seme"), read("../../../modules/package/v4/module.seme"), read("../../../modules/dependency/v1/module.seme"), read("../../../modules/configuration/v3/module.seme"), read("../../../modules/resource/v1/module.seme"), read("../../../modules/durable-state/v1/module.seme"), read("../../../modules/project/v9/module.seme"), read("../../../modules/project/v10/module.seme"))
+	if err != nil || !s.Validated() {
+		t.Fatalf("resolve: %v", err)
+	}
+	if s.DurableState().Pin() != (Pin{durableStateModule, durableStateRev}) || s.Project().Pin() != (Pin{projectModule, projectRevV10}) {
+		t.Fatal("pins")
+	}
+	if _, err = ResolveProjectContractSetV10(read("../../../modules/foundation/v1/module.seme"), read("../../../modules/execution/v36/module.seme"), read("../../../modules/package/v4/module.seme"), read("../../../modules/dependency/v1/module.seme"), read("../../../modules/configuration/v3/module.seme"), read("../../../modules/resource/v1/module.seme"), read("../../../modules/resource/v1/module.seme"), read("../../../modules/project/v9/module.seme"), read("../../../modules/project/v10/module.seme")); err == nil {
+		t.Fatal("accepted substituted durable contract")
+	}
+}
