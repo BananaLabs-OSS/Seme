@@ -54,6 +54,111 @@ func TestResolveProjectContractSetV2(t *testing.T) {
 	}
 }
 
+func TestResolveProjectContractSetV3(t *testing.T) {
+	e, _, _ := artifacts(t)
+	p, err := os.ReadFile("../../../modules/package/v2/module.seme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := os.ReadFile("../../../modules/project/v3/module.seme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := ResolveProjectContractSetV3(e, p, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Validated() || set.Package().Pin().Revision != packageRevV2 || set.Project().Pin().Revision != projectRevV3 || len(set.Package().Exports()) != 61 || len(set.Project().Exports()) != 38 {
+		t.Fatal("unexpected v3 contract set")
+	}
+	if _, err = ResolveProjectContractSetV2(e, p, r); err == nil {
+		t.Fatal("v2 resolver accepted v3 substitutions")
+	}
+}
+
+func TestResolveProjectContractSetV3RejectsMutations(t *testing.T) {
+	e, _, _ := artifacts(t)
+	p, _ := os.ReadFile("../../../modules/package/v2/module.seme")
+	r, _ := os.ReadFile("../../../modules/project/v3/module.seme")
+	mutate := func(source []byte, f func(*wire.Envelope)) []byte {
+		x, err := wire.Decode(source)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f(&x)
+		out, err := wire.Encode(x)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	tests := map[string]func() error{
+		"package-revision": func() error {
+			bad := mutate(p, func(x *wire.Envelope) { x.Revision = packageRev })
+			_, err := ResolveProjectContractSetV3(e, bad, r)
+			return err
+		},
+		"project-revision": func() error {
+			bad := mutate(r, func(x *wire.Envelope) { x.Revision = projectRevV2 })
+			_, err := ResolveProjectContractSetV3(e, p, bad)
+			return err
+		},
+		"package-export": func() error {
+			bad := mutate(p, func(x *wire.Envelope) {
+				m := x.Entities[x.Module]
+				v := m.Fields[fExports]
+				v.List = v.List[1:]
+				m.Fields[fExports] = v
+				x.Entities[x.Module] = m
+			})
+			_, err := ResolveProjectContractSetV3(e, bad, r)
+			return err
+		},
+		"project-export": func() error {
+			bad := mutate(r, func(x *wire.Envelope) {
+				m := x.Entities[x.Module]
+				v := m.Fields[fExports]
+				v.List = v.List[1:]
+				m.Fields[fExports] = v
+				x.Entities[x.Module] = m
+			})
+			_, err := ResolveProjectContractSetV3(e, p, bad)
+			return err
+		},
+		"project-import-pin": func() error {
+			bad := mutate(r, func(x *wire.Envelope) {
+				m := x.Entities[x.Module]
+				iid := m.Fields[fImports].List[0].Reference
+				im := x.Entities[iid]
+				v := im.Fields[fImportRev]
+				v.Bytes = append([]byte(nil), v.Bytes...)
+				v.Bytes[15] ^= 1
+				im.Fields[fImportRev] = v
+				x.Entities[iid] = im
+			})
+			_, err := ResolveProjectContractSetV3(e, p, bad)
+			return err
+		},
+	}
+	for name, run := range tests {
+		t.Run(name, func(t *testing.T) {
+			if err := run(); err == nil {
+				t.Fatal("accepted")
+			}
+		})
+	}
+	t.Run("package-digest", func(t *testing.T) {
+		if _, err := Resolve(p, Expectation{Pin: Pin{packageModule, packageRevV2}, ModuleVersion: 2, Digest: mustDigest("0100000000000000000000000000000000000000000000000000000000000000")}); err == nil || !strings.Contains(err.Error(), "digest") {
+			t.Fatalf("got %v", err)
+		}
+	})
+	t.Run("project-digest", func(t *testing.T) {
+		if _, err := Resolve(r, Expectation{Pin: Pin{projectModule, projectRevV3}, ModuleVersion: 3, Digest: mustDigest("0100000000000000000000000000000000000000000000000000000000000000")}); err == nil || !strings.Contains(err.Error(), "digest") {
+			t.Fatalf("got %v", err)
+		}
+	})
+}
+
 func TestResolveRejectsUntrustedContractInputs(t *testing.T) {
 	e, p, r := artifacts(t)
 	tests := map[string]func() error{
