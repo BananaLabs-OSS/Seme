@@ -42,22 +42,36 @@ type Inputs struct {
 	Declarations []Declaration
 }
 
+type InputsV4 struct {
+	Contracts    contractcatalog.ProjectContractSetV8
+	PackageV2    []byte
+	Declarations []Declaration
+}
+
 var relevant = map[wire.ID]Kind{id("9030"): DataType, id("a010"): BehavioralInterface, id("a002"): ReceiverCallable, id("9042"): GenericRealization, id("a004"): GenericRealization, id("a050"): GenericRealization}
 
 func Emit(in Inputs) ([]byte, error) {
-	base, err := validatedBase(in)
+	return emit(in.PackageV2, in.Declarations, false, in.Contracts, contractcatalog.ProjectContractSetV8{})
+}
+
+func EmitV4(in InputsV4) ([]byte, error) {
+	return emit(in.PackageV2, in.Declarations, true, contractcatalog.ProjectContractSetV5{}, in.Contracts)
+}
+
+func emit(packageV2 []byte, declarations []Declaration, v4 bool, v5 contractcatalog.ProjectContractSetV5, v8 contractcatalog.ProjectContractSetV8) ([]byte, error) {
+	base, err := validatedBase(packageV2, v4, v5, v8)
 	if err != nil {
 		return nil, err
 	}
 	e := cloneEnvelope(base)
-	if err = upgrade(&e); err != nil {
+	if err = upgrade(&e, v4); err != nil {
 		return nil, err
 	}
 	detailSet := schemaSet(e, id("b021"))
 	bindingSet := schemaSet(e, id("b024"))
 	kindIDs := map[Kind]wire.ID{}
 	refs := []wire.Value{}
-	for _, d := range in.Declarations {
+	for _, d := range declarations {
 		decl, er := wire.ParseID(d.Identity)
 		if er != nil {
 			return nil, fmt.Errorf("package_v3.declaration_identity")
@@ -70,7 +84,7 @@ func Emit(in Inputs) ([]byte, error) {
 		if er != nil || d.Origin.Path == "" || d.Origin.ByteStart >= d.Origin.ByteEnd || d.Origin.StartLine == 0 || d.Origin.StartColumn == 0 || d.Origin.EndLine == 0 || d.Origin.EndColumn == 0 || d.Origin.EndLine < d.Origin.StartLine {
 			return nil, fmt.Errorf("package_v3.origin")
 		}
-		origin := stable(in.PackageV2, "origin", d.Origin.SourceIdentity, d.Origin.Path, fmt.Sprint(d.Origin.ByteStart), fmt.Sprint(d.Origin.ByteEnd))
+		origin := stable(packageV2, "origin", d.Origin.SourceIdentity, d.Origin.Path, fmt.Sprint(d.Origin.ByteStart), fmt.Sprint(d.Origin.ByteEnd))
 		originEntity := wire.Entity{ID: origin, Schema: id("b026"), Version: 1, Fields: map[wire.ID]wire.Value{id("b260"): ref(source), id("b261"): blob([]byte(d.Origin.Path)), id("b262"): blob(d.Origin.ContentDigest[:]), id("b263"): u(d.Origin.ByteStart), id("b264"): u(d.Origin.ByteEnd), id("b265"): u(uint64(d.Origin.StartLine)), id("b266"): u(uint64(d.Origin.StartColumn)), id("b267"): u(uint64(d.Origin.EndLine)), id("b268"): u(uint64(d.Origin.EndColumn))}}
 		for x, q := range e.Entities {
 			if q.Schema == id("b026") && sameOrigin(q, originEntity) {
@@ -88,7 +102,7 @@ func Emit(in Inputs) ([]byte, error) {
 		}
 		kid, ok := kindIDs[d.Kind]
 		if !ok {
-			kid = stable(in.PackageV2, "kind", fmt.Sprint(d.Kind))
+			kid = stable(packageV2, "kind", fmt.Sprint(d.Kind))
 			kindEntity := wire.Entity{ID: kid, Schema: id("b027"), Version: 1, Fields: map[wire.ID]wire.Value{id("b270"): u(uint64(d.Kind))}}
 			if prior, exists := e.Entities[kid]; exists && !sameEntity(prior, kindEntity) {
 				return nil, fmt.Errorf("package_v3.identity_collision")
@@ -108,11 +122,11 @@ func Emit(in Inputs) ([]byte, error) {
 		if !unique(imports) {
 			return nil, fmt.Errorf("package_v3.referenced_import_duplicate")
 		}
-		did := stable(in.PackageV2, "declaration", d.Identity)
+		did := stable(packageV2, "declaration", d.Identity)
 		if d.Visibility > packagedetail.Public {
 			return nil, fmt.Errorf("package_v3.visibility")
 		}
-		vid, er := visibility(e, in.PackageV2, uint64(d.Visibility))
+		vid, er := visibility(e, packageV2, uint64(d.Visibility))
 		if er != nil {
 			return nil, er
 		}
@@ -134,7 +148,7 @@ func Emit(in Inputs) ([]byte, error) {
 		refs = append(refs, ref(did))
 	}
 	sortRefs(refs)
-	gid := stable(in.PackageV2, "graph")
+	gid := stable(packageV2, "graph")
 	if _, exists := e.Entities[gid]; exists {
 		return nil, fmt.Errorf("package_v3.identity_collision")
 	}
@@ -154,21 +168,54 @@ func Emit(in Inputs) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = Validate(in.Contracts, in.PackageV2, out); err != nil {
+	if v4 {
+		err = ValidateV4(v8, packageV2, out)
+	} else {
+		err = Validate(v5, packageV2, out)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("package_v3.emit_validate:%w", err)
 	}
 	return out, nil
 }
 
 func Validate(contracts contractcatalog.ProjectContractSetV5, baseRaw, outRaw []byte) error {
-	if !contracts.Validated() || contracts.Package().Pin() != (contractcatalog.Pin{Module: id("b000"), Revision: id("b003")}) {
+	return validate(false, contracts, contractcatalog.ProjectContractSetV8{}, baseRaw, outRaw)
+}
+
+func ValidateV4(contracts contractcatalog.ProjectContractSetV8, baseRaw, outRaw []byte) error {
+	return validate(true, contractcatalog.ProjectContractSetV5{}, contracts, baseRaw, outRaw)
+}
+
+func validate(v4 bool, v5 contractcatalog.ProjectContractSetV5, v8 contractcatalog.ProjectContractSetV8, baseRaw, outRaw []byte) error {
+	validated := v5.Validated()
+	pin := v5.Package().Pin()
+	if v4 {
+		validated = v8.Validated()
+		pin = v8.Package().Pin()
+	}
+	want := id("b003")
+	if v4 {
+		want = id("b004")
+	}
+	if !validated || pin != (contractcatalog.Pin{Module: id("b000"), Revision: want}) {
 		return fmt.Errorf("package_v3.contracts")
 	}
-	if err := packagedetailinstance.Validate(baseRaw); err != nil {
-		return fmt.Errorf("package_v3.base:%w", err)
+	var baseErr error
+	if v4 {
+		baseErr = packagedetailinstance.ValidateV4(baseRaw)
+	} else {
+		baseErr = packagedetailinstance.Validate(baseRaw)
+	}
+	if baseErr != nil {
+		return fmt.Errorf("package_v3.base:%w", baseErr)
 	}
 	base, _ := wire.Decode(baseRaw)
-	if err := executionprofile.ValidateConstruction(contracts.Execution(), base); err != nil {
+	executionContract := v5.Execution()
+	if v4 {
+		executionContract = v8.Execution()
+	}
+	if err := executionprofile.ValidateConstruction(executionContract, base); err != nil {
 		return fmt.Errorf("package_v3.execution_profile:%w", err)
 	}
 	e, err := wire.Decode(outRaw)
@@ -179,7 +226,7 @@ func Validate(contracts contractcatalog.ProjectContractSetV5, baseRaw, outRaw []
 	if !bytes.Equal(canonical, outRaw) {
 		return fmt.Errorf("package_v3.noncanonical")
 	}
-	if err = checkUpgrade(e); err != nil {
+	if err = checkUpgrade(e, v4); err != nil {
 		return err
 	}
 	if e.Revision != artifactRevision(e) {
@@ -370,16 +417,29 @@ func Validate(contracts contractcatalog.ProjectContractSetV5, baseRaw, outRaw []
 	return exactBase(base, e, used)
 }
 
-func validatedBase(in Inputs) (wire.Envelope, error) {
-	if !in.Contracts.Validated() {
+func validatedBase(raw []byte, v4 bool, v5 contractcatalog.ProjectContractSetV5, v8 contractcatalog.ProjectContractSetV8) (wire.Envelope, error) {
+	validated := v5.Validated()
+	if v4 {
+		validated = v8.Validated()
+	}
+	if !validated {
 		return wire.Envelope{}, fmt.Errorf("package_v3.contracts")
 	}
-	if err := packagedetailinstance.Validate(in.PackageV2); err != nil {
+	var err error
+	if v4 {
+		err = packagedetailinstance.ValidateV4(raw)
+	} else {
+		err = packagedetailinstance.Validate(raw)
+	}
+	if err != nil {
 		return wire.Envelope{}, err
 	}
-	return wire.Decode(in.PackageV2)
+	return wire.Decode(raw)
 }
-func upgrade(e *wire.Envelope) error {
+func upgrade(e *wire.Envelope, v4 bool) error {
+	if v4 {
+		return checkUpgrade(*e, true)
+	}
 	b003 := id("b003")
 	for x, q := range e.Entities {
 		if q.Schema == id("13") && q.Fields[id("130")].Reference == id("b000") {
@@ -390,8 +450,11 @@ func upgrade(e *wire.Envelope) error {
 	}
 	return fmt.Errorf("package_v3.package_import")
 }
-func checkUpgrade(e wire.Envelope) error {
+func checkUpgrade(e wire.Envelope, v4 bool) error {
 	b003 := id("b003")
+	if v4 {
+		b003 = id("b004")
+	}
 	for _, q := range e.Entities {
 		if q.Schema == id("13") && q.Fields[id("130")].Reference == id("b000") {
 			if bytes.Equal(q.Fields[id("131")].Bytes, b003[:]) {

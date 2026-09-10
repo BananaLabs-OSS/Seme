@@ -14,6 +14,15 @@ var packageSchema = id("b010")
 
 // Emit preserves base and adds one deterministic, independently validated v2 graph.
 func Emit(base wire.Envelope, g packagedetail.Graph) ([]byte, error) {
+	return emit(base, g, false)
+}
+
+// EmitV4 adds Package detail semantics to a fresh b004-authorized v36 base.
+func EmitV4(base wire.Envelope, g packagedetail.Graph) ([]byte, error) {
+	return emit(base, g, true)
+}
+
+func emit(base wire.Envelope, g packagedetail.Graph, v4 bool) ([]byte, error) {
 	if err := packagedetail.Validate(g); err != nil {
 		return nil, err
 	}
@@ -21,7 +30,7 @@ func Emit(base wire.Envelope, g packagedetail.Graph) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("package_detail_emitter.base:%w", err)
 	}
-	if err = upgradePackagePin(&e); err != nil {
+	if err = upgradePackagePin(&e, v4); err != nil {
 		return nil, err
 	}
 	packages := map[string]wire.ID{}
@@ -167,13 +176,18 @@ func Emit(base wire.Envelope, g packagedetail.Graph) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err = packagedetailinstance.Validate(out); err != nil {
+	if v4 {
+		err = packagedetailinstance.ValidateV4(out)
+	} else {
+		err = packagedetailinstance.Validate(out)
+	}
+	if err != nil {
 		return nil, fmt.Errorf("package_detail_emitter.validate:%w", err)
 	}
 	return out, nil
 }
 
-func upgradePackagePin(e *wire.Envelope) error {
+func upgradePackagePin(e *wire.Envelope, v4 bool) error {
 	module, ok := e.Entities[e.Module]
 	if !ok || module.Schema != id("12") {
 		return fmt.Errorf("package_detail_emitter.module")
@@ -202,6 +216,13 @@ func upgradePackagePin(e *wire.Envelope) error {
 	item := e.Entities[packageImports[0]]
 	revision, ok := item.Fields[id("131")]
 	b001, b002 := id("b001"), id("b002")
+	if v4 {
+		b004 := id("b004")
+		if !ok || revision.Tag != 5 || !bytes.Equal(revision.Bytes, b004[:]) {
+			return fmt.Errorf("package_detail_emitter.package_pin_revision")
+		}
+		return nil
+	}
 	if !ok || revision.Tag != 5 || len(revision.Bytes) != len(wire.ID{}) || !bytes.Equal(revision.Bytes, b001[:]) && !bytes.Equal(revision.Bytes, b002[:]) {
 		return fmt.Errorf("package_detail_emitter.package_pin_revision")
 	}

@@ -29,8 +29,20 @@ var (
 )
 
 func Validate(source []byte) error {
-	if err := packageinstance.Validate(source); err != nil {
-		return fmt.Errorf("package_detail.v1:%w", err)
+	return validate(source, false)
+}
+
+func ValidateV4(source []byte) error { return validate(source, true) }
+
+func validate(source []byte, v4 bool) error {
+	var baseErr error
+	if v4 {
+		baseErr = packageinstance.ValidateV4(source)
+	} else {
+		baseErr = packageinstance.Validate(source)
+	}
+	if baseErr != nil {
+		return fmt.Errorf("package_detail.v1:%w", baseErr)
 	}
 	e, err := wire.Decode(source)
 	if err != nil {
@@ -40,7 +52,11 @@ func Validate(source []byte) error {
 	if err != nil || !bytes.Equal(canonical, source) {
 		return fmt.Errorf("package_detail.noncanonical")
 	}
-	if !hasV2Pin(e) {
+	revision := id("b002")
+	if v4 {
+		revision = id("b004")
+	}
+	if !hasPin(e, revision) {
 		return fmt.Errorf("package_detail.v2_import_unpinned")
 	}
 	graphs := idsWithSchema(e, graphSchema)
@@ -295,7 +311,7 @@ func revision(e wire.Envelope, root, excluded wire.ID, domain string) ([]byte, e
 	return h.Sum(nil), nil
 }
 
-func hasV2Pin(e wire.Envelope) bool {
+func hasPin(e wire.Envelope, revision wire.ID) bool {
 	m := e.Entities[e.Module]
 	if m.Schema != moduleSchema {
 		return false
@@ -304,13 +320,12 @@ func hasV2Pin(e wire.Envelope) bool {
 	if err != nil {
 		return false
 	}
-	v2 := id("b002")
 	for _, x := range xs {
 		q := e.Entities[x]
 		if q.Schema == importSchema {
 			a, _ := ref(q, id("130"))
 			b, _ := blob(q, id("131"))
-			if a == id("b000") && bytes.Equal(b, v2[:]) {
+			if a == id("b000") && bytes.Equal(b, revision[:]) {
 				return true
 			}
 		}

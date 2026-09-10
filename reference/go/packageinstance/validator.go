@@ -16,6 +16,7 @@ var (
 	packageModule    = id("0000000000000000000000000000b000")
 	packageRevision  = id("0000000000000000000000000000b001")
 	packageRevision2 = id("0000000000000000000000000000b002")
+	packageRevision4 = id("0000000000000000000000000000b004")
 	packageSchema    = id("0000000000000000000000000000b010")
 	interfaceSchema  = id("0000000000000000000000000000b011")
 	dependencySchema = id("0000000000000000000000000000b012")
@@ -41,14 +42,28 @@ func fid(n uint64) wire.ID { return id(fmt.Sprintf("%032x", n)) }
 
 // Validate checks all Package v1 instances in canonical wire bytes.
 func Validate(source []byte) error {
+	return validate(source, map[wire.ID]bool{packageRevision: true, packageRevision2: true})
+}
+
+// ValidateV4 validates a fresh Package-v4-authorized instance and never
+// accepts a legacy Package v1/v2 pin.
+func ValidateV4(source []byte) error {
+	return validate(source, map[wire.ID]bool{packageRevision4: true})
+}
+
+func validate(source []byte, revisions map[wire.ID]bool) error {
 	e, err := wire.Decode(source)
 	if err != nil {
 		return err
 	}
-	return ValidateEnvelope(e)
+	return validateEnvelope(e, revisions)
 }
 
 func ValidateEnvelope(e wire.Envelope) error {
+	return validateEnvelope(e, map[wire.ID]bool{packageRevision: true, packageRevision2: true})
+}
+
+func validateEnvelope(e wire.Envelope, revisions map[wire.ID]bool) error {
 	m, ok := e.Entities[e.Module]
 	if !ok || m.Schema != moduleSchema {
 		return fmt.Errorf("package_instance.module_declaration")
@@ -63,8 +78,10 @@ func ValidateEnvelope(e wire.Envelope) error {
 		if q.Schema == importSchema {
 			a, ae := ref(q, fImportModule)
 			b, be := blob(q, fImportRevision)
-			if ae == nil && be == nil && a == packageModule && (bytes.Equal(b, packageRevision[:]) || bytes.Equal(b, packageRevision2[:])) {
-				pinned = true
+			if ae == nil && be == nil && a == packageModule && len(b) == len(wire.ID{}) {
+				var revision wire.ID
+				copy(revision[:], b)
+				pinned = revisions[revision]
 			}
 		}
 	}
