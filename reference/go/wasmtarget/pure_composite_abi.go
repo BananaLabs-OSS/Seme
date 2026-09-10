@@ -49,7 +49,7 @@ func CertifyPureCompositeABI(graph wire.Envelope) (PureCompositeABI, error) {
 	if pErr != nil || rErr != nil || parameters.Tag != 7 || result.Tag != 6 || len(parameters.List) > 32 {
 		return PureCompositeABI{}, fmt.Errorf("wasm.pure_composite_signature")
 	}
-	abi := PureCompositeABI{Contract: "seme.pure-composite-abi/v1", Provider: "seme.function-composite-v1", Target: "wasm32-pulp-reactor-v1", Fidelity: "exact", CanonicalModule: graph.Module.String(), CanonicalRevision: graph.Revision.String(), CanonicalProgram: programs[0].ID.String(), Function: function.ID.String(), MaximumMessage: pureValueMaximumMessage}
+	abi := PureCompositeABI{Contract: "seme.pure-composite-abi/v1", Provider: "seme.function-composite-v1", Target: "wasm32-pulp-reactor-v1", Fidelity: "exact", CanonicalModule: graph.Module.String(), CanonicalRevision: graph.Revision.String(), CanonicalProgram: programs[0].ID.String(), Function: function.ID.String(), MaximumMessage: PureValueMaximumMessageSize}
 	seen := map[wire.ID]bool{}
 	for index, item := range parameters.List {
 		if item.Tag != 6 || seen[item.Reference] {
@@ -68,6 +68,10 @@ func CertifyPureCompositeABI(graph wire.Envelope) (PureCompositeABI, error) {
 		}
 		abi.Parameters = append(abi.Parameters, layout)
 		abi.RequestFixedSize += layout.FixedSize
+	}
+	request := aggregateApplicationRequest(abi.Parameters)
+	if _, err := MaximumPureValueEncodedSize(request); err != nil {
+		return PureCompositeABI{}, fmt.Errorf("wasm.pure_composite_request_capacity:%w", err)
 	}
 	resultLayout, err := CertifyPureValueLayout(graph, result.Reference)
 	if err != nil {

@@ -45,6 +45,7 @@ func main() {
 		}
 	}
 	scanner := bufio.NewScanner(os.Stdin)
+	scanner.Buffer(make([]byte, 64*1024), int(wasmtarget.PureValueMaximumHexLineSize))
 	for scanner.Scan() {
 		parts := strings.Split(strings.TrimSpace(scanner.Text()), "\t")
 		data, err := hex.DecodeString(parts[0])

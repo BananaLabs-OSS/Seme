@@ -9,7 +9,14 @@ import (
 	"seme.local/reference/wire"
 )
 
-const pureValueMaximumMessage = 7160
+// PureValueMaximumMessageSize is the implementation-wide ceiling for one
+// certified Pure Value ABI message. Individual layouts retain their smaller,
+// structurally derived FixedSize+MaximumPayload bound.
+const PureValueMaximumMessageSize uint64 = 128 << 10
+
+// PureValueMaximumHexLineSize bounds a hexadecimal message plus conservative
+// line/record overhead in JSONL and line-oriented carrier tools.
+const PureValueMaximumHexLineSize = 2*PureValueMaximumMessageSize + 4096
 
 // PureValueLayout is the recursively certified boundary representation used
 // by the next compositional pure ABI. It describes bytes only; it does not
@@ -45,13 +52,34 @@ type PureValueVariantLayout struct {
 // CertifyPureValueLayout derives a layout exclusively from canonical type
 // entities. Recursive types and unsupported schemas fail closed.
 func CertifyPureValueLayout(graph wire.Envelope, typeID wire.ID) (PureValueLayout, error) {
-	return certifyPureValueLayout(graph, typeID, map[wire.ID]bool{}, 32)
+	layout, err := certifyPureValueLayout(graph, typeID, map[wire.ID]bool{}, 32)
+	if err != nil {
+		return PureValueLayout{}, err
+	}
+	if _, err := MaximumPureValueEncodedSize(layout); err != nil {
+		return PureValueLayout{}, err
+	}
+	return layout, nil
+}
+
+// MaximumPureValueEncodedSize authenticates a layout's finite whole-message
+// capacity and rejects arithmetic overflow or a layout above the global bound.
+func MaximumPureValueEncodedSize(layout PureValueLayout) (uint64, error) {
+	if layout.Contract != "seme.pure-value-abi/v1" || layout.MaximumPayload > ^uint64(0)-layout.FixedSize {
+		return 0, fmt.Errorf("wasm.pure_value_layout_size")
+	}
+	maximum := layout.FixedSize + layout.MaximumPayload
+	if maximum > PureValueMaximumMessageSize {
+		return 0, fmt.Errorf("wasm.pure_value_layout_capacity")
+	}
+	return maximum, nil
 }
 
 // ValidatePureValueBytes rejects every noncanonical encoding described by a
 // certified layout. Variable offsets are absolute within data.
 func ValidatePureValueBytes(layout PureValueLayout, data []byte) error {
-	if layout.Contract != "seme.pure-value-abi/v1" || uint64(len(data)) < layout.FixedSize || len(data) > pureValueMaximumMessage {
+	maximum, err := MaximumPureValueEncodedSize(layout)
+	if err != nil || uint64(len(data)) < layout.FixedSize || uint64(len(data)) > maximum {
 		return fmt.Errorf("wasm.pure_value_size")
 	}
 	ranges := make([]pureValueRange, 0, 4)

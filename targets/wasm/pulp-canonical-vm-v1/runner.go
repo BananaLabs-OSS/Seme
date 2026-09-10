@@ -19,6 +19,11 @@ import (
 	"github.com/tetratelabs/wazero"
 )
 
+// Keep this carrier bound synchronized with the exported Seme Pure Value ABI
+// ceiling. This runner is copied into a pinned Pulp module and therefore cannot
+// import Seme's Go package.
+const maximumPureValueHexLineSize = 2*(128<<10) + 4096
+
 var observations []bool
 
 func init() {
@@ -87,6 +92,7 @@ func run(args []string) error {
 	}
 	defer f.Close()
 	scanner := bufio.NewScanner(f)
+	scanner.Buffer(make([]byte, 64*1024), maximumPureValueHexLineSize)
 	encoder := json.NewEncoder(os.Stdout)
 	for scanner.Scan() {
 		request, err := hex.DecodeString(strings.TrimSpace(scanner.Text()))
