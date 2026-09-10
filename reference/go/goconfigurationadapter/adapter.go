@@ -177,7 +177,7 @@ func Resolve(ctx context.Context, in Input) (Plan, error) {
 func authenticate(ctx context.Context, in Input) (evidence, error) {
 	construction, packages := []byte(in.Session.CanonicalG1), in.Session.Packages
 	if len(in.CanonicalG1) != 0 {
-		if len(construction) != 0 || len(in.Packages) == 0 {
+		if len(construction) != 0 {
 			return evidence{}, fmt.Errorf("go_configuration.run_ambiguous")
 		}
 		construction, packages = in.CanonicalG1, in.Packages
@@ -247,6 +247,36 @@ func authenticate(ctx context.Context, in Input) (evidence, error) {
 				return evidence{}, fmt.Errorf("go_configuration.function_duplicate")
 			}
 			ev.functions[key] = function{fid, owner, params, result}
+		}
+	}
+	if len(packages) == 0 {
+		for _, q := range p.Entities {
+			if q.Schema != id("b021") {
+				continue
+			}
+			pkg := packageName(p, q.ID)
+			for _, mr := range q.Fields[id("b211")].List {
+				m := p.Entities[mr.Reference]
+				fid, ok := reference(m, id("b220"))
+				if !ok || g.Entities[fid].Schema != id("9011") {
+					continue
+				}
+				fq := g.Entities[fid]
+				if !reflect.DeepEqual(fq, p.Entities[fid]) {
+					return evidence{}, fmt.Errorf("go_configuration.function_run_mismatch")
+				}
+				name := string(m.Fields[id("b221")].Bytes)
+				params := refs(fq, id("9111"))
+				result, rok := reference(fq, id("9112"))
+				if !rok {
+					return evidence{}, fmt.Errorf("go_configuration.function_shape")
+				}
+				key := selectKey(pkg, name)
+				if _, exists := ev.functions[key]; exists {
+					return evidence{}, fmt.Errorf("go_configuration.function_duplicate")
+				}
+				ev.functions[key] = function{fid, q.ID, params, result}
+			}
 		}
 	}
 	for _, q := range p.Entities {
