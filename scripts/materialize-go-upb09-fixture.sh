@@ -8,4 +8,5 @@ cp "$repo/fixtures/go-upb09-effects-overlay/controlled/source.go" "$destination/
 cp "$repo/fixtures/go-upb09-effects-overlay/controlled/source_test.go" "$destination/controlled/source_test.go"
 cp "$repo/fixtures/go-upb09-effects-overlay/streamservice/controlled.go" "$destination/streamservice/controlled.go"
 cp "$repo/fixtures/go-upb09-effects-overlay/streamservice/controlled_test.go" "$destination/streamservice/controlled_test.go"
+cp "$repo/fixtures/go-upb09-effects-overlay/streamservice/native_effects_corpus_test.go" "$destination/streamservice/native_effects_corpus_test.go"
 cp "$repo/fixtures/go-upb09-effects-overlay/controlled-effects-selection.json" "$destination/controlled-effects-selection.json"
