@@ -23,11 +23,13 @@ var (
 	packageModule    = mustID("0000000000000000000000000000b000")
 	packageRev       = mustID("0000000000000000000000000000b001")
 	packageRevV2     = mustID("0000000000000000000000000000b002")
+	packageRevV3     = mustID("0000000000000000000000000000b003")
 	projectModule    = mustID("0000000000000000000000000000e000")
 	projectRev       = mustID("0000000000000000000000000000e001")
 	projectRevV2     = mustID("0000000000000000000000000000e002")
 	projectRevV3     = mustID("0000000000000000000000000000e003")
 	projectRevV4     = mustID("0000000000000000000000000000e004")
+	projectRevV5     = mustID("0000000000000000000000000000e005")
 	dependencyModule = mustID("0000000000000000000000000000f000")
 	dependencyRev    = mustID("0000000000000000000000000000f001")
 )
@@ -222,6 +224,41 @@ type ProjectContractSet struct {
 type ProjectContractSetV4 struct {
 	execution, packages, dependency, project Contract
 	validated                                bool
+}
+
+// ProjectContractSetV5 authenticates the complete semantic declaration
+// ownership graph without changing the established v1-v4 APIs.
+type ProjectContractSetV5 struct {
+	execution, packages, dependency, project Contract
+	validated                                bool
+}
+
+func (s ProjectContractSetV5) Validated() bool      { return s.validated }
+func (s ProjectContractSetV5) Execution() Contract  { return s.execution }
+func (s ProjectContractSetV5) Package() Contract    { return s.packages }
+func (s ProjectContractSetV5) Dependency() Contract { return s.dependency }
+func (s ProjectContractSetV5) Project() Contract    { return s.project }
+
+func ResolveProjectContractSetV5(execution, packages, dependency, project []byte) (ProjectContractSetV5, error) {
+	execPin, packagePin := Pin{executionModule, executionRev}, Pin{packageModule, packageRevV3}
+	dependencyPin, projectPin := Pin{dependencyModule, dependencyRev}, Pin{projectModule, projectRevV5}
+	x, err := Resolve(execution, Expectation{Pin: execPin, ModuleVersion: 35, RequiredExports: []wire.ID{mustID("00000000000000000000000000009015")}, Digest: mustDigest("54fdd39b5d78f7f12da37fd43505e0a7962bad9d9808b54a16c20e4cf95e736a")})
+	if err != nil {
+		return ProjectContractSetV5{}, fmt.Errorf("execution:%w", err)
+	}
+	p, err := Resolve(packages, Expectation{Pin: packagePin, ModuleVersion: 3, RequiredExports: ids("b010", "b011", "b012", "b013", "b014", "b020", "b021", "b022", "b023", "b024", "b025", "b026", "b027", "b028", "b029"), Digest: mustDigest("d05d708091bd5594f059d00ec51d083c2c694bc07015befb92cc0fc1a4f30f37")})
+	if err != nil {
+		return ProjectContractSetV5{}, fmt.Errorf("package:%w", err)
+	}
+	d, err := Resolve(dependency, Expectation{Pin: dependencyPin, ModuleVersion: 1, RequiredExports: ids("f010", "f011", "f012", "f013", "f014", "f015", "f016", "f017"), Digest: mustDigest("167cc9a93239db97075d064f0f008edae194bc79e8e9391e2e97958b345be024")})
+	if err != nil {
+		return ProjectContractSetV5{}, fmt.Errorf("dependency:%w", err)
+	}
+	r, err := Resolve(project, Expectation{Pin: projectPin, ModuleVersion: 5, RequiredExports: ids("e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e020"), Imports: []Pin{packagePin, execPin, dependencyPin}, Digest: mustDigest("37279f2918a76abfb0eaeeb1ff62cb527dda40a27421a504cfa10003ff7e2641")})
+	if err != nil {
+		return ProjectContractSetV5{}, fmt.Errorf("project:%w", err)
+	}
+	return ProjectContractSetV5{execution: x, packages: p, dependency: d, project: r, validated: true}, nil
 }
 
 func (s ProjectContractSetV4) Validated() bool      { return s.validated }

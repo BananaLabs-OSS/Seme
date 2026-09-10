@@ -32,7 +32,7 @@ func declarations(version int) []schema {
 		{0xb013, "RuntimeAssumption", []field{f(0xb130, "runtime_assumption.name", 4, 0, 0), f(0xb131, "runtime_assumption.detail", 4, 0, 0)}},
 		{0xb014, "FidelityMapping", []field{f(0xb140, "fidelity.source", 5, 0, 0), f(0xb141, "fidelity.target", 5, 0, 0), f(0xb142, "fidelity.realization", 2, 0, 0), f(0xb143, "fidelity.evidence", 4, 0, 0)}},
 	}
-	if version == 2 {
+	if version >= 2 {
 		out = append(out,
 			schema{0xb020, "PackageGraph", []field{f(0xb200, "package_graph.packages", 5, 0xb021, 2), f(0xb201, "package_graph.content_revision", 4, 0, 0)}},
 			schema{0xb021, "PackageDetail", []field{f(0xb210, "package_detail.package", 5, 0xb010, 0), f(0xb211, "package_detail.members", 5, 0xb022, 2), f(0xb212, "package_detail.imports", 5, 0xb024, 2), f(0xb213, "package_detail.origins", 5, 0xb026, 2), f(0xb214, "package_detail.revision", 4, 0, 0)}},
@@ -43,12 +43,33 @@ func declarations(version int) []schema {
 			schema{0xb026, "SourceOrigin", []field{f(0xb260, "source_origin.source_unit_identity", 5, 0, 0), f(0xb261, "source_origin.normalized_relative_path", 4, 0, 0), f(0xb262, "source_origin.content_digest", 4, 0, 0), f(0xb263, "source_origin.start_byte", 2, 0, 0), f(0xb264, "source_origin.end_byte", 2, 0, 0), f(0xb265, "source_origin.start_line", 2, 0, 0), f(0xb266, "source_origin.start_column", 2, 0, 0), f(0xb267, "source_origin.end_line", 2, 0, 0), f(0xb268, "source_origin.end_column", 2, 0, 0)}},
 		)
 	}
+	if version == 3 {
+		out = append(out,
+			schema{0xb027, "SemanticDeclarationKind", []field{f(0xb270, "semantic_declaration_kind.code", 2, 0, 0)}},
+			schema{0xb028, "OwnedSemanticDeclaration", []field{
+				f(0xb280, "owned_semantic_declaration.declaration", 5, 0, 0),
+				f(0xb281, "owned_semantic_declaration.owner", 5, 0xb021, 0),
+				f(0xb282, "owned_semantic_declaration.kind", 5, 0xb027, 0),
+				f(0xb283, "owned_semantic_declaration.name", 4, 0, 0),
+				f(0xb284, "owned_semantic_declaration.visibility", 5, 0xb023, 0),
+				f(0xb285, "owned_semantic_declaration.export_name", 4, 0, 1),
+				f(0xb286, "owned_semantic_declaration.origin", 5, 0xb026, 0),
+				f(0xb287, "owned_semantic_declaration.referenced_imports", 5, 0xb024, 2),
+				f(0xb288, "owned_semantic_declaration.generic_definition", 5, 0, 1),
+			}},
+			schema{0xb029, "CompletePackageGraph", []field{
+				f(0xb290, "complete_package_graph.package_graph", 5, 0xb020, 0),
+				f(0xb291, "complete_package_graph.supplemental_declarations", 5, 0xb028, 2),
+				f(0xb292, "complete_package_graph.content_revision", 4, 0, 0),
+			}},
+		)
+	}
 	return out
 }
 func main() {
-	version := flag.Int("version", 1, "Package Contract version (1 or 2)")
+	version := flag.Int("version", 1, "Package Contract version (1, 2, or 3)")
 	flag.Parse()
-	if *version != 1 && *version != 2 {
+	if *version < 1 || *version > 3 {
 		panic("unsupported Package Contract version")
 	}
 	schemas := declarations(*version)
@@ -58,12 +79,12 @@ func main() {
 	}
 	sort.Slice(fields, func(i, j int) bool { return fields[i].id < fields[j].id })
 	parents := 0
-	if *version == 2 {
+	if *version >= 2 {
 		parents = 1
 	}
 	fmt.Printf("# Generated construction projection for Package Contract v%d.\nve 1\nmo %s\nrv %s\npc %d\n", *version, id(0xb000), id(0xb000+uint64(*version)), parents)
 	if parents == 1 {
-		fmt.Printf("%s\n", id(0xb001))
+		fmt.Printf("%s\n", id(0xb000+uint64(*version)-1))
 	}
 	fmt.Printf("ec %d\n\n", 1+len(schemas)+len(fields))
 	fmt.Printf("en %s %s %d 2\nfi %s by %s\nfi %s li %d\n", id(0xb000), id(0x12), *version, id(0x120), text(fmt.Sprintf("package-contract-v%d", *version)), id(0x122), len(schemas)+len(fields))

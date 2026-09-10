@@ -54,8 +54,30 @@ func TestEmitV2ExtendsV1WithExactAncestryAndNeutralSources(t *testing.T) {
 			t.Fatalf("language/project-specific contamination %q", bad)
 		}
 	}
-	if err := EmitVersion(&bytes.Buffer{}, 5); err == nil {
+	if err := EmitVersion(&bytes.Buffer{}, 6); err == nil {
 		t.Fatal("accepted unknown version")
+	}
+}
+
+func TestEmitV5BindsCompletePackageGraph(t *testing.T) {
+	var out bytes.Buffer
+	if err := EmitVersion(&out, 5); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"rv " + RevisionV5ID, "pc 1\n" + RevisionV4ID, "0000000000000000000000000000b003", "0000000000000000000000000000e020", "0000000000000000000000000000e200", "0000000000000000000000000000e201", "0000000000000000000000000000e202"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("missing %s", want)
+		}
+	}
+	for version := 1; version <= 4; version++ {
+		want, err := os.ReadFile(fmt.Sprintf("../../../modules/project/v%d/module.g1", version))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var got bytes.Buffer
+		if err = EmitVersion(&got, version); err != nil || !bytes.Equal(want, got.Bytes()) {
+			t.Fatalf("v%d changed: %v", version, err)
+		}
 	}
 }
 

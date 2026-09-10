@@ -12,6 +12,7 @@ const RevisionID = "0000000000000000000000000000e001"
 const RevisionV2ID = "0000000000000000000000000000e002"
 const RevisionV3ID = "0000000000000000000000000000e003"
 const RevisionV4ID = "0000000000000000000000000000e004"
+const RevisionV5ID = "0000000000000000000000000000e005"
 
 type SourceClassification uint64
 
@@ -51,7 +52,7 @@ func Emit(out io.Writer) error {
 }
 
 func EmitVersion(out io.Writer, version int) error {
-	if version < 1 || version > 4 {
+	if version < 1 || version > 5 {
 		return fmt.Errorf("unsupported Project Contract version %d", version)
 	}
 	b := func(value string) string { return hex.EncodeToString([]byte(value)) }
@@ -82,6 +83,19 @@ func EmitVersion(out io.Writer, version int) error {
 		importCount = 3
 		importRefs += "\nrf 0000000000000000000000000000e004"
 		dependencyImport = "\n\nen 0000000000000000000000000000e004 00000000000000000000000000000013 1 2\nfi 00000000000000000000000000000130 rf 0000000000000000000000000000f000\nfi 00000000000000000000000000000131 by 0000000000000000000000000000f001"
+	}
+	if version == 5 {
+		revision, parent, count, moduleVersion, exportCount, packageRevision = RevisionV5ID, "pc 1\n"+RevisionV4ID, 50, 5, 46, "0000000000000000000000000000b003"
+		exports = v5Exports()
+		extraSchemas, extraFields = v2Entities(b)
+		s3, f3 := v3Entities(b)
+		s4, f4 := v4Entities(b)
+		s5, f5 := v5Entities(b)
+		extraSchemas += s3 + s4 + s5
+		extraFields += f3 + f4 + f5
+		importCount = 3
+		importRefs += "\nrf 0000000000000000000000000000e006"
+		dependencyImport = "\n\nen 0000000000000000000000000000e006 00000000000000000000000000000013 1 2\nfi 00000000000000000000000000000130 rf 0000000000000000000000000000f000\nfi 00000000000000000000000000000131 by 0000000000000000000000000000f001"
 	}
 	if version >= 2 {
 		// Preserve the established generated layout between export, schema, and
@@ -126,6 +140,19 @@ rf 0000000000000000000000000000e114
 %s
 %s%s`, version, ModuleID, revision, parent, count, ModuleID, moduleVersion, b(fmt.Sprintf("project-contract-v%d", version)), importCount, importRefs, exportCount, exports, packageRevision, dependencyImport, b("ProjectIdentity"), b("ProjectSnapshot"), extraSchemas, fields(b), extraFields)
 	return err
+}
+
+func v5Entities(b func(string) string) (string, string) {
+	schema := fmt.Sprintf("\nen 0000000000000000000000000000e020 00000000000000000000000000000010 1 2\nfi 00000000000000000000000000000100 by %s\nfi 00000000000000000000000000000101 li 3\nrf 0000000000000000000000000000e200\nrf 0000000000000000000000000000e201\nrf 0000000000000000000000000000e202\n", b("CompleteProjectGraphSnapshot"))
+	field := func(id, name, target string) string {
+		kind, count, constraint := 4, 1, ""
+		if target != "" {
+			kind, count = 5, 2
+			constraint = fmt.Sprintf("fi 00000000000000000000000000002001 rf 0000000000000000000000000000%s\n", target)
+		}
+		return fmt.Sprintf("\nen 0000000000000000000000000000%s 00000000000000000000000000000011 1 4\nfi 00000000000000000000000000000110 by %s\nfi 00000000000000000000000000000111 rc %d\nfi 00000000000000000000000000002000 uu %d\n%sfi 00000000000000000000000000000112 uu 0\nfi 00000000000000000000000000000113 uu 1\n", id, b(name), count, kind, constraint)
+	}
+	return schema, field("e200", "complete_project_graph_snapshot.dependency_graph_snapshot", "e019") + field("e201", "complete_project_graph_snapshot.complete_package_graph", "b029") + field("e202", "complete_project_graph_snapshot.content_revision", "")
 }
 
 func v4Entities(b func(string) string) (string, string) {
@@ -231,6 +258,13 @@ func v3Exports() string {
 func v4Exports() string {
 	out := ""
 	for _, x := range []string{"e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e100", "e110", "e111", "e112", "e113", "e114", "e120", "e121", "e122", "e123", "e130", "e140", "e150", "e151", "e152", "e153", "e154", "e155", "e160", "e161", "e162", "e163", "e164", "e170", "e171", "e172", "e180", "e181", "e182", "e190", "e191", "e192"} {
+		out += fmt.Sprintf("rf 0000000000000000000000000000%s\n", x)
+	}
+	return out
+}
+func v5Exports() string {
+	out := ""
+	for _, x := range []string{"e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e020", "e100", "e110", "e111", "e112", "e113", "e114", "e120", "e121", "e122", "e123", "e130", "e140", "e150", "e151", "e152", "e153", "e154", "e155", "e160", "e161", "e162", "e163", "e164", "e170", "e171", "e172", "e180", "e181", "e182", "e190", "e191", "e192", "e200", "e201", "e202"} {
 		out += fmt.Sprintf("rf 0000000000000000000000000000%s\n", x)
 	}
 	return out
