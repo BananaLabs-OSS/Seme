@@ -40,6 +40,13 @@ func TestValidationRejectsOriginVisibilityAndOrdering(t *testing.T) {
 }
 
 func TestOwnershipAndNamespaceAdversaries(t *testing.T) {
+	t.Run("source without origin", func(t *testing.T) {
+		g := fixture()
+		g.Packages[0].Sources = append(g.Packages[0].Sources, Source{Identity: "unused", Path: "unused.go", ContentDigest: sha256.Sum256([]byte("unused")), ByteSize: 6})
+		if err := Validate(g); err == nil || err.Error() != "package_detail.source_unowned" {
+			t.Fatalf("accepted unowned package source: %v", err)
+		}
+	})
 	t.Run("source identity ownership", func(t *testing.T) {
 		g := fixture()
 		g.Packages = append(g.Packages, Detail{Identity: "lib", Sources: []Source{{Identity: "src", Path: "lib.go", ContentDigest: sha256.Sum256([]byte("lib")), ByteSize: 1}}})

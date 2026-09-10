@@ -89,6 +89,7 @@ func Validate(g Graph) error {
 			sourceIdentities[s.Identity], sourcePaths[s.Path] = p.Identity, p.Identity
 		}
 		memberNames, exportNames := map[string]bool{}, map[string]bool{}
+		usedSources := map[string]bool{}
 		for j, m := range p.Members {
 			if m.Identity == "" || m.Name == "" || (j > 0 && p.Members[j-1].Identity >= m.Identity) {
 				return fmt.Errorf("package_detail.member_order")
@@ -119,6 +120,7 @@ func Validate(g Graph) error {
 			if err := origin(m.Origin, sources); err != nil {
 				return err
 			}
+			usedSources[m.Origin.SourceIdentity] = true
 			if !m.Callable && (len(m.Parameters) > 0 || len(m.Results) > 0) {
 				return fmt.Errorf("package_detail.signature")
 			}
@@ -146,6 +148,10 @@ func Validate(g Graph) error {
 			if err := origin(im.Origin, sources); err != nil {
 				return err
 			}
+			usedSources[im.Origin.SourceIdentity] = true
+		}
+		if len(usedSources) != len(sources) {
+			return fmt.Errorf("package_detail.source_unowned")
 		}
 	}
 	if roots != 1 {

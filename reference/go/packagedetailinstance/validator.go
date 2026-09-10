@@ -158,7 +158,10 @@ func Validate(source []byte) error {
 		if err = matchInterfaces(e, pid, exports); err != nil {
 			return err
 		}
-		deps := packageDependencies(e, pid)
+		deps, er := packageDependencies(e, pid)
+		if er != nil {
+			return er
+		}
 		aliases := map[string]bool{}
 		for _, bid := range bindings {
 			b, ok := e.Entities[bid]
@@ -195,7 +198,7 @@ func Validate(source []byte) error {
 					return fmt.Errorf("package_detail.local_arm:%s", bid)
 				}
 				dep, ok := deps[local]
-				if !ok || alias != dep {
+				if !ok || string(requested) != dep.name || dep.requirement != "local" {
 					return fmt.Errorf("package_detail.local_dependency:%s", bid)
 				}
 			} else {
@@ -204,6 +207,10 @@ func Validate(source []byte) error {
 				}
 				if !ownsDependency(e, pid, external) {
 					return fmt.Errorf("package_detail.external_dependency:%s", bid)
+				}
+				dep := dependency(e, external)
+				if string(requested) != dep.name || dep.requirement == "" || dep.requirement == "local" {
+					return fmt.Errorf("package_detail.external_identity:%s", bid)
 				}
 			}
 		}
@@ -322,16 +329,32 @@ func matchInterfaces(e wire.Envelope, pid wire.ID, exports map[string]wire.ID) e
 	}
 	return nil
 }
-func packageDependencies(e wire.Envelope, pid wire.ID) map[wire.ID]string {
-	out := map[wire.ID]string{}
+
+type dependencyInfo struct{ name, requirement string }
+
+func dependency(e wire.Envelope, did wire.ID) dependencyInfo {
+	q := e.Entities[did]
+	name, _ := blob(q, id("b120"))
+	requirement, _ := blob(q, id("b121"))
+	return dependencyInfo{string(name), string(requirement)}
+}
+func packageDependencies(e wire.Envelope, pid wire.ID) (map[wire.ID]dependencyInfo, error) {
+	out := map[wire.ID]dependencyInfo{}
+	names := map[string]bool{}
 	xs, _ := refs(e.Entities[pid], id("b103"))
 	for _, x := range xs {
 		q := e.Entities[x]
 		target, _ := ref(q, id("b122"))
-		name, _ := blob(q, id("b120"))
-		out[target] = string(name)
+		info := dependency(e, x)
+		if _, exists := out[target]; exists {
+			return nil, fmt.Errorf("package_detail.dependency_target_duplicate:%s", target)
+		}
+		if names[info.name] {
+			return nil, fmt.Errorf("package_detail.dependency_name_duplicate:%s", info.name)
+		}
+		out[target], names[info.name] = info, true
 	}
-	return out
+	return out, nil
 }
 func ownsDependency(e wire.Envelope, pid, did wire.ID) bool {
 	xs, _ := refs(e.Entities[pid], id("b103"))
