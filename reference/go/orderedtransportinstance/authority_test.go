@@ -21,7 +21,7 @@ func TestAuthenticatesExactNeutralAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.CodecIdentity != CodecIdentity || a.DigestIdentity != DigestIdentity || a.MaximumCommands != 256 || a.MaximumEvents != 1024 || a.MaximumEventsPerCommand != 4 || a.MaximumPayloadBytes != 3072 || a.MaximumFrameBytes != 4096 || a.CorrelationBytes != 16 || a.MaximumStreamBytes != 128 || a.FirstCommandSequence != 1 || a.CommandTerminalSentinel != 257 || a.EventTerminalSentinel != 1025 {
+	if a.CodecIdentity != CodecIdentity || a.DigestIdentity != DigestIdentity || a.MaximumCommands != 256 || a.MaximumEvents != 1024 || a.MaximumEventsPerCommand != 4 || a.MaximumPayloadBytes != 3072 || a.MaximumRetainedPayloadBytes != 4096 || a.MaximumFrameBytes != 4096 || a.CorrelationBytes != 16 || a.MaximumStreamBytes != 128 || a.FirstCommandSequence != 1 || a.CommandTerminalSentinel != 257 || a.EventTerminalSentinel != 1025 {
 		t.Fatalf("authority = %#v", a)
 	}
 	if a.CodecLayout[1] != "ordered_transport.codec.magic.SEMEOT01" {
