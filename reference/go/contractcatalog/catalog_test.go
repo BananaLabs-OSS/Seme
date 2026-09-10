@@ -134,6 +134,42 @@ func TestResolveProjectContractSetV4ExactImmutablePins(t *testing.T) {
 	}
 }
 
+func TestResolveProjectContractSetV5ExactImmutablePins(t *testing.T) {
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	e := read("../../../modules/execution/v35/module.seme")
+	p := read("../../../modules/package/v3/module.seme")
+	d := read("../../../modules/dependency/v1/module.seme")
+	r := read("../../../modules/project/v5/module.seme")
+	set, err := ResolveProjectContractSetV5(e, p, d, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !set.Validated() || set.Package().Pin() != (Pin{packageModule, packageRevV3}) || set.Project().Pin() != (Pin{projectModule, projectRevV5}) {
+		t.Fatal("unexpected v5 pins")
+	}
+	if (ProjectContractSetV5{}).Validated() {
+		t.Fatal("zero set authenticated")
+	}
+	if _, err = ResolveProjectContractSetV5(e, read("../../../modules/package/v2/module.seme"), d, r); err == nil {
+		t.Fatal("v2 package substitution accepted")
+	}
+	if _, err = ResolveProjectContractSetV5(e, p, d, read("../../../modules/project/v4/module.seme")); err == nil {
+		t.Fatal("v4 project substitution accepted")
+	}
+	bad, _ := wire.Decode(r)
+	bad.Revision = projectRevV4
+	encoded, _ := wire.Encode(bad)
+	if _, err = ResolveProjectContractSetV5(e, p, d, encoded); err == nil {
+		t.Fatal("wrong revision accepted")
+	}
+}
+
 func TestResolveProjectContractSetV3RejectsMutations(t *testing.T) {
 	e, _, _ := artifacts(t)
 	p, _ := os.ReadFile("../../../modules/package/v2/module.seme")
