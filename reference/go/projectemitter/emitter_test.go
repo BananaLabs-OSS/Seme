@@ -151,3 +151,45 @@ func TestEmitRejectsInvalidProgramAndMultipleFunctionOwners(t *testing.T) {
 		t.Fatal("accepted duplicate exported interface name")
 	}
 }
+
+func TestEmitOwnsExactCanonicalEffectsAndRejectsForgeries(t *testing.T) {
+	set := contracts(t)
+	in := input()
+	program, _ := soleProgram(in.Execution)
+	function := in.Execution.Entities[program].Fields[fProgramEntry].Reference
+	body := in.Execution.Entities[function].Fields[id("00000000000000000000000000009113")].Reference
+	effect := stableID("test", "effect")
+	capability := stableID("test", "capability")
+	in.Execution.Entities[capability] = wire.Entity{ID: capability, Schema: capabilitySchema, Version: 1, Fields: map[wire.ID]wire.Value{id("00000000000000000000000000000160"): blob([]byte("observability.log"))}}
+	in.Execution.Entities[effect] = wire.Entity{ID: effect, Schema: effectSchema, Version: 1, Fields: map[wire.ID]wire.Value{id("00000000000000000000000000000150"): blob([]byte("observability.log")), id("00000000000000000000000000000151"): ref(capability)}}
+	invoke := in.Execution.Entities[body]
+	invoke.Schema = id("000000000000000000000000000090f1")
+	invoke.Fields = map[wire.ID]wire.Value{id("00000000000000000000000000009f10"): ref(effect), id("00000000000000000000000000009f11"): list(nil)}
+	in.Execution.Entities[body] = invoke
+	in.Packages[0].Effects = []wire.ID{effect}
+	first, err := Emit(set, in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, _ := wire.Decode(first)
+	pid := stableID("package", in.Packages[0].Name)
+	if got := decoded.Entities[pid].Fields[id("0000000000000000000000000000b104")].List; len(got) != 1 || got[0].Reference != effect {
+		t.Fatalf("effect ownership missing: %#v", got)
+	}
+
+	for name, mutate := range map[string]func(*Input){
+		"unowned":         func(x *Input) { x.Packages[0].Effects = nil },
+		"duplicate":       func(x *Input) { x.Packages[0].Effects = []wire.ID{effect, effect} },
+		"foreign":         func(x *Input) { x.Packages[0].Effects = []wire.ID{stableID("test", "foreign")} },
+		"multiple owners": func(x *Input) { x.Packages[1].Effects = []wire.ID{effect} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bad := in
+			bad.Packages = append([]Package(nil), in.Packages...)
+			mutate(&bad)
+			if out, err := Emit(set, bad); err == nil || out != nil {
+				t.Fatalf("accepted forged effects: err=%v", err)
+			}
+		})
+	}
+}

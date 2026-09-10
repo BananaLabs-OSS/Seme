@@ -10,6 +10,7 @@ import (
 
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/goprovider"
+	"seme.local/reference/wire"
 )
 
 func testContracts(t *testing.T) contractcatalog.ProjectContractSet {
@@ -28,23 +29,28 @@ func testContracts(t *testing.T) contractcatalog.ProjectContractSet {
 	return x
 }
 
+func frozenCompiler(t *testing.T) Compile {
+	t.Helper()
+	return func(ctx context.Context, input []byte) ([]byte, error) {
+		dir := t.TempDir()
+		in, out := filepath.Join(dir, "in.g1"), filepath.Join(dir, "out.seme")
+		if err := os.WriteFile(in, input, 0600); err != nil {
+			return nil, err
+		}
+		command := exec.CommandContext(ctx, "../../../bootstrap/seme-k0-linux-amd64", "../../../compiler/g1-compiler.k0", in, out)
+		if b, err := command.CombinedOutput(); err != nil {
+			return nil, errors.New(string(b))
+		}
+		return os.ReadFile(out)
+	}
+}
+
 func TestBuildWithInjectedFrozenCompiler(t *testing.T) {
 	g1, e := os.ReadFile("../../../modules/execution/v35/module.g1")
 	if e != nil {
 		t.Fatal(e)
 	}
-	compile := func(ctx context.Context, input []byte) ([]byte, error) {
-		dir := t.TempDir()
-		in, out := filepath.Join(dir, "in.g1"), filepath.Join(dir, "out.seme")
-		if e := os.WriteFile(in, input, 0600); e != nil {
-			return nil, e
-		}
-		command := exec.CommandContext(ctx, "../../../bootstrap/seme-k0-linux-amd64", "../../../compiler/g1-compiler.k0", in, out)
-		if b, e := command.CombinedOutput(); e != nil {
-			return nil, errors.New(string(b))
-		}
-		return os.ReadFile(out)
-	}
+	compile := frozenCompiler(t)
 	snapshot := goprovider.DocumentSnapshot{Revision: 7, ModulePath: "example.test/build", PackagePath: "example.test/build/app", Entry: "Apply", Files: map[string]string{
 		"lib/value.go": `package lib
 func addOne(v int64) int64 { return v + 1 }
@@ -98,6 +104,40 @@ func Apply(v int64) int64 { return lib.AddOne(v) }`,
 			if file == "mutation" {
 				t.Fatal("resolution metadata was not copy safe")
 			}
+		}
+	}
+}
+
+func TestBuildOwnsCanonicalLogEffectWithoutSourceDependency(t *testing.T) {
+	g1, err := os.ReadFile("../../../modules/execution/v35/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot := goprovider.DocumentSnapshot{Revision: 1, ModulePath: "example.test/effects", PackagePath: "example.test/effects", Entry: "Apply", Files: map[string]string{
+		"main.go": "package effects\nimport \"log\"\nfunc Apply(v bool) bool { log.Print(v); return v }\n",
+	}}
+	result, err := Build(context.Background(), snapshot, testContracts(t), g1, frozenCompiler(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err := wire.Decode(result.Artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, entity := range envelope.Entities {
+		if entity.Schema != mustID("0000000000000000000000000000b010") {
+			continue
+		}
+		effects := entity.Fields[mustID("0000000000000000000000000000b104")]
+		found = effects.Tag == 7 && len(effects.List) == 1
+	}
+	if !found {
+		t.Fatal("canonical log effect was not owned by its package")
+	}
+	for _, p := range result.Packages {
+		if len(p.Dependencies) != 0 {
+			t.Fatalf("standard-library effect became a source dependency: %#v", p.Dependencies)
 		}
 	}
 }

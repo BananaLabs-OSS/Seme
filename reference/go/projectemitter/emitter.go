@@ -28,6 +28,10 @@ type Package struct {
 	Name         string
 	Interfaces   []Interface
 	Dependencies []Dependency
+	// Effects contains the exact canonical Effect declarations required by
+	// functions owned by this package. Effects are declarations, not source
+	// imports or package dependencies.
+	Effects []wire.ID
 }
 
 type Interface struct {
@@ -44,6 +48,8 @@ var (
 	importSchema      = id("00000000000000000000000000000013")
 	programSchema     = id("00000000000000000000000000009015")
 	functionSchema    = id("00000000000000000000000000009011")
+	effectSchema      = id("00000000000000000000000000000015")
+	capabilitySchema  = id("00000000000000000000000000000016")
 	fProgramFunctions = id("00000000000000000000000000009150")
 	fProgramEntry     = id("00000000000000000000000000009151")
 	packageSchema     = id("0000000000000000000000000000b010")
@@ -95,6 +101,7 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 		return nil, err
 	}
 	functionOwners := map[wire.ID]string{}
+	effectOwners := map[wire.ID]string{}
 	for _, p := range packages {
 		for _, x := range p.Interfaces {
 			if owner, found := functionOwners[x.Function]; found && owner != p.Name {
@@ -169,10 +176,24 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 			}
 		}
 		sortValues(dependencyRefs)
+		effects := append([]wire.ID(nil), p.Effects...)
+		sortIDs(effects)
+		for i, effect := range effects {
+			if i > 0 && effect == effects[i-1] {
+				return nil, fmt.Errorf("project_emitter.effect_duplicate:%s", effect)
+			}
+			if owner, exists := effectOwners[effect]; exists {
+				return nil, fmt.Errorf("project_emitter.effect_multiple_owners:%s:%s:%s", effect, owner, p.Name)
+			}
+			if err := validateEffect(entities, effect); err != nil {
+				return nil, err
+			}
+			effectOwners[effect] = p.Name
+		}
 		if err := put(entities, wire.Entity{ID: pid, Schema: packageSchema, Version: 1, Fields: map[wire.ID]wire.Value{
 			id("0000000000000000000000000000b100"): blob([]byte(p.Name)), id("0000000000000000000000000000b101"): blob(nil),
 			id("0000000000000000000000000000b102"): list(interfaceRefs), id("0000000000000000000000000000b103"): list(dependencyRefs),
-			id("0000000000000000000000000000b104"): list(nil), id("0000000000000000000000000000b105"): list(nil), id("0000000000000000000000000000b106"): list(nil),
+			id("0000000000000000000000000000b104"): list(refs(effects)), id("0000000000000000000000000000b105"): list(nil), id("0000000000000000000000000000b106"): list(nil),
 		}}); err != nil {
 			return nil, err
 		}
@@ -183,6 +204,14 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 		entity := entities[pid]
 		entity.Fields[id("0000000000000000000000000000b101")] = blob(version)
 		entities[pid] = entity
+	}
+	for eid, entity := range entities {
+		if entity.Schema != effectSchema {
+			continue
+		}
+		if _, owned := effectOwners[eid]; !owned {
+			return nil, fmt.Errorf("project_emitter.effect_unowned:%s", eid)
+		}
 	}
 	sortIDs(packageList)
 	identity := stableID("project-identity", in.Identity)
@@ -239,6 +268,24 @@ func Emit(contracts contractcatalog.ProjectContractSet, in Input) ([]byte, error
 		return nil, err
 	}
 	return out, nil
+}
+
+func validateEffect(entities map[wire.ID]wire.Entity, effectID wire.ID) error {
+	effect, ok := entities[effectID]
+	if !ok || effect.Schema != effectSchema || effect.Version != 1 || len(effect.Fields) != 2 {
+		return fmt.Errorf("project_emitter.effect_invalid:%s", effectID)
+	}
+	name, nok := effect.Fields[id("00000000000000000000000000000150")]
+	capability, cok := effect.Fields[id("00000000000000000000000000000151")]
+	if !nok || name.Tag != 5 || len(name.Bytes) == 0 || !cok || capability.Tag != 6 {
+		return fmt.Errorf("project_emitter.effect_invalid:%s", effectID)
+	}
+	cap, ok := entities[capability.Reference]
+	field, fok := cap.Fields[id("00000000000000000000000000000160")]
+	if !ok || cap.Schema != capabilitySchema || cap.Version != 1 || len(cap.Fields) != 1 || !fok || field.Tag != 5 || len(field.Bytes) == 0 {
+		return fmt.Errorf("project_emitter.capability_invalid:%s", capability.Reference)
+	}
+	return nil
 }
 
 func dependencyOrder(packages []Package) ([]Package, error) {
