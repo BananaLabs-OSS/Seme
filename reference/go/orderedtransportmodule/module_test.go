@@ -11,7 +11,7 @@ func TestEmitDeterministicNeutralAndBounded(t *testing.T) {
 	if Emit(&a) != nil || Emit(&b) != nil || a.String() != b.String() {
 		t.Fatal("nondeterministic")
 	}
-	for _, value := range []string{ModuleID, RevisionID, "00000000000000000000000000002010", "00000000000000000000000000002024", "000000000000000000000000000021e8", "000000000000000000000000000021fe"} {
+	for _, value := range []string{ModuleID, RevisionID, "00000000000000000000000000010100", "00000000000000000000000000010114", "000000000000000000000000000110e8", "000000000000000000000000000110fe"} {
 		if !strings.Contains(a.String(), value) {
 			t.Fatalf("missing %s", value)
 		}
