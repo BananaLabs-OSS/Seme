@@ -192,9 +192,6 @@ func ProjectPackagesRichWithAliases(g1 []byte, ownership RichPackageOwnership, p
 			})
 			chunks = append(chunks, raw)
 		}
-		for _, dep := range plans[pkg.Identity].imports {
-			imports[dep] = true
-		}
 		aliasChunks := []string{}
 		graph, parseErr := parse(g1)
 		if parseErr != nil {
@@ -216,6 +213,15 @@ func ProjectPackagesRichWithAliases(g1 []byte, ownership RichPackageOwnership, p
 				imports[dep] = true
 			}
 			aliasChunks = append(aliasChunks, fmt.Sprintf("type %s = %s", present.Name, name))
+		}
+		usedQualifiers, er := projectedSelectorQualifiers(append(append([]string(nil), chunks...), aliasChunks...))
+		if er != nil {
+			return nil, er
+		}
+		for _, dep := range plans[pkg.Identity].imports {
+			if usedQualifiers[aliases[dep]] {
+				imports[dep] = true
+			}
 		}
 		var b strings.Builder
 		fmt.Fprintf(&b, "package %s\n\n", pkg.Name)
@@ -257,6 +263,26 @@ func ProjectPackagesRichWithAliases(g1 []byte, ownership RichPackageOwnership, p
 		out[pkg.Identity] = formatted
 	}
 	return out, nil
+}
+
+func projectedSelectorQualifiers(chunks []string) (map[string]bool, error) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "projected.go", "package projection\n\n"+strings.Join(chunks, "\n\n"), 0)
+	if err != nil {
+		return nil, fmt.Errorf("go_projection.selector_scan:%w", err)
+	}
+	used := map[string]bool{}
+	ast.Inspect(file, func(node ast.Node) bool {
+		selector, ok := node.(*ast.SelectorExpr)
+		if !ok {
+			return true
+		}
+		if qualifier, ok := selector.X.(*ast.Ident); ok {
+			used[qualifier.Name] = true
+		}
+		return true
+	})
+	return used, nil
 }
 
 func isTypeSchema(schema string) bool {
