@@ -646,7 +646,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 						}
 						temporary := *next
 						*next++
-						block.statements = append(block.statements, &goStatement{localName: fmt.Sprintf("parallel.%d", i), localType: localType, local: temporary, initializer: initializers[i]})
+						block.statements = append(block.statements, &goStatement{localName: fmt.Sprintf("seme_parallel_%d", i), localType: localType, local: temporary, initializer: initializers[i]})
 						initializers[i] = &goExpression{kind: goLocalRead, local: temporary}
 					}
 				}
