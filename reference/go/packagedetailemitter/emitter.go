@@ -1,6 +1,7 @@
 package packagedetailemitter
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"seme.local/reference/packagedetail"
@@ -19,6 +20,9 @@ func Emit(base wire.Envelope, g packagedetail.Graph) ([]byte, error) {
 	e, err := clone(base)
 	if err != nil {
 		return nil, fmt.Errorf("package_detail_emitter.base:%w", err)
+	}
+	if err = upgradePackagePin(&e); err != nil {
+		return nil, err
 	}
 	packages := map[string]wire.ID{}
 	deps := map[string]map[wire.ID]bool{}
@@ -167,6 +171,43 @@ func Emit(base wire.Envelope, g packagedetail.Graph) ([]byte, error) {
 		return nil, fmt.Errorf("package_detail_emitter.validate:%w", err)
 	}
 	return out, nil
+}
+
+func upgradePackagePin(e *wire.Envelope) error {
+	module, ok := e.Entities[e.Module]
+	if !ok || module.Schema != id("12") {
+		return fmt.Errorf("package_detail_emitter.module")
+	}
+	imports, ok := module.Fields[id("121")]
+	if !ok || imports.Tag != 7 {
+		return fmt.Errorf("package_detail_emitter.imports")
+	}
+	var packageImports []wire.ID
+	for _, value := range imports.List {
+		if value.Tag != 6 {
+			return fmt.Errorf("package_detail_emitter.import_reference")
+		}
+		item, exists := e.Entities[value.Reference]
+		if !exists || item.Schema != id("13") {
+			continue
+		}
+		moduleValue, mok := item.Fields[id("130")]
+		if mok && moduleValue.Tag == 6 && moduleValue.Reference == id("b000") {
+			packageImports = append(packageImports, item.ID)
+		}
+	}
+	if len(packageImports) != 1 {
+		return fmt.Errorf("package_detail_emitter.package_pin_count:%d", len(packageImports))
+	}
+	item := e.Entities[packageImports[0]]
+	revision, ok := item.Fields[id("131")]
+	b001, b002 := id("b001"), id("b002")
+	if !ok || revision.Tag != 5 || len(revision.Bytes) != len(wire.ID{}) || !bytes.Equal(revision.Bytes, b001[:]) && !bytes.Equal(revision.Bytes, b002[:]) {
+		return fmt.Errorf("package_detail_emitter.package_pin_revision")
+	}
+	item.Fields[id("131")] = blob(b002[:])
+	e.Entities[item.ID] = item
+	return nil
 }
 
 func stable(parts ...string) wire.ID {
