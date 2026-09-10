@@ -3,7 +3,9 @@
 Package Contract v3 extends v2 with complete, language-neutral ownership of
 canonical semantic declarations needed for package-preserving projection.
 
-`OwnedSemanticDeclaration` supplements—never duplicates—v2 function members.
+`OwnedSemanticDeclaration` annotates v2-owned non-function declarations and
+supplements concrete canonical realizations that have no source member. Normal
+functions remain represented only by v2 members.
 Its declaration reference points to the authoritative Execution entity. It
 records package ownership, semantic name, visibility, source origin, and the
 already-declared imports used by cross-package references. Records, behavioral
