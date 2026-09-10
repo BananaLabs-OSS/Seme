@@ -1,6 +1,6 @@
 # Seme progress dashboard
 
-Snapshot: 2026-09-10 after the bounded Go UPB-02 package-graph proof.
+Snapshot: 2026-09-10 after the bounded Go UPB-03 dependency-closure proof.
 
 Percentages answer different questions and must not be conflated:
 
@@ -12,8 +12,9 @@ Percentages answer different questions and must not be conflated:
 | Bounded Go/JavaScript semantic bridge | about 82% | Estimate for the deliberately supported, tested language subset—not either complete language. |
 | Useful small-application subset | about 75% | Estimate against the semantics needed for modest deterministic applications. |
 | Useful Application Bridge Profile v1 | 36/36 cells (100%) | UAB-01 through UAB-11 pass all five evidence classes independently for Go, JavaScript, and Lua. UAB-12 projects one shared application into all three languages, requires byte-identical re-lift, and passes 2,048 observations through native, canonical, Wasm, and pinned-Pulp realizations. This is 100% of the frozen bounded profile, not complete language support. |
-| Useful Project Bridge Profile v1 | 2/36 cells (5.6%); Go 2/12 (16.7%) | Go UPB-01 and UPB-02 each pass all seven mapped evidence classes. JavaScript and Lua project cells remain unclaimed. |
+| Useful Project Bridge Profile v1 | 3/36 cells (8.3%); Go 3/12 (25%) | Go UPB-01 through UPB-03 each pass all seven mapped evidence classes. JavaScript and Lua project cells remain unclaimed. |
 | Go UPB-02 package graph | complete for the bounded profile | Package v2 and Project v3 commit full membership, native visibility, import bindings, aliases, source ownership, spans, and digests. The production three-package pipeline, strict projection, authenticated report, native/canonical/Wasm/Pulp parity, deterministic re-lift, and fail-closed adversaries pass. |
+| Go UPB-03 dependency closure | complete for the bounded profile | Dependency v1 and Project v4 commit a pinned local-plus-ecosystem closure with integrity and source evidence. Go applicability binds it to the exact package edge, source inventory, and `go.mod`; offline repeat, projection, native/canonical/Wasm/Pulp parity, and fail-closed adversaries pass. External dependency calls remain outside this cell. |
 | UAB-02 exact value bridge | complete | All three languages pass shared scalar, aggregate-collection, and tagged-composite observations through original and projected native source, structural canonical evaluation, standalone Wasm, and pinned Pulp, with representation-appropriate rejection evidence. |
 | UAB-03 compositional control flow | complete | All three languages pass shared locals, mutation, modular arithmetic, comparison, hazardous short-circuit, conditional, loop, and early-return observations through all five evidence paths. |
 | UAB-04 collection operations | Go/JavaScript/Lua complete | All three languages pass construction, length, checked indexing, traversal, immutable update/append/removal, and map lookup/insert/removal through original/projected native code, canonical evaluation, standalone Wasm, and pinned Pulp with direct rejection evidence. |

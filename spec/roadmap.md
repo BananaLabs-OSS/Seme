@@ -166,7 +166,8 @@ and use the same provider, patch, target-contract, and conformance boundaries.
 
 ## 7. Useful Project Bridge v1
 
-Status: 1/36 cells (2.8%); Go UPB-01 passes all seven evidence classes.
+Status: 3/36 cells (8.3%); Go UPB-01 through UPB-03 pass all seven evidence
+classes.
 
 The completed UAB-v1 proves a bounded application semantic vocabulary. It does
 not by itself prove that Seme can preserve an ordinary project's source closure,
@@ -201,3 +202,14 @@ standalone Wasm, pinned Pulp, projection/re-lift, and adversarial behavior.
 Original and projected Project v3 artifacts honestly differ when source paths
 or digests differ; semantic Project v1 remains byte-identical, while repeated
 lifts of the same projected source produce byte-identical Project v3 output.
+
+Go UPB-03 is complete for its bounded dependency-closure profile. Dependency
+Contract v1 records exact local and ecosystem requirements, selected versions,
+integrity, sources, and applicable metadata; Project Contract v4 binds that
+closure to Project v3. A Go-specific applicability validator proves the local
+edge against the canonical package graph and the ecosystem requirement against
+the exact inventoried `go.mod`. The mapped gate repeats resolution offline,
+matches native, canonical, Wasm, and pinned-Pulp behavior, projects and re-lifts
+the project, and rejects floating, substituted, undeclared, mismatched,
+unrelated, symlinked, and tampered inputs. The external dependency is resolved
+but deliberately not called; typed ecosystem-package calls belong to UPB-04.
