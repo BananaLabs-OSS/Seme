@@ -40,7 +40,16 @@ func TestEmitV2AddsTypedInitializerBindingsWithoutChangingV1(t *testing.T) {
 			t.Fatalf("missing %s", id)
 		}
 	}
-	if err := EmitVersion(&bytes.Buffer{}, 3); err == nil {
+	var v3 bytes.Buffer
+	if err := EmitVersion(&v3, 3); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{RevisionV3ID, "pc 1\n" + RevisionV2ID, "0000000000000000000000000000b004", "00000000000000000000000000009024"} {
+		if !strings.Contains(v3.String(), want) {
+			t.Fatalf("v3 missing %s", want)
+		}
+	}
+	if err := EmitVersion(&bytes.Buffer{}, 4); err == nil {
 		t.Fatal("accepted unknown version")
 	}
 }

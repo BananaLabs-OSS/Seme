@@ -20,10 +20,12 @@ var (
 	fImportRev          = mustID("00000000000000000000000000000131")
 	executionModule     = mustID("00000000000000000000000000009000")
 	executionRev        = mustID("00000000000000000000000000009023")
+	executionRevV36     = mustID("00000000000000000000000000009024")
 	packageModule       = mustID("0000000000000000000000000000b000")
 	packageRev          = mustID("0000000000000000000000000000b001")
 	packageRevV2        = mustID("0000000000000000000000000000b002")
 	packageRevV3        = mustID("0000000000000000000000000000b003")
+	packageRevV4        = mustID("0000000000000000000000000000b004")
 	projectModule       = mustID("0000000000000000000000000000e000")
 	projectRev          = mustID("0000000000000000000000000000e001")
 	projectRevV2        = mustID("0000000000000000000000000000e002")
@@ -32,11 +34,13 @@ var (
 	projectRevV5        = mustID("0000000000000000000000000000e005")
 	projectRevV6        = mustID("0000000000000000000000000000e008")
 	projectRevV7        = mustID("0000000000000000000000000000e009")
+	projectRevV8        = mustID("0000000000000000000000000000e00a")
 	dependencyModule    = mustID("0000000000000000000000000000f000")
 	dependencyRev       = mustID("0000000000000000000000000000f001")
 	configurationModule = mustID("00000000000000000000000000004000")
 	configurationRev    = mustID("00000000000000000000000000004001")
 	configurationRevV2  = mustID("00000000000000000000000000004005")
+	configurationRevV3  = mustID("00000000000000000000000000004006")
 	foundationModule    = mustID("00000000000000000000000000003000")
 	foundationRev       = mustID("00000000000000000000000000003001")
 )
@@ -248,6 +252,53 @@ type ProjectContractSetV6 struct {
 type ProjectContractSetV7 struct {
 	execution, packages, dependency, foundation, configuration, project Contract
 	validated                                                           bool
+}
+
+// ProjectContractSetV8 authenticates one complete Execution v36 snapshot and
+// its Package v4 and Configuration v3 views. It never reinterprets a v35
+// instance under the newer authority.
+type ProjectContractSetV8 struct {
+	execution, packages, dependency, foundation, configuration, project Contract
+	validated                                                           bool
+}
+
+func (s ProjectContractSetV8) Validated() bool         { return s.validated }
+func (s ProjectContractSetV8) Execution() Contract     { return s.execution }
+func (s ProjectContractSetV8) Package() Contract       { return s.packages }
+func (s ProjectContractSetV8) Dependency() Contract    { return s.dependency }
+func (s ProjectContractSetV8) Foundation() Contract    { return s.foundation }
+func (s ProjectContractSetV8) Configuration() Contract { return s.configuration }
+func (s ProjectContractSetV8) Project() Contract       { return s.project }
+
+func ResolveProjectContractSetV8(foundation, execution, packages, dependency, configuration, project []byte) (ProjectContractSetV8, error) {
+	foundationPin := Pin{foundationModule, foundationRev}
+	execPin, packagePin := Pin{executionModule, executionRevV36}, Pin{packageModule, packageRevV4}
+	dependencyPin, configurationPin, projectPin := Pin{dependencyModule, dependencyRev}, Pin{configurationModule, configurationRevV3}, Pin{projectModule, projectRevV8}
+	f, err := Resolve(foundation, Expectation{Pin: foundationPin, ModuleVersion: 1, RequiredExports: ids("16"), Digest: mustDigest("bbb42f8d71f8c537713a478514f74f79cef60ba370b1a2e10525f631d922dd5d")})
+	if err != nil {
+		return ProjectContractSetV8{}, fmt.Errorf("foundation:%w", err)
+	}
+	x, err := Resolve(execution, Expectation{Pin: execPin, ModuleVersion: 36, RequiredExports: ids("9015", "a069"), Digest: mustDigest("2315477d7c0d248ce167aeada313654d25c056be1d8c851e43bd9c225ff07450")})
+	if err != nil {
+		return ProjectContractSetV8{}, fmt.Errorf("execution:%w", err)
+	}
+	p, err := Resolve(packages, Expectation{Pin: packagePin, ModuleVersion: 4, RequiredExports: ids("b010", "b011", "b012", "b013", "b014", "b020", "b021", "b022", "b023", "b024", "b025", "b026", "b027", "b028", "b029"), Imports: []Pin{execPin}, Digest: mustDigest("476a531c390e794c0a699bf85a877b0c4d2f409574758728b140a498dcb00102")})
+	if err != nil {
+		return ProjectContractSetV8{}, fmt.Errorf("package:%w", err)
+	}
+	d, err := Resolve(dependency, Expectation{Pin: dependencyPin, ModuleVersion: 1, RequiredExports: ids("f010", "f011", "f012", "f013", "f014", "f015", "f016", "f017"), Digest: mustDigest("167cc9a93239db97075d064f0f008edae194bc79e8e9391e2e97958b345be024")})
+	if err != nil {
+		return ProjectContractSetV8{}, fmt.Errorf("dependency:%w", err)
+	}
+	c, err := Resolve(configuration, Expectation{Pin: configurationPin, ModuleVersion: 3, RequiredExports: ids("4010", "4011", "4012", "4013", "4014", "4015", "4016", "4017", "4018", "4019", "401a", "401b", "401c", "401d", "401e", "401f"), Imports: []Pin{packagePin, execPin, foundationPin}, Digest: mustDigest("80b62b080d196df5adfbc6c6dd702dfe527d63ac0c82aab52f4829ad29cd5fef")})
+	if err != nil {
+		return ProjectContractSetV8{}, fmt.Errorf("configuration:%w", err)
+	}
+	r, err := Resolve(project, Expectation{Pin: projectPin, ModuleVersion: 8, RequiredExports: ids("e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e020", "e021", "e022", "e023"), Imports: []Pin{packagePin, execPin, dependencyPin, configurationPin, foundationPin}, Digest: mustDigest("49236fc9e52633671eef0c47be5968da91c014f8e3632e0c1a8d72bcd9d803d2")})
+	if err != nil {
+		return ProjectContractSetV8{}, fmt.Errorf("project:%w", err)
+	}
+	return ProjectContractSetV8{execution: x, packages: p, dependency: d, foundation: f, configuration: c, project: r, validated: true}, nil
 }
 
 func (s ProjectContractSetV7) Validated() bool         { return s.validated }

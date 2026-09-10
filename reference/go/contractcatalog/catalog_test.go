@@ -230,6 +230,38 @@ func TestResolveProjectContractSetV7AuthenticatesBoundConfiguration(t *testing.T
 	}
 }
 
+func TestResolveProjectContractSetV8AuthenticatesOneExecutionV36Snapshot(t *testing.T) {
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	f := read("../../../modules/foundation/v1/module.seme")
+	e := read("../../../modules/execution/v36/module.seme")
+	p := read("../../../modules/package/v4/module.seme")
+	d := read("../../../modules/dependency/v1/module.seme")
+	c := read("../../../modules/configuration/v3/module.seme")
+	r := read("../../../modules/project/v8/module.seme")
+	set, err := ResolveProjectContractSetV8(f, e, p, d, c, r)
+	if err != nil || !set.Validated() || set.Execution().Pin().Revision != executionRevV36 || set.Package().Pin().Revision != packageRevV4 || set.Configuration().Pin().Revision != configurationRevV3 || set.Project().Pin().Revision != projectRevV8 {
+		t.Fatalf("resolve v8: validated=%v err=%v", set.Validated(), err)
+	}
+	if bad, err := ResolveProjectContractSetV8(f, read("../../../modules/execution/v35/module.seme"), p, d, c, r); err == nil || bad.Validated() {
+		t.Fatal("v8 accepted Execution v35")
+	}
+	if bad, err := ResolveProjectContractSetV8(f, e, read("../../../modules/package/v3/module.seme"), d, c, r); err == nil || bad.Validated() {
+		t.Fatal("v8 accepted Package v3")
+	}
+	if bad, err := ResolveProjectContractSetV8(f, e, p, d, read("../../../modules/configuration/v2/module.seme"), r); err == nil || bad.Validated() {
+		t.Fatal("v8 accepted Configuration v2")
+	}
+	if bad, err := ResolveProjectContractSetV8(f, e, p, d, c, read("../../../modules/project/v7/module.seme")); err == nil || bad.Validated() {
+		t.Fatal("v8 accepted Project v7")
+	}
+}
+
 func TestResolveProjectContractSetV3RejectsMutations(t *testing.T) {
 	e, _, _ := artifacts(t)
 	p, _ := os.ReadFile("../../../modules/package/v2/module.seme")
