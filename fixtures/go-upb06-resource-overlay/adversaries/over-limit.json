@@ -1,0 +1,1 @@
+{"version":"seme.resources/v1","resources":[{"identity":"adversary.over-limit","path":"resources/notice.txt","destination":"resources/notice.txt","media_type":"text/plain; charset=utf-8","size":65537,"sha256":"dde7c6f27c3a259a48b5c9e6b886a7f3c1c75f87c73699536eccb7149d1e7d48"}]}
