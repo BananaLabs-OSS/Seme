@@ -42,7 +42,7 @@ func declarations() []schema {
 		{0x8019, "DurableOpaqueToken", []field{f(0x8190, "durable_opaque_token.bytes", 4, 0, 0)}},
 		{0x801a, "DurableLoadRequest", []field{f(0x81a0, "durable_load_request.port", 5, 0x8015, 0), f(0x81a1, "durable_load_request.key", 5, 0x8017, 0)}},
 		{0x801b, "DurableLoadFound", []field{f(0x81b0, "durable_load_found.version", 5, 0x8012, 0), f(0x81b1, "durable_load_found.payload", 5, 0x8018, 0), f(0x81b2, "durable_load_found.token", 5, 0x8019, 0)}},
-		{0x801c, "DurableLoadOutcome", []field{f(0x81c0, "durable_load_outcome.variant", 2, 0, 0), f(0x81c1, "durable_load_outcome.found", 5, 0x801b, 1), f(0x81c2, "durable_load_outcome.error", 5, 0x801f, 1)}},
+		{0x801c, "DurableLoadOutcome", []field{f(0x81c0, "durable_load_outcome.variant", 2, 0, 0), f(0x81c1, "durable_load_outcome.found", 5, 0x801b, 1), f(0x81c2, "durable_load_outcome.error", 5, 0x801f, 1), f(0x81c3, "durable_load_outcome.missing_token", 5, 0x8019, 1)}},
 		{0x801d, "DurableCompareExchangeRequest", []field{f(0x81d0, "durable_compare_exchange_request.port", 5, 0x8015, 0), f(0x81d1, "durable_compare_exchange_request.key", 5, 0x8017, 0), f(0x81d2, "durable_compare_exchange_request.expected_token", 5, 0x8019, 0), f(0x81d3, "durable_compare_exchange_request.payload", 5, 0x8018, 0)}},
 		{0x801e, "DurableCompareExchangeOutcome", []field{f(0x81e0, "durable_compare_exchange_outcome.variant", 2, 0, 0), f(0x81e1, "durable_compare_exchange_outcome.token", 5, 0x8019, 1), f(0x81e2, "durable_compare_exchange_outcome.error", 5, 0x801f, 1)}},
 		{0x801f, "DurablePortError", []field{f(0x81f0, "durable_port_error.identity", 4, 0, 0), f(0x81f1, "durable_port_error.operation_identity", 4, 0, 0)}},

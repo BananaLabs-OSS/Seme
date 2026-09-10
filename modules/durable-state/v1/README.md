@@ -6,7 +6,8 @@ port metadata. Its authenticated operation authority fixes the Load-then-CAS
 order, operation and capability identities, canonical codec identity, and the
 `opaque-thread-only` comparison-token policy. Typed neutral boundary schemas
 cover logical keys, bounded canonical payloads and digests, opaque tokens,
-missing/found/error Load outcomes, saved/conflict/error compare-exchange
+missing/found/error Load outcomes (including the mandatory opaque absence token
+for a missing-create CAS), saved/conflict/error compare-exchange
 outcomes, and port errors. A port also binds its domain-error type.
 
 Load and atomic compare-exchange are declared Foundation effects; filesystem,
