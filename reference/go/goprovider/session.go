@@ -397,6 +397,23 @@ func checkSessionPackages(snapshot DocumentSnapshot) ([]*checkedSessionPackage, 
 	if _, err := loader.Import(snapshot.PackagePath); err != nil && len(diagnostics) == 0 {
 		diagnostics = append(diagnostics, SessionDiagnostic{Code: "go.type", Message: err.Error(), Severity: "error"})
 	}
+	// A project snapshot is the complete declared source set, not merely the
+	// transitive import closure of its selected executable entry. Load every
+	// package group deterministically so disconnected libraries remain visible
+	// to package contracts and later project-wide selections.
+	allPaths := make([]string, 0, len(groups))
+	for path := range groups {
+		allPaths = append(allPaths, path)
+	}
+	sort.Strings(allPaths)
+	for _, path := range allPaths {
+		if _, present := loader.loaded[path]; present {
+			continue
+		}
+		if _, err := loader.Import(path); err != nil && len(diagnostics) == 0 {
+			diagnostics = append(diagnostics, SessionDiagnostic{Code: "go.type", Message: err.Error(), Severity: "error"})
+		}
+	}
 	paths := make([]string, 0, len(loader.loaded))
 	for path := range loader.loaded {
 		paths = append(paths, path)

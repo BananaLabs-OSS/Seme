@@ -14,7 +14,7 @@ Each request contains:
 
 The session deterministically hashes paths and contents, groups every non-test
 Go document by its package directory, and type-checks the requested package and
-its bounded sibling local-package closure with the native Go checker. Standard
+every declared sibling local package with the native Go checker. Standard
 packages still resolve through the installed toolchain. It lifts supported
 declarations through the existing compositional expression and structured-body
 lifter. Source mappings connect stable semantic identities to document byte
@@ -38,7 +38,7 @@ declarations may still form a valid canonical subset. Unsupported source is not
 inserted into the canonical graph or rewritten.
 
 Each valid result also exposes a copy-safe, deterministically ordered neutral
-view of the reachable local packages. It records the single root package,
+view of all declared local packages. It records the selected root package,
 direct local dependencies, and supported exported top-level functions with
 their canonical identities and ordered parameter/result type identities. This
 metadata comes from the same typed walk as the canonical graph; it is not
@@ -60,7 +60,7 @@ dependency ecosystems from the in-memory snapshot, evaluate build tags or
 platform/file variants, reproduce `go generate`, cgo, assembly, plugins,
 reflection, goroutine/channel semantics, or arbitrary standard-library and
 runtime behavior. Multiple-result shapes outside the explicitly supported
-Result/Option conventions also remain unsupported. The bounded local closure
+Result/Option conventions also remain unsupported. The bounded local package forest
 must not be described as general module compatibility.
 
 When supplied the v14 execution module, a live snapshot containing text
