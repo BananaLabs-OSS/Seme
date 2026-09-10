@@ -25,13 +25,18 @@ StateV2 { Revision i64, State application.State }
 ```
 
 The migration validates v1, copies its application state, and initializes the
-durable revision to zero. V2 validation requires a nonnegative durable
-revision and delegates existing application-state invariants where applicable.
-The update function takes a validated v2 value plus the existing configuration,
-command, and resource set; it delegates `ApplyConfiguredResource`, increments
-the durable revision with checked overflow behavior, and returns either a new
-v2 value or a typed error. Validation, migration, and update are pure and do
-not import a storage package.
+durable revision to one. V2 validation requires a positive durable revision
+and delegates existing application-state invariants where applicable. The
+bounded update function takes a validated v2 value, increments the durable
+revision with checked overflow behavior, and returns either a new v2 value or
+a typed error. Validation, migration, and update are pure and do not import a
+storage package.
+
+UPB-06 continues to prove `ApplyConfiguredResource` independently. UPB-07 does
+not invoke that effect-producing operation between Load and CAS: doing so would
+either leak an application effect when CAS conflicts or require a transaction
+spanning unrelated authorities. A later contract may explicitly coordinate
+those operations; this bounded durable proof does not silently claim it.
 
 Exact error identities must be frozen before implementation. They must
 distinguish at least invalid v1, invalid v2, unsupported version, migration
@@ -91,7 +96,7 @@ Required ordered port traces are:
 | unsupported/invalid stored payload | `Load(...)` only | none |
 | domain validation/update failure | `Load(...)` only | none |
 | CAS conflict | `Load(...)`, `CAS(...)=conflict` | none |
-| missing key | `Load(...)=missing` only | none |
+| missing create success | `Load(...)=missing(token)`, `CAS(token,v2)=committed` | exactly v2 |
 | authorization/input failure | empty trace | none |
 
 “Failure has no state or effects” means no authoritative state transition, no
@@ -108,10 +113,11 @@ baseline. Add a small deterministic durable matrix that covers:
 
 - current-v2 success;
 - v1 migration plus update success;
-- boundary revisions zero, one, and maximum;
+- rejected revision zero, accepted revision one, and overflow at maximum;
 - invalid v1 and invalid v2;
 - unsupported version;
-- missing key and malformed canonical payload;
+- missing-key create, malformed canonical payload, and missing-load without an
+  opaque absence token;
 - domain rejection before CAS;
 - CAS conflict; and
 - missing each required capability.
