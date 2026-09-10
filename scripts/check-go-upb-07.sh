@@ -21,6 +21,7 @@ durable_selection="$repo/fixtures/go-upb07-durable-overlay/durable-selection.jso
 # profile probe. This does not claim that Pulp invokes DurablePort.
 "$repo/scripts/check-go-upb-07-runtime.sh"
 "$repo/scripts/check-go-upb-07-port-runtime.sh"
+"$repo/scripts/check-go-upb-07-pulp-placement.sh"
 
 # Class 4: focused producer, authenticated consumer, projection, and report APIs.
 "$repo/scripts/materialize-go-upb07-fixture.sh" "$work/source"
