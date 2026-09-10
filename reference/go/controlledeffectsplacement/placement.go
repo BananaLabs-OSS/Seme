@@ -12,9 +12,13 @@ import (
 )
 
 const (
-	PinnedPulpCommit     = "acc66ca61fe69c5f2c4093bc55e13aeac6dcc001"
-	PinnedManifestSHA256 = "e88c5c9fb7d4c839090dcbc546d838466d6a68b8d818ce3fa9e8da7efeea826c"
-	PureProvider         = "seme.function-composite-v1"
+	PinnedPulpCommit       = "acc66ca61fe69c5f2c4093bc55e13aeac6dcc001"
+	PinnedManifestSHA256   = "e88c5c9fb7d4c839090dcbc546d838466d6a68b8d818ce3fa9e8da7efeea826c"
+	PureProvider           = "seme.function-composite-v1"
+	ObservedManifestSHA256 = "12f65a8f865a068b2c48c0b749a4f48ea3519752ccb1db1be9abb9e5c445167d"
+	ObservedRunnerSHA256   = "01ef0baa21f882720829cb63d695538e3bfe19f7d256ecea5299085f9ee428d9"
+	ObservedProvider       = "seme.evaluate.v1"
+	ObservedLogProvider    = "seme.pulp.log-v1"
 )
 
 type HostCandidate struct {
@@ -27,10 +31,22 @@ type PureCandidate struct {
 	Roles, Capabilities, AmbientProviders, Extensions               []string
 	Pure, Synchronous, OpaqueBytes                                  bool
 }
+type ObservedCandidate struct {
+	PulpCommit, ManifestSHA256, RunnerSHA256, Provider, Carrier, Capability, CapabilityProvider, Fidelity, ObservationMeaning string
+	Synchronous, OpaqueBytes                                                                                                  bool
+}
 type Evidence struct {
 	ClockIdentity, RandomIdentity, EffectIdentity string
 	Host                                          HostCandidate
 	Canonical, Wasm, Pulp                         PureCandidate
+	ObservedPulp                                  ObservedCandidate
+}
+
+func VerifyObservedParity(c ObservedCandidate) error {
+	if c.PulpCommit != PinnedPulpCommit || c.ManifestSHA256 != ObservedManifestSHA256 || c.RunnerSHA256 != ObservedRunnerSHA256 || c.Provider != ObservedProvider || c.Carrier != "pulp_on_call" || c.Capability != "observability.log" || c.CapabilityProvider != ObservedLogProvider || c.Fidelity != "exact-test-harness-observation" || c.ObservationMeaning != "logical-request-capture-not-external-delivery" || !c.Synchronous || !c.OpaqueBytes {
+		return fmt.Errorf("controlled_effects_placement.observed_harness")
+	}
+	return nil
 }
 
 func VerifyHost(in controlledeffectsinstance.Inputs, c HostCandidate) error {
@@ -73,8 +89,11 @@ func VerifyPure(c PureCandidate) error {
 	}
 	return nil
 }
-func Build(in controlledeffectsinstance.Inputs, h HostCandidate, canonical, wasm, pulp PureCandidate) (Evidence, error) {
+func Build(in controlledeffectsinstance.Inputs, h HostCandidate, canonical, wasm, pulp PureCandidate, observed ObservedCandidate) (Evidence, error) {
 	if err := VerifyHost(in, h); err != nil {
+		return Evidence{}, err
+	}
+	if err := VerifyObservedParity(observed); err != nil {
 		return Evidence{}, err
 	}
 	for _, c := range []PureCandidate{canonical, wasm, pulp} {
@@ -83,7 +102,10 @@ func Build(in controlledeffectsinstance.Inputs, h HostCandidate, canonical, wasm
 		}
 	}
 	m := in.Model
-	return Evidence{ClockIdentity: m.Clock.Identity, RandomIdentity: m.Random.Identity, EffectIdentity: m.ExternalEffect.Identity, Host: h, Canonical: canonical, Wasm: wasm, Pulp: pulp}, nil
+	return Evidence{ClockIdentity: m.Clock.Identity, RandomIdentity: m.Random.Identity, EffectIdentity: m.ExternalEffect.Identity, Host: h, Canonical: canonical, Wasm: wasm, Pulp: pulp, ObservedPulp: observed}, nil
+}
+func ExactObservedParity() ObservedCandidate {
+	return ObservedCandidate{PulpCommit: PinnedPulpCommit, ManifestSHA256: ObservedManifestSHA256, RunnerSHA256: ObservedRunnerSHA256, Provider: ObservedProvider, Carrier: "pulp_on_call", Capability: "observability.log", CapabilityProvider: ObservedLogProvider, Fidelity: "exact-test-harness-observation", ObservationMeaning: "logical-request-capture-not-external-delivery", Synchronous: true, OpaqueBytes: true}
 }
 func ExactHost(m controlledeffectsinstance.Model) HostCandidate {
 	return HostCandidate{Provider: "go.controlled-effects-host-v1", Placement: "go-host-boundary", Fidelity: "exact-declared-provider", Capabilities: []string{m.Clock.Identity, m.ExternalEffect.CapabilityIdentity}, InjectedClock: true, ExplicitSeed: true, ExternalEffectDelivery: true}
