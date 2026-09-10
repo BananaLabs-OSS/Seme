@@ -24,7 +24,7 @@ const CompareExchangeEffectIdentity = "seme.storage.compare_exchange.v1"
 type Model struct {
 	Identity, PortIdentity                                                                          string
 	StateOwner, PortOwner, Version1Type, Version2Type, ErrorType, Validator1, Validator2, Migration wire.ID
-	LoadCapability, CompareExchangeCapability, LoadEffect, CompareExchangeEffect, KeyType           wire.ID
+	KeyType                                                                                         wire.ID
 	MaximumPayloadBytes, MaximumKeyBytes                                                            uint64
 }
 type Inputs struct {
@@ -67,7 +67,7 @@ func emit(in Inputs) ([]byte, error) {
 	if !name(m.Identity) || !name(m.PortIdentity) || m.MaximumPayloadBytes == 0 || m.MaximumPayloadBytes > MaxPayloadBytes || m.MaximumKeyBytes == 0 || m.MaximumKeyBytes > MaxKeyBytes {
 		return nil, fmt.Errorf("durable_instance.metadata")
 	}
-	owners, effects, functions := ownership(base)
+	owners, _, functions := ownership(base)
 	if !owners[m.StateOwner] || !owners[m.PortOwner] {
 		return nil, fmt.Errorf("durable_instance.owner")
 	}
@@ -88,17 +88,6 @@ func emit(in Inputs) ([]byte, error) {
 	if !pureResultFunction(base, m.Validator1, m.Version1Type, m.Version1Type, m.ErrorType, functions[m.Validator1] == m.StateOwner) || !pureResultFunction(base, m.Validator2, m.Version2Type, m.Version2Type, m.ErrorType, functions[m.Validator2] == m.StateOwner) || !pureResultFunction(base, m.Migration, m.Version1Type, m.Version2Type, m.ErrorType, functions[m.Migration] == m.StateOwner) {
 		return nil, fmt.Errorf("durable_instance.function")
 	}
-	if m.LoadCapability == m.CompareExchangeCapability || m.LoadEffect == m.CompareExchangeEffect {
-		return nil, fmt.Errorf("durable_instance.authorization_mix")
-	}
-	for i, p := range [][2]wire.ID{{m.LoadEffect, m.LoadCapability}, {m.CompareExchangeEffect, m.CompareExchangeCapability}} {
-		q, ok := base.Entities[p[0]]
-		want := []string{LoadEffectIdentity, CompareExchangeEffectIdentity}[i]
-		cap := base.Entities[p[1]]
-		if !ok || q.Schema != id("15") || string(q.Fields[id("150")].Bytes) != want || q.Fields[id("151")].Tag != 6 || q.Fields[id("151")].Reference != p[1] || cap.Schema != id("16") || string(cap.Fields[id("160")].Bytes) != want+".capability" || !effects[m.PortOwner][p[0]] {
-			return nil, fmt.Errorf("durable_instance.effect")
-		}
-	}
 	e := wire.Envelope{Entities: map[wire.ID]wire.Entity{}}
 	for x, q := range base.Entities {
 		if q.Schema != id("12") && q.Schema != id("13") {
@@ -114,13 +103,21 @@ func emit(in Inputs) ([]byte, error) {
 	mig := stable(baseBytes, "migration")
 	port := stable(baseBytes, "port", m.PortIdentity)
 	plan := stable(baseBytes, "plan")
+	loadCapability := stable(baseBytes, "capability", LoadEffectIdentity)
+	casCapability := stable(baseBytes, "capability", CompareExchangeEffectIdentity)
+	loadEffect := stable(baseBytes, "effect", LoadEffectIdentity)
+	casEffect := stable(baseBytes, "effect", CompareExchangeEffectIdentity)
+	e.Entities[loadCapability] = entity(loadCapability, "16", map[string]wire.Value{"160": blob(LoadEffectIdentity + ".capability")})
+	e.Entities[casCapability] = entity(casCapability, "16", map[string]wire.Value{"160": blob(CompareExchangeEffectIdentity + ".capability")})
+	e.Entities[loadEffect] = entity(loadEffect, "15", map[string]wire.Value{"150": blob(LoadEffectIdentity), "151": ref(loadCapability)})
+	e.Entities[casEffect] = entity(casEffect, "15", map[string]wire.Value{"150": blob(CompareExchangeEffectIdentity), "151": ref(casCapability)})
 	e.Entities[v1] = entity(v1, "8012", map[string]wire.Value{"8120": ref(fam), "8121": u(1), "8122": ref(m.Version1Type)})
 	e.Entities[v2] = entity(v2, "8012", map[string]wire.Value{"8120": ref(fam), "8121": u(2), "8122": ref(m.Version2Type)})
 	e.Entities[a] = entity(a, "8013", map[string]wire.Value{"8130": ref(v1), "8131": ref(m.Validator1)})
 	e.Entities[b] = entity(b, "8013", map[string]wire.Value{"8130": ref(v2), "8131": ref(m.Validator2)})
 	e.Entities[mig] = entity(mig, "8014", map[string]wire.Value{"8140": ref(v1), "8141": ref(v2), "8142": ref(m.Migration)})
 	e.Entities[fam] = entity(fam, "8011", map[string]wire.Value{"8110": blob(m.Identity), "8111": ref(m.StateOwner), "8112": ref(v2), "8113": list(v1, v2), "8114": list(a, b), "8115": list(mig)})
-	e.Entities[port] = entity(port, "8015", map[string]wire.Value{"8150": blob(m.PortIdentity), "8151": ref(m.PortOwner), "8152": ref(fam), "8153": ref(m.LoadCapability), "8154": ref(m.CompareExchangeCapability), "8155": ref(m.LoadEffect), "8156": ref(m.CompareExchangeEffect), "8157": ref(m.KeyType), "8158": u(m.MaximumPayloadBytes), "8159": blob(CodecIdentity), "815a": u(m.MaximumKeyBytes)})
+	e.Entities[port] = entity(port, "8015", map[string]wire.Value{"8150": blob(m.PortIdentity), "8151": ref(m.PortOwner), "8152": ref(fam), "8153": ref(loadCapability), "8154": ref(casCapability), "8155": ref(loadEffect), "8156": ref(casEffect), "8157": ref(m.KeyType), "8158": u(m.MaximumPayloadBytes), "8159": blob(CodecIdentity), "815a": u(m.MaximumKeyBytes)})
 	e.Entities[plan] = entity(plan, "8010", map[string]wire.Value{"8100": list(fam), "8101": list(port), "8102": blobBytes(make([]byte, 32))})
 	q := e.Entities[plan]
 	q.Fields[id("8102")] = blobBytes(contentRevision(e, plan))
