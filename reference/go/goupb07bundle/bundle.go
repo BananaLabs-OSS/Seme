@@ -12,6 +12,7 @@ import (
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/durableinstance"
 	"seme.local/reference/goconfigurationadapter"
+	"seme.local/reference/godurableadapter"
 	"seme.local/reference/goupb06bundle"
 	"seme.local/reference/projectv10instance"
 	"seme.local/reference/wire"
@@ -28,8 +29,12 @@ type Input struct {
 	Artifacts Artifacts
 	Manifest  []byte
 	Selection goconfigurationadapter.Selection
-	Compile   goconfigurationadapter.Compile
-	Blobs     map[[32]byte][]byte
+	// DurableSelection is independent authoring evidence. Load resolves it
+	// against the authenticated Project-v9 graph and requires it to describe
+	// exactly the same model encoded by the durable artifact.
+	DurableSelection godurableadapter.Selection
+	Compile          goconfigurationadapter.Compile
+	Blobs            map[[32]byte][]byte
 }
 
 type Result struct {
@@ -56,6 +61,10 @@ func Load(ctx context.Context, in Input) (Result, error) {
 	model, err := modelFromArtifact(a.Durable)
 	if err != nil {
 		return Result{}, err
+	}
+	selected, err := godurableadapter.Resolve(base.Project, in.DurableSelection)
+	if err != nil || selected != model {
+		return Result{}, fmt.Errorf("go_upb07_bundle.durable_selection")
 	}
 	di := durableinstance.Inputs{Contracts: in.Contracts, ProjectV9: base.Project, Artifact: a.Durable, Model: model}
 	if err = durableinstance.Validate(di); err != nil {

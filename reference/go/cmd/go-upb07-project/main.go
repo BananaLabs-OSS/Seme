@@ -16,6 +16,7 @@ import (
 
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/goconfigurationmanifest"
+	"seme.local/reference/godurablemanifest"
 	"seme.local/reference/goupb07bundle"
 	"seme.local/reference/projectbundle"
 	"seme.local/reference/projectroundtrip"
@@ -33,7 +34,7 @@ func run(parent context.Context, args []string) error {
 	f := flag.NewFlagSet("go-upb07-project", flag.ContinueOnError)
 	f.SetOutput(io.Discard)
 	paths := map[string]*string{}
-	for _, name := range []string{"root", "to", "module", "bundle", "selection", "foundation", "execution", "package", "dependency", "configuration", "resource", "durable-state", "project-v8", "project-v9", "project-v10", "k0", "g1-compiler"} {
+	for _, name := range []string{"root", "to", "module", "bundle", "selection", "durable-selection", "foundation", "execution", "package", "dependency", "configuration", "resource", "durable-state", "project-v8", "project-v9", "project-v10", "k0", "g1-compiler"} {
 		paths[name] = new(string)
 		f.StringVar(paths[name], name, "", name)
 	}
@@ -61,13 +62,17 @@ func run(parent context.Context, args []string) error {
 	}
 	read := func(name string) ([]byte, error) { return readStrict(*paths[name]) }
 	inputs := map[string][]byte{}
-	for _, name := range []string{"selection", "foundation", "execution", "package", "dependency", "configuration", "resource", "durable-state", "project-v8", "project-v9", "project-v10", "k0", "g1-compiler"} {
+	for _, name := range []string{"selection", "durable-selection", "foundation", "execution", "package", "dependency", "configuration", "resource", "durable-state", "project-v8", "project-v9", "project-v10", "k0", "g1-compiler"} {
 		inputs[name], err = read(name)
 		if err != nil {
 			return fmt.Errorf("%s:%w", name, err)
 		}
 	}
 	selection, err := goconfigurationmanifest.Parse(inputs["selection"])
+	if err != nil {
+		return err
+	}
+	durableSelection, err := godurablemanifest.Parse(inputs["durable-selection"])
 	if err != nil {
 		return err
 	}
@@ -89,7 +94,7 @@ func run(parent context.Context, args []string) error {
 	}
 	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
 	defer cancel()
-	loaded, err := goupb07bundle.Load(ctx, goupb07bundle.Input{Contracts: v10, V9: v9, V8: v8, Artifacts: a, Manifest: manifest, Selection: selection, Blobs: blobs, Compile: func(ctx context.Context, source []byte) ([]byte, error) {
+	loaded, err := goupb07bundle.Load(ctx, goupb07bundle.Input{Contracts: v10, V9: v9, V8: v8, Artifacts: a, Manifest: manifest, Selection: selection, DurableSelection: durableSelection, Blobs: blobs, Compile: func(ctx context.Context, source []byte) ([]byte, error) {
 		return compile(ctx, *paths["k0"], *paths["g1-compiler"], source)
 	}})
 	if err != nil {
