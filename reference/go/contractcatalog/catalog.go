@@ -40,6 +40,11 @@ var (
 	projectRevV11           = mustID("0000000000000000000000000000e030")
 	projectRevV12           = mustID("0000000000000000000000000000e031")
 	projectRevV13           = mustID("0000000000000000000000000000e032")
+	projectRevV14           = mustID("0000000000000000000000000000e035")
+	patchModule             = mustID("00000000000000000000000000005000")
+	patchRev                = mustID("00000000000000000000000000005001")
+	languageServiceModule   = mustID("0000000000000000000000000000d000")
+	languageServiceRev      = mustID("0000000000000000000000000000d001")
 	targetModule            = mustID("0000000000000000000000000000c000")
 	targetRev               = mustID("0000000000000000000000000000c001")
 	resourceModule          = mustID("00000000000000000000000000006000")
@@ -113,6 +118,14 @@ func ResolveControlledEffectsContract(source []byte) (Contract, error) {
 // ResolveTargetContract authenticates the project-neutral Target Contract v1.
 func ResolveTargetContract(source []byte) (Contract, error) {
 	return Resolve(source, Expectation{Pin: Pin{targetModule, targetRev}, ModuleVersion: 1, RequiredExports: ids("c010", "c011", "c012", "c013", "c014", "c015"), Digest: mustDigest("f354015d57a8baf9b7e5fb30e144eb6ef74972638ce50fe8e6958e0bbcbbc6ce")})
+}
+
+func ResolvePatchContract(source []byte) (Contract, error) {
+	return Resolve(source, Expectation{Pin: Pin{patchModule, patchRev}, ModuleVersion: 1, RequiredExports: ids("5010", "5011"), Digest: mustDigest("f7ec1943de753c143d6a36b87270a7c898262b167ed45745ada7d3099292ce12")})
+}
+
+func ResolveLanguageServiceContract(source []byte) (Contract, error) {
+	return Resolve(source, Expectation{Pin: Pin{languageServiceModule, languageServiceRev}, ModuleVersion: 1, RequiredExports: ids("d010", "d011", "d012", "d013", "d014", "d015"), Digest: mustDigest("0838cb278fd2f1fd3306f02d31ed83cc6b4a45b720ab0aca43f4f94981d89579")})
 }
 
 // Resolve accepts only the one canonical byte representation described by e.
@@ -353,6 +366,40 @@ type ProjectContractSetV12 struct {
 type ProjectContractSetV13 struct {
 	execution, packages, dependency, foundation, configuration, resource, durableState, presentation, orderedTransport, controlledEffects, target, project Contract
 	validated                                                                                                                                              bool
+}
+
+// ProjectContractSetV14 adds independently authenticated Patch and Live
+// Language Service authority while preserving the exact Project-v13 chain.
+type ProjectContractSetV14 struct {
+	ProjectContractSetV13
+	patch, languageService, projectV14 Contract
+	validated                          bool
+}
+
+func (s ProjectContractSetV14) Validated() bool           { return s.validated }
+func (s ProjectContractSetV14) Patch() Contract           { return s.patch }
+func (s ProjectContractSetV14) LanguageService() Contract { return s.languageService }
+func (s ProjectContractSetV14) Project() Contract         { return s.projectV14 }
+func (s ProjectContractSetV14) ProjectV13() Contract      { return s.ProjectContractSetV13.project }
+
+func ResolveProjectContractSetV14(foundation, execution, packages, dependency, configuration, resource, durableState, presentation, orderedTransport, controlledEffects, target, patchSource, languageService, projectV9, projectV10, projectV11, projectV12, projectV13, project []byte) (ProjectContractSetV14, error) {
+	v13, err := ResolveProjectContractSetV13(foundation, execution, packages, dependency, configuration, resource, durableState, presentation, orderedTransport, controlledEffects, target, projectV9, projectV10, projectV11, projectV12, projectV13)
+	if err != nil {
+		return ProjectContractSetV14{}, err
+	}
+	p, err := ResolvePatchContract(patchSource)
+	if err != nil {
+		return ProjectContractSetV14{}, fmt.Errorf("patch:%w", err)
+	}
+	l, err := ResolveLanguageServiceContract(languageService)
+	if err != nil {
+		return ProjectContractSetV14{}, fmt.Errorf("language_service:%w", err)
+	}
+	q, err := Resolve(project, Expectation{Pin: Pin{projectModule, projectRevV14}, Parents: []wire.ID{projectRevV13}, ModuleVersion: 14, RequiredExports: ids("e036", "e360", "e361", "e362", "e363", "e364", "e365", "e366"), Imports: []Pin{{projectModule, projectRevV13}, {patchModule, patchRev}, {languageServiceModule, languageServiceRev}}, Digest: mustDigest("f50d418faa5b20e0db66e303a36198e5ee15bd26edaff695c0ac316d147d9495")})
+	if err != nil {
+		return ProjectContractSetV14{}, fmt.Errorf("project:%w", err)
+	}
+	return ProjectContractSetV14{ProjectContractSetV13: v13, patch: p, languageService: l, projectV14: q, validated: true}, nil
 }
 
 func (s ProjectContractSetV13) Validated() bool             { return s.validated }
