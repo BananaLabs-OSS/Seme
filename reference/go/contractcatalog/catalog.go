@@ -39,6 +39,9 @@ var (
 	projectRevV10           = mustID("0000000000000000000000000000e00e")
 	projectRevV11           = mustID("0000000000000000000000000000e030")
 	projectRevV12           = mustID("0000000000000000000000000000e031")
+	projectRevV13           = mustID("0000000000000000000000000000e032")
+	targetModule            = mustID("0000000000000000000000000000c000")
+	targetRev               = mustID("0000000000000000000000000000c001")
 	resourceModule          = mustID("00000000000000000000000000006000")
 	resourceRev             = mustID("00000000000000000000000000006001")
 	durableStateModule      = mustID("00000000000000000000000000008000")
@@ -105,6 +108,11 @@ func ResolveOrderedTransportContract(source []byte) (Contract, error) {
 // Controlled Effects Contract v1.
 func ResolveControlledEffectsContract(source []byte) (Contract, error) {
 	return Resolve(source, Expectation{Pin: Pin{controlledEffectsModule, controlledEffectsRev}, ModuleVersion: 1, RequiredExports: ids("13100", "13101", "13102", "13103", "13104", "13105", "13106", "13107", "13108"), Imports: []Pin{{packageModule, packageRevV4}, {executionModule, executionRevV36}, {foundationModule, foundationRev}}, Digest: mustDigest("7e886fb777b13565deb303ddecbe9e16610268d3130eb285f494290a6faf2baf")})
+}
+
+// ResolveTargetContract authenticates the project-neutral Target Contract v1.
+func ResolveTargetContract(source []byte) (Contract, error) {
+	return Resolve(source, Expectation{Pin: Pin{targetModule, targetRev}, ModuleVersion: 1, RequiredExports: ids("c010", "c011", "c012", "c013", "c014", "c015"), Digest: mustDigest("f354015d57a8baf9b7e5fb30e144eb6ef74972638ce50fe8e6958e0bbcbbc6ce")})
 }
 
 // Resolve accepts only the one canonical byte representation described by e.
@@ -338,6 +346,43 @@ type ProjectContractSetV11 struct {
 type ProjectContractSetV12 struct {
 	execution, packages, dependency, foundation, configuration, resource, durableState, presentation, orderedTransport, controlledEffects, project Contract
 	validated                                                                                                                                      bool
+}
+
+// ProjectContractSetV13 adds one independently authenticated neutral Target
+// v1 authority without weakening the complete Project-v12 chain.
+type ProjectContractSetV13 struct {
+	execution, packages, dependency, foundation, configuration, resource, durableState, presentation, orderedTransport, controlledEffects, target, project Contract
+	validated                                                                                                                                              bool
+}
+
+func (s ProjectContractSetV13) Validated() bool             { return s.validated }
+func (s ProjectContractSetV13) Execution() Contract         { return s.execution }
+func (s ProjectContractSetV13) Package() Contract           { return s.packages }
+func (s ProjectContractSetV13) Dependency() Contract        { return s.dependency }
+func (s ProjectContractSetV13) Foundation() Contract        { return s.foundation }
+func (s ProjectContractSetV13) Configuration() Contract     { return s.configuration }
+func (s ProjectContractSetV13) Resource() Contract          { return s.resource }
+func (s ProjectContractSetV13) DurableState() Contract      { return s.durableState }
+func (s ProjectContractSetV13) Presentation() Contract      { return s.presentation }
+func (s ProjectContractSetV13) OrderedTransport() Contract  { return s.orderedTransport }
+func (s ProjectContractSetV13) ControlledEffects() Contract { return s.controlledEffects }
+func (s ProjectContractSetV13) Target() Contract            { return s.target }
+func (s ProjectContractSetV13) Project() Contract           { return s.project }
+
+func ResolveProjectContractSetV13(foundation, execution, packages, dependency, configuration, resource, durableState, presentation, orderedTransport, controlledEffects, target, projectV9, projectV10, projectV11, projectV12, project []byte) (ProjectContractSetV13, error) {
+	v12, err := ResolveProjectContractSetV12(foundation, execution, packages, dependency, configuration, resource, durableState, presentation, orderedTransport, controlledEffects, projectV9, projectV10, projectV11, projectV12)
+	if err != nil {
+		return ProjectContractSetV13{}, err
+	}
+	t, err := ResolveTargetContract(target)
+	if err != nil {
+		return ProjectContractSetV13{}, fmt.Errorf("target:%w", err)
+	}
+	p, err := Resolve(project, Expectation{Pin: Pin{projectModule, projectRevV13}, Parents: []wire.ID{projectRevV12}, ModuleVersion: 13, RequiredExports: ids("e010", "e011", "e012", "e013", "e014", "e015", "e016", "e017", "e018", "e019", "e020", "e021", "e022", "e023", "e024", "e025", "e026", "e029", "e02c", "e253", "e261", "e291", "e2c1"), Imports: []Pin{{targetModule, targetRev}, {controlledEffectsModule, controlledEffectsRev}, {orderedTransportModule, orderedTransportRev}, {presentationModule, presentationRev}, {packageModule, packageRevV4}, {executionModule, executionRevV36}, {dependencyModule, dependencyRev}, {configurationModule, configurationRevV3}, {foundationModule, foundationRev}, {resourceModule, resourceRev}, {durableStateModule, durableStateRev}}, Digest: mustDigest("96b5aa0b3ba5b78e503c5699914e0daf3578dffede536395be35a696299aa957")})
+	if err != nil {
+		return ProjectContractSetV13{}, fmt.Errorf("project:%w", err)
+	}
+	return ProjectContractSetV13{v12.execution, v12.packages, v12.dependency, v12.foundation, v12.configuration, v12.resource, v12.durableState, v12.presentation, v12.orderedTransport, v12.controlledEffects, t, p, true}, nil
 }
 
 func (s ProjectContractSetV12) Validated() bool             { return s.validated }

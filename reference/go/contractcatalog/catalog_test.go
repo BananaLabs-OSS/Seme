@@ -580,3 +580,58 @@ func TestResolveProjectContractSetV12ExactCumulativePins(t *testing.T) {
 		t.Fatal("accepted tampered Project-v12")
 	}
 }
+
+func TestResolveProjectContractSetV13ExactTargetAndCumulativePins(t *testing.T) {
+	read := func(path string) []byte {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	inputs := [][]byte{
+		read("../../../modules/foundation/v1/module.seme"),
+		read("../../../modules/execution/v36/module.seme"),
+		read("../../../modules/package/v4/module.seme"),
+		read("../../../modules/dependency/v1/module.seme"),
+		read("../../../modules/configuration/v3/module.seme"),
+		read("../../../modules/resource/v1/module.seme"),
+		read("../../../modules/durable-state/v1/module.seme"),
+		read("../../../modules/source-presentation/v1/module.seme"),
+		read("../../../modules/ordered-transport/v1/module.seme"),
+		read("../../../modules/controlled-effects/v1/module.seme"),
+		read("../../../modules/target/v1/module.seme"),
+		read("../../../modules/project/v9/module.seme"),
+		read("../../../modules/project/v10/module.seme"),
+		read("../../../modules/project/v11/module.seme"),
+		read("../../../modules/project/v12/module.seme"),
+		read("../../../modules/project/v13/module.seme"),
+	}
+	resolve := func(values [][]byte) (ProjectContractSetV13, error) {
+		return ResolveProjectContractSetV13(values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8], values[9], values[10], values[11], values[12], values[13], values[14], values[15])
+	}
+	s, err := resolve(inputs)
+	if err != nil || !s.Validated() {
+		t.Fatalf("resolve: %v", err)
+	}
+	if s.Project().Pin() != (Pin{projectModule, projectRevV13}) || s.Target().Pin() != (Pin{targetModule, targetRev}) || s.ControlledEffects().Pin() != (Pin{controlledEffectsModule, controlledEffectsRev}) {
+		t.Fatal("cumulative pins")
+	}
+
+	wrongTarget := append([][]byte(nil), inputs...)
+	wrongTarget[10] = inputs[9]
+	if got, err := resolve(wrongTarget); err == nil || got.Validated() {
+		t.Fatal("accepted substituted target contract")
+	}
+	wrongParent := append([][]byte(nil), inputs...)
+	wrongParent[14] = inputs[13]
+	if got, err := resolve(wrongParent); err == nil || got.Validated() {
+		t.Fatal("accepted substituted Project-v12 parent")
+	}
+	tampered := append([][]byte(nil), inputs...)
+	tampered[15] = append([]byte(nil), inputs[15]...)
+	tampered[15][len(tampered[15])-1] ^= 1
+	if got, err := resolve(tampered); err == nil || got.Validated() {
+		t.Fatal("accepted tampered Project-v13")
+	}
+}
