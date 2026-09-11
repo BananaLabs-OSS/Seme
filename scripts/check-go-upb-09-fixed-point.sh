@@ -1,6 +1,5 @@
 #!/bin/sh
-# Candidate Project-v12 source-free projection and re-lift fixed-point gate.
-# This script remains unclaimed until its serialized heavyweight run is green.
+# Project-v12 source-free projection and semantic re-lift fixed-point evidence.
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-go-upb09-fixed.XXXXXX")

@@ -32,6 +32,10 @@
     "go/UPB-08": {
       "gate": "scripts/check-go-upb-08.sh",
       "evidence": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"]
+    },
+    "go/UPB-09": {
+      "gate": "scripts/check-go-upb-09.sh",
+      "evidence": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"]
     }
   }
 }

@@ -1,7 +1,5 @@
 #!/bin/sh
-# Cumulative Go UPB-09 pre-claim gate. Passing this scaffold is deliberately
-# insufficient to map UPB-09: projection/re-lift, complete fixed-point, and a
-# final seven-class adversarial audit remain required.
+# Cumulative Go UPB-09 seven-class authority gate.
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-go-upb09.XXXXXX")
@@ -16,6 +14,7 @@ export GOCACHE XDG_CACHE_HOME
 "$repo/scripts/check-controlled-effects-v1.sh"
 "$repo/scripts/check-project-contract-v12.sh"
 "$repo/scripts/check-go-upb-09-runtime.sh"
+"$repo/scripts/check-go-upb-09-placement.sh"
 
 # Exercise the presently implemented producer/consumer, real materialized
 # authority, replay, closed-world bundle, report, and command-boundary evidence.
@@ -68,4 +67,9 @@ build "$work/bundle-a"
 build "$work/bundle-b"
 diff -ru "$work/bundle-a" "$work/bundle-b"
 
-printf 'Go UPB-09 implemented pre-claim evidence passes; UPB-09 remains unclaimed\n'
+# Project the authenticated source-free bundle back to ordinary Go, build it
+# offline, re-lift it, and require an exact canonical construction/execution
+# fixed point while retaining honest source-provenance differences.
+"$repo/scripts/check-go-upb-09-fixed-point.sh"
+
+printf 'Go UPB-09 seven-class authority gate passes\n'

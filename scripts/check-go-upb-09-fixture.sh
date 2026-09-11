@@ -1,5 +1,5 @@
 #!/bin/sh
-# Pre-claim native fixture evidence for Go UPB-09. This does not establish
+# Native fixture partition for Go UPB-09. This does not establish
 # canonical, Wasm, Pulp, replay-corpus, projection, or fixed-point parity.
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -15,4 +15,4 @@ diff -ru "$work/project-a" "$work/project-b"
   GOTOOLCHAIN=local GOPROXY="file://$proxy" GOSUMDB=off \
   go test -race -count=1 -buildvcs=false ./...)
 
-printf 'Go UPB-09 fixture: deterministic materialization and native race tests pass (pre-claim only)\n'
+printf 'Go UPB-09 fixture partition: deterministic materialization and native race tests pass\n'

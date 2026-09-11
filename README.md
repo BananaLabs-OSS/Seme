@@ -303,8 +303,8 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 8/36 (22.2%): bounded Go UPB-01 through UPB-08 are the claimed
-project-level cells, placing the Go column at 8/12 (66.7%).
+is now 9/36 (25%): bounded Go UPB-01 through UPB-09 are the claimed
+project-level cells, placing the Go column at 9/12 (75%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -366,6 +366,16 @@ and rejection by pinned Pulp, whose synchronous opaque call carrier is not a
 TransportPort. Deterministic 16-artifact bundles, source-free reports, native
 projection, exact re-lift, fixed point, and atomic adversaries pass. Run
 `./scripts/check-go-upb-08.sh`.
+
+Go UPB-09 adds neutral declared clock inputs, a versioned seeded random
+transition, one ordered external Boolean effect request, and authenticated
+replay. A deterministic 4,096-observation corpus agrees across native Go,
+canonical Seme, standalone Wasm, and pinned Pulp. Live clock sampling and
+effect delivery remain an explicit authenticated Go host boundary; Pulp carries
+the pure planner/replay and ambient time or entropy cannot substitute for the
+declared providers. Deterministic bundles, real replay/tamper evidence, and a
+source-free ordinary-Go projection/re-lift semantic fixed point pass. Run
+`./scripts/check-go-upb-09.sh`.
 
 The first bounded foundation is now executable: [`Go Project Build v1`](spec/go-project-build-v1.md)
 lifts a native three-package Go fixture, compiles its canonical G1 with the
