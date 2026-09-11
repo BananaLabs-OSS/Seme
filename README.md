@@ -303,9 +303,8 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 21/36 (58.3%): bounded Go UPB-01 through UPB-11 and JavaScript
-UPB-01 through UPB-10 are claimed. Go is 11/12 (91.7%); JavaScript is
-10/12 (83.3%).
+is now 22/36 (61.1%): bounded Go and JavaScript UPB-01 through UPB-11
+are claimed. Go and JavaScript are each 11/12 (91.7%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -391,6 +390,17 @@ transport. Two source-free deployments reproduce byte-for-byte; exact-only
 policy, plan tampering, and existing destinations fail closed. Provider rules
 use a JavaScript-owned realization namespace while the contracts and project
 graph remain language-neutral. Run `./scripts/check-javascript-upb-10.sh`.
+
+JavaScript UPB-11 adds monotonic complete-project snapshots with last-valid
+retention and one identity-bound semantic rename across an exported declaration,
+named import, and structured configuration reference. Native JavaScript is
+projected atomically, validated, and re-imported under the unchanged canonical
+identity. Both complete Project-v12 revisions are independently placed, and
+Project v14 binds their exact Project-v13 authorities through Patch v1 and a
+native-validation transcript. Stale native bytes/revisions, simultaneous
+native and semantic changes, ambiguity, collisions, malformed identifiers,
+tampered metadata, and existing destinations fail closed. Run
+`./scripts/check-javascript-upb-11.sh`.
 
 Go UPB-03 adds a resolved, integrity-pinned local-plus-ecosystem dependency
 closure, authenticates it with Project v4, and proves that it applies to the
