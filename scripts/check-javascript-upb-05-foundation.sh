@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd); fixture="$repo/fixtures/javascript-upb05-configuration"; project=example.test/javascript-upb05
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd); fixture=${JS_UPB_FIXTURE:-"$repo/fixtures/javascript-upb05-configuration"}; project=${JS_UPB_PROJECT:-example.test/javascript-upb05}
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-javascript-upb05.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM
 GOCACHE="$work/go-cache";XDG_CACHE_HOME="$work/cache";export GOCACHE XDG_CACHE_HOME
 (cd "$repo/reference/go" && for command in project-source-discover project-assemble source-inventory-emit package-detail-emit package-v4-upgrade dependency-emit project-v8-compose go-upb05-configure;do go build -buildvcs=false -o "$work/$command" "./cmd/$command";done)
