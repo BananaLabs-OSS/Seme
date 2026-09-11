@@ -524,14 +524,16 @@ func ProjectRename(project, destination string, manifest Manifest, target, expec
 	})
 	var transcript []byte
 	if validate {
-		report.Validation = "go test ./..."
+		report.Validation = "GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off go test -count=1 ./..."
 		cmd := exec.Command("go", "test", "-count=1", "./...")
 		cmd.Dir = stage
 		cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local", "GOPROXY=off", "GOSUMDB=off")
-		transcript, err = cmd.CombinedOutput()
+		output, runErr := cmd.CombinedOutput()
+		err = runErr
 		if err != nil {
-			return ProjectionReport{}, nil, fmt.Errorf("provider.native_validation:%w:%s", err, transcript)
+			return ProjectionReport{}, nil, fmt.Errorf("provider.native_validation:%w:%s", err, output)
 		}
+		transcript = []byte("seme-native-validation-v1\ncommand GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off go test -count=1 ./...\nstatus 0\n")
 		report.ValidationStatus = 0
 	}
 	newFiles, _, err := nativeFiles(stage)
