@@ -1,0 +1,1 @@
+{"valid":[{"name":"enabled","enabled":true,"limit":"8","result":"16"},{"name":"disabled","enabled":false,"limit":"8","result":"8"},{"name":"negative","enabled":true,"limit":"-3","result":"-6"},{"name":"wrap","enabled":true,"limit":"9223372036854775807","result":"-2"}]}
