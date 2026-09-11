@@ -51,7 +51,7 @@ func Load(ctx context.Context, paths Paths, policy goprojectplacementadapter.Pol
 	if err != nil {
 		return Result{}, err
 	}
-	bundle, err := goupb10bundle.Load(goupb10bundle.Input{Contracts: contracts, Base: base.Bundle, Policy: policy, Artifacts: goupb10bundle.Artifacts{Base: base.Bundle.Artifacts, TargetPlan: placement.TargetPlan, ProjectV13: placement.ProjectV13}})
+	bundle, err := goupb10bundle.Load(goupb10bundle.Input{Contracts: contracts, Base: base.Bundle, Policy: policy, Artifacts: goupb10bundle.Artifacts{Base: base.Bundle.Artifacts, TargetPlan: placement.TargetPlan, ProjectV13: placement.ProjectV13, ProviderCatalog: placement.ProviderCatalog, LaunchManifest: placement.LaunchManifest, CanonicalVM: placement.CanonicalVM, PulpCell: placement.PulpCell}})
 	if err != nil {
 		return Result{}, err
 	}

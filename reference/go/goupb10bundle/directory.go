@@ -13,7 +13,8 @@ import (
 )
 
 type PlacementFiles struct {
-	TargetPlan, ProjectV13, Report []byte
+	TargetPlan, ProjectV13, Report                         []byte
+	ProviderCatalog, LaunchManifest, CanonicalVM, PulpCell []byte
 }
 
 func WriteDirectory(destination string, files PlacementFiles, baseManifest []byte) error {
@@ -70,7 +71,7 @@ func ReadDirectory(root string, baseManifest []byte) (PlacementFiles, error) {
 	if err != nil || real != root {
 		return PlacementFiles{}, fmt.Errorf("go_upb10_directory.symlink")
 	}
-	allowed := map[string]bool{"COMPLETE.sha256": true, "target-plan-v1.seme": true, "project-v13.seme": true, "placement-report.json": true}
+	allowed := map[string]bool{"COMPLETE.sha256": true, "target-plan-v1.seme": true, "project-v13.seme": true, "placement-report.json": true, "provider-catalog-v1.json": true, "native-island-launch-v1.json": true, "canonical-vm.wasm": true, "pulp.cell.toml": true}
 	values := map[string][]byte{}
 	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -99,15 +100,17 @@ func ReadDirectory(root string, baseManifest []byte) (PlacementFiles, error) {
 			return PlacementFiles{}, fmt.Errorf("go_upb10_directory.missing:%s", name)
 		}
 	}
-	manifest, err := placementManifest(map[string][]byte{"target-plan-v1.seme": values["target-plan-v1.seme"], "project-v13.seme": values["project-v13.seme"], "placement-report.json": values["placement-report.json"]}, baseManifest)
-	if err != nil || !bytes.Equal(manifest, values["COMPLETE.sha256"]) {
+	complete := bytes.Clone(values["COMPLETE.sha256"])
+	delete(values, "COMPLETE.sha256")
+	manifest, err := placementManifest(values, baseManifest)
+	if err != nil || !bytes.Equal(manifest, complete) {
 		return PlacementFiles{}, fmt.Errorf("go_upb10_directory.manifest")
 	}
-	return PlacementFiles{TargetPlan: bytes.Clone(values["target-plan-v1.seme"]), ProjectV13: bytes.Clone(values["project-v13.seme"]), Report: bytes.Clone(values["placement-report.json"])}, nil
+	return PlacementFiles{TargetPlan: bytes.Clone(values["target-plan-v1.seme"]), ProjectV13: bytes.Clone(values["project-v13.seme"]), Report: bytes.Clone(values["placement-report.json"]), ProviderCatalog: bytes.Clone(values["provider-catalog-v1.json"]), LaunchManifest: bytes.Clone(values["native-island-launch-v1.json"]), CanonicalVM: bytes.Clone(values["canonical-vm.wasm"]), PulpCell: bytes.Clone(values["pulp.cell.toml"])}, nil
 }
 
 func placementMap(files PlacementFiles) map[string][]byte {
-	return map[string][]byte{"target-plan-v1.seme": files.TargetPlan, "project-v13.seme": files.ProjectV13, "placement-report.json": files.Report}
+	return map[string][]byte{"target-plan-v1.seme": files.TargetPlan, "project-v13.seme": files.ProjectV13, "placement-report.json": files.Report, "provider-catalog-v1.json": files.ProviderCatalog, "native-island-launch-v1.json": files.LaunchManifest, "canonical-vm.wasm": files.CanonicalVM, "pulp.cell.toml": files.PulpCell}
 }
 
 func placementManifest(values map[string][]byte, base []byte) ([]byte, error) {
