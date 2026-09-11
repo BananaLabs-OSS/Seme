@@ -1,7 +1,7 @@
 {
   "fields": [
     {"key":"Enabled","owner_package":"example.test/javascript-upb05/configuration","type":{"name":"bool"},"origin":{"package":"example.test/javascript-upb05/configuration","name":"ConfigInput"},"default_provider":{"package":"example.test/javascript-upb05/configuration","name":"DefaultEnabled"},"required":false,"resolution":{"kind":"default"},"validation_order":0},
-    {"key":"Limit","owner_package":"example.test/javascript-upb05/configuration","type":{"name":"i64"},"origin":{"package":"example.test/javascript-upb05/configuration","name":"ConfigInput"},"default_provider":{"package":"example.test/javascript-upb05/configuration","name":"DefaultLimit"},"required":false,"resolution":{"kind":"default"},"validator":{"package":"example.test/javascript-upb05/configuration","name":"ValidateLimit"},"validation_order":1},
+    {"key":"Limit","owner_package":"example.test/javascript-upb05/configuration","type":{"name":"i64"},"origin":{"package":"example.test/javascript-upb05/configuration","name":"ConfigInput"},"default_provider":{"package":"example.test/javascript-upb05/configuration","name":"DefaultLimit"},"required":false,"resolution":{"kind":"default"},"validator":{"package":"example.test/javascript-upb05/configuration","name":"ValidateLimit"},"validation_order":0},
     {"key":"Namespace","owner_package":"example.test/javascript-upb05/configuration","type":{"name":"string"},"origin":{"package":"example.test/javascript-upb05/configuration","name":"ConfigInput"},"default_provider":{"package":"example.test/javascript-upb05/configuration","name":"DefaultNamespace"},"required":false,"resolution":{"kind":"default"},"validation_order":0}
   ],
   "runtime_inputs": [],

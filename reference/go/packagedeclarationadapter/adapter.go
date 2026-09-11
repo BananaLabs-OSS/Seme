@@ -5,6 +5,7 @@ package packagedeclarationadapter
 
 import (
 	"fmt"
+	"sort"
 
 	"seme.local/reference/packagedetail"
 	"seme.local/reference/packagedetailinstance"
@@ -12,8 +13,9 @@ import (
 	"seme.local/reference/wire"
 )
 
-// DataTypes returns every canonical record owned by Package v2. Other richer
-// declaration kinds require explicit provider evidence and are not inferred.
+// DataTypes returns all record declarations and generated generic realizations
+// reachable from authenticated Package-v2 members. The historical name is
+// retained for callers; no source-language metadata participates.
 func DataTypes(raw []byte) ([]packagev3instance.Declaration, error) {
 	if err := packagedetailinstance.ValidateV4(raw); err != nil {
 		return nil, fmt.Errorf("package_declaration_adapter.base:%w", err)
@@ -23,6 +25,12 @@ func DataTypes(raw []byte) ([]packagev3instance.Declaration, error) {
 		return nil, err
 	}
 	out := []packagev3instance.Declaration{}
+	type owner struct {
+		detail wire.ID
+		origin packagedetail.Origin
+	}
+	direct := map[wire.ID]owner{}
+	candidates := map[wire.ID][]owner{}
 	for _, detail := range e.Entities {
 		if detail.Schema != id("b021") {
 			continue
@@ -30,9 +38,6 @@ func DataTypes(raw []byte) ([]packagev3instance.Declaration, error) {
 		for _, value := range detail.Fields[id("b211")].List {
 			member := e.Entities[value.Reference]
 			declaration := member.Fields[id("b220")].Reference
-			if e.Entities[declaration].Schema != id("9030") {
-				continue
-			}
 			origin, er := decodeOrigin(e, member.Fields[id("b224")].Reference)
 			if er != nil {
 				return nil, er
@@ -43,10 +48,56 @@ func DataTypes(raw []byte) ([]packagev3instance.Declaration, error) {
 			if x := member.Fields[id("b223")]; x.Tag == 5 {
 				exportName = string(x.Bytes)
 			}
-			out = append(out, packagev3instance.Declaration{Identity: declaration.String(), OwnerDetail: detail.ID.String(), Origin: origin, Visibility: visibility, Kind: packagev3instance.DataType, Name: string(member.Fields[id("b221")].Bytes), ExportName: exportName})
+			if e.Entities[declaration].Schema == id("9030") {
+				direct[declaration] = owner{detail.ID, origin}
+				out = append(out, packagev3instance.Declaration{Identity: declaration.String(), OwnerDetail: detail.ID.String(), Origin: origin, Visibility: visibility, Kind: packagev3instance.DataType, Name: string(member.Fields[id("b221")].Bytes), ExportName: exportName})
+			}
+			for reachable := range closure(e, declaration) {
+				if e.Entities[reachable].Schema == id("9042") {
+					candidates[reachable] = append(candidates[reachable], owner{detail.ID, origin})
+				}
+			}
 		}
 	}
+	for declaration, owners := range candidates {
+		if _, ok := direct[declaration]; ok {
+			continue
+		}
+		sort.Slice(owners, func(i, j int) bool { return owners[i].detail.String() < owners[j].detail.String() })
+		selected := owners[0]
+		out = append(out, packagev3instance.Declaration{Identity: declaration.String(), OwnerDetail: selected.detail.String(), Origin: selected.origin, Visibility: packagedetail.Package, Kind: packagev3instance.GenericRealization, Name: declaration.String()})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Identity < out[j].Identity })
 	return out, nil
+}
+
+func closure(e wire.Envelope, root wire.ID) map[wire.ID]bool {
+	out := map[wire.ID]bool{}
+	var visit func(wire.ID)
+	visit = func(x wire.ID) {
+		if out[x] {
+			return
+		}
+		out[x] = true
+		q, ok := e.Entities[x]
+		if !ok {
+			return
+		}
+		for _, v := range q.Fields {
+			if v.Tag == 6 {
+				visit(v.Reference)
+			}
+			if v.Tag == 7 {
+				for _, item := range v.List {
+					if item.Tag == 6 {
+						visit(item.Reference)
+					}
+				}
+			}
+		}
+	}
+	visit(root)
+	return out
 }
 
 func decodeOrigin(e wire.Envelope, identity wire.ID) (packagedetail.Origin, error) {
