@@ -11,7 +11,7 @@ import (
 func TestPlacementDirectoryRoundTripAndAtomicRejection(t *testing.T) {
 	parent := t.TempDir()
 	base := []byte("seme-go-upb09-bundle-v1\nexample digest\n")
-	files := PlacementFiles{TargetPlan: []byte("plan"), ProjectV13: []byte("project"), Report: []byte("report")}
+	files := placementFixture()
 	first := filepath.Join(parent, "first")
 	second := filepath.Join(parent, "second")
 	if err := WriteDirectory(first, files, base); err != nil {
@@ -43,7 +43,7 @@ func TestPlacementDirectoryRoundTripAndAtomicRejection(t *testing.T) {
 func TestPlacementDirectoryRejectsTamperWrongBaseAndExtras(t *testing.T) {
 	parent := t.TempDir()
 	base := []byte("base")
-	files := PlacementFiles{TargetPlan: []byte("plan"), ProjectV13: []byte("project"), Report: []byte("report")}
+	files := placementFixture()
 	for _, test := range []struct {
 		name   string
 		mutate func(string)
@@ -66,4 +66,8 @@ func TestPlacementDirectoryRejectsTamperWrongBaseAndExtras(t *testing.T) {
 			}
 		})
 	}
+}
+
+func placementFixture() PlacementFiles {
+	return PlacementFiles{TargetPlan: []byte("plan"), ProjectV13: []byte("project"), Report: []byte("report"), ProviderCatalog: []byte("catalog"), LaunchManifest: []byte("launch"), CanonicalVM: []byte("wasm"), PulpCell: []byte("cell")}
 }

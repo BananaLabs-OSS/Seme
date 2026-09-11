@@ -14,6 +14,8 @@ export GOCACHE XDG_CACHE_HOME
 (cd "$repo/reference/go" && go build -buildvcs=false -o "$work/report" ./cmd/go-upb10-report)
 (cd "$repo/reference/go" && go build -buildvcs=false -o "$work/policy" ./cmd/go-upb10-policy-check)
 (cd "$repo/reference/go" && go build -buildvcs=false -o "$work/closure" ./cmd/canonical-closure-check)
+(cd "$repo/reference/go" && GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -buildvcs=false -o "$work/canonical-vm.wasm" ./cmd/canonical-wasm-cell)
+cp "$repo/targets/wasm/pulp-canonical-vm-v1/pulp.cell.toml" "$work/pulp.cell.toml"
 
 proxy="$repo/fixtures/go-upb03-offline-proxy"
 printf 'UPB-10 placement stage: build authenticated Project-v12 base\n'
@@ -76,9 +78,13 @@ common() {
     -g1-compiler "$repo/compiler/g1-compiler.k0"
 }
 
+place() {
+  common "$work/place" -canonical-vm "$work/canonical-vm.wasm" -pulp-cell "$work/pulp.cell.toml" "$@"
+}
+
 printf 'UPB-10 placement stage: two independent placements\n'
-common "$work/place" -out "$work/placement-a"
-common "$work/place" -out "$work/placement-b"
+place -out "$work/placement-a"
+place -out "$work/placement-b"
 diff -ru "$work/placement-a" "$work/placement-b"
 printf 'UPB-10 placement stage: independent source-free report\n'
 common "$work/report" -placement "$work/placement-a" > "$work/report.json"
@@ -93,7 +99,7 @@ common "$work/policy" -expect-exact 88 -expect-impossible 4
 # Exact-only may produce diagnostic meaning internally, but it must never
 # publish a target placement or Project-v13 artifact.
 printf 'UPB-10 placement stage: atomic publication adversaries\n'
-if common "$work/place" -policy exact-only -out "$work/exact-output" > "$work/exact.out" 2> "$work/exact.err"; then
+if place -policy exact-only -out "$work/exact-output" > "$work/exact.out" 2> "$work/exact.err"; then
   echo 'UPB-10 published an exact-only impossible plan' >&2; exit 1
 fi
 test ! -e "$work/exact-output"
@@ -105,7 +111,7 @@ printf x >> "$work/tampered/target-plan-v1.seme"
 if common "$work/report" -placement "$work/tampered" > "$work/tampered.out" 2> "$work/tampered.err"; then
   echo 'UPB-10 report accepted a tampered plan' >&2; exit 1
 fi
-if common "$work/place" -out "$work/placement-a" > "$work/existing.out" 2> "$work/existing.err"; then
+if place -out "$work/placement-a" > "$work/existing.out" 2> "$work/existing.err"; then
   echo 'UPB-10 overwrote an existing placement' >&2; exit 1
 fi
 

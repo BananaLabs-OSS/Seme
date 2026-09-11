@@ -15,17 +15,19 @@ import (
 	"seme.local/reference/goupb09cmdload"
 	"seme.local/reference/goupb10bundle"
 	"seme.local/reference/goupb10cmdload"
+	"seme.local/reference/goupb10deployment"
 	"seme.local/reference/goupb10report"
 	"seme.local/reference/projectv13instance"
 	"seme.local/reference/targetplaninstance"
 )
 
 type options struct {
-	base               goupb09cmdload.Paths
-	target, projectV13 string
-	out, policy        string
-	targetName         string
-	targetRevision     uint64
+	base                  goupb09cmdload.Paths
+	target, projectV13    string
+	out, policy           string
+	targetName            string
+	targetRevision        uint64
+	canonicalVM, pulpCell string
 }
 
 func main() {
@@ -46,10 +48,12 @@ func run(parent context.Context, arguments []string, stderr io.Writer) error {
 	set.StringVar(&options.policy, "policy", "mixed", "mixed or exact-only")
 	set.StringVar(&options.targetName, "target-name", "wasm32-pulp-go-host-v1", "target identity")
 	set.Uint64Var(&options.targetRevision, "target-revision", 1, "target revision")
+	set.StringVar(&options.canonicalVM, "canonical-vm", "", "canonical VM Wasm artifact")
+	set.StringVar(&options.pulpCell, "pulp-cell", "", "Pulp cell manifest")
 	if err := set.Parse(arguments); err != nil || set.NArg() != 0 {
 		return fmt.Errorf("arguments")
 	}
-	if options.out == "" || !filepath.IsAbs(options.out) || filepath.Clean(options.out) != options.out || options.targetName == "" || options.targetRevision == 0 {
+	if options.out == "" || !filepath.IsAbs(options.out) || filepath.Clean(options.out) != options.out || options.targetName == "" || options.targetRevision == 0 || options.canonicalVM == "" || options.pulpCell == "" {
 		return fmt.Errorf("options")
 	}
 	if _, err := os.Lstat(options.out); !os.IsNotExist(err) {
@@ -95,10 +99,34 @@ func run(parent context.Context, arguments []string, stderr io.Writer) error {
 	if err = projectv13instance.Validate(projectInput); err != nil {
 		return err
 	}
+	catalog, err := goupb10deployment.EmitCatalog(planInput.Authority, planInput.Model.Target)
+	if err != nil {
+		return err
+	}
+	vmBytes, err := strictRead(options.canonicalVM)
+	if err != nil {
+		return fmt.Errorf("canonical_vm:%w", err)
+	}
+	cellBytes, err := strictRead(options.pulpCell)
+	if err != nil {
+		return fmt.Errorf("pulp_cell:%w", err)
+	}
+	vm, err := goupb10deployment.DigestArtifact("canonical-vm.wasm", "wasm", vmBytes)
+	if err != nil {
+		return err
+	}
+	cell, err := goupb10deployment.DigestArtifact("pulp.cell.toml", "pulp-cell-manifest", cellBytes)
+	if err != nil {
+		return err
+	}
+	launch, err := goupb10deployment.EmitLaunch(catalog, plan, project, goupb10deployment.PinnedPulpCommit, map[string]goupb10deployment.Artifact{vm.Name: vm, cell.Name: cell}, planInput.Model.Boundaries)
+	if err != nil {
+		return err
+	}
 	bundle, err := goupb10bundle.Load(goupb10bundle.Input{
 		Contracts: contracts, Base: loaded.Bundle,
 		Policy:    goprojectplacementadapter.Policy{Name: options.targetName, Revision: options.targetRevision, AllowedFidelity: allowed},
-		Artifacts: goupb10bundle.Artifacts{Base: loaded.Bundle.Artifacts, TargetPlan: plan, ProjectV13: project},
+		Artifacts: goupb10bundle.Artifacts{Base: loaded.Bundle.Artifacts, TargetPlan: plan, ProjectV13: project, ProviderCatalog: catalog, LaunchManifest: launch, CanonicalVM: vmBytes, PulpCell: cellBytes},
 	})
 	if err != nil {
 		return err
@@ -115,7 +143,7 @@ func run(parent context.Context, arguments []string, stderr io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("base_manifest:%w", err)
 	}
-	return goupb10bundle.WriteDirectory(options.out, goupb10bundle.PlacementFiles{TargetPlan: plan, ProjectV13: project, Report: reportBytes}, baseManifest)
+	return goupb10bundle.WriteDirectory(options.out, goupb10bundle.PlacementFiles{TargetPlan: plan, ProjectV13: project, Report: reportBytes, ProviderCatalog: catalog, LaunchManifest: launch, CanonicalVM: vmBytes, PulpCell: cellBytes}, baseManifest)
 }
 
 func strictRead(path string) ([]byte, error) {

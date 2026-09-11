@@ -9,13 +9,16 @@ import (
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/goprojectplacementadapter"
 	"seme.local/reference/goupb09bundle"
+	"seme.local/reference/goupb10deployment"
 	"seme.local/reference/projectv13instance"
 	"seme.local/reference/targetplaninstance"
 )
 
 type Artifacts struct {
-	Base                   goupb09bundle.Artifacts
-	TargetPlan, ProjectV13 []byte
+	Base                            goupb09bundle.Artifacts
+	TargetPlan, ProjectV13          []byte
+	ProviderCatalog, LaunchManifest []byte
+	CanonicalVM, PulpCell           []byte
 }
 
 type Input struct {
@@ -49,6 +52,20 @@ func Load(in Input) (Result, error) {
 	projectInput := projectv13instance.Inputs{Contracts: in.Contracts, ProjectV12: in.Base.Project, Plan: planInput, Composed: bytes.Clone(in.Artifacts.ProjectV13)}
 	if err = projectv13instance.Validate(projectInput); err != nil {
 		return Result{}, fmt.Errorf("go_upb10_bundle.project:%w", err)
+	}
+	if err = goupb10deployment.ValidateCatalog(in.Artifacts.ProviderCatalog, planInput.Authority, planInput.Model.Target); err != nil {
+		return Result{}, fmt.Errorf("go_upb10_bundle.catalog:%w", err)
+	}
+	vm, err := goupb10deployment.DigestArtifact("canonical-vm.wasm", "wasm", in.Artifacts.CanonicalVM)
+	if err != nil {
+		return Result{}, err
+	}
+	cell, err := goupb10deployment.DigestArtifact("pulp.cell.toml", "pulp-cell-manifest", in.Artifacts.PulpCell)
+	if err != nil {
+		return Result{}, err
+	}
+	if err = goupb10deployment.ValidateLaunch(in.Artifacts.LaunchManifest, in.Artifacts.ProviderCatalog, in.Artifacts.TargetPlan, in.Artifacts.ProjectV13, goupb10deployment.PinnedPulpCommit, map[string]goupb10deployment.Artifact{vm.Name: vm, cell.Name: cell}, planInput.Model.Boundaries); err != nil {
+		return Result{}, fmt.Errorf("go_upb10_bundle.launch:%w", err)
 	}
 	return Result{Artifacts: cloneArtifacts(in.Artifacts), Base: in.Base, Plan: planInput, Project: projectInput}, nil
 }
@@ -90,5 +107,5 @@ func cloneArtifacts(value Artifacts) Artifacts {
 	transport.Base, transport.Transport, transport.ProjectV11 = b, clone(transport.Transport), clone(transport.ProjectV11)
 	base := value.Base
 	base.Base, base.ControlledEffects, base.ProjectV12, base.ReplayAuthority = transport, clone(base.ControlledEffects), clone(base.ProjectV12), clone(base.ReplayAuthority)
-	return Artifacts{Base: base, TargetPlan: clone(value.TargetPlan), ProjectV13: clone(value.ProjectV13)}
+	return Artifacts{Base: base, TargetPlan: clone(value.TargetPlan), ProjectV13: clone(value.ProjectV13), ProviderCatalog: clone(value.ProviderCatalog), LaunchManifest: clone(value.LaunchManifest), CanonicalVM: clone(value.CanonicalVM), PulpCell: clone(value.PulpCell)}
 }
