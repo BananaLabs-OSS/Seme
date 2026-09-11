@@ -80,6 +80,10 @@
     "javascript/UPB-09": {
       "gate": "scripts/check-javascript-upb-09.sh",
       "evidence": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"]
+    },
+    "javascript/UPB-10": {
+      "gate": "scripts/check-javascript-upb-10.sh",
+      "evidence": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"]
     }
   }
 }
