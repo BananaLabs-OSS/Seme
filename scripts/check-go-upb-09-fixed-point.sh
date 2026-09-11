@@ -29,6 +29,10 @@ cmp "$source/controlled-effects-selection.json" "$projected/controlled-effects-s
 cmp "$repo/fixtures/go-upb08-transport-overlay/transport-selection.json" "$projected/ordered-transport-selection.json"
 cmp "$source/resources/notice.txt" "$projected/resources/notice.txt"
 cmp "$source/resources/marker.bin" "$projected/resources/marker.bin"
+rg -q '^go 1\.25$' "$projected/go.mod"
+rg -q '^require example\.test/seme/checksum v1\.2\.3$' "$projected/go.mod"
+test "$(wc -l < "$projected/go.sum" | tr -d ' ')" -eq 1
+rg -q '^example\.test/seme/checksum v1\.2\.3 h1:iqNHCyOnAuyQDdyru3Tt6tsFgwUzMObOH5iQ9\+5SMXA=$' "$projected/go.sum"
 (cd "$projected" && GOROOT="$go_root" GOPROXY=off GOSUMDB=off "$go_tool" test -count=1 ./...)
 
 # shellcheck disable=SC2086
