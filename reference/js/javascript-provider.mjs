@@ -171,6 +171,11 @@ export function javascriptDeclarationIdentity(packagePath, name) {
   return stableID("session-declaration", packagePath, name);
 }
 
+export function javascriptRecordIdentity(packagePath, name) {
+	if (!packagePath || !/^[A-Za-z_$][\w$]*$/.test(name)) fail("javascript.invalid_record_identity");
+	return stableID("execution", "record", packagePath, name);
+}
+
 // Lift one semantic JavaScript package from independently parsed ECMAScript
 // modules. File order is deliberately irrelevant: paths establish the stable
 // package snapshot order, while semantic identities remain package/name based.
