@@ -1,6 +1,6 @@
 # JavaScript UPB-07 acceptance design
 
-Status: accepted implementation design; unclaimed.
+Status: claimed 2026-09-11 by `scripts/check-javascript-upb-07.sh`.
 
 JavaScript UPB-07 extends the cumulative Project-v9 authority with one neutral,
 capability-backed durable-state family. Ordinary native JavaScript declares two
