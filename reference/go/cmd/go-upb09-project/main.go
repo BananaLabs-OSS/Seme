@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"seme.local/reference/dependencyinstance"
+	"seme.local/reference/dependencyresolution"
 	"seme.local/reference/goresourcemanifest"
 	"seme.local/reference/goupb09bundle"
 	"seme.local/reference/goupb09cmdload"
@@ -128,7 +130,30 @@ func run(parent context.Context, args []string) error {
 			return err
 		}
 	}
-	if err = write("go.mod", []byte("module "+*module+"\n\ngo 1.26\n")); err != nil {
+	dependencyBase := loaded.Bundle.Base.Base.Base.Base
+	closure, err := dependencyinstance.Validate(dependencyBase.ProjectV8Input.Contracts.Dependency(), dependencyBase.Artifacts.Dependency)
+	if err != nil {
+		return err
+	}
+	var external dependencyresolution.Entry
+	for _, item := range closure.Entries {
+		if item.Kind != dependencyresolution.External {
+			continue
+		}
+		if external.Identity != "" || item.Ecosystem != "go" || item.IntegrityAlgorithm != "go-h1-tree" {
+			return fmt.Errorf("dependency_projection")
+		}
+		external = item
+	}
+	if external.Identity == "" {
+		return fmt.Errorf("dependency_projection_missing")
+	}
+	goMod := []byte(fmt.Sprintf("module %s\n\ngo 1.25\n\nrequire %s %s\n", *module, external.Identity, external.Version))
+	goSum := []byte(fmt.Sprintf("%s %s %s\n", external.Identity, external.Version, external.Integrity))
+	if err = write("go.mod", goMod); err != nil {
+		return err
+	}
+	if err = write("go.sum", goSum); err != nil {
 		return err
 	}
 	cmd := exec.CommandContext(ctx, *goTool, "test", "./...")
