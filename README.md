@@ -303,9 +303,9 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 19/36 (52.8%): bounded Go UPB-01 through UPB-11 and JavaScript
-UPB-01 through UPB-08 are claimed. Go is 11/12 (91.7%); JavaScript is
-8/12 (66.7%).
+is now 20/36 (55.6%): bounded Go UPB-01 through UPB-11 and JavaScript
+UPB-01 through UPB-09 are claimed. Go is 11/12 (91.7%); JavaScript is
+9/12 (75.0%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -374,6 +374,14 @@ the exact Project-v10 graph. Native JavaScript, canonical Seme, standalone
 Wasm, and pinned Pulp dispatch identically; separate host tests prove framing
 and placement while refusing to mislabel Pulp's synchronous carrier as an
 authoritative stream provider. Run `./scripts/check-javascript-upb-08.sh`.
+
+JavaScript UPB-09 adds explicit clock, seeded-random, state/command/result, and
+effect-bearing dispatch declarations. The native project graph assigns the
+lifted `observability.log` effect to its exact package, while Controlled Effects
+v1 and Project v12 remain language-neutral. Native JavaScript, canonical Seme,
+standalone Wasm, and pinned Pulp agree on both value and logical effect trace;
+live clock sampling and delivery remain explicit host boundaries. Run
+`./scripts/check-javascript-upb-09.sh`.
 
 Go UPB-03 adds a resolved, integrity-pinned local-plus-ecosystem dependency
 closure, authenticates it with Project v4, and proves that it applies to the
