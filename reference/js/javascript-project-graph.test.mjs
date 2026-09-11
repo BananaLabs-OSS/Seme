@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import test from "node:test";
-import { liftJavaScript, liftJavaScriptPackage } from "./javascript-provider.mjs";
+import { javascriptDeclarationIdentity, liftJavaScript, liftJavaScriptPackage } from "./javascript-provider.mjs";
 import { buildJavaScriptProjectGraph } from "./javascript-project-graph.mjs";
 
 const projectPath="example.test/javascript-upb02";
@@ -32,4 +32,13 @@ test("publishes authenticated structural record ownership",()=>{
   const graph=buildJavaScriptProjectGraph({files:input,snapshot:snap,projectPath:project,rootModule:path,canonicalG1:canonical});
   const record=graph.Packages[0].Members.find((member)=>!member.Callable);
   assert.equal(record.Name,"Settings");assert.equal(record.Visibility,2);assert.match(record.Identity,/^80[0-9a-f]{30}$/);assert.equal(record.Origin.Path,path);
+});
+test("retains declaration identity across an evidenced native rename",()=>{
+  const renamed=files.map((file)=>file.path==="math/sum.js"?{...file,source:file.source.replaceAll("Sum","Total")}:file.path==="application.js"?{...file,source:file.source.replaceAll("Sum","Total")}:file);
+  const identity=javascriptDeclarationIdentity(projectPath,"Sum"),evidence={version:1,packagePath:projectPath,renames:[{previousName:"Sum",currentName:"Total",identity}]};
+  const canonical=liftJavaScriptPackage({files:renamed,packagePath:projectPath,revision:2,moduleG1,entryName:"Run",identityEvidence:evidence});
+  const snap={RootIdentity:projectPath,Units:renamed.map((file)=>({Path:file.path,Class:"tracked",Preservation:"semantic-projection",Size:Buffer.byteLength(file.source),SHA256:crypto.createHash("sha256").update(file.source).digest("hex")}))};
+  const graph=buildJavaScriptProjectGraph({files:renamed,snapshot:snap,projectPath,rootModule:"application.js",canonicalG1:canonical,identityEvidence:evidence});
+  assert.equal(graph.Packages.flatMap((pkg)=>pkg.Members).find((member)=>member.Name==="Total").Identity,identity);
+  assert.throws(()=>buildJavaScriptProjectGraph({files:renamed,snapshot:snap,projectPath,rootModule:"application.js",canonicalG1:canonical,identityEvidence:{...evidence,renames:[{...evidence.renames[0],identity:"00".repeat(16)}]}}),/identity_evidence/);
 });

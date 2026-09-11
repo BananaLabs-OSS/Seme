@@ -2,7 +2,7 @@
 # Real source-free JavaScript UPB-10 target placement and adversaries.
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-fixture="$repo/fixtures/javascript-upb05-configuration"
+fixture=${JS_UPB_FIXTURE:-"$repo/fixtures/javascript-upb05-configuration"}
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-javascript-upb10-placement.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 GOCACHE="$work/go-cache"; XDG_CACHE_HOME="$work/cache"
