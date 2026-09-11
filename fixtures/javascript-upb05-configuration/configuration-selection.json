@@ -1,0 +1,13 @@
+{
+  "fields": [
+    {"key":"Enabled","owner_package":"example.test/javascript-upb05/configuration","type":{"name":"bool"},"origin":{"package":"example.test/javascript-upb05/configuration","name":"ConfigInput"},"default_provider":{"package":"example.test/javascript-upb05/configuration","name":"DefaultEnabled"},"required":false,"resolution":{"kind":"default"},"validation_order":0},
+    {"key":"Limit","owner_package":"example.test/javascript-upb05/configuration","type":{"name":"i64"},"origin":{"package":"example.test/javascript-upb05/configuration","name":"ConfigInput"},"default_provider":{"package":"example.test/javascript-upb05/configuration","name":"DefaultLimit"},"required":false,"resolution":{"kind":"default"},"validator":{"package":"example.test/javascript-upb05/configuration","name":"ValidateLimit"},"validation_order":1},
+    {"key":"Namespace","owner_package":"example.test/javascript-upb05/configuration","type":{"name":"string"},"origin":{"package":"example.test/javascript-upb05/configuration","name":"ConfigInput"},"default_provider":{"package":"example.test/javascript-upb05/configuration","name":"DefaultNamespace"},"required":false,"resolution":{"kind":"default"},"validation_order":0}
+  ],
+  "runtime_inputs": [],
+  "initializers": [
+    {"key":"configuration","callable":{"package":"example.test/javascript-upb05/configuration","name":"InitializeConfig"},"dependencies":[],"arguments":[{"kind":"record","record":{"type":{"package":"example.test/javascript-upb05/configuration","name":"ConfigInput"},"members":[{"name":"Enabled","source":{"kind":"resolved-field","field":"Enabled"}},{"name":"Limit","source":{"kind":"resolved-field","field":"Limit"}},{"name":"Namespace","source":{"kind":"resolved-field","field":"Namespace"}}]}}]},
+    {"key":"policy","callable":{"package":"example.test/javascript-upb05/policy","name":"InitializePolicy"},"dependencies":["configuration"],"arguments":[{"kind":"predecessor-ok","predecessor":"configuration"}]},
+    {"key":"application","callable":{"package":"example.test/javascript-upb05/application","name":"Assemble"},"dependencies":["configuration","policy"],"arguments":[{"kind":"predecessor-ok","predecessor":"configuration"},{"kind":"predecessor-ok","predecessor":"policy"}]}
+  ]
+}
