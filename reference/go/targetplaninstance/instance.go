@@ -67,15 +67,18 @@ type Model struct {
 
 type Inputs struct {
 	TargetContract contractcatalog.Contract
-	Authority      []byte
-	Model          Model
-	Artifact       []byte
+	// SemanticContracts closes imported identities used by Authority. Each
+	// contract must already be independently digest-authenticated.
+	SemanticContracts []contractcatalog.Contract
+	Authority         []byte
+	Model             Model
+	Artifact          []byte
 }
 
 func Emit(in Inputs) ([]byte, error) { return emit(in) }
 
 func Validate(in Inputs) error {
-	want, err := emit(Inputs{TargetContract: in.TargetContract, Authority: in.Authority, Model: in.Model})
+	want, err := emit(Inputs{TargetContract: in.TargetContract, SemanticContracts: in.SemanticContracts, Authority: in.Authority, Model: in.Model})
 	if err != nil {
 		return err
 	}
@@ -103,19 +106,32 @@ func emit(in Inputs) ([]byte, error) {
 	if in.Model.Target.Name == "" || in.Model.Target.Revision == 0 || len(in.Model.Requirements) == 0 {
 		return nil, fmt.Errorf("target_plan.model")
 	}
+	out := cloneEnvelope(base)
+	contracts, err := normalizedContracts(in.TargetContract, in.SemanticContracts)
+	if err != nil {
+		return nil, err
+	}
+	for _, contract := range contracts {
+		for key, value := range contract.Envelope().Entities {
+			if prior, ok := out.Entities[key]; ok && !sameEntity(prior, value) {
+				return nil, fmt.Errorf("target_plan.contract_collision:%s", key)
+			}
+			out.Entities[key] = value
+		}
+	}
 	allowed, err := allowedSet(in.Model.Allowed)
 	if err != nil {
 		return nil, err
 	}
-	requirements, err := normalizeRequirements(base.Entities, in.Model.Requirements)
+	requirements, err := normalizeRequirements(out.Entities, in.Model.Requirements)
 	if err != nil {
 		return nil, err
 	}
-	rules, err := normalizeRules(base.Entities, in.Model.Target.Rules)
+	rules, err := normalizeRules(out.Entities, in.Model.Target.Rules)
 	if err != nil {
 		return nil, err
 	}
-	boundaries, err := normalizeBoundaries(base.Entities, in.Model.Root, in.Model.Boundaries)
+	boundaries, err := normalizeBoundaries(out.Entities, in.Model.Root, in.Model.Boundaries)
 	if err != nil {
 		return nil, err
 	}
@@ -123,14 +139,7 @@ func emit(in Inputs) ([]byte, error) {
 		return nil, err
 	}
 
-	out := cloneEnvelope(base)
-	for key, entity := range in.TargetContract.Envelope().Entities {
-		if prior, ok := out.Entities[key]; ok && !sameEntity(prior, entity) {
-			return nil, fmt.Errorf("target_plan.contract_collision:%s", key)
-		}
-		out.Entities[key] = entity
-	}
-	seed := modelDigest(in.Authority, in.TargetContract.Digest(), in.Model)
+	seed := modelDigest(in.Authority, contracts, in.Model)
 	stable := func(parts ...string) wire.ID { return stableID(seed, parts...) }
 
 	targetID := stable("target")
@@ -207,13 +216,18 @@ func emit(in Inputs) ([]byte, error) {
 	}
 	planID := stable("plan")
 	out.Entities[planID] = entity(planID, "c014", map[wire.ID]wire.Value{id("c140"): ref(in.Model.Root), id("c141"): ref(targetID), id("c142"): refs(resolutionIDs), id("c143"): refs(boundaryIDs), id("c144"): boolean(executable)})
-	moduleID, importAuthorityID, importTargetID := stable("module"), stable("import", "authority"), stable("import", "target-v1")
-	targetRevision := id("c001")
+	moduleID, importAuthorityID := stable("module"), stable("import", "authority")
 	out.Entities[importAuthorityID] = entity(importAuthorityID, "13", map[wire.ID]wire.Value{id("130"): ref(base.Module), id("131"): blob(base.Revision[:])})
-	out.Entities[importTargetID] = entity(importTargetID, "13", map[wire.ID]wire.Value{id("130"): ref(id("c000")), id("131"): blob(targetRevision[:])})
+	importIDs := []wire.ID{importAuthorityID}
+	for _, contract := range contracts {
+		pin := contract.Pin()
+		importID := stable("import", pin.Module.String(), pin.Revision.String())
+		out.Entities[importID] = entity(importID, "13", map[wire.ID]wire.Value{id("130"): ref(pin.Module), id("131"): blob(pin.Revision[:])})
+		importIDs = append(importIDs, importID)
+	}
 	out.Module = moduleID
 	out.Parents = nil
-	out.Entities[moduleID] = entity(moduleID, "12", map[wire.ID]wire.Value{id("120"): blob([]byte("target-execution-plan-v1")), id("121"): refs(sortedIDs([]wire.ID{importAuthorityID, importTargetID})), id("122"): refs([]wire.ID{planID})})
+	out.Entities[moduleID] = entity(moduleID, "12", map[wire.ID]wire.Value{id("120"): blob([]byte("target-execution-plan-v1")), id("121"): refs(sortedIDs(importIDs)), id("122"): refs([]wire.ID{planID})})
 	out.Revision = wire.ID{}
 	encoded, err := wire.Encode(out)
 	if err != nil {
@@ -233,6 +247,34 @@ func allowedSet(values []Fidelity) (map[Fidelity]bool, error) {
 		out[value] = true
 	}
 	return out, nil
+}
+
+func normalizedContracts(target contractcatalog.Contract, additional []contractcatalog.Contract) ([]contractcatalog.Contract, error) {
+	values := append([]contractcatalog.Contract{target}, additional...)
+	seen := map[contractcatalog.Pin][sha256.Size]byte{}
+	result := make([]contractcatalog.Contract, 0, len(values))
+	for _, value := range values {
+		if !value.Validated() {
+			return nil, fmt.Errorf("target_plan.semantic_contract")
+		}
+		pin, digest := value.Pin(), value.Digest()
+		if prior, exists := seen[pin]; exists {
+			if prior != digest {
+				return nil, fmt.Errorf("target_plan.semantic_contract_collision")
+			}
+			continue
+		}
+		seen[pin] = digest
+		result = append(result, value)
+	}
+	sort.Slice(result, func(i, j int) bool {
+		a, b := result[i].Pin(), result[j].Pin()
+		if a.Module != b.Module {
+			return bytes.Compare(a.Module[:], b.Module[:]) < 0
+		}
+		return bytes.Compare(a.Revision[:], b.Revision[:]) < 0
+	})
+	return result, nil
 }
 
 func normalizeRequirements(entities map[wire.ID]wire.Entity, values []Requirement) ([]Requirement, error) {
@@ -314,7 +356,7 @@ func selectRule(requirement Requirement, rules []Rule, allowed map[Fidelity]bool
 	return Rule{}, false
 }
 
-func modelDigest(authority []byte, contract [sha256.Size]byte, model Model) [sha256.Size]byte {
+func modelDigest(authority []byte, contracts []contractcatalog.Contract, model Model) [sha256.Size]byte {
 	requirements := append([]Requirement(nil), model.Requirements...)
 	sort.Slice(requirements, func(i, j int) bool { return requirements[i].Identity < requirements[j].Identity })
 	rules := append([]Rule(nil), model.Target.Rules...)
@@ -336,7 +378,12 @@ func modelDigest(authority []byte, contract [sha256.Size]byte, model Model) [sha
 	h.Write([]byte("seme.target-plan.model.v1\x00"))
 	a := sha256.Sum256(authority)
 	h.Write(a[:])
-	h.Write(contract[:])
+	for _, contract := range contracts {
+		pin, digest := contract.Pin(), contract.Digest()
+		writeID(h, pin.Module)
+		writeID(h, pin.Revision)
+		h.Write(digest[:])
+	}
 	writeID(h, model.Root)
 	writeText(h, model.Target.Name)
 	_ = binary.Write(h, binary.BigEndian, model.Target.Revision)

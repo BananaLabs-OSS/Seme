@@ -76,7 +76,13 @@ func Derive(project projectv12instance.Inputs, target contractcatalog.Contract, 
 	if len(model.Requirements) < 2 || len(model.Boundaries) < 4 {
 		return targetplaninstance.Inputs{}, fmt.Errorf("go_placement.incomplete_profile")
 	}
-	return targetplaninstance.Inputs{TargetContract: target, Authority: bytes.Clone(project.Composed), Model: model}, nil
+	contracts := []contractcatalog.Contract{
+		project.Contracts.Foundation(), project.Contracts.Execution(), project.Contracts.Package(),
+		project.Contracts.Dependency(), project.Contracts.Configuration(), project.Contracts.Resource(),
+		project.Contracts.DurableState(), project.Contracts.Presentation(), project.Contracts.OrderedTransport(),
+		project.Contracts.ControlledEffects(), project.Contracts.Project(), target,
+	}
+	return targetplaninstance.Inputs{TargetContract: target, SemanticContracts: contracts, Authority: bytes.Clone(project.Composed), Model: model}, nil
 }
 
 const (
