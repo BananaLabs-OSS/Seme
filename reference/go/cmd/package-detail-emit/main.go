@@ -12,8 +12,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"seme.local/reference/contractcatalog"
 	"seme.local/reference/packagedetail"
 	"seme.local/reference/packagedetailemitter"
+	"seme.local/reference/sourceinventory"
 	"seme.local/reference/wire"
 )
 
@@ -54,12 +56,16 @@ func main() {
 	}
 }
 func run() error {
-	var basePath, graphPath, out string
+	var basePath, inventoryPath, graphPath, executionContract, packageContract, projectContract, out string
 	flag.StringVar(&basePath, "base", "", "canonical Project-v1 artifact")
+	flag.StringVar(&inventoryPath, "inventory", "", "bound Project-v2 source inventory")
 	flag.StringVar(&graphPath, "graph", "", "provider package graph JSON")
+	flag.StringVar(&executionContract, "execution-contract", "", "Execution contract")
+	flag.StringVar(&packageContract, "package-contract", "", "Package-v1 contract")
+	flag.StringVar(&projectContract, "project-contract", "", "Project-v2 contract")
 	flag.StringVar(&out, "out", "", "new Package-v2 artifact")
 	flag.Parse()
-	if basePath == "" || graphPath == "" || out == "" {
+	if basePath == "" || inventoryPath == "" || graphPath == "" || executionContract == "" || packageContract == "" || projectContract == "" || out == "" {
 		return fmt.Errorf("package_detail_emit.missing")
 	}
 	baseBytes, err := read(basePath)
@@ -73,6 +79,46 @@ func run() error {
 	canonical, err := wire.Encode(base)
 	if err != nil || !bytes.Equal(canonical, baseBytes) {
 		return fmt.Errorf("package_detail_emit.base_noncanonical")
+	}
+	inventoryBytes, err := read(inventoryPath)
+	if err != nil {
+		return err
+	}
+	ec, err := read(executionContract)
+	if err != nil {
+		return err
+	}
+	pc, err := read(packageContract)
+	if err != nil {
+		return err
+	}
+	prc, err := read(projectContract)
+	if err != nil {
+		return err
+	}
+	contracts, err := contractcatalog.ResolveProjectContractSetV2(ec, pc, prc)
+	if err != nil {
+		return err
+	}
+	if err = sourceinventory.Validate(contracts.Project(), baseBytes, inventoryBytes); err != nil {
+		return fmt.Errorf("package_detail_emit.inventory:%w", err)
+	}
+	inventoryEnvelope, err := wire.Decode(inventoryBytes)
+	if err != nil {
+		return err
+	}
+	for identity, entity := range inventoryEnvelope.Entities {
+		if entity.Schema == mustID("12") || entity.Schema == mustID("13") {
+			continue
+		}
+		if old, exists := base.Entities[identity]; exists {
+			left, _ := wire.Encode(wire.Envelope{Entities: map[wire.ID]wire.Entity{identity: old}})
+			right, _ := wire.Encode(wire.Envelope{Entities: map[wire.ID]wire.Entity{identity: entity}})
+			if !bytes.Equal(left, right) {
+				return fmt.Errorf("package_detail_emit.inventory_collision:%s", identity)
+			}
+		}
+		base.Entities[identity] = entity
 	}
 	raw, err := read(graphPath)
 	if err != nil {
@@ -135,6 +181,16 @@ func digest(raw string) ([32]byte, error) {
 	}
 	copy(out[:], b)
 	return out, nil
+}
+func mustID(raw string) wire.ID {
+	for len(raw) < 32 {
+		raw = "0" + raw
+	}
+	id, err := wire.ParseID(raw)
+	if err != nil {
+		panic(err)
+	}
+	return id
 }
 func read(path string) ([]byte, error) {
 	i, e := os.Lstat(path)
