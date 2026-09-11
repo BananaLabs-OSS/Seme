@@ -1,0 +1,23 @@
+{
+  "valid": [
+    {
+      "name": "zero",
+      "arguments": [{"kind":"record","fields":{"Count":{"kind":"i64","i64":"0"}}}],
+      "result": {"kind":"result","variant":"ok","payload":{"kind":"record","fields":{"Count":{"kind":"i64","i64":"0"},"Namespace":{"kind":"text","text":"migrated"}}}}
+    },
+    {
+      "name": "positive",
+      "arguments": [{"kind":"record","fields":{"Count":{"kind":"i64","i64":"41"}}}],
+      "result": {"kind":"result","variant":"ok","payload":{"kind":"record","fields":{"Count":{"kind":"i64","i64":"41"},"Namespace":{"kind":"text","text":"migrated"}}}}
+    },
+    {
+      "name": "negative",
+      "arguments": [{"kind":"record","fields":{"Count":{"kind":"i64","i64":"-7"}}}],
+      "result": {"kind":"result","variant":"ok","payload":{"kind":"record","fields":{"Count":{"kind":"i64","i64":"-7"},"Namespace":{"kind":"text","text":"migrated"}}}}
+    }
+  ],
+  "malformed": [
+    {"name":"missing-count","arguments":[{"kind":"record","fields":{}}]},
+    {"name":"wrong-count","arguments":[{"kind":"record","fields":{"Count":{"kind":"text","text":"0"}}}]}
+  ]
+}

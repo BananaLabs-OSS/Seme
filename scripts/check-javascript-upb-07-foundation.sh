@@ -1,0 +1,71 @@
+#!/bin/sh
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+fixture="$repo/fixtures/javascript-upb05-configuration"
+work=$(mktemp -d "${TMPDIR:-/tmp}/seme-javascript-upb07.XXXXXX")
+trap 'rm -rf "$work"' EXIT HUP INT TERM
+GOCACHE="$work/go-cache"; XDG_CACHE_HOME="$work/cache"; export GOCACHE XDG_CACHE_HOME
+
+JS_UPB06_EXPORT="$work/prior" "$repo/scripts/check-javascript-upb-06-foundation.sh"
+"$repo/scripts/check-durable-state-v1.sh"
+"$repo/scripts/check-source-presentation-v1.sh"
+"$repo/scripts/check-project-contract-v10.sh"
+(cd "$repo/reference/go" &&
+  go test -count=1 ./godurablemanifest ./godurableadapter ./durableinstance ./presentationinstance ./projectv10instance ./cmd/project-v10-compose &&
+  go build -buildvcs=false -o "$work/compose" ./cmd/project-v10-compose)
+
+compose() {
+  selection=$1 out=$2 v9=${3:-"$work/prior/v9"}
+  "$work/compose" -bundle-v8 "$work/prior/base/bundle" -bundle-v9 "$v9" \
+    -configuration-selection "$fixture/configuration-selection.json" -durable-selection "$selection" \
+    -foundation-contract "$repo/modules/foundation/v1/module.seme" -execution-contract "$repo/modules/execution/v36/module.seme" \
+    -package-contract "$repo/modules/package/v4/module.seme" -dependency-contract "$repo/modules/dependency/v1/module.seme" \
+    -configuration-contract "$repo/modules/configuration/v3/module.seme" -project-v8-contract "$repo/modules/project/v8/module.seme" \
+    -resource-contract "$repo/modules/resource/v1/module.seme" -project-v9-contract "$repo/modules/project/v9/module.seme" \
+    -durable-state-contract "$repo/modules/durable-state/v1/module.seme" -source-presentation-contract "$repo/modules/source-presentation/v1/module.seme" \
+    -project-v10-contract "$repo/modules/project/v10/module.seme" -k0 "$repo/bootstrap/seme-k0-linux-amd64" \
+    -g1-compiler "$repo/compiler/g1-compiler.k0" -out "$out"
+}
+
+compose "$fixture/durable-selection.json" "$work/v10-a"
+compose "$fixture/durable-selection.json" "$work/v10-b"
+diff -ru "$work/v10-a" "$work/v10-b"
+test -s "$work/v10-a/durable-state-v1.seme"
+test -s "$work/v10-a/source-presentation-v1.seme"
+test -s "$work/v10-a/project-v10.seme"
+
+reject() {
+  name=$1 selection=$2 v9=${3:-"$work/prior/v9"}
+  if compose "$selection" "$work/reject-$name" "$v9" >"$work/$name.out" 2>"$work/$name.err"; then
+    echo "JavaScript UPB-07 accepted $name" >&2; exit 1
+  fi
+  test ! -e "$work/reject-$name"; test ! -s "$work/$name.out"
+}
+if compose "$fixture/durable-selection.json" "$work/v10-a" >"$work/collision.out" 2>"$work/collision.err"; then exit 1; fi
+test ! -s "$work/collision.out"
+for kind in owner validator migration codec extra; do
+  node - "$fixture/durable-selection.json" "$work/$kind.json" "$kind" <<'NODE'
+const fs=require("fs"), input=process.argv[2], output=process.argv[3], kind=process.argv[4];
+const d=JSON.parse(fs.readFileSync(input));
+if(kind==="owner") d.state_owner="example.test/javascript-upb05/missing";
+if(kind==="validator") d.validator_1.name="MissingValidator";
+if(kind==="migration") d.migration.name="ValidateV1";
+if(kind==="codec") d.codec="native-json";
+if(kind==="extra") d.provider="filesystem";
+fs.writeFileSync(output, JSON.stringify(d));
+NODE
+  reject "$kind" "$work/$kind.json"
+done
+cp -R "$work/prior/v9" "$work/stale-v9"
+printf x >> "$work/stale-v9/project-v9.seme"
+reject stale-v9 "$fixture/durable-selection.json" "$work/stale-v9"
+cp -R "$work/prior/v9" "$work/stale-resource"
+printf x >> "$work/stale-resource/resource-v1.seme"
+reject stale-resource "$fixture/durable-selection.json" "$work/stale-resource"
+
+if test -n "${JS_UPB07_EXPORT:-}"; then
+  test ! -e "$JS_UPB07_EXPORT"; mkdir "$JS_UPB07_EXPORT"
+  cp -R "$work/prior" "$JS_UPB07_EXPORT/prior"
+  cp -R "$work/v10-a" "$JS_UPB07_EXPORT/v10"
+fi
+echo 'JavaScript UPB-07 foundation: Durable-State-v1, neutral presentation, and Project-v10 authorities reproduce'
