@@ -55,6 +55,22 @@ grep -q '"Visibility":"public"' "$work/report.json"
 grep -q '"Visibility":"package"' "$work/report.json"
 grep -q '"Requested":"./math/sum.js"' "$work/report.json"
 grep -q '"Alias":"Sum"' "$work/report.json"
+node "$repo/reference/js/javascript-module-projector-cli.mjs" "$work/a/execution.g1" "$work/a/package-graph.json" "$work/projected-modules"
+node --check "$work/projected-modules/application.js"
+node --check "$work/projected-modules/math/sum.js"
+node "$repo/reference/js/javascript-uab-01-vectors.mjs" > "$work/vectors.json"
+node "$repo/reference/js/javascript-package-native-runner.mjs" "$fixture/application.js" "$work/vectors.json" > "$work/native-original.json"
+node "$repo/reference/js/javascript-package-native-runner.mjs" "$work/projected-modules/application.js" "$work/vectors.json" > "$work/native-projected.json"
+cmp "$work/native-original.json" "$work/native-projected.json"
+(cd "$work/projected-modules" && node "$repo/reference/js/javascript-package-provider-cli.mjs" \
+  --files application.js,math/sum.js --module "$repo/modules/execution/v35/module.g1" \
+  --package example.test/javascript-upb02 --entry Run --revision 1 --out "$work/relifted.g1")
+"$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" "$work/relifted.g1" "$work/relifted.seme"
+cmp "$work/a/execution.seme" "$work/relifted.seme"
+"$work/assemble" -execution "$work/relifted.seme" -manifest "$fixture/seme-package-manifest.json" \
+  -execution-contract "$repo/modules/execution/v35/module.seme" -package-contract "$repo/modules/package/v1/module.seme" \
+  -project-contract "$repo/modules/project/v1/module.seme" -out "$work/relifted-project.seme"
+cmp "$work/a/project-v1.seme" "$work/relifted-project.seme"
 if build "$work/a" >"$work/collision.out" 2>"$work/collision.err"; then exit 1; fi
 test -s "$work/a/project-v3.seme"
 echo 'JavaScript UPB-02 graph foundation: deterministic Package-v2 and Project-v3 authority pass'
