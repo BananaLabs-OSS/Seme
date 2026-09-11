@@ -1,6 +1,6 @@
 # JavaScript UPB-02 acceptance design
 
-Status: accepted implementation design; unclaimed.
+Status: claimed 2026-09-11 by `scripts/check-javascript-upb-02.sh`.
 
 JavaScript UPB-02 extends the claimed Project-v2 source authority with a real
 ECMAScript module graph under the existing neutral Package-v2 and Project-v3
