@@ -62,6 +62,13 @@ build09 "$work/source" 1 "$work/prior-base"
   -target example.test/go-uab-11/transport.EqualI64 \
   -expected EqualI64 -replacement SameI64
 build09 "$work/result-source" 2 "$work/result-base" "$work/result-source/.seme-reconciliation-v1/projection-report.json"
+rg -q 'func EqualI64' "$work/source/transport/stream.go"
+if rg -q 'SameI64' "$work/source/transport/stream.go"; then
+  echo 'UPB-11 modified its source project' >&2; exit 1
+fi
+if "$work/reconcile" -project "$work/source" -out "$work/result-source" -module example.test/go-uab-11 -package example.test/go-uab-11/streamservice -entry DispatchControlled -revision 2 -execution-g1 "$repo/modules/execution/v36/module.g1" -provider-g1 "$repo/modules/provider/v1/module.g1" -target example.test/go-uab-11/transport.EqualI64 -expected EqualI64 -replacement SameI64 >"$work/collision.out" 2>"$work/collision.err"; then
+  echo 'UPB-11 overwrote an existing reconciliation' >&2; exit 1
+fi
 
 common_place() {
   bundle=$1; shift
@@ -136,6 +143,9 @@ printf 'UPB-11 project stage: two deterministic Project-v14 finalizations\n'
 finalize "$work/final-a"
 finalize "$work/final-b"
 diff -ru "$work/final-a" "$work/final-b"
+if finalize "$work/final-a" >"$work/final-collision.out" 2>"$work/final-collision.err"; then
+  echo 'UPB-11 overwrote final authority' >&2; exit 1
+fi
 test -s "$work/final-a/patch-v1.seme"
 test -s "$work/final-a/project-v14.seme"
 printf 'Go UPB-11 full Project-v14 reconciliation and deterministic publication pass\n'

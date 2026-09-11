@@ -103,6 +103,30 @@ func TestProjectRenameRejectsStaleAndValidationFailureWithoutOutput(t *testing.T
 	if _, e := os.Lstat(destination); !os.IsNotExist(e) {
 		t.Fatal("stale output published")
 	}
+
+	validated := t.TempDir()
+	if err = os.WriteFile(filepath.Join(validated, "go.mod"), []byte("module example.test/failing\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(validated, "value.go"), []byte("package failing\nfunc Value(v int64) int64{return v}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// Test files are intentionally outside semantic rename occurrences; native
+	// validation must therefore catch a stale native-only reference.
+	if err = os.WriteFile(filepath.Join(validated, "value_test.go"), []byte("package failing\nimport \"testing\"\nfunc TestValue(t *testing.T){if Value(1)!=1{t.Fatal()}}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	validatedManifest, _, err := Ingest(IngestOptions{Project: validated, ModuleG1: "../../../modules/provider/v1/module.g1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	failedOutput := filepath.Join(t.TempDir(), "failed")
+	if _, _, err = ProjectRename(validated, failedOutput, validatedManifest, validatedManifest.Declarations[0].ID, "Value", "Reading", true); err == nil || !strings.Contains(err.Error(), "native_validation") {
+		t.Fatalf("native failure=%v", err)
+	}
+	if _, statErr := os.Lstat(failedOutput); !os.IsNotExist(statErr) {
+		t.Fatal("native-test-failing output published")
+	}
 }
 
 func TestProjectRenameRejectsSymlinkedSourceWithoutOutput(t *testing.T) {
