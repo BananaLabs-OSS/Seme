@@ -1,6 +1,6 @@
 # JavaScript UPB-04 acceptance design
 
-Status: accepted implementation design; unclaimed.
+Status: claimed 2026-09-11 by `scripts/check-javascript-upb-04.sh`.
 
 JavaScript UPB-04 extends the cumulative Project-v4 fixture with typed behavior
 across a real ES-module boundary. The application entry accepts a canonical

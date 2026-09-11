@@ -2,12 +2,14 @@ import fs from "node:fs";
 import { pathToFileURL } from "node:url";
 import { Seme } from "./seme-values.mjs";
 
-const [sourcePath, vectorsPath] = process.argv.slice(2);
+const [sourcePath, vectorsPath, entryName = "Evaluate"] = process.argv.slice(2);
 if (!sourcePath || !vectorsPath) throw new Error("usage: javascript-uab-04-native-runner SOURCE VECTORS");
 globalThis.Seme = Seme;
 const program = await import(`${pathToFileURL(sourcePath)}?uab04=${Date.now()}`);
 const vectors = JSON.parse(fs.readFileSync(vectorsPath, "utf8"));
-const invoke = item => program.Evaluate(item.values.map(BigInt), BigInt(item.index), BigInt(item.replacement), BigInt(item.appended), BigInt(item.removeIndex), BigInt(item.keepKey), BigInt(item.removeKey));
+const entry = program[entryName];
+if (typeof entry !== "function") throw new Error(`javascript.uab04.entry:${entryName}`);
+const invoke = item => entry(item.values.map(BigInt), BigInt(item.index), BigInt(item.replacement), BigInt(item.appended), BigInt(item.removeIndex), BigInt(item.keepKey), BigInt(item.removeKey));
 const valid = {};
 for (const item of vectors.valid) {
   const original = item.values.slice();
@@ -18,7 +20,7 @@ for (const item of vectors.valid) {
 let malformed = 0;
 for (const item of vectors.malformed) {
   try {
-    if (item.category === "collection-kind") program.Evaluate("not-a-slice", BigInt(item.index), BigInt(item.replacement), BigInt(item.appended), BigInt(item.removeIndex), BigInt(item.keepKey), BigInt(item.removeKey));
+    if (item.category === "collection-kind") entry("not-a-slice", BigInt(item.index), BigInt(item.replacement), BigInt(item.appended), BigInt(item.removeIndex), BigInt(item.keepKey), BigInt(item.removeKey));
     else invoke(item);
   } catch { malformed += 1; }
 }
