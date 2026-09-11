@@ -63,7 +63,13 @@ func run(arguments []string, stderr io.Writer) error {
 	if !lifted.Accepted || !lifted.Valid || lifted.LastValidRevision != o.revision {
 		return fmt.Errorf("lift:%v", lifted.Diagnostics)
 	}
-	manifest, _, err := goprovider.Ingest(goprovider.IngestOptions{Project: o.project, ModuleG1: o.providerG1, CanonicalSources: lifted.Sources})
+	canonicalFunctions := make([]goprovider.SourceIdentity, 0, len(lifted.Sources))
+	for _, source := range lifted.Sources {
+		if source.Kind == "function" {
+			canonicalFunctions = append(canonicalFunctions, source)
+		}
+	}
+	manifest, _, err := goprovider.Ingest(goprovider.IngestOptions{Project: o.project, ModuleG1: o.providerG1, CanonicalSources: canonicalFunctions})
 	if err != nil {
 		return err
 	}

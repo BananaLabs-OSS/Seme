@@ -522,6 +522,14 @@ func ProjectRename(project, destination string, manifest Manifest, target, expec
 		}
 		return report.ChangedRanges[i].Start < report.ChangedRanges[j].Start
 	})
+	for index := range report.IdentityBindings {
+		binding := &report.IdentityBindings[index]
+		for _, changed := range report.ChangedRanges {
+			if changed.File == binding.Document && changed.Start < binding.Start {
+				binding.Start += len(replacement) - len(expected)
+			}
+		}
+	}
 	var transcript []byte
 	if validate {
 		report.Validation = "GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off go test -count=1 ./..."
