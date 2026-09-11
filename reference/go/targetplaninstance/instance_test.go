@@ -2,6 +2,7 @@ package targetplaninstance
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"testing"
@@ -102,6 +103,11 @@ func TestForbiddenAndMalformedPlansRejectAtomically(t *testing.T) {
 	if !seenImpossible {
 		t.Fatal("forbidden adapted rule was relabeled")
 	}
+	in.Artifact = artifact
+	summary, err := Inspect(in)
+	if err != nil || summary.Executable || summary.Requirements != 2 || summary.Boundaries != 0 || summary.Fidelities[Exact] != 1 || summary.Fidelities[Impossible] != 1 || summary.Diagnostics != 1 {
+		t.Fatal("incorrect impossible summary", summary, err)
+	}
 
 	cases := []func(*Inputs){
 		func(x *Inputs) { x.Model.Requirements[0].Construct = id("ffff") },
@@ -123,6 +129,37 @@ func TestForbiddenAndMalformedPlansRejectAtomically(t *testing.T) {
 	badArtifact.Artifact[len(badArtifact.Artifact)-1] ^= 1
 	if err = Validate(badArtifact); err == nil {
 		t.Fatal("tampered artifact accepted")
+	}
+}
+
+func TestEveryFidelityValueIsPreservedWithoutRelabeling(t *testing.T) {
+	for fidelity := Exact; fidelity <= NativeIsland; fidelity++ {
+		t.Run(fmt.Sprint(fidelity), func(t *testing.T) {
+			input := fixture(t)
+			requirement := input.Model.Requirements[1]
+			rule := input.Model.Target.Rules[0]
+			rule.Identity = "selected"
+			rule.Construct = requirement.Construct
+			rule.Fidelity = fidelity
+			input.Model.Requirements = []Requirement{requirement}
+			input.Model.Target.Rules = []Rule{rule}
+			input.Model.Allowed = []Fidelity{fidelity}
+			input.Model.Boundaries = nil
+			if fidelity != Exact && fidelity != Refined {
+				boundary := fixture(t).Model.Boundaries[0]
+				boundary.Requirement = requirement.Identity
+				input.Model.Boundaries = []Boundary{boundary}
+			}
+			artifact, err := Emit(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			input.Artifact = artifact
+			summary, err := Inspect(input)
+			if err != nil || !summary.Executable || summary.Requirements != 1 || summary.Fidelities[fidelity] != 1 {
+				t.Fatal("fidelity changed", summary, err)
+			}
+		})
 	}
 }
 
