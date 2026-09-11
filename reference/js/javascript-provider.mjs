@@ -411,6 +411,12 @@ function typeID(type, context) {
 function splitCompositeType(value) {
   const transition = /^(transition:record:[^:]+:(?:i64|bool|string)):(.+)$/.exec(value);
   if (transition) return [transition[1], transition[2]];
+  const named = /^(record|interface):[^:]+:(.+)$/.exec(value);
+  if (named) {
+    const prefix = `${named[1]}:`;
+    const name = value.slice(prefix.length, value.indexOf(":", prefix.length));
+    return [`${prefix}${name}`, named[2]];
+  }
   let depth = 0;
   for (let index = 0; index < value.length; index += 1) {
     if (value[index] === ":" && depth === 0) return [value.slice(0, index), value.slice(index + 1)];
