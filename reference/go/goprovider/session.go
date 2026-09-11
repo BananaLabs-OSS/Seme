@@ -26,6 +26,14 @@ type DocumentSnapshot struct {
 	PackagePath string
 	Entry       string
 	Files       map[string]string
+	// IdentityBindings are explicit reconciliation authority supplied by a
+	// semantic patch. Ordinary ingestion leaves this empty and derives IDs.
+	IdentityBindings []IdentityBinding
+}
+
+type IdentityBinding struct {
+	ID, Kind, Document, Name string
+	Start                    int
 }
 
 type SessionDiagnostic struct {
@@ -262,6 +270,23 @@ type snapshotSourceImporter struct {
 	checking    map[string]bool
 	diagnostics *[]SessionDiagnostic
 	standard    types.Importer
+	matched     map[string]bool
+}
+
+func (loader *snapshotSourceImporter) boundIdentity(node *ast.FuncDecl, fset *token.FileSet) string {
+	position := fset.Position(node.Pos())
+	document := filepath.ToSlash(position.Filename)
+	kind := "function"
+	if node.Recv != nil {
+		kind = "method"
+	}
+	for _, binding := range loader.snapshot.IdentityBindings {
+		if binding.Document == document && binding.Start == position.Offset && binding.Name == node.Name.Name && binding.Kind == kind {
+			loader.matched[binding.Document+"\x00"+strconv.Itoa(binding.Start)] = true
+			return binding.ID
+		}
+	}
+	return ""
 }
 
 func (loader *snapshotSourceImporter) Import(path string) (*types.Package, error) {
@@ -313,7 +338,11 @@ func (loader *snapshotSourceImporter) Import(path string) (*types.Package, error
 		for _, declaration := range file.Decls {
 			switch node := declaration.(type) {
 			case *ast.FuncDecl:
-				if id := semeIdentityDirective(node.Doc); id != "" {
+				id := semeIdentityDirective(node.Doc)
+				if id == "" {
+					id = loader.boundIdentity(node, fset)
+				}
+				if id != "" {
 					semanticIDs[info.Defs[node.Name]] = id
 				}
 				if id := semeReceiverDirective(node.Doc); id != "" {
@@ -385,6 +414,23 @@ func checkSessionPackages(snapshot DocumentSnapshot) ([]*checkedSessionPackage, 
 	}
 	groups := map[string][]string{}
 	var diagnostics []SessionDiagnostic
+	seenBindings, seenBindingIDs := map[string]bool{}, map[string]bool{}
+	for _, binding := range snapshot.IdentityBindings {
+		key := binding.Document + "\x00" + strconv.Itoa(binding.Start)
+		if len(binding.ID) != 32 || binding.Start < 0 || binding.Document == "" || binding.Name == "" || (binding.Kind != "function" && binding.Kind != "method") {
+			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.identity_binding_invalid", Message: "identity continuity binding is malformed", File: binding.Document, Severity: "error"})
+			continue
+		}
+		if _, err := hex.DecodeString(binding.ID); err != nil || seenBindings[key] || seenBindingIDs[binding.ID] {
+			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.identity_binding_invalid", Message: "identity continuity binding is malformed or duplicated", File: binding.Document, Severity: "error"})
+			continue
+		}
+		seenBindings[key] = true
+		seenBindingIDs[binding.ID] = true
+	}
+	if len(diagnostics) != 0 {
+		return nil, sortedDiagnostics(diagnostics)
+	}
 	for name, source := range snapshot.Files {
 		if filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
 			continue
@@ -412,7 +458,7 @@ func checkSessionPackages(snapshot DocumentSnapshot) ([]*checkedSessionPackage, 
 			groups[snapshot.PackagePath] = rootFiles
 		}
 	}
-	loader := &snapshotSourceImporter{snapshot: snapshot, groups: groups, loaded: map[string]*checkedSessionPackage{}, checking: map[string]bool{}, diagnostics: &diagnostics}
+	loader := &snapshotSourceImporter{snapshot: snapshot, groups: groups, loaded: map[string]*checkedSessionPackage{}, checking: map[string]bool{}, diagnostics: &diagnostics, matched: map[string]bool{}}
 	if _, err := loader.Import(snapshot.PackagePath); err != nil && len(diagnostics) == 0 {
 		diagnostics = append(diagnostics, SessionDiagnostic{Code: "go.type", Message: err.Error(), Severity: "error"})
 	}
@@ -432,6 +478,14 @@ func checkSessionPackages(snapshot DocumentSnapshot) ([]*checkedSessionPackage, 
 		if _, err := loader.Import(path); err != nil && len(diagnostics) == 0 {
 			diagnostics = append(diagnostics, SessionDiagnostic{Code: "go.type", Message: err.Error(), Severity: "error"})
 		}
+	}
+	for key := range seenBindings {
+		if !loader.matched[key] {
+			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.identity_binding_unmatched", Message: "identity continuity binding did not resolve exactly", Severity: "error"})
+		}
+	}
+	if len(diagnostics) != 0 {
+		return nil, sortedDiagnostics(diagnostics)
 	}
 	paths := make([]string, 0, len(loader.loaded))
 	for path := range loader.loaded {

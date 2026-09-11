@@ -22,7 +22,22 @@ func TestProjectRenamePublishesCrossPackageReferencesAtomically(t *testing.T) {
 	write("model/value.go", "package model\n// Value remains in this comment.\nfunc Value(v int64) int64 { return v + 1 }\n")
 	write("application/run.go", "package application\nimport \"example.test/live/model\"\nfunc Run(v int64) int64 { return model.Value(v) }\n")
 	write("application/run_test.go", "package application\nimport \"testing\"\nfunc TestRun(t *testing.T) { if Run(4) != 5 { t.Fatal() } }\n")
-	manifest, _, err := Ingest(IngestOptions{Project: root, ModuleG1: "../../../modules/provider/v1/module.g1"})
+	execution, err := os.ReadFile("../../../modules/execution/v36/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(execution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lifted := session.Apply(DocumentSnapshot{Revision: 1, ModulePath: "example.test/live", PackagePath: "example.test/live/application", Entry: "Run", Files: map[string]string{
+		"model/value.go":     "package model\n// Value remains in this comment.\nfunc Value(v int64) int64 { return v + 1 }\n",
+		"application/run.go": "package application\nimport \"example.test/live/model\"\nfunc Run(v int64) int64 { return model.Value(v) }\n",
+	}})
+	if !lifted.Valid {
+		t.Fatalf("lift=%#v", lifted)
+	}
+	manifest, _, err := Ingest(IngestOptions{Project: root, ModuleG1: "../../../modules/provider/v1/module.g1", CanonicalSources: lifted.Sources})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,6 +45,11 @@ func TestProjectRenamePublishesCrossPackageReferencesAtomically(t *testing.T) {
 	for _, d := range manifest.Declarations {
 		if d.Qualified == "example.test/live/model.Value" {
 			target = d.ID
+			for _, source := range lifted.Sources {
+				if source.Name == "Value" && source.Document == "model/value.go" && source.ID != target {
+					t.Fatalf("provider identity %s != semantic identity %s", target, source.ID)
+				}
+			}
 			if len(d.Occurrences) < 2 {
 				t.Fatalf("cross-package occurrences=%d", len(d.Occurrences))
 			}
@@ -45,6 +65,9 @@ func TestProjectRenamePublishesCrossPackageReferencesAtomically(t *testing.T) {
 	}
 	if len(report.ChangedFiles) != 2 || report.ResultRevision == report.BaseRevision || transcript == nil {
 		t.Fatalf("report=%+v transcript=%q", report, transcript)
+	}
+	if len(report.IdentityBindings) != 1 || report.IdentityBindings[0].ID != target || report.IdentityBindings[0].Name != "Reading" || report.IdentityBindings[0].Document != "model/value.go" {
+		t.Fatalf("continuity=%#v", report.IdentityBindings)
 	}
 	model, _ := os.ReadFile(filepath.Join(destination, "model/value.go"))
 	app, _ := os.ReadFile(filepath.Join(destination, "application/run.go"))

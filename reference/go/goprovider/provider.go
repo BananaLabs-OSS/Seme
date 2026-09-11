@@ -81,14 +81,18 @@ type IngestOptions struct {
 	ModuleG1   string
 	Prior      *Manifest
 	ProviderID string
+	// CanonicalSources binds provider locations to identities emitted by the
+	// authoritative semantic lift. It is optional for standalone ingestion.
+	CanonicalSources []SourceIdentity
 }
 type ProjectionReport struct {
-	BaseRevision     string   `json:"base_revision"`
-	ResultRevision   string   `json:"result_revision"`
-	ChangedFiles     []string `json:"changed_files"`
-	ChangedRanges    []Range  `json:"changed_ranges"`
-	Validation       string   `json:"validation_command"`
-	ValidationStatus int      `json:"validation_status"`
+	BaseRevision     string            `json:"base_revision"`
+	ResultRevision   string            `json:"result_revision"`
+	ChangedFiles     []string          `json:"changed_files"`
+	ChangedRanges    []Range           `json:"changed_ranges"`
+	Validation       string            `json:"validation_command"`
+	ValidationStatus int               `json:"validation_status"`
+	IdentityBindings []IdentityBinding `json:"identity_bindings,omitempty"`
 }
 type Range struct {
 	File  string `json:"file"`
@@ -126,6 +130,11 @@ func Ingest(options IngestOptions) (Manifest, string, error) {
 	if err != nil {
 		return Manifest{}, "", err
 	}
+	if len(options.CanonicalSources) != 0 {
+		if err = bindCanonicalSources(project, decls, files, sources, options.CanonicalSources); err != nil {
+			return Manifest{}, "", err
+		}
+	}
 	providerID := options.ProviderID
 	if providerID == "" {
 		providerID = "seme.go-provider.v1"
@@ -143,6 +152,68 @@ func Ingest(options IngestOptions) (Manifest, string, error) {
 	}
 	g1, err := emitG1(module, manifest)
 	return manifest, g1, err
+}
+
+func bindCanonicalSources(project string, declarations []Declaration, files []NativeFile, sources map[string][]byte, canonical []SourceIdentity) error {
+	byLocation := map[string]SourceIdentity{}
+	for _, source := range canonical {
+		key := filepath.ToSlash(source.Document) + "\x00" + strconv.Itoa(source.Start) + "\x00" + source.Name
+		if source.ID == "" || byLocation[key].ID != "" {
+			return errors.New("provider.canonical_source_ambiguous")
+		}
+		byLocation[key] = source
+	}
+	filePath := map[string]string{}
+	for _, file := range files {
+		filePath[file.ID] = file.Path
+	}
+	seenIDs := map[string]bool{}
+	for i := range declarations {
+		declaration := &declarations[i]
+		var definition *Occurrence
+		for j := range declaration.Occurrences {
+			if declaration.Occurrences[j].Role == 0 {
+				definition = &declaration.Occurrences[j]
+				break
+			}
+		}
+		if definition == nil {
+			continue
+		}
+		document := filePath[definition.File]
+		fset := token.NewFileSet()
+		file, err := parser.ParseFile(fset, filepath.Join(project, filepath.FromSlash(document)), sources[document], parser.SkipObjectResolution)
+		if err != nil {
+			return err
+		}
+		for _, item := range file.Decls {
+			function, ok := item.(*ast.FuncDecl)
+			if !ok || fset.Position(function.Name.Pos()).Offset != definition.Start {
+				continue
+			}
+			key := document + "\x00" + strconv.Itoa(fset.Position(function.Pos()).Offset) + "\x00" + declaration.Name
+			bound, exists := byLocation[key]
+			if !exists {
+				break
+			}
+			if seenIDs[bound.ID] {
+				return errors.New("provider.canonical_identity_reused")
+			}
+			seenIDs[bound.ID] = true
+			declaration.ID = bound.ID
+			declaration.EvidenceID = stableID("evidence", bound.ID)
+			for occurrence := range declaration.Occurrences {
+				value := &declaration.Occurrences[occurrence]
+				value.ID = stableID("occurrence", bound.ID, filePath[value.File], strconv.Itoa(value.Start), strconv.FormatUint(value.Role, 10))
+			}
+			delete(byLocation, key)
+			break
+		}
+	}
+	if len(byLocation) != 0 {
+		return errors.New("provider.canonical_source_unmatched")
+	}
+	return nil
 }
 
 func ReadManifest(path string) (Manifest, error) {
@@ -387,6 +458,10 @@ func ProjectRename(project, destination string, manifest Manifest, target, expec
 	if len(byPath) == 0 {
 		return ProjectionReport{}, nil, errors.New("provider.missing_occurrences")
 	}
+	binding, err := renameIdentityBinding(project, *declaration, paths, replacement)
+	if err != nil {
+		return ProjectionReport{}, nil, err
+	}
 	stage, err := os.MkdirTemp(parent, ".seme-go-project-rename-")
 	if err != nil {
 		return ProjectionReport{}, nil, err
@@ -400,7 +475,7 @@ func ProjectRename(project, destination string, manifest Manifest, target, expec
 	if err = copyTree(project, stage); err != nil {
 		return ProjectionReport{}, nil, err
 	}
-	report := ProjectionReport{BaseRevision: manifest.Revision}
+	report := ProjectionReport{BaseRevision: manifest.Revision, IdentityBindings: []IdentityBinding{binding}}
 	fileNames := make([]string, 0, len(byPath))
 	for path := range byPath {
 		fileNames = append(fileNames, path)
@@ -465,6 +540,48 @@ func ProjectRename(project, destination string, manifest Manifest, target, expec
 	}
 	keep = true
 	return report, append([]byte(nil), transcript...), nil
+}
+
+func renameIdentityBinding(project string, declaration Declaration, paths map[string]string, replacement string) (IdentityBinding, error) {
+	var definition *Occurrence
+	for i := range declaration.Occurrences {
+		if declaration.Occurrences[i].Role != 0 {
+			continue
+		}
+		if definition != nil {
+			return IdentityBinding{}, errors.New("provider.multiple_definitions")
+		}
+		definition = &declaration.Occurrences[i]
+	}
+	if definition == nil {
+		return IdentityBinding{}, errors.New("provider.definition_missing")
+	}
+	document := paths[definition.File]
+	source, err := os.ReadFile(filepath.Join(project, filepath.FromSlash(document)))
+	if err != nil {
+		return IdentityBinding{}, err
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, document, source, parser.SkipObjectResolution)
+	if err != nil {
+		return IdentityBinding{}, err
+	}
+	for _, item := range file.Decls {
+		function, ok := item.(*ast.FuncDecl)
+		if !ok {
+			continue
+		}
+		position := fset.Position(function.Name.Pos())
+		if position.Offset != definition.Start || function.Name.Name != declaration.Name {
+			continue
+		}
+		kind := "function"
+		if function.Recv != nil {
+			kind = "method"
+		}
+		return IdentityBinding{ID: declaration.ID, Kind: kind, Document: document, Name: replacement, Start: fset.Position(function.Pos()).Offset}, nil
+	}
+	return IdentityBinding{}, errors.New("provider.definition_mapping")
 }
 
 func cloneWireFields(fields map[wire.ID]wire.Value) map[wire.ID]wire.Value {
