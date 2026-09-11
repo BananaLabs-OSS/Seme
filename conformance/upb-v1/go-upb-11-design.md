@@ -12,8 +12,8 @@ mechanics, Workbench, or merge algorithms to Core semantics.
 Project Contract v14 adds one `ReconciledProjectRevision` record. An accepted
 record binds:
 
-- the exact prior Project-v13 `PlacedProjectSnapshot`;
-- the exact resulting Project-v13 `PlacedProjectSnapshot`;
+- SHA-256 bindings to the exact prior and resulting Project-v13
+  `PlacedProjectSnapshot` artifacts;
 - one exact Patch-v1 transaction containing the identity-bound semantic edit;
 - a strictly increasing project client revision;
 - the prior and resulting 32-byte project content revisions; and

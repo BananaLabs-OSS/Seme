@@ -465,8 +465,8 @@ func v14Entities(b func(string) string) (string, string) {
 		return fmt.Sprintf("\nen 0000000000000000000000000000%s 00000000000000000000000000000011 1 4\nfi 00000000000000000000000000000110 by %s\nfi 00000000000000000000000000000111 rc %d\nfi 00000000000000000000000000002000 uu %d\n%sfi 00000000000000000000000000000112 uu 0\nfi 00000000000000000000000000000113 uu 1\n", id, b(name), count, kind, constraint)
 	}
 	return schema,
-		field("e360", "reconciled_project_revision.prior_project", "e02c", false) +
-			field("e361", "reconciled_project_revision.result_project", "e02c", false) +
+		field("e360", "reconciled_project_revision.prior_project_digest", "", false) +
+			field("e361", "reconciled_project_revision.result_project_digest", "", false) +
 			field("e362", "reconciled_project_revision.patch", "5010", false) +
 			field("e363", "reconciled_project_revision.client_revision", "", true) +
 			field("e364", "reconciled_project_revision.prior_content_revision", "", false) +
