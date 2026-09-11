@@ -1,6 +1,6 @@
 # JavaScript UPB-09 acceptance design
 
-Status: accepted implementation design; unclaimed.
+Status: claimed 2026-09-11 by `scripts/check-javascript-upb-09.sh`.
 
 JavaScript UPB-09 adds native record declarations for explicit clock samples,
 seeded random state/draws, application commands/state/results, and pure next,
