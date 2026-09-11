@@ -56,13 +56,16 @@ func main() {
 	}
 }
 func run() error {
-	var basePath, inventoryPath, graphPath, executionContract, packageContract, projectContract, out string
+	var basePath, inventoryPath, graphPath, executionContract, packageContract, projectContract, foundationContract, dependencyContract, configurationContract, out string
 	flag.StringVar(&basePath, "base", "", "canonical Project-v1 artifact")
 	flag.StringVar(&inventoryPath, "inventory", "", "bound Project-v2 source inventory")
 	flag.StringVar(&graphPath, "graph", "", "provider package graph JSON")
 	flag.StringVar(&executionContract, "execution-contract", "", "Execution contract")
 	flag.StringVar(&packageContract, "package-contract", "", "Package-v1 contract")
 	flag.StringVar(&projectContract, "project-contract", "", "Project-v2 contract")
+	flag.StringVar(&foundationContract, "foundation-contract", "", "Foundation contract for Project v8 mode")
+	flag.StringVar(&dependencyContract, "dependency-contract", "", "Dependency contract for Project v8 mode")
+	flag.StringVar(&configurationContract, "configuration-contract", "", "Configuration contract for Project v8 mode")
 	flag.StringVar(&out, "out", "", "new Package-v2 artifact")
 	flag.Parse()
 	if basePath == "" || inventoryPath == "" || graphPath == "" || executionContract == "" || packageContract == "" || projectContract == "" || out == "" {
@@ -96,11 +99,42 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	contracts, err := contractcatalog.ResolveProjectContractSetV2(ec, pc, prc)
-	if err != nil {
-		return err
+	v8 := foundationContract != "" || dependencyContract != "" || configurationContract != ""
+	var projectAuthority contractcatalog.Contract
+	if v8 {
+		if foundationContract == "" || dependencyContract == "" || configurationContract == "" {
+			return fmt.Errorf("package_detail_emit.v8_contracts")
+		}
+		fc, e := read(foundationContract)
+		if e != nil {
+			return e
+		}
+		dc, e := read(dependencyContract)
+		if e != nil {
+			return e
+		}
+		cc, e := read(configurationContract)
+		if e != nil {
+			return e
+		}
+		contracts, e := contractcatalog.ResolveProjectContractSetV8(fc, ec, pc, dc, cc, prc)
+		if e != nil {
+			return e
+		}
+		projectAuthority = contracts.Project()
+	} else {
+		contracts, e := contractcatalog.ResolveProjectContractSetV2(ec, pc, prc)
+		if e != nil {
+			return e
+		}
+		projectAuthority = contracts.Project()
 	}
-	if err = sourceinventory.Validate(contracts.Project(), baseBytes, inventoryBytes); err != nil {
+	if v8 {
+		err = sourceinventory.ValidateV8(projectAuthority, baseBytes, inventoryBytes)
+	} else {
+		err = sourceinventory.Validate(projectAuthority, baseBytes, inventoryBytes)
+	}
+	if err != nil {
 		return fmt.Errorf("package_detail_emit.inventory:%w", err)
 	}
 	inventoryEnvelope, err := wire.Decode(inventoryBytes)
@@ -160,7 +194,12 @@ func run() error {
 		}
 		g.Packages = append(g.Packages, d)
 	}
-	artifact, err := packagedetailemitter.Emit(base, g)
+	var artifact []byte
+	if v8 {
+		artifact, err = packagedetailemitter.EmitV4(base, g)
+	} else {
+		artifact, err = packagedetailemitter.Emit(base, g)
+	}
 	if err != nil {
 		return err
 	}
