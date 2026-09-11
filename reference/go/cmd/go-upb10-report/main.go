@@ -45,5 +45,4 @@ func main() {
 		os.Exit(1)
 	}
 	os.Stdout.Write(encoded)
-	os.Stdout.Write([]byte("\n"))
 }

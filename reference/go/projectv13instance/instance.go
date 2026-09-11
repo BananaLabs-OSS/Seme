@@ -26,7 +26,7 @@ func Emit(in Inputs) ([]byte, error) { return emit(in) }
 
 func Validate(in Inputs) error {
 	want, err := emit(Inputs{Contracts: in.Contracts, ProjectV12: in.ProjectV12, Plan: targetplaninstance.Inputs{
-		TargetContract: in.Plan.TargetContract, Authority: in.Plan.Authority, Model: in.Plan.Model, Artifact: in.Plan.Artifact,
+		TargetContract: in.Plan.TargetContract, SemanticContracts: in.Plan.SemanticContracts, Authority: in.Plan.Authority, Model: in.Plan.Model, Artifact: in.Plan.Artifact,
 	}})
 	if err != nil {
 		return err
@@ -61,9 +61,6 @@ func emit(in Inputs) ([]byte, error) {
 	out := wire.Envelope{Entities: map[wire.ID]wire.Entity{}}
 	for _, part := range []wire.Envelope{project, plan} {
 		for identity, value := range part.Entities {
-			if value.Schema == xid("12") || value.Schema == xid("13") {
-				continue
-			}
 			if prior, exists := out.Entities[identity]; exists && !same(prior, value) {
 				return nil, fmt.Errorf("project_v13.collision:%s", identity)
 			}

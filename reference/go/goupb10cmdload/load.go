@@ -35,19 +35,19 @@ func (paths *Paths) Bind(set *flag.FlagSet) {
 }
 
 func Load(ctx context.Context, paths Paths, policy goprojectplacementadapter.Policy) (Result, error) {
-	base, err := goupb09cmdload.Load(ctx, paths.Base)
-	if err != nil {
-		return Result{}, err
-	}
-	contracts, err := ResolveContracts(paths)
-	if err != nil {
-		return Result{}, err
-	}
 	baseManifest, err := read(filepath.Join(paths.Base.Base.Bundle, "COMPLETE.sha256"))
 	if err != nil {
 		return Result{}, fmt.Errorf("base_manifest:%w", err)
 	}
 	placement, err := goupb10bundle.ReadDirectory(paths.Placement, baseManifest)
+	if err != nil {
+		return Result{}, err
+	}
+	base, err := goupb09cmdload.Load(ctx, paths.Base)
+	if err != nil {
+		return Result{}, err
+	}
+	contracts, err := ResolveContracts(paths)
 	if err != nil {
 		return Result{}, err
 	}

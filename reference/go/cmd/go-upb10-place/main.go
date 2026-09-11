@@ -52,6 +52,9 @@ func run(parent context.Context, arguments []string, stderr io.Writer) error {
 	if options.out == "" || !filepath.IsAbs(options.out) || filepath.Clean(options.out) != options.out || options.targetName == "" || options.targetRevision == 0 {
 		return fmt.Errorf("options")
 	}
+	if _, err := os.Lstat(options.out); !os.IsNotExist(err) {
+		return fmt.Errorf("output_exists")
+	}
 	allowed := []targetplaninstance.Fidelity{targetplaninstance.Exact, targetplaninstance.NativeIsland}
 	if options.policy == "exact-only" {
 		allowed = []targetplaninstance.Fidelity{targetplaninstance.Exact}
