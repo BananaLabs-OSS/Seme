@@ -1,0 +1,8 @@
+{"valid":[
+  {"name":"zero","arguments":[{"kind":"record","fields":{"Value":{"kind":"i64","i64":"0"}}},{"kind":"record","fields":{"Delta":{"kind":"i64","i64":"0"}}}],"result":{"kind":"record","fields":{"Value":{"kind":"i64","i64":"0"}}}},
+  {"name":"positive","arguments":[{"kind":"record","fields":{"Value":{"kind":"i64","i64":"40"}}},{"kind":"record","fields":{"Delta":{"kind":"i64","i64":"2"}}}],"result":{"kind":"record","fields":{"Value":{"kind":"i64","i64":"42"}}}},
+  {"name":"wrap","arguments":[{"kind":"record","fields":{"Value":{"kind":"i64","i64":"9223372036854775807"}}},{"kind":"record","fields":{"Delta":{"kind":"i64","i64":"1"}}}],"result":{"kind":"record","fields":{"Value":{"kind":"i64","i64":"-9223372036854775808"}}}}
+],"malformed":[
+  {"name":"missing-state","arguments":[{"kind":"record","fields":{}},{"kind":"record","fields":{"Delta":{"kind":"i64","i64":"1"}}}]},
+  {"name":"wrong-command","arguments":[{"kind":"record","fields":{"Value":{"kind":"i64","i64":"0"}}},{"kind":"record","fields":{"Delta":{"kind":"text","text":"1"}}}]}
+]}

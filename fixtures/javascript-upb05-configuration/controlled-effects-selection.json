@@ -1,0 +1,9 @@
+{
+  "version":"seme.controlled-effects-selection/v1",
+  "clock":{"identity":"clock.injected.unix-milliseconds.v1","owner":"example.test/javascript-upb05/controlled","sample":{"package":"example.test/javascript-upb05/controlled","name":"ClockSample"},"monotonic_policy":"nondecreasing","injection_policy":"explicit-replayable-input"},
+  "random":{"identity":"random.seeded.lcg-48271-plus-1.v1","owner":"example.test/javascript-upb05/controlled","state":{"package":"example.test/javascript-upb05/controlled","name":"RandomState"},"draw":{"package":"example.test/javascript-upb05/controlled","name":"Draw"},"next":{"package":"example.test/javascript-upb05/controlled","name":"Next"},"algorithm":"state*48271+1","overflow_policy":"signed-i64-modular"},
+  "effect":{"identity":"observability.log","owner":"example.test/javascript-upb05/controlled","capability":"observability.log","payload":"bool","delivery_policy":"request-not-delivery"},
+  "application":{"command":{"package":"example.test/javascript-upb05/controlled","name":"ControlledCommand"},"state":{"package":"example.test/javascript-upb05/controlled","name":"ControlledState"},"result":{"package":"example.test/javascript-upb05/controlled","name":"ControlledResult"},"dispatch":{"package":"example.test/javascript-upb05/controlled","name":"DispatchControlled"},"replay":{"package":"example.test/javascript-upb05/controlled","name":"ReplayControlled"}},
+  "replay":{"duplicate_policy":"cached-no-new-effects","rejection_policy":"atomic-no-effects"},
+  "bounds":{"maximum_steps":256,"first_clock_sequence":1,"clock_terminal_sentinel":257,"maximum_unix_milliseconds":4102444800000,"minimum_seed":1,"maximum_seed":9223372036854775807,"maximum_draws":256,"maximum_effects":256,"maximum_command_bytes":4096,"maximum_initial_state_bytes":524288,"maximum_transcript_bytes":1048576}
+}

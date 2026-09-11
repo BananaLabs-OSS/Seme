@@ -2,7 +2,7 @@
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd);fixture="$repo/fixtures/javascript-upb05-configuration";vectors="$fixture/vectors.json";pulp_repo=${PULP_REPO:-"$repo/../Pulp"};commit=acc66ca61fe69c5f2c4093bc55e13aeac6dcc001
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-javascript-upb05-parity.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM;GOCACHE="$work/go-cache";XDG_CACHE_HOME="$work/cache";export GOCACHE XDG_CACHE_HOME
-(cd "$fixture"&&node "$repo/reference/js/javascript-package-provider-cli.mjs" --files application.js,configuration.js,policy.js,state.js,transport.js --module "$repo/modules/execution/v36/module.g1" --package example.test/javascript-upb05 --entry Run --revision 1 --out "$work/program.g1")
+(cd "$fixture"&&node "$repo/reference/js/javascript-package-provider-cli.mjs" --files application.js,configuration.js,controlled.js,policy.js,state.js,transport.js --module "$repo/modules/execution/v36/module.g1" --package example.test/javascript-upb05 --entry Run --revision 1 --out "$work/program.g1")
 "$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" "$work/program.g1" "$work/program.seme"
 node "$repo/reference/js/javascript-upb05-native-parity.mjs" "$fixture" "$vectors" > "$work/native.json";node "$repo/reference/js/javascript-upb05-vectors.mjs" canonical "$vectors" > "$work/canonical-vectors.json"
 (cd "$repo/reference/go"&&go build -buildvcs=false -o "$work/eval" ./cmd/canonical-eval&&go build -buildvcs=false -o "$work/codec" ./cmd/pure-application-codec&&GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -buildvcs=false -o "$work/canonical-vm.wasm" ./cmd/canonical-wasm-cell)

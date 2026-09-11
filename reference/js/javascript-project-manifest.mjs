@@ -7,7 +7,7 @@ export function javascriptProjectManifest(projectIdentity, graph) {
     dependencies.sort((a,b)=>a.Name.localeCompare(b.Name)||a.Package.localeCompare(b.Package));
     const interfaces=(pkg.Members??[]).filter((member)=>member.Callable&&member.Visibility===2).map((member)=>({name:member.ExportName,function:member.Identity,parameters:[...(member.Parameters??[])],result:member.Results?.[0]})).sort((a,b)=>a.function.localeCompare(b.function));
     if(interfaces.some((item)=>!item.name||!item.result))fail(`interface:${pkg.Identity}`);
-    return {name:pkg.Identity,interfaces,dependencies,effects:[]};
+    return {name:pkg.Identity,interfaces,dependencies,effects:[...(pkg.Effects??[])]};
   }).sort((a,b)=>a.name.localeCompare(b.name));
   return {identity:projectIdentity,root_package:roots[0].Identity,packages};
 }

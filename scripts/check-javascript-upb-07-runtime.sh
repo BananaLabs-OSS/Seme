@@ -8,7 +8,7 @@ work=$(mktemp -d "${TMPDIR:-/tmp}/seme-javascript-upb07-runtime.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 GOCACHE="$work/go-cache"; XDG_CACHE_HOME="$work/cache"; export GOCACHE XDG_CACHE_HOME
 
-(cd "$fixture" && node "$repo/reference/js/javascript-package-provider-cli.mjs" --files application.js,configuration.js,policy.js,state.js,transport.js \
+(cd "$fixture" && node "$repo/reference/js/javascript-package-provider-cli.mjs" --files application.js,configuration.js,controlled.js,policy.js,state.js,transport.js \
   --module "$repo/modules/execution/v36/module.g1" --package example.test/javascript-upb05 --entry MigrateV1ToV2 --revision 1 --out "$work/program.g1")
 "$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" "$work/program.g1" "$work/program.seme"
 node "$repo/reference/js/javascript-upb07-native.mjs" "$fixture" "$vectors" > "$work/native.json"
