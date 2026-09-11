@@ -325,6 +325,148 @@ func rename(project string, manifest Manifest, target, expected, replacement str
 	return report, nil
 }
 
+// ProjectRename publishes an identity-bound rename into a new complete project
+// directory. All declaration and typed-reference occurrences may span files
+// and packages. The source project is never modified and destination becomes
+// visible only after syntax and optional native validation succeed.
+func ProjectRename(project, destination string, manifest Manifest, target, expected, replacement string, validate bool) (ProjectionReport, []byte, error) {
+	if expected == "" || replacement == "" || target == "" {
+		return ProjectionReport{}, nil, errors.New("provider.invalid_rename")
+	}
+	project, err := filepath.Abs(project)
+	if err != nil {
+		return ProjectionReport{}, nil, err
+	}
+	destination, err = filepath.Abs(destination)
+	if err != nil || destination == project {
+		return ProjectionReport{}, nil, errors.New("provider.invalid_destination")
+	}
+	if _, err = os.Lstat(destination); !os.IsNotExist(err) {
+		return ProjectionReport{}, nil, errors.New("provider.destination_exists")
+	}
+	parent := filepath.Dir(destination)
+	realParent, err := filepath.EvalSymlinks(parent)
+	if err != nil || realParent != parent {
+		return ProjectionReport{}, nil, errors.New("provider.destination_parent")
+	}
+	currentFiles, _, err := nativeFiles(project)
+	if err != nil {
+		return ProjectionReport{}, nil, err
+	}
+	if revisionOf(currentFiles) != manifest.Revision {
+		return ProjectionReport{}, nil, errors.New("provider.stale_native_revision")
+	}
+	var declaration *Declaration
+	for i := range manifest.Declarations {
+		if manifest.Declarations[i].ID == target {
+			declaration = &manifest.Declarations[i]
+			break
+		}
+	}
+	if declaration == nil {
+		return ProjectionReport{}, nil, errors.New("provider.unknown_target")
+	}
+	if declaration.Name != expected {
+		return ProjectionReport{}, nil, errors.New("provider.precondition_failed")
+	}
+	paths := map[string]string{}
+	for _, file := range manifest.Files {
+		if paths[file.ID] != "" {
+			return ProjectionReport{}, nil, errors.New("provider.duplicate_file_identity")
+		}
+		paths[file.ID] = file.Path
+	}
+	byPath := map[string][]Occurrence{}
+	for _, occ := range declaration.Occurrences {
+		path, ok := paths[occ.File]
+		if !ok || path == "" {
+			return ProjectionReport{}, nil, errors.New("provider.occurrence_file")
+		}
+		byPath[path] = append(byPath[path], occ)
+	}
+	if len(byPath) == 0 {
+		return ProjectionReport{}, nil, errors.New("provider.missing_occurrences")
+	}
+	stage, err := os.MkdirTemp(parent, ".seme-go-project-rename-")
+	if err != nil {
+		return ProjectionReport{}, nil, err
+	}
+	keep := false
+	defer func() {
+		if !keep {
+			_ = os.RemoveAll(stage)
+		}
+	}()
+	if err = copyTree(project, stage); err != nil {
+		return ProjectionReport{}, nil, err
+	}
+	report := ProjectionReport{BaseRevision: manifest.Revision}
+	fileNames := make([]string, 0, len(byPath))
+	for path := range byPath {
+		fileNames = append(fileNames, path)
+	}
+	sort.Strings(fileNames)
+	for _, relative := range fileNames {
+		original, readErr := os.ReadFile(filepath.Join(project, filepath.FromSlash(relative)))
+		if readErr != nil {
+			return ProjectionReport{}, nil, readErr
+		}
+		occurrences := append([]Occurrence(nil), byPath[relative]...)
+		sort.Slice(occurrences, func(i, j int) bool { return occurrences[i].Start > occurrences[j].Start })
+		changed := append([]byte(nil), original...)
+		lastStart := len(changed) + 1
+		for _, occ := range occurrences {
+			if occ.Start < 0 || occ.End > len(changed) || occ.Start >= occ.End || occ.End > lastStart || string(changed[occ.Start:occ.End]) != expected {
+				return ProjectionReport{}, nil, errors.New("provider.occurrence_precondition_failed")
+			}
+			lastStart = occ.Start
+			changed = append(changed[:occ.Start], append([]byte(replacement), changed[occ.End:]...)...)
+			report.ChangedRanges = append(report.ChangedRanges, Range{relative, occ.Start, occ.End})
+		}
+		if _, parseErr := parser.ParseFile(token.NewFileSet(), relative, changed, parser.AllErrors); parseErr != nil {
+			return ProjectionReport{}, nil, fmt.Errorf("provider.projected_syntax:%w", parseErr)
+		}
+		if err = atomicWrite(filepath.Join(stage, filepath.FromSlash(relative)), changed, 0o644); err != nil {
+			return ProjectionReport{}, nil, err
+		}
+		report.ChangedFiles = append(report.ChangedFiles, relative)
+	}
+	sort.Slice(report.ChangedRanges, func(i, j int) bool {
+		if report.ChangedRanges[i].File != report.ChangedRanges[j].File {
+			return report.ChangedRanges[i].File < report.ChangedRanges[j].File
+		}
+		return report.ChangedRanges[i].Start < report.ChangedRanges[j].Start
+	})
+	var transcript []byte
+	if validate {
+		report.Validation = "go test ./..."
+		cmd := exec.Command("go", "test", "-count=1", "./...")
+		cmd.Dir = stage
+		cmd.Env = append(os.Environ(), "GOTOOLCHAIN=local", "GOPROXY=off", "GOSUMDB=off")
+		transcript, err = cmd.CombinedOutput()
+		if err != nil {
+			return ProjectionReport{}, nil, fmt.Errorf("provider.native_validation:%w:%s", err, transcript)
+		}
+		report.ValidationStatus = 0
+	}
+	newFiles, _, err := nativeFiles(stage)
+	if err != nil {
+		return ProjectionReport{}, nil, err
+	}
+	report.ResultRevision = revisionOf(newFiles)
+	if report.ResultRevision == report.BaseRevision {
+		return ProjectionReport{}, nil, errors.New("provider.missing_native_change")
+	}
+	if _, err = os.Lstat(destination); !os.IsNotExist(err) {
+		return ProjectionReport{}, nil, errors.New("provider.destination_exists")
+	}
+	if err = os.Rename(stage, destination); err != nil {
+		return ProjectionReport{}, nil, fmt.Errorf("provider.publish:%w", err)
+	}
+	keep = true
+	return report, append([]byte(nil), transcript...), nil
+}
+
 func cloneWireFields(fields map[wire.ID]wire.Value) map[wire.ID]wire.Value {
 	out := make(map[wire.ID]wire.Value, len(fields))
 	for identity, value := range fields {
@@ -381,8 +523,76 @@ func declarations(project, packagePath string, files []NativeFile, sources map[s
 		}
 		out = append(out, items...)
 	}
+	if err := attachExternalOccurrences(project, packagePath, ordered, files, sources, out); err != nil {
+		return nil, err
+	}
+	for i := range out {
+		sort.Slice(out[i].Occurrences, func(a, b int) bool {
+			left, right := out[i].Occurrences[a], out[i].Occurrences[b]
+			if left.File != right.File {
+				return left.File < right.File
+			}
+			return left.Start < right.Start
+		})
+	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
+}
+
+func attachExternalOccurrences(project, modulePath string, directories []string, files []NativeFile, sources map[string][]byte, declarations []Declaration) error {
+	byQualified := map[string]*Declaration{}
+	for i := range declarations {
+		byQualified[declarations[i].Qualified] = &declarations[i]
+	}
+	fileIDs := map[string]string{}
+	for _, file := range files {
+		fileIDs[file.Path] = file.ID
+	}
+	for _, directory := range directories {
+		packagePath := modulePath
+		if directory != "" {
+			packagePath += "/" + directory
+		}
+		fset := token.NewFileSet()
+		parsed := []*ast.File{}
+		for _, file := range files {
+			fileDirectory := filepath.ToSlash(filepath.Dir(file.Path))
+			if fileDirectory == "." {
+				fileDirectory = ""
+			}
+			if fileDirectory != directory || !strings.HasSuffix(file.Path, ".go") || strings.HasSuffix(file.Path, "_test.go") {
+				continue
+			}
+			node, err := parser.ParseFile(fset, filepath.Join(project, filepath.FromSlash(file.Path)), sources[file.Path], parser.SkipObjectResolution)
+			if err != nil {
+				return err
+			}
+			parsed = append(parsed, node)
+		}
+		info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}}
+		config := types.Config{Importer: newSourceImporter(project, Manifest{Files: files}, modulePath)}
+		if _, err := config.Check(packagePath, fset, parsed, info); err != nil {
+			return err
+		}
+		for identifier, object := range info.Uses {
+			fn, ok := object.(*types.Func)
+			if !ok || fn.Pkg() == nil || fn.Pkg().Path() == packagePath {
+				continue
+			}
+			declaration := byQualified[fn.Pkg().Path()+"."+fn.Name()]
+			if declaration == nil {
+				continue
+			}
+			position := fset.Position(identifier.Pos())
+			relative := filepath.ToSlash(relativePath(project, position.Filename))
+			fileID := fileIDs[relative]
+			if fileID == "" {
+				return fmt.Errorf("provider.external_occurrence_file:%s", relative)
+			}
+			declaration.Occurrences = append(declaration.Occurrences, occurrence(fset, identifier, relative, fileID, declaration.ID, 1))
+		}
+	}
+	return nil
 }
 
 func declarationsForPackage(project, packagePath, directory string, files []NativeFile, sources map[string][]byte, prior *Manifest) ([]Declaration, error) {
@@ -693,6 +903,9 @@ func copyTree(source, destination string) error {
 		info, err := entry.Info()
 		if err != nil {
 			return err
+		}
+		if entry.Type()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return errors.New("provider.unsupported_source_entry")
 		}
 		b, err := os.ReadFile(path)
 		if err != nil {
