@@ -1,0 +1,18 @@
+{
+  "identity": "example.test/javascript-upb03",
+  "root_package": "example.test/javascript-upb03/application",
+  "packages": [
+    {
+      "name": "example.test/javascript-upb03/application",
+      "interfaces": [{"name":"Run","function":"800b02b53aa267fd46c3bf8faf553b65","parameters":["809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a"],"result":"809e162c5f3c856abb00b3b86cd8ed3a"}],
+      "dependencies": [{"Name":"./math/sum.js","Package":"example.test/javascript-upb03/math/sum"}],
+      "effects": []
+    },
+    {
+      "name": "example.test/javascript-upb03/math/sum",
+      "interfaces": [{"name":"Sum","function":"80cfadad0780d6f5963791fe500a0a13","parameters":["809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a"],"result":"809e162c5f3c856abb00b3b86cd8ed3a"}],
+      "dependencies": [],
+      "effects": []
+    }
+  ]
+}

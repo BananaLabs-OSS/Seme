@@ -1,0 +1,21 @@
+import crypto from "node:crypto";
+
+export function resolveNpmDependency({ manifest, lock, local, external, localIdentity, localFrom, externalSource }) {
+  object(manifest,"manifest");object(lock,"lock");exactKeys(manifest,["name","version","private","type","dependencies"],"manifest");exactKeys(lock,["name","version","lockfileVersion","requires","packages"],"lock");
+  if(manifest.type!=="module"||manifest.private!==true||lock.lockfileVersion!==3||lock.requires!==true||lock.name!==manifest.name||lock.version!==manifest.version)fail("root");
+  object(manifest.dependencies,"dependencies");const requirements=Object.entries(manifest.dependencies);if(requirements.length!==1)fail("requirement_count");const [identity,version]=requirements[0];if(!exactVersion(version))fail("requirement_version");
+  object(lock.packages,"lock_packages");const root=lock.packages[""];const selected=lock.packages[`node_modules/${identity}`];if(Object.keys(lock.packages).length!==2||!root||!selected)fail("lock_closure");if(root.name!==manifest.name||root.version!==manifest.version||JSON.stringify(root.dependencies)!==JSON.stringify(manifest.dependencies))fail("lock_root");
+  if(selected.version!==version||selected.resolved!==externalSource||typeof selected.integrity!=="string"||!selected.integrity.startsWith("sha512-"))fail("lock_selection");
+  const externalPackage=JSON.parse(textFile(external,"package.json"));if(externalPackage.name!==identity||externalPackage.version!==version||externalPackage.dependencies!==undefined)fail("external_manifest");
+  const localTree=tree(local);const externalTree=tree(external);if(`sha512-${externalTree.sha512}`!==selected.integrity)fail("integrity");
+  const localVersion=`source:${localTree.sha256}`;
+  const out={Requirements:[{Identity:localIdentity,Requirement:localVersion,Kind:0,Metadata:[{Key:"javascript.import.from",Value:localFrom}]},{Identity:identity,Requirement:version,Kind:1,Metadata:[{Key:"npm.direct",Value:"true"}]}],Entries:[{Identity:localIdentity,Ecosystem:"",Version:localVersion,Integrity:`sha256:${localTree.sha256}`,IntegrityAlgorithm:"sha256-tree",Source:`project:${[...local.keys()].sort().join(",")}`,SourceKind:"explicit-local-tree",Digest:localTree.sha256,Kind:0,Dependencies:[],Metadata:[{Key:"direct",Value:"true"},{Key:"javascript.import.from",Value:localFrom}]},{Identity:identity,Ecosystem:"npm",Version:version,Integrity:selected.integrity,IntegrityAlgorithm:"npm-sha512-tree",Source:externalSource,SourceKind:"explicit-offline-package-tree",Digest:externalTree.sha256,Kind:1,Dependencies:[],Metadata:[{Key:"direct",Value:"true"},{Key:"npm.lockfile",Value:"3"},{Key:"npm.resolved",Value:externalSource}]}]};
+  out.Requirements.sort((a,b)=>a.Identity.localeCompare(b.Identity));out.Entries.sort((a,b)=>a.Identity.localeCompare(b.Identity));return out;
+}
+export function tree(files){if(!(files instanceof Map)||files.size===0)fail("tree_empty");const chunks=[Buffer.from("seme.npm-tree.v1\0")];for(const name of [...files.keys()].sort()){if(!validPath(name))fail("tree_path");const data=files.get(name);if(!Buffer.isBuffer(data))fail("tree_bytes");const nameSize=Buffer.alloc(8),dataSize=Buffer.alloc(8);nameSize.writeBigUInt64BE(BigInt(Buffer.byteLength(name)));dataSize.writeBigUInt64BE(BigInt(data.length));chunks.push(nameSize,Buffer.from(name),dataSize,data);}const payload=Buffer.concat(chunks);return{sha256:crypto.createHash("sha256").update(payload).digest("hex"),sha512:crypto.createHash("sha512").update(payload).digest("base64")};}
+function textFile(files,name){const value=files.get(name);if(!value)fail(`file:${name}`);return value.toString("utf8")}
+function exactVersion(value){return typeof value==="string"&&/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(value)}
+function validPath(value){return typeof value==="string"&&value!==""&&!value.startsWith("/")&&!value.includes("\\")&&!value.split("/").some((part)=>part===""||part==="."||part==="..")}
+function object(value,label){if(!value||typeof value!=="object"||Array.isArray(value))fail(label)}
+function exactKeys(value,want,label){const got=Object.keys(value).sort();if(JSON.stringify(got)!==JSON.stringify([...want].sort()))fail(`${label}_fields`)}
+function fail(code){throw new Error(`javascript_npm.${code}`)}
