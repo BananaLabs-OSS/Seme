@@ -387,6 +387,13 @@ func ResolveProjectContractSetV14(foundation, execution, packages, dependency, c
 	if err != nil {
 		return ProjectContractSetV14{}, err
 	}
+	return ResolveProjectContractSetV14FromV13(v13, patchSource, languageService, project)
+}
+
+func ResolveProjectContractSetV14FromV13(v13 ProjectContractSetV13, patchSource, languageService, project []byte) (ProjectContractSetV14, error) {
+	if !v13.Validated() {
+		return ProjectContractSetV14{}, fmt.Errorf("project_v13:unauthenticated")
+	}
 	p, err := ResolvePatchContract(patchSource)
 	if err != nil {
 		return ProjectContractSetV14{}, fmt.Errorf("patch:%w", err)
