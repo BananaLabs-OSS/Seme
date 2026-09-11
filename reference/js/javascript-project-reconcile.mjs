@@ -10,7 +10,7 @@ const metadataDirectory = ".seme-reconciliation-v1";
 const identifier = /^[A-Za-z_$][\w$]*$/;
 
 export function reconcileJavaScriptProject(options) {
-  const { project, destination, projectPath, files, moduleG1, entryName, target, expected, replacement, revision, nativeRunner, nativeArguments = [] } = options;
+  const { project, destination, projectPath, files, structuredReferences = [], moduleG1, entryName, target, expected, replacement, revision, nativeRunner, nativeArguments = [] } = options;
   if (![project, destination, projectPath, moduleG1, entryName, target, expected, replacement, nativeRunner].every((value) => typeof value === "string" && value) || !Number.isSafeInteger(revision) || revision < 2) fail("options");
   if (!path.isAbsolute(project) || !path.isAbsolute(destination) || !Array.isArray(files) || files.length < 2 || !identifier.test(expected) || !identifier.test(replacement) || expected === replacement) fail("options");
   if (target !== javascriptDeclarationIdentity(projectPath, expected)) fail("target_identity");
@@ -57,6 +57,14 @@ export function reconcileJavaScriptProject(options) {
     changed.set(relative, source);
     let shift=0;for (const edit of unique){const resultStart=edit.start+shift;occurrences.push({path:relative,start:edit.start,end:edit.end,result_start:resultStart,result_end:resultStart+replacement.length,role:edit.role});shift+=replacement.length-(edit.end-edit.start);}
   }
+  const nativePackage=`${projectPath}/${declaration.file.replace(/\.js$/,"")}`;
+  for(const relative of structuredReferences.map(normalizeDataFile)){
+    const source=strictRead(path.join(root,relative)).toString("utf8");let value;try{value=JSON.parse(source);}catch{fail("structured_json");}
+    let semanticMatches=0;const visit=(node)=>{if(!node||typeof node!=="object")return;if(!Array.isArray(node)&&node.package===nativePackage&&node.name===expected)semanticMatches+=1;for(const child of Object.values(node))visit(child);};visit(value);
+    if(semanticMatches===0)continue;if(semanticMatches!==1)fail("structured_reference_cardinality");
+    const encoded=JSON.stringify(expected),index=source.indexOf(encoded);if(index<0||source.indexOf(encoded,index+encoded.length)>=0)fail("structured_reference_encoding");
+    const start=index+1,end=start+expected.length;changed.set(relative,source.slice(0,start)+replacement+source.slice(end));occurrences.push({path:relative,start,end,result_start:start,result_end:start+replacement.length,role:"structured-reference"});
+  }
   // The bounded cumulative fixture has one exported declaration and one named
   // cross-module import. A referenced local binding adds further occurrences,
   // but an unused native import is still a typed module-edge reference.
@@ -98,7 +106,7 @@ export function reconcileJavaScriptProject(options) {
   }
 }
 
-export function readJavaScriptReconciliation({ project, projectPath, files, moduleG1, entryName, nativeRunner }) {
+export function readJavaScriptReconciliation({ project, projectPath, files, structuredReferences = [], moduleG1, entryName, nativeRunner }) {
   if (![project,projectPath,moduleG1,entryName,nativeRunner].every((value)=>typeof value==="string"&&value)||!path.isAbsolute(project)||!Array.isArray(files))fail("read_options");
   const root=fs.realpathSync(project);if(root!==project)fail("read_root");
   const metadata=path.join(root,metadataDirectory),names=["identity-evidence.json","native-validation.txt","prior-provider.g1","projection-report.json","result-provider.g1"];
@@ -112,7 +120,8 @@ export function readJavaScriptReconciliation({ project, projectPath, files, modu
   const sources=normalized.map((relative)=>({path:relative,source:strictRead(path.join(root,relative)).toString("utf8")}));
   const reproduced=liftJavaScriptPackage({files:sources,packagePath:projectPath,revision:report.client_revision,moduleG1:strictRead(moduleG1).toString("utf8"),entryName,identityEvidence:evidence});
   if(!artifacts["result-provider.g1"].equals(Buffer.from(reproduced)))fail("metadata_reingest");
-  for(const occurrence of report.occurrences){const source=sources.find((item)=>item.path===occurrence.path)?.source;if(!source||![occurrence.start,occurrence.end,occurrence.result_start,occurrence.result_end].every(Number.isSafeInteger)||occurrence.start<0||occurrence.end<=occurrence.start||occurrence.result_end<=occurrence.result_start||source.slice(occurrence.result_start,occurrence.result_end)!==report.replacement)fail("metadata_occurrence");}
+  const allSources=new Map(sources.map((item)=>[item.path,item.source]));for(const relative of structuredReferences.map(normalizeDataFile))allSources.set(relative,strictRead(path.join(root,relative)).toString("utf8"));
+  for(const occurrence of report.occurrences){const source=allSources.get(occurrence.path);if(!source||![occurrence.start,occurrence.end,occurrence.result_start,occurrence.result_end].every(Number.isSafeInteger)||occurrence.start<0||occurrence.end<=occurrence.start||occurrence.result_end<=occurrence.result_start||source.slice(occurrence.result_start,occurrence.result_end)!==report.replacement)fail("metadata_occurrence");}
   const native=runNative(nativeRunner,root,[]),expectedTranscript=Buffer.from(`seme-javascript-native-validation-v1\nrunner ${path.basename(nativeRunner)}\nsha256 ${sha256(native)}\n`);if(!artifacts["native-validation.txt"].equals(expectedTranscript))fail("metadata_native");
   return {report,evidence,prior:artifacts["prior-provider.g1"].toString("utf8"),result:reproduced,transcript:artifacts["native-validation.txt"]};
 }
@@ -126,6 +135,7 @@ function walk(node,parent,key,visit){if(!node||typeof node!=="object")return;vis
 function addReplacement(map,file,node,role){map.get(file).push({start:node.start,end:node.end,role});}
 function uniqueEdits(edits){const seen=new Map();for(const edit of edits){const key=`${edit.start}:${edit.end}`;const prior=seen.get(key);if(prior&&prior.role!==edit.role)continue;seen.set(key,edit);}const result=[...seen.values()].sort((a,b)=>a.start-b.start);for(let i=1;i<result.length;i++)if(result[i].start<result[i-1].end)fail("overlap");return result;}
 function normalizeFile(value){if(typeof value!=="string")fail("file");const result=posix.normalize(value);if(result!==value||result===".."||result.startsWith("../")||posix.isAbsolute(result)||!result.endsWith(".js"))fail("file");return result;}
+function normalizeDataFile(value){if(typeof value!=="string")fail("structured_file");const result=posix.normalize(value);if(result!==value||result===".."||result.startsWith("../")||posix.isAbsolute(result)||!result.endsWith(".json"))fail("structured_file");return result;}
 function resolveImport(from,specifier){if(typeof specifier!=="string"||!specifier.startsWith("."))return "";const value=posix.normalize(posix.join(posix.dirname(from),specifier));return posix.extname(value)?value:`${value}.js`;}
 function strictRead(file){const real=fs.realpathSync(file);if(real!==file||!fs.statSync(file).isFile())fail("regular_file");return fs.readFileSync(file);}
 function copyTree(source,destination){fs.mkdirSync(destination);for(const entry of fs.readdirSync(source,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){if(entry.name===metadataDirectory)continue;const from=path.join(source,entry.name),to=path.join(destination,entry.name);if(entry.isSymbolicLink())fail("symlink");if(entry.isDirectory())copyTree(from,to);else if(entry.isFile())fs.copyFileSync(from,to,fs.constants.COPYFILE_EXCL);else fail("file_type");}}

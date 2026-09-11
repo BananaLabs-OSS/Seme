@@ -3,7 +3,7 @@ import path from "node:path/posix";
 import { parse } from "acorn";
 import { javascriptDeclarationIdentity, javascriptRecordIdentity } from "./javascript-provider.mjs";
 
-export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, rootModule, canonicalG1 }) {
+export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, rootModule, canonicalG1, identityEvidence }) {
   if (!Array.isArray(files) || !snapshot || snapshot.RootIdentity !== projectPath) fail("identity");
   const units = new Map(snapshot.Units.map((unit) => [unit.Path, unit]));
   const modules = new Map();
@@ -32,13 +32,14 @@ export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, root
   }
   if (!modules.has(rootModule) || modules.size === 0 || modules.size !== files.length) fail("root");
   const signatures = canonicalSignatures(canonicalG1);
+  const recoveredIdentities = recoverIdentities(identityEvidence, projectPath, modules);
   const effectIdentities = canonicalEffectIdentities(canonicalG1);
   const edges = new Map([...modules.keys()].map((key) => [key, []]));
   const packages = [];
   for (const module of modules.values()) {
     const origin = (node) => ({ SourceIdentity: module.sourceIdentity, Path: module.path, ContentDigest: module.unit.SHA256, ByteStart: node.start, ByteEnd: node.end, StartLine: node.loc.start.line, StartColumn: node.loc.start.column + 1, EndLine: node.loc.end.line, EndColumn: node.loc.end.column + 1 });
     const members = module.functions.map((fn) => {
-      const identity = javascriptDeclarationIdentity(projectPath, fn.id.name);
+      const identity = recoveredIdentities.get(fn.id.name) ?? javascriptDeclarationIdentity(projectPath, fn.id.name);
       const signature = signatures.get(identity);
       if (!signature) fail(`signature:${module.path}:${fn.id.name}`);
       const exported = module.exports.has(fn.id.name);
@@ -75,6 +76,8 @@ export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, root
   packages.sort((a, b) => a.Identity.localeCompare(b.Identity));
   return { Packages: packages };
 }
+
+function recoverIdentities(evidence,projectPath,modules){const result=new Map();if(evidence===undefined)return result;if(!evidence||evidence.version!==1||evidence.packagePath!==projectPath||!Array.isArray(evidence.renames))fail("identity_evidence");const current=new Set([...modules.values()].flatMap((module)=>module.functions.map((fn)=>fn.id.name)));for(const rename of evidence.renames){if(!rename||typeof rename.previousName!=="string"||typeof rename.currentName!=="string"||typeof rename.identity!=="string"||!current.has(rename.currentName)||current.has(rename.previousName)||result.has(rename.currentName)||rename.identity!==javascriptDeclarationIdentity(projectPath,rename.previousName))fail("identity_evidence");result.set(rename.currentName,rename.identity);}return result;}
 
 function recordDeclaration(comment,projectPath){
   const match=comment.value.match(/@typedef\s+\{Object\}\s+([A-Za-z_$][\w$]*)/);

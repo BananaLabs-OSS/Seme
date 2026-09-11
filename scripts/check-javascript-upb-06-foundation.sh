@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd);fixture="$repo/fixtures/javascript-upb05-configuration";project=example.test/javascript-upb05
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd);fixture=${JS_UPB_FIXTURE:-"$repo/fixtures/javascript-upb05-configuration"};project=${JS_UPB_PROJECT:-example.test/javascript-upb05}
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-javascript-upb06.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM;GOCACHE="$work/go-cache";XDG_CACHE_HOME="$work/cache";export GOCACHE XDG_CACHE_HOME
 JS_UPB05_EXPORT="$work/base-a" "$repo/scripts/check-javascript-upb-05-foundation.sh"
 (cd "$repo/reference/go"&&go test -count=1 ./goresourcemanifest ./goresourceadapter ./resourceinstance ./projectv9instance ./cmd/project-v9-compose ./cmd/resource-report&&go build -buildvcs=false -o "$work/compose" ./cmd/project-v9-compose&&go build -buildvcs=false -o "$work/publish" ./cmd/project-roundtrip-publish&&go build -buildvcs=false -o "$work/report" ./cmd/resource-report)

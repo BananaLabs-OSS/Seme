@@ -13,6 +13,7 @@ run() {
     --project "$fixture" --out "$1" \
     --project-path example.test/javascript-upb05 \
     --files application.js,configuration.js,controlled.js,policy.js,state.js,transport.js \
+    --structured-references configuration-selection.json,durable-selection.json,transport-selection.json,controlled-effects-selection.json \
     --module "$repo/modules/execution/v36/module.g1" --entry Run \
     --target "$2" --expected InitializePolicy --replacement "$3" --revision 2 \
     --native-runner "$repo/reference/js/javascript-upb11-native-runner.mjs"
@@ -32,6 +33,7 @@ verify() {
   node "$repo/reference/js/javascript-project-reconcile-verify-cli.mjs" \
     --project "$1" --project-path example.test/javascript-upb05 \
     --files application.js,configuration.js,controlled.js,policy.js,state.js,transport.js \
+    --structured-references configuration-selection.json,durable-selection.json,transport-selection.json,controlled-effects-selection.json \
     --module "$repo/modules/execution/v36/module.g1" --entry Run \
     --native-runner "$repo/reference/js/javascript-upb11-native-runner.mjs"
 }
