@@ -25,6 +25,7 @@ export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, root
         if (item.type === "ExportNamedDeclaration") exports.add(declaration.id.name);
         functions.push(declaration);
       }
+      if (declaration?.type === "ClassDeclaration" && item.type === "ExportNamedDeclaration") exports.add(declaration.id.name);
     }
     const records=comments.flatMap((comment)=>recordDeclaration(comment,projectPath));
     modules.set(file.path, { ...file, unit, ast, identity, sourceIdentity, exports, functions, records });
