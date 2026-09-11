@@ -32,6 +32,7 @@ export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, root
   }
   if (!modules.has(rootModule) || modules.size === 0 || modules.size !== files.length) fail("root");
   const signatures = canonicalSignatures(canonicalG1);
+  const effectIdentities = canonicalEffectIdentities(canonicalG1);
   const edges = new Map([...modules.keys()].map((key) => [key, []]));
   const packages = [];
   for (const module of modules.values()) {
@@ -63,7 +64,12 @@ export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, root
       }
     }
     imports.sort((a, b) => a.Origin.SourceIdentity.localeCompare(b.Origin.SourceIdentity) || a.Origin.ByteStart - b.Origin.ByteStart || a.Requested.localeCompare(b.Requested) || a.Alias.localeCompare(b.Alias));
-    packages.push({ Identity: module.identity, Root: module.path === rootModule, Sources: [{ Identity: module.sourceIdentity, Path: module.path, ContentDigest: module.unit.SHA256, ByteSize: module.unit.Size }], Members: members, Imports: imports });
+    const effects = sourceEffects(module.ast).map((name) => {
+      const identity = effectIdentities.get(name);
+      if (!identity) fail(`effect:${module.path}:${name}`);
+      return identity;
+    }).sort();
+    packages.push({ Identity: module.identity, Root: module.path === rootModule, Sources: [{ Identity: module.sourceIdentity, Path: module.path, ContentDigest: module.unit.SHA256, ByteSize: module.unit.Size }], Members: members, Imports: imports, Effects: effects });
   }
   rejectCycles(edges);
   packages.sort((a, b) => a.Identity.localeCompare(b.Identity));
@@ -76,6 +82,30 @@ function recordDeclaration(comment,projectPath){
   return [{Name:match[1],Identity:javascriptRecordIdentity(projectPath,match[1]),Node:comment}];
 }
 function canonicalRecord(g1,identity){return new RegExp(`^en ${identity} 00000000000000000000000000009030 1 \\d+$`,`m`).test(g1)}
+
+function canonicalEffectIdentities(g1) {
+  const result = new Map(); let current = null;
+  for (const line of g1.split(/\r?\n/)) {
+    const parts = line.trim().split(/\s+/);
+    if (parts[0] === "en") { current = parts[2] === "00000000000000000000000000000015" ? parts[1] : null; continue; }
+    if (current && parts[0] === "fi" && parts[1] === "00000000000000000000000000000150" && parts[2] === "by") result.set(Buffer.from(parts[3], "hex").toString("utf8"), current);
+  }
+  return result;
+}
+
+function sourceEffects(ast) {
+  const found = new Set();
+  const visit = (node) => {
+    if (!node || typeof node !== "object") return;
+    if (node.type === "CallExpression" && node.callee?.type === "MemberExpression" && !node.callee.computed && node.callee.object?.type === "Identifier" && node.callee.object.name === "console" && node.callee.property?.name === "log") found.add("observability.log");
+    for (const [key, value] of Object.entries(node)) {
+      if (key === "loc" || key === "start" || key === "end") continue;
+      if (Array.isArray(value)) value.forEach(visit); else visit(value);
+    }
+  };
+  visit(ast);
+  return [...found];
+}
 
 function canonicalSignatures(g1) {
   if (typeof g1 !== "string") fail("canonical");

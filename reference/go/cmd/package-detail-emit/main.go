@@ -46,6 +46,10 @@ type detail struct {
 	Sources  []source
 	Members  []member
 	Imports  []imported
+	// Effects are consumed by the project manifest that produced Base. Accept
+	// the same provider graph here so one authenticated graph can drive both
+	// stages; Package Detail adds no second effect-ownership representation.
+	Effects []string
 }
 type graph struct{ Packages []detail }
 
