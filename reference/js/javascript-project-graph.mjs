@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import path from "node:path/posix";
 import { parse } from "acorn";
-import { javascriptDeclarationIdentity } from "./javascript-provider.mjs";
+import { javascriptDeclarationIdentity, javascriptRecordIdentity } from "./javascript-provider.mjs";
 
 export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, rootModule, canonicalG1 }) {
   if (!Array.isArray(files) || !snapshot || snapshot.RootIdentity !== projectPath) fail("identity");
@@ -11,8 +11,8 @@ export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, root
     const unit = units.get(file.path);
     if (!unit || unit.Class !== "tracked" || unit.Preservation !== "semantic-projection") fail(`source:${file.path}`);
     if (Buffer.byteLength(file.source) !== unit.Size || sha256(file.source) !== unit.SHA256) fail(`digest:${file.path}`);
-    let ast;
-    try { ast = parse(file.source, { ecmaVersion: 2024, sourceType: "module", locations: true }); }
+    let ast; const comments=[];
+    try { ast = parse(file.source, { ecmaVersion: 2024, sourceType: "module", locations: true, onComment: comments }); }
     catch (error) { throw new Error(`javascript_project_graph.parse:${file.path}:${error.loc?.line ?? 0}:${(error.loc?.column ?? -1) + 1}`); }
     const identity = moduleIdentity(projectPath, file.path);
     const sourceIdentity = stableSourceIdentity(projectPath, file.path);
@@ -26,7 +26,8 @@ export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, root
         functions.push(declaration);
       }
     }
-    modules.set(file.path, { ...file, unit, ast, identity, sourceIdentity, exports, functions });
+    const records=comments.flatMap((comment)=>recordDeclaration(comment,projectPath));
+    modules.set(file.path, { ...file, unit, ast, identity, sourceIdentity, exports, functions, records });
   }
   if (!modules.has(rootModule) || modules.size === 0 || modules.size !== files.length) fail("root");
   const signatures = canonicalSignatures(canonicalG1);
@@ -40,7 +41,12 @@ export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, root
       if (!signature) fail(`signature:${module.path}:${fn.id.name}`);
       const exported = module.exports.has(fn.id.name);
       return { Identity: identity, Name: fn.id.name, ExportName: exported ? fn.id.name : "", Visibility: exported ? 2 : 0, Origin: origin(fn), Callable: true, Parameters: signature.parameters, Results: [signature.result] };
-    }).sort((a, b) => a.Identity.localeCompare(b.Identity));
+    });
+    for(const record of module.records){
+      if(!canonicalRecord(canonicalG1,record.Identity))fail(`record:${module.path}:${record.Name}`);
+      members.push({Identity:record.Identity,Name:record.Name,ExportName:record.Name,Visibility:2,Origin:origin(record.Node),Callable:false,Parameters:[],Results:[]});
+    }
+    members.sort((a, b) => a.Identity.localeCompare(b.Identity));
     const imports = [];
     for (const declaration of module.ast.body.filter((item) => item.type === "ImportDeclaration")) {
       if (typeof declaration.source.value !== "string" || !declaration.source.value.startsWith(".") || declaration.specifiers.some((item) => item.type !== "ImportSpecifier")) fail(`import_shape:${module.path}`);
@@ -62,6 +68,13 @@ export function buildJavaScriptProjectGraph({ files, snapshot, projectPath, root
   packages.sort((a, b) => a.Identity.localeCompare(b.Identity));
   return { Packages: packages };
 }
+
+function recordDeclaration(comment,projectPath){
+  const match=comment.value.match(/@typedef\s+\{Object\}\s+([A-Za-z_$][\w$]*)/);
+  if(!match)return [];
+  return [{Name:match[1],Identity:javascriptRecordIdentity(projectPath,match[1]),Node:comment}];
+}
+function canonicalRecord(g1,identity){return new RegExp(`^en ${identity} 00000000000000000000000000009030 1 \\d+$`,`m`).test(g1)}
 
 function canonicalSignatures(g1) {
   if (typeof g1 !== "string") fail("canonical");
