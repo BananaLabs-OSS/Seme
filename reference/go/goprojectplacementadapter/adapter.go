@@ -15,8 +15,12 @@ import (
 )
 
 type Policy struct {
-	Name            string
-	Revision        uint64
+	Name     string
+	Revision uint64
+	// RuleNamespace identifies the language/profile adapter that supplied the
+	// realization evidence. Empty preserves the historical Go UPB-10 identity
+	// so existing authenticated Go bundles remain reproducible.
+	RuleNamespace   string
 	AllowedFidelity []targetplaninstance.Fidelity
 }
 
@@ -29,6 +33,13 @@ func Derive(project projectv12instance.Inputs, target contractcatalog.Contract, 
 	}
 	if !target.Validated() || target.Pin() != (contractcatalog.Pin{Module: identity("c000"), Revision: identity("c001")}) || policy.Name == "" || policy.Revision == 0 {
 		return targetplaninstance.Inputs{}, fmt.Errorf("go_placement.authority")
+	}
+	ruleNamespace := policy.RuleNamespace
+	if ruleNamespace == "" {
+		ruleNamespace = "go-upb10"
+	}
+	if !validRuleNamespace(ruleNamespace) {
+		return targetplaninstance.Inputs{}, fmt.Errorf("go_placement.rule_namespace")
 	}
 	graph, err := wire.Decode(project.Composed)
 	if err != nil {
@@ -53,7 +64,7 @@ func Derive(project projectv12instance.Inputs, target contractcatalog.Contract, 
 	}
 	// The snapshot itself is a requirement: this prevents an implementation
 	// from planning a disconnected subset while calling it the project.
-	if err = appendRequirement(&model, graph, root, Exact, nil); err != nil {
+	if err = appendRequirement(&model, graph, root, Exact, nil, ruleNamespace); err != nil {
 		return targetplaninstance.Inputs{}, err
 	}
 	for _, entity := range sortedEntities(graph) {
@@ -69,7 +80,7 @@ func Derive(project projectv12instance.Inputs, target contractcatalog.Contract, 
 			}
 			boundary = &value
 		}
-		if err = appendRequirement(&model, graph, entity.ID, fidelity, boundary); err != nil {
+		if err = appendRequirement(&model, graph, entity.ID, fidelity, boundary, ruleNamespace); err != nil {
 			return targetplaninstance.Inputs{}, err
 		}
 	}
@@ -90,7 +101,7 @@ const (
 	NativeIsland = targetplaninstance.NativeIsland
 )
 
-func appendRequirement(model *targetplaninstance.Model, graph wire.Envelope, construct wire.ID, fidelity targetplaninstance.Fidelity, boundary *targetplaninstance.Boundary) error {
+func appendRequirement(model *targetplaninstance.Model, graph wire.Envelope, construct wire.ID, fidelity targetplaninstance.Fidelity, boundary *targetplaninstance.Boundary, ruleNamespace string) error {
 	entity, exists := graph.Entities[construct]
 	if !exists {
 		return fmt.Errorf("go_placement.construct:%s", construct)
@@ -98,7 +109,7 @@ func appendRequirement(model *targetplaninstance.Model, graph wire.Envelope, con
 	properties := directReferences(graph, entity)
 	name := entity.Schema.String() + ":" + construct.String()
 	model.Requirements = append(model.Requirements, targetplaninstance.Requirement{Identity: name, Construct: construct, MinimumRevision: uint64(entity.Version), Properties: properties})
-	rule := targetplaninstance.Rule{Identity: "go-upb10:" + name, Construct: construct, MaximumRevision: uint64(entity.Version), PreservedProperties: properties, Fidelity: fidelity, Evidence: evidence(construct, properties)}
+	rule := targetplaninstance.Rule{Identity: ruleNamespace + ":" + name, Construct: construct, MaximumRevision: uint64(entity.Version), PreservedProperties: properties, Fidelity: fidelity, Evidence: evidence(construct, properties)}
 	if fidelity != Exact {
 		provider := boundary.Provider
 		rule.Dependency = &provider
@@ -107,6 +118,19 @@ func appendRequirement(model *targetplaninstance.Model, graph wire.Envelope, con
 	}
 	model.Target.Rules = append(model.Target.Rules, rule)
 	return nil
+}
+
+func validRuleNamespace(value string) bool {
+	if len(value) == 0 || len(value) > 128 {
+		return false
+	}
+	for index, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || (index > 0 && (r == '-' || r == '.')) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func nativeBoundary(graph wire.Envelope, entity wire.Entity, controlled wire.ID) (targetplaninstance.Boundary, error) {

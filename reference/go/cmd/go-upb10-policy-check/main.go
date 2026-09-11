@@ -20,6 +20,7 @@ func main() {
 	var paths goupb10cmdload.Paths
 	paths.Bind(set)
 	name := set.String("target-name", "wasm32-pulp-go-host-v1", "target identity")
+	ruleNamespace := set.String("rule-namespace", "go-upb10", "placement rule identity namespace")
 	revision := set.Uint64("target-revision", 1, "target revision")
 	exact := set.Int("expect-exact", -1, "expected exact resolution count")
 	impossible := set.Int("expect-impossible", -1, "expected impossible resolution count")
@@ -37,7 +38,7 @@ func main() {
 	if err != nil {
 		fatal(err)
 	}
-	input, err := goprojectplacementadapter.Derive(base.Bundle.Project, contracts.Target(), goprojectplacementadapter.Policy{Name: *name, Revision: *revision, AllowedFidelity: []targetplaninstance.Fidelity{targetplaninstance.Exact}})
+	input, err := goprojectplacementadapter.Derive(base.Bundle.Project, contracts.Target(), goprojectplacementadapter.Policy{Name: *name, Revision: *revision, RuleNamespace: *ruleNamespace, AllowedFidelity: []targetplaninstance.Fidelity{targetplaninstance.Exact}})
 	if err != nil {
 		fatal(err)
 	}
