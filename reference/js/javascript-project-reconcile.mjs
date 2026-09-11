@@ -10,8 +10,8 @@ const metadataDirectory = ".seme-reconciliation-v1";
 const identifier = /^[A-Za-z_$][\w$]*$/;
 
 export function reconcileJavaScriptProject(options) {
-  const { project, destination, projectPath, files, structuredReferences = [], moduleG1, entryName, target, expected, replacement, revision, nativeRunner, nativeArguments = [] } = options;
-  if (![project, destination, projectPath, moduleG1, entryName, target, expected, replacement, nativeRunner].every((value) => typeof value === "string" && value) || !Number.isSafeInteger(revision) || revision < 2) fail("options");
+  const { project, destination, projectPath, files, structuredReferences = [], moduleG1, entryName, target, expected, replacement, revision, baseRevision, nativeRunner, nativeArguments = [] } = options;
+  if (![project, destination, projectPath, moduleG1, entryName, target, expected, replacement, baseRevision, nativeRunner].every((value) => typeof value === "string" && value) || !Number.isSafeInteger(revision) || revision < 2) fail("options");
   if (!path.isAbsolute(project) || !path.isAbsolute(destination) || !Array.isArray(files) || files.length < 2 || !identifier.test(expected) || !identifier.test(replacement) || expected === replacement) fail("options");
   if (target !== javascriptDeclarationIdentity(projectPath, expected)) fail("target_identity");
   const root = fs.realpathSync(project);
@@ -19,6 +19,8 @@ export function reconcileJavaScriptProject(options) {
   const normalized = [...new Set(files.map(normalizeFile))].sort();
   if (normalized.length !== files.length) fail("files");
   const sources = new Map(normalized.map((relative) => [relative, strictRead(path.join(root, relative)).toString("utf8")]));
+  const structuredSources = new Map(structuredReferences.map(normalizeDataFile).sort().map((relative) => [relative, strictRead(path.join(root, relative)).toString("utf8")]));
+  if (projectRevision(sources, structuredSources) !== baseRevision) fail("stale_native_revision");
   const programs = new Map([...sources].map(([relative, source]) => [relative, parseModule(source, relative)]));
   const declaration = findDeclaration(programs, expected);
   if (!declaration || javascriptDeclarationIdentity(projectPath, declaration.node.id.name) !== target) fail("declaration");
@@ -59,7 +61,7 @@ export function reconcileJavaScriptProject(options) {
   }
   const nativePackage=`${projectPath}/${declaration.file.replace(/\.js$/,"")}`;
   for(const relative of structuredReferences.map(normalizeDataFile)){
-    const source=strictRead(path.join(root,relative)).toString("utf8");let value;try{value=JSON.parse(source);}catch{fail("structured_json");}
+    const source=structuredSources.get(relative);let value;try{value=JSON.parse(source);}catch{fail("structured_json");}
     let semanticMatches=0;const visit=(node)=>{if(!node||typeof node!=="object")return;if(!Array.isArray(node)&&node.package===nativePackage&&node.name===expected)semanticMatches+=1;for(const child of Object.values(node))visit(child);};visit(value);
     if(semanticMatches===0)continue;if(semanticMatches!==1)fail("structured_reference_cardinality");
     const encoded=JSON.stringify(expected),index=source.indexOf(encoded);if(index<0||source.indexOf(encoded,index+encoded.length)>=0)fail("structured_reference_encoding");
@@ -106,6 +108,30 @@ export function reconcileJavaScriptProject(options) {
   }
 }
 
+// javascriptProjectRevision binds a semantic edit to the exact complete native
+// snapshot that the editor displayed. Language-neutral Patch authority remains
+// in Seme; this source-byte precondition belongs to the JavaScript provider.
+export function javascriptProjectRevision({project, files, structuredReferences=[]}) {
+  const root=fs.realpathSync(project);if(root!==project)fail("revision_root");
+  const normalized=[...new Set(files.map(normalizeFile))].sort();if(normalized.length!==files.length)fail("files");
+  const data=[...new Set(structuredReferences.map(normalizeDataFile))].sort();if(data.length!==structuredReferences.length)fail("structured_files");
+  return projectRevision(new Map(normalized.map((relative)=>[relative,strictRead(path.join(root,relative)).toString("utf8")])),new Map(data.map((relative)=>[relative,strictRead(path.join(root,relative)).toString("utf8")])))
+}
+
+// JavaScriptProjectSession processes complete editor snapshots monotonically.
+// Invalid newer snapshots retain the most recent valid canonical graph; stale
+// snapshots never replace either the accepted revision or last-valid state.
+export class JavaScriptProjectSession {
+  constructor({projectPath,moduleG1,entryName}) {if(![projectPath,moduleG1,entryName].every((v)=>typeof v==="string"&&v))fail("session_options");this.projectPath=projectPath;this.moduleG1=moduleG1;this.entryName=entryName;this.lastSeen=0;this.lastValidRevision=0;this.lastValid="";}
+  apply({revision,files,identityEvidence}) {
+    if(!Number.isSafeInteger(revision)||revision<1||!Array.isArray(files))fail("snapshot");
+    if(revision<=this.lastSeen)return {accepted:false,valid:false,disposition:"rejected-stale",revision,lastValidRevision:this.lastValidRevision,canonicalG1:this.lastValid,diagnostics:[{code:"session.stale_revision"}]};
+    this.lastSeen=revision;
+    try {const canonicalG1=liftJavaScriptPackage({files,packagePath:this.projectPath,revision,moduleG1:this.moduleG1,entryName:this.entryName,identityEvidence});this.lastValid=canonicalG1;this.lastValidRevision=revision;return {accepted:true,valid:true,disposition:"accepted-valid",revision,lastValidRevision:revision,canonicalG1,diagnostics:[]};}
+    catch(error){return {accepted:true,valid:false,disposition:"accepted-invalid",revision,lastValidRevision:this.lastValidRevision,canonicalG1:this.lastValid,diagnostics:[{code:"javascript.lift",message:String(error?.message??error)}]};}
+  }
+}
+
 export function readJavaScriptReconciliation({ project, projectPath, files, structuredReferences = [], moduleG1, entryName, nativeRunner }) {
   if (![project,projectPath,moduleG1,entryName,nativeRunner].every((value)=>typeof value==="string"&&value)||!path.isAbsolute(project)||!Array.isArray(files))fail("read_options");
   const root=fs.realpathSync(project);if(root!==project)fail("read_root");
@@ -143,5 +169,6 @@ function runNative(runner,root,args){const result=spawnSync(process.execPath,[ru
 function canonicalName(g1,target){const lines=g1.split(/\r?\n/);let active=false;for(const line of lines){const parts=line.trim().split(/\s+/);if(parts[0]==="en")active=parts[1]===target;if(active&&parts[0]==="fi"&&parts[1]==="00000000000000000000000000009110"&&parts[2]==="by")return Buffer.from(parts[3],"hex").toString("utf8");}return "";}
 function encode(value){return Buffer.from(`${JSON.stringify(value,null,2)}\n`);}
 function sha256(value){return crypto.createHash("sha256").update(value).digest("hex");}
+function projectRevision(sources,structured){const hash=crypto.createHash("sha256");hash.update("seme-javascript-native-revision-v1\0");for(const [name,value] of [...sources,...structured].sort((a,b)=>a[0].localeCompare(b[0]))){hash.update(String(Buffer.byteLength(name)));hash.update(":");hash.update(name);hash.update(":");hash.update(String(Buffer.byteLength(value)));hash.update(":");hash.update(value);}return hash.digest("hex");}
 function manifest(artifacts){return Buffer.from(`seme-javascript-reconciliation-v1\n${Object.keys(artifacts).sort().map((name)=>`${name} ${sha256(artifacts[name])}`).join("\n")}\n`);}
 function fail(code){throw new Error(`javascript_reconcile.${code}`);}
