@@ -1,7 +1,8 @@
 #!/bin/sh
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-fixture="$repo/fixtures/javascript-upb02-modules"
+fixture=${JS_UPB_FIXTURE:-"$repo/fixtures/javascript-upb02-modules"}
+package=${JS_UPB_PACKAGE:-example.test/javascript-upb02}
 pulp_repo=${PULP_REPO:-"$repo/../Pulp"}
 pulp_commit=acc66ca61fe69c5f2c4093bc55e13aeac6dcc001
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-javascript-upb02-parity.XXXXXX")
@@ -9,7 +10,7 @@ trap 'rm -rf "$work"' EXIT HUP INT TERM
 GOCACHE="$work/go-cache"; XDG_CACHE_HOME="$work/cache"; export GOCACHE XDG_CACHE_HOME
 (cd "$fixture" && node "$repo/reference/js/javascript-package-provider-cli.mjs" \
   --files application.js,math/sum.js --module "$repo/modules/execution/v35/module.g1" \
-  --package example.test/javascript-upb02 --entry Run --revision 1 --out "$work/execution.g1")
+  --package "$package" --entry Run --revision 1 --out "$work/execution.g1")
 "$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" "$work/execution.g1" "$work/execution.seme"
 (cd "$repo/reference/go" && go build -buildvcs=false -o "$work/eval" ./cmd/canonical-eval && go build -buildvcs=false -o "$work/lower" ./cmd/pure-wasm-lower)
 node "$repo/reference/js/javascript-uab-01-vectors.mjs" > "$work/vectors.json"

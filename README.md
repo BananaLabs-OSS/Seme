@@ -303,9 +303,9 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 13/36 (36.1%): bounded Go UPB-01 through UPB-11 and JavaScript
-UPB-01 through UPB-02 are claimed. Go is 11/12 (91.7%); JavaScript is
-2/12 (16.7%).
+is now 14/36 (38.9%): bounded Go UPB-01 through UPB-11 and JavaScript
+UPB-01 through UPB-03 are claimed. Go is 11/12 (91.7%); JavaScript is
+3/12 (25.0%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -328,6 +328,13 @@ origins in Package v2 and Project v3. Canonical projection reconstructs the
 native module boundary and re-lifts to identical meaning; native, canonical,
 Wasm, and pinned Pulp results agree. Run
 `./scripts/check-javascript-upb-02.sh`.
+
+JavaScript UPB-03 resolves a local ES-module dependency and an exact pinned npm
+package from independently hashed offline trees. Dependency v1 and Project v4
+bind the lock selection, SHA-512 integrity, source, applicability metadata, and
+content digest. Projection preserves native package metadata and repeats the
+resolution without network access or lifecycle scripts. Run
+`./scripts/check-javascript-upb-03.sh`.
 
 Go UPB-03 adds a resolved, integrity-pinned local-plus-ecosystem dependency
 closure, authenticates it with Project v4, and proves that it applies to the
