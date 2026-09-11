@@ -93,6 +93,16 @@ func ReadDirectory(root string) (Artifacts, []byte, map[[32]byte][]byte, error) 
 	return Artifacts{Base: base, ControlledEffects: data["controlled-effects-v1.seme"], ProjectV12: data["project-v12.seme"], ReplayAuthority: data["controlled-replay-v1.json"]}, data["COMPLETE.sha256"], blobs, nil
 }
 
+// ReadV11Directory reuses the strict Project-v11 directory reader and returns
+// the cumulative artifacts in the Project-v12 container shape.
+func ReadV11Directory(root string) (Artifacts, []byte, map[[32]byte][]byte, error) {
+	a, manifest, blobs, err := goupb08bundle.ReadDirectory(root)
+	if err != nil {
+		return Artifacts{}, nil, nil, err
+	}
+	return Artifacts{Base: a}, manifest, blobs, nil
+}
+
 func WriteDirectory(destination string, a Artifacts, blobs map[[32]byte][]byte) error {
 	if !filepath.IsAbs(destination) || filepath.Clean(destination) != destination {
 		return fmt.Errorf("go_upb09_publish.path")

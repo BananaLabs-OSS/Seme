@@ -7,6 +7,11 @@ fixture="$repo/fixtures/javascript-upb05-configuration"
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-javascript-upb11-reconcile.XXXXXX")
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 target=$(cd "$repo/reference/js" && node --input-type=module -e 'import{javascriptDeclarationIdentity as id}from"./javascript-provider.mjs";process.stdout.write(id("example.test/javascript-upb05","InitializePolicy"))')
+base_revision=$(node --input-type=module - "$repo/reference/js/javascript-project-reconcile.mjs" "$fixture" <<'NODE'
+const{javascriptProjectRevision}=await import(process.argv[2]);
+process.stdout.write(javascriptProjectRevision({project:process.argv[3],files:["application.js","configuration.js","controlled.js","policy.js","state.js","transport.js"],structuredReferences:["configuration-selection.json","durable-selection.json","transport-selection.json","controlled-effects-selection.json"]}));
+NODE
+)
 
 run() {
   node "$repo/reference/js/javascript-project-reconcile-cli.mjs" \
@@ -15,7 +20,7 @@ run() {
     --files application.js,configuration.js,controlled.js,policy.js,state.js,transport.js \
     --structured-references configuration-selection.json,durable-selection.json,transport-selection.json,controlled-effects-selection.json \
     --module "$repo/modules/execution/v36/module.g1" --entry Run \
-    --target "$2" --expected InitializePolicy --replacement "$3" --revision 2 \
+    --target "$2" --expected InitializePolicy --replacement "$3" --revision 2 --base-revision "$base_revision" \
     --native-runner "$repo/reference/js/javascript-upb11-native-runner.mjs"
 }
 
@@ -51,6 +56,19 @@ reject() {
 reject forged 00000000000000000000000000000000 BuildPolicy
 reject collision "$target" Run
 reject keyword "$target" class
+cp -R "$fixture" "$work/stale-source"
+printf '\n// concurrent native and semantic edit\n' >> "$work/stale-source/policy.js"
+if node "$repo/reference/js/javascript-project-reconcile-cli.mjs" \
+  --project "$work/stale-source" --out "$work/reject-both-changed" \
+  --project-path example.test/javascript-upb05 --files application.js,configuration.js,controlled.js,policy.js,state.js,transport.js \
+  --structured-references configuration-selection.json,durable-selection.json,transport-selection.json,controlled-effects-selection.json \
+  --module "$repo/modules/execution/v36/module.g1" --entry Run --target "$target" \
+  --expected InitializePolicy --replacement BuildPolicy --revision 2 --base-revision "$base_revision" \
+  --native-runner "$repo/reference/js/javascript-upb11-native-runner.mjs" >"$work/both-changed.out" 2>"$work/both-changed.err"; then
+  echo 'JavaScript UPB-11 accepted simultaneous native and semantic changes' >&2; exit 1
+fi
+test ! -e "$work/reject-both-changed"
+test ! -s "$work/both-changed.out"
 if run "$work/a" "$target" BuildPolicy >"$work/existing.out" 2>"$work/existing.err"; then
   echo 'JavaScript UPB-11 overwrote an existing destination' >&2; exit 1
 fi
