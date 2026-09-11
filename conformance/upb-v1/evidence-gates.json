@@ -64,6 +64,10 @@
     "javascript/UPB-05": {
       "gate": "scripts/check-javascript-upb-05.sh",
       "evidence": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"]
+    },
+    "javascript/UPB-06": {
+      "gate": "scripts/check-javascript-upb-06.sh",
+      "evidence": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"]
     }
   }
 }
