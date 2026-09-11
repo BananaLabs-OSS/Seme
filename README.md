@@ -303,9 +303,9 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 17/36 (47.2%): bounded Go UPB-01 through UPB-11 and JavaScript
-UPB-01 through UPB-06 are claimed. Go is 11/12 (91.7%); JavaScript is
-6/12 (50.0%).
+is now 18/36 (50.0%): bounded Go UPB-01 through UPB-11 and JavaScript
+UPB-01 through UPB-07 are claimed. Go is 11/12 (91.7%); JavaScript is
+7/12 (58.3%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -357,6 +357,15 @@ paths, ownership, digests, detached bytes, placements, validation, and project
 composition remain language-neutral. Projection preserves both byte streams
 and re-lifts the native modules exactly. Run
 `./scripts/check-javascript-upb-06.sh`.
+
+JavaScript UPB-07 resolves native JSDoc state records, validators, and one
+v1-to-v2 migration into the neutral Durable State v1 contract. Project v10
+binds the versioned family, canonical codec, bounds, string-keyed opaque-token
+Load/CAS port, and an intentionally empty source-presentation manifest to the
+exact Project-v9 graph. Native JavaScript, canonical Seme, standalone Wasm,
+and pinned Pulp execute the pure migration identically; the separate neutral
+host port suite proves atomic storage mechanics without claiming a Pulp or
+database realization. Run `./scripts/check-javascript-upb-07.sh`.
 
 Go UPB-03 adds a resolved, integrity-pinned local-plus-ecosystem dependency
 closure, authenticates it with Project v4, and proves that it applies to the
