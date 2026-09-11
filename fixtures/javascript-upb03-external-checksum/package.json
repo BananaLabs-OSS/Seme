@@ -1,0 +1,6 @@
+{
+  "name": "@seme/checksum",
+  "version": "1.2.3",
+  "type": "module",
+  "exports": "./index.js"
+}
