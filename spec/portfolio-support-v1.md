@@ -12,7 +12,7 @@ is incomplete.
 - execution strategy;
 - whether semantic-provider work remains.
 
-The first audit of `/home/sirniklas/Projects` discovered 100 non-hidden project
+The first audit of a representative development workspace discovered 100 non-hidden project
 directories: 80 containing Go modules, 12 JavaScript/TypeScript projects, five
 Rust projects, and four Java/Kotlin projects. Some projects contain multiple
 ecosystems, so language counts overlap. Seventy-one are Go-only provider
