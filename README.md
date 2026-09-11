@@ -303,8 +303,8 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 9/36 (25%): bounded Go UPB-01 through UPB-09 are the claimed
-project-level cells, placing the Go column at 9/12 (75%).
+is now 10/36 (27.8%): bounded Go UPB-01 through UPB-10 are the claimed
+project-level cells, placing the Go column at 10/12 (83.3%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -376,6 +376,16 @@ the pure planner/replay and ambient time or entropy cannot substitute for the
 declared providers. Deterministic bundles, real replay/tamper evidence, and a
 source-free ordinary-Go projection/re-lift semantic fixed point pass. Run
 `./scripts/check-go-upb-09.sh`.
+
+Go UPB-10 derives 92 target requirements from the authenticated Project-v12
+closure and resolves 88 exactly while retaining clock delivery, external
+effects, DurablePort, and TransportPort as four explicit Go-host native
+islands. Project v13 binds the executable Target-v1 plan. A closed deployment
+also authenticates its provider catalog, canonical VM Wasm, pinned Pulp cell
+manifest, typed native-island launch manifest, and source-free report. Two
+independent deployments match byte-for-byte; exact-only policy produces four
+impossible diagnostics and publishes nothing. Run
+`./scripts/check-go-upb-10.sh`.
 
 The first bounded foundation is now executable: [`Go Project Build v1`](spec/go-project-build-v1.md)
 lifts a native three-package Go fixture, compiles its canonical G1 with the
