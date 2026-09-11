@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"seme.local/reference/resourceinstance"
+	"sort"
 )
 
 type resource struct {
@@ -35,6 +36,13 @@ func main() {
 	for _, x := range m.Resources {
 		r.Resources = append(r.Resources, resource{x.Identity, x.Owner.String(), x.SourceUnit.String(), x.Path, x.MediaType, hex.EncodeToString(x.SHA256[:]), x.Kind, x.Size})
 	}
+	sort.Slice(r.Resources, func(i, j int) bool { return r.Resources[i].Identity < r.Resources[j].Identity })
+	sort.Slice(r.Placements, func(i, j int) bool {
+		if r.Placements[i].Resource == r.Placements[j].Resource {
+			return r.Placements[i].Destination < r.Placements[j].Destination
+		}
+		return r.Placements[i].Resource < r.Placements[j].Resource
+	})
 	fatal(json.NewEncoder(os.Stdout).Encode(r))
 }
 func fatal(e error) {
