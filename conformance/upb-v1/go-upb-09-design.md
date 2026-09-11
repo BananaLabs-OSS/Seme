@@ -1,6 +1,6 @@
 # Go UPB-09 semantic design
 
-Status: accepted implementation design; unclaimed.
+Status: claimed 2026-09-11 by `scripts/check-go-upb-09.sh`.
 
 Go UPB-09 extends the cumulative Project-v11 fixture with one project-neutral
 Runtime Inputs v1 plan and one Project-v12 binding. It does not revise Core or
@@ -72,5 +72,6 @@ payload; denied capabilities; ambient time/entropy substitutions; mixed or
 tampered artifacts; unsafe projection; and existing destinations without
 partial graph, artifact, source, state, or effect commits.
 
-The scorecard remains unchanged until the complete cumulative authority gate
-passes from a clean commit.
+The cumulative authority gate passes all seven evidence classes and is mapped
+by the scorecard. The claim remains limited to this explicit-input profile and
+its authenticated Go host boundary.

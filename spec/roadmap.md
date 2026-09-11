@@ -166,8 +166,8 @@ and use the same provider, patch, target-contract, and conformance boundaries.
 
 ## 7. Useful Project Bridge v1
 
-Status: 8/36 cells (22.2%); Go UPB-01 through UPB-08 pass all seven evidence
-classes, placing the Go column at 8/12 (66.7%).
+Status: 9/36 cells (25%); Go UPB-01 through UPB-09 pass all seven evidence
+classes, placing the Go column at 9/12 (75%).
 
 The completed UAB-v1 proves a bounded application semantic vocabulary. It does
 not by itself prove that Seme can preserve an ordinary project's source closure,
@@ -264,3 +264,13 @@ verified only as a synchronous opaque pure-call carrier and rejects the
 authoritative TransportPort. Deterministic bundles, source-free reporting,
 ordinary projection, exact semantic re-lift, fixed point, and atomic
 adversaries pass.
+
+Go UPB-09 is complete for one bounded controlled-effects and replay profile.
+Controlled Effects v1 and Project v12 authenticate injected clock samples, a
+versioned seeded random transition, one ordered Boolean effect request, and the
+complete replay ledger. All 4,096 full state/result/effect observations agree
+across native Go, canonical Seme, standalone Wasm, and pinned Pulp. Live clock
+sampling and effect delivery remain an authenticated Go host boundary; ambient
+Pulp time/entropy substitutions reject. Deterministic bundles, a real
+canonical replay, source-free ordinary-Go projection, exact semantic re-lift,
+and atomic adversaries pass.

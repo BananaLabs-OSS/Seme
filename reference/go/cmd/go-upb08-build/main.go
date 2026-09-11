@@ -130,7 +130,10 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	ctx, cancel := context.WithTimeout(parent, 90*time.Second)
+	// A cold frozen-K0 compilation of the cumulative project can exceed ninety
+	// seconds on the acceptance workstation. Keep the producer bounded while
+	// allowing the same four-minute budget used by its real bundle verifier.
+	ctx, cancel := context.WithTimeout(parent, 4*time.Minute)
 	defer cancel()
 	base := goupb05pipeline.V8Input{
 		Documents: goprovider.DocumentSnapshot{Revision: o.revision, ModulePath: o.module, PackagePath: o.pkg, Entry: o.entry, Files: files},

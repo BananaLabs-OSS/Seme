@@ -3,6 +3,20 @@
 This file records development-environment changes made while advancing Seme.
 It is not part of Seme's runtime or trusted bootstrap.
 
+## 2026-09-11 — Go UPB-09 controlled-effects completion
+
+Controlled Effects v1, Project v12, real replay, authenticated placement,
+ordinary-Go projection, and native/canonical/Wasm/Pulp parity reused the
+existing Go 1.26 toolchain, Node 22, checked Seme bootstrap, repository-local
+offline proxy, and pinned Pulp source at
+`acc66ca61fe69c5f2c4093bc55e13aeac6dcc001`. All generated projects, corpora,
+bundles, copied Pulp sources, and caches lived in temporary directories. No
+software or dependency was installed, and no shell, SSH, editor, toolchain,
+global, network, or persistent workstation setting was changed. The bounded
+`go-upb08-build` producer timeout changed in repository source from 90 seconds
+to four minutes so cold frozen-bootstrap compilation can complete; this is an
+application deadline, not an environment change.
+
 ## 2026-09-10 — Go UPB-08 ordered-transport completion
 
 Ordered Transport v1, Project v11, authenticated host framing and placement,
