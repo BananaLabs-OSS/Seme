@@ -1,6 +1,6 @@
 # JavaScript UPB-01 acceptance design
 
-Status: implementation in progress; unclaimed.
+Status: claimed 2026-09-11 by `scripts/check-javascript-upb-01.sh`.
 
 JavaScript UPB-01 uses the neutral Project-v2 source inventory and an explicit
 ECMAScript policy. `.js` semantic sources are tracked; generated, ignored,
@@ -16,4 +16,4 @@ behavior proof and reject unsafe paths, symlinks, classification ambiguity,
 digest drift, malformed authority, and destination collisions atomically.
 
 `scripts/check-javascript-upb-01-source.sh` is supporting discovery evidence;
-it cannot claim the cell until the complete seven-class gate exists and passes.
+only the complete `scripts/check-javascript-upb-01.sh` gate claims the cell.
