@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -37,6 +38,7 @@ type options struct {
 	dependencyV1, configurationV3, resourceV1, projectV9, durableV1, presentationV1, projectV10 string
 	transportSelection, orderedTransportV1, projectV11                                          string
 	effectsSelection, controlledEffectsV1, projectV12                                           string
+	identityBindings                                                                            string
 	k0, compiler                                                                                string
 	revision                                                                                    uint64
 }
@@ -72,6 +74,7 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 		"effects-selection":     &o.effectsSelection,
 		"controlled-effects-v1": &o.controlledEffectsV1,
 		"project-v12":           &o.projectV12,
+		"identity-bindings":     &o.identityBindings,
 	}
 	for n, p := range flags {
 		f.StringVar(p, n, "", n+" input")
@@ -113,6 +116,22 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
+	var identityBindings []goprovider.IdentityBinding
+	if o.identityBindings != "" {
+		encoded, readErr := readStrict(o.identityBindings)
+		if readErr != nil {
+			return fmt.Errorf("identity_bindings:%w", readErr)
+		}
+		var report goprovider.ProjectionReport
+		if json.Unmarshal(encoded, &report) != nil || report.BaseRevision == "" || report.ResultRevision == "" || report.BaseRevision == report.ResultRevision || len(report.IdentityBindings) == 0 {
+			return fmt.Errorf("identity_bindings:report")
+		}
+		nativeRevision, revisionErr := goprovider.NativeRevision(root)
+		if revisionErr != nil || nativeRevision != report.ResultRevision {
+			return fmt.Errorf("identity_bindings:source_revision")
+		}
+		identityBindings = append([]goprovider.IdentityBinding(nil), report.IdentityBindings...)
+	}
 	policy := projectsource.Policy{TrackedExtensions: []string{".go"}, IgnoredSuffixes: []string{"_test.go"}, GeneratedHeader: []byte("// generated"), MaxFiles: 1024, MaxFileBytes: maxFile, MaxTotalBytes: maxTotal}
 	sources, err := projectsource.Discover(root, o.module, projectsource.Toolchain{Language: "go", Toolchain: "go1.26", Profile: "upb-09-bounded-v1", SemanticRevision: "provider-v1"}, policy)
 	if err != nil {
@@ -145,7 +164,7 @@ func run(parent context.Context, args []string, stderr io.Writer) error {
 	ctx, cancel := context.WithTimeout(parent, 5*time.Minute)
 	defer cancel()
 	base := goupb05pipeline.V8Input{
-		Documents: goprovider.DocumentSnapshot{Revision: o.revision, ModulePath: o.module, PackagePath: o.pkg, Entry: o.entry, Files: files},
+		Documents: goprovider.DocumentSnapshot{Revision: o.revision, ModulePath: o.module, PackagePath: o.pkg, Entry: o.entry, Files: files, IdentityBindings: identityBindings},
 		Sources:   sources, Contracts: v8,
 		Dependency: goupb05pipeline.V8DependencyInput{ProjectRoot: root, ProxyRoot: o.proxy, Module: o.dependency, Version: o.version, LocalFrom: o.localFrom, LocalTo: o.localTo},
 		Selection:  selection, ExecutionG1: inputs[o.executionG1],
@@ -184,6 +203,9 @@ func (o options) validate() error {
 		if !filepath.IsAbs(p) || filepath.Clean(p) != p {
 			return fmt.Errorf("absolute_path")
 		}
+	}
+	if o.identityBindings != "" && (!filepath.IsAbs(o.identityBindings) || filepath.Clean(o.identityBindings) != o.identityBindings) {
+		return fmt.Errorf("absolute_path")
 	}
 	if o.revision == 0 {
 		return fmt.Errorf("revision")
