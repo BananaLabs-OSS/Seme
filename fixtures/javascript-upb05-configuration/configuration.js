@@ -15,6 +15,6 @@ export class Settings { constructor(Enabled, Limit, Namespace) { this.Enabled = 
 /** @returns {boolean} */ export function DefaultEnabled() { return true; }
 /** @returns {bigint} */ export function DefaultLimit() { return 8n; }
 /** @returns {string} */ export function DefaultNamespace() { return "seme"; }
-/** @param {bigint} _value @returns {boolean} */ export function ValidateLimit(_value) { return true; }
+/** @param {bigint} value @returns {Seme.Result<bigint,string>} */ export function ValidateLimit(value) { return Seme.ok(value); }
 /** @param {ConfigInput} input @returns {Seme.Result<Settings,string>} */
 export function InitializeConfig(input) { return Seme.ok(new Settings(input.Enabled, input.Limit, input.Namespace)); }
