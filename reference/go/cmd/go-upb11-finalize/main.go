@@ -66,6 +66,9 @@ func run(parent context.Context, arguments []string, stderr io.Writer) error {
 	if err := set.Parse(arguments); err != nil || set.NArg() != 0 || !valid(o) {
 		return fmt.Errorf("arguments")
 	}
+	if _, err := os.Lstat(o.output); !os.IsNotExist(err) {
+		return fmt.Errorf("output_exists")
+	}
 	ctx, cancel := context.WithTimeout(parent, 10*time.Minute)
 	defer cancel()
 	policy := goprojectplacementadapter.Policy{Name: "wasm32-pulp-go-host-v1", Revision: 1, AllowedFidelity: []targetplaninstance.Fidelity{targetplaninstance.Exact, targetplaninstance.NativeIsland}}
