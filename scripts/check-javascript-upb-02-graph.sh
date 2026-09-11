@@ -15,22 +15,23 @@ GOCACHE="$work/go-cache"; XDG_CACHE_HOME="$work/cache"; export GOCACHE XDG_CACHE
 node --test "$repo/reference/js/javascript-project-graph.test.mjs"
 
 build() {
-  destination=$1
+  source=$1
+  destination=$2
   mkdir "$destination"
-  (cd "$fixture" && node "$repo/reference/js/javascript-package-provider-cli.mjs" \
+  (cd "$source" && node "$repo/reference/js/javascript-package-provider-cli.mjs" \
     --files application.js,math/sum.js --module "$repo/modules/execution/v35/module.g1" \
     --package example.test/javascript-upb02 --entry Run --revision 1 --out "$destination/execution.g1")
   "$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" "$destination/execution.g1" "$destination/execution.seme"
   "$work/assemble" -execution "$destination/execution.seme" -manifest "$fixture/seme-package-manifest.json" \
     -execution-contract "$repo/modules/execution/v35/module.seme" -package-contract "$repo/modules/package/v1/module.seme" \
     -project-contract "$repo/modules/project/v1/module.seme" -out "$destination/project-v1.seme"
-  "$work/discover" -root "$fixture" -identity example.test/javascript-upb02 -language javascript \
+  "$work/discover" -root "$source" -identity example.test/javascript-upb02 -language javascript \
     -toolchain "$(node --version)" -profile seme.javascript-upb02/v1 -semantic-revision seme.javascript-provider/uab11 \
     -tracked-extensions .js -generated-header '// Code generated' -out "$destination/snapshot.json"
   "$work/inventory" -snapshot "$destination/snapshot.json" -project "$destination/project-v1.seme" \
     -execution-contract "$repo/modules/execution/v35/module.seme" -package-contract "$repo/modules/package/v1/module.seme" \
     -project-contract "$repo/modules/project/v2/module.seme" -out "$destination/inventory-v2.seme"
-  (cd "$fixture" && node "$repo/reference/js/javascript-project-graph-cli.mjs" --files application.js,math/sum.js \
+  (cd "$source" && node "$repo/reference/js/javascript-project-graph-cli.mjs" --files application.js,math/sum.js \
     --snapshot "$destination/snapshot.json" --canonical-g1 "$destination/execution.g1" \
     --project example.test/javascript-upb02 --root-module application.js --out "$destination/package-graph.json")
   "$work/detail" -base "$destination/project-v1.seme" -inventory "$destination/inventory-v2.seme" \
@@ -43,8 +44,8 @@ build() {
     -project "$destination/project-v1.seme" -inventory "$destination/inventory-v2.seme" \
     -package-graph "$destination/package-v2.seme" -out "$destination/project-v3.seme"
 }
-build "$work/a"
-build "$work/b"
+build "$fixture" "$work/a"
+build "$fixture" "$work/b"
 for file in execution.g1 execution.seme project-v1.seme snapshot.json inventory-v2.seme package-graph.json package-v2.seme project-v3.seme; do cmp "$work/a/$file" "$work/b/$file"; done
 "$work/report" --execution "$repo/modules/execution/v35/module.seme" --package-v1 "$repo/modules/package/v1/module.seme" \
   --package-v2 "$repo/modules/package/v2/module.seme" --project-v2-contract "$repo/modules/project/v2/module.seme" \
@@ -71,6 +72,10 @@ cmp "$work/a/execution.seme" "$work/relifted.seme"
   -execution-contract "$repo/modules/execution/v35/module.seme" -package-contract "$repo/modules/package/v1/module.seme" \
   -project-contract "$repo/modules/project/v1/module.seme" -out "$work/relifted-project.seme"
 cmp "$work/a/project-v1.seme" "$work/relifted-project.seme"
-if build "$work/a" >"$work/collision.out" 2>"$work/collision.err"; then exit 1; fi
+build "$work/projected-modules" "$work/projected-a"
+build "$work/projected-modules" "$work/projected-b"
+cmp "$work/a/project-v1.seme" "$work/projected-a/project-v1.seme"
+cmp "$work/projected-a/project-v3.seme" "$work/projected-b/project-v3.seme"
+if build "$fixture" "$work/a" >"$work/collision.out" 2>"$work/collision.err"; then exit 1; fi
 test -s "$work/a/project-v3.seme"
 echo 'JavaScript UPB-02 graph foundation: deterministic Package-v2 and Project-v3 authority pass'
