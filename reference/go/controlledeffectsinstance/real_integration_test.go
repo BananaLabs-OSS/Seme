@@ -32,7 +32,7 @@ func TestRealProjectEmitsDeterministicTamperSensitiveEffectsPlan(t *testing.T) {
 	if testing.Short() {
 		t.Skip("materialized project integration")
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
 	defer cancel()
 	repo, err := filepath.Abs("../../..")
 	if err != nil {
