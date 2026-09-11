@@ -303,8 +303,8 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 10/36 (27.8%): bounded Go UPB-01 through UPB-10 are the claimed
-project-level cells, placing the Go column at 10/12 (83.3%).
+is now 11/36 (30.6%): bounded Go UPB-01 through UPB-11 are the claimed
+project-level cells, placing the Go column at 11/12 (91.7%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -386,6 +386,15 @@ manifest, typed native-island launch manifest, and source-free report. Two
 independent deployments match byte-for-byte; exact-only policy produces four
 impossible diagnostics and publishes nothing. Run
 `./scripts/check-go-upb-10.sh`.
+
+Go UPB-11 performs an identity-bound exported-function rename across two
+packages and 23 typed occurrences. It atomically projects a new ordinary-Go
+project, runs its tests offline, re-lifts it to the independently expected
+canonical graph, preserves the declaration's Seme identity, and binds the
+prior and resulting Project-v13 authorities with Patch v1 in compact Project
+v14. Two complete finalizations match byte-for-byte; stale, malformed,
+conflicting, test-failing, tampered, symlink, and output-collision adversaries
+publish nothing. Run `./scripts/check-go-upb-11.sh`.
 
 The first bounded foundation is now executable: [`Go Project Build v1`](spec/go-project-build-v1.md)
 lifts a native three-package Go fixture, compiles its canonical G1 with the

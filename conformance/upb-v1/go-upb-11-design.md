@@ -1,6 +1,6 @@
 # Go UPB-11 acceptance design
 
-Status: accepted implementation design; unclaimed.
+Status: claimed 2026-09-11 by `scripts/check-go-upb-11.sh`.
 
 Go UPB-11 extends the cumulative Project-v13 fixture with live, transactional
 project revision. It composes the existing neutral Patch v1 and Live Language
@@ -121,5 +121,5 @@ The cumulative gate must prove all seven UPB evidence classes:
 Only `scripts/check-go-upb-11.sh` may claim or map Go UPB-11. It must execute
 the complete mapped UPB-10 gate, reproduce Project-v14 independently, exercise
 the live revision and reconciliation partitions, cover all seven evidence
-classes, and perform a clean deterministic second edit/build. Until that gate
-passes, the scorecard remains 10/36 overall and 10/12 for Go.
+classes, and perform a clean deterministic second edit/build. The gate passed;
+the scorecard is 11/36 overall and 11/12 for Go.
