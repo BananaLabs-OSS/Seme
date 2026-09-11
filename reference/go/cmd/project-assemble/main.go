@@ -42,12 +42,15 @@ func main() {
 }
 
 func run() error {
-	var executionPath, manifestPath, executionContract, packageContract, projectContract, out string
+	var executionPath, manifestPath, executionContract, packageContract, projectContract, foundationContract, dependencyContract, configurationContract, out string
 	flag.StringVar(&executionPath, "execution", "", "canonical Execution artifact")
 	flag.StringVar(&manifestPath, "manifest", "", "explicit package ownership JSON")
 	flag.StringVar(&executionContract, "execution-contract", "", "Execution contract")
 	flag.StringVar(&packageContract, "package-contract", "", "Package v1 contract")
 	flag.StringVar(&projectContract, "project-contract", "", "Project v1 contract")
+	flag.StringVar(&foundationContract, "foundation-contract", "", "Foundation contract for Project v8 mode")
+	flag.StringVar(&dependencyContract, "dependency-contract", "", "Dependency contract for Project v8 mode")
+	flag.StringVar(&configurationContract, "configuration-contract", "", "Configuration contract for Project v8 mode")
 	flag.StringVar(&out, "out", "", "new Project artifact destination")
 	flag.Parse()
 	for name, value := range map[string]string{"execution": executionPath, "manifest": manifestPath, "execution-contract": executionContract, "package-contract": packageContract, "project-contract": projectContract, "out": out} {
@@ -131,11 +134,36 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	contracts, err := contractcatalog.ResolveProjectContractSet(ec, pc, prc)
-	if err != nil {
-		return err
+	v8 := foundationContract != "" || dependencyContract != "" || configurationContract != ""
+	var artifact []byte
+	if v8 {
+		if foundationContract == "" || dependencyContract == "" || configurationContract == "" {
+			return fmt.Errorf("project_assemble.v8_contracts")
+		}
+		fc, e := read(foundationContract)
+		if e != nil {
+			return e
+		}
+		dc, e := read(dependencyContract)
+		if e != nil {
+			return e
+		}
+		cc, e := read(configurationContract)
+		if e != nil {
+			return e
+		}
+		contracts, e := contractcatalog.ResolveProjectContractSetV8(fc, ec, pc, dc, cc, prc)
+		if e != nil {
+			return e
+		}
+		artifact, err = projectemitter.EmitV8Base(contracts, input)
+	} else {
+		contracts, e := contractcatalog.ResolveProjectContractSet(ec, pc, prc)
+		if e != nil {
+			return e
+		}
+		artifact, err = projectemitter.Emit(contracts, input)
 	}
-	artifact, err := projectemitter.Emit(contracts, input)
 	if err != nil {
 		return err
 	}

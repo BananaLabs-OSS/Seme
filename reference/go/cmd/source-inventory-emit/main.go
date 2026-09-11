@@ -24,12 +24,15 @@ func main() {
 }
 
 func run() error {
-	var snapshotPath, projectPath, executionContract, packageContract, projectContract, out string
+	var snapshotPath, projectPath, executionContract, packageContract, projectContract, foundationContract, dependencyContract, configurationContract, out string
 	flag.StringVar(&snapshotPath, "snapshot", "", "detached source snapshot JSON")
 	flag.StringVar(&projectPath, "project", "", "validated semantic Project artifact")
 	flag.StringVar(&executionContract, "execution-contract", "", "Execution contract")
 	flag.StringVar(&packageContract, "package-contract", "", "Package contract")
 	flag.StringVar(&projectContract, "project-contract", "", "Project v2 contract")
+	flag.StringVar(&foundationContract, "foundation-contract", "", "Foundation contract for Project v8 mode")
+	flag.StringVar(&dependencyContract, "dependency-contract", "", "Dependency contract for Project v8 mode")
+	flag.StringVar(&configurationContract, "configuration-contract", "", "Configuration contract for Project v8 mode")
 	flag.StringVar(&out, "out", "", "new source inventory artifact")
 	flag.Parse()
 	for name, value := range map[string]string{"snapshot": snapshotPath, "project": projectPath, "execution-contract": executionContract, "package-contract": packageContract, "project-contract": projectContract, "out": out} {
@@ -77,15 +80,48 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	contracts, err := contractcatalog.ResolveProjectContractSetV2(ec, pc, prc)
+	v8 := foundationContract != "" || dependencyContract != "" || configurationContract != ""
+	var inventory []byte
+	var projectAuthority contractcatalog.Contract
+	if v8 {
+		if foundationContract == "" || dependencyContract == "" || configurationContract == "" {
+			return fmt.Errorf("source_inventory_emit.v8_contracts")
+		}
+		fc, e := read(foundationContract)
+		if e != nil {
+			return e
+		}
+		dc, e := read(dependencyContract)
+		if e != nil {
+			return e
+		}
+		cc, e := read(configurationContract)
+		if e != nil {
+			return e
+		}
+		contracts, e := contractcatalog.ResolveProjectContractSetV8(fc, ec, pc, dc, cc, prc)
+		if e != nil {
+			return e
+		}
+		projectAuthority = contracts.Project()
+		inventory, err = sourceinventory.EmitV8(projectAuthority, project, snapshot)
+	} else {
+		contracts, e := contractcatalog.ResolveProjectContractSetV2(ec, pc, prc)
+		if e != nil {
+			return e
+		}
+		projectAuthority = contracts.Project()
+		inventory, err = sourceinventory.Emit(projectAuthority, project, snapshot)
+	}
 	if err != nil {
 		return err
 	}
-	inventory, err := sourceinventory.Emit(contracts.Project(), project, snapshot)
-	if err != nil {
-		return err
+	if v8 {
+		err = sourceinventory.ValidateV8(projectAuthority, project, inventory)
+	} else {
+		err = sourceinventory.Validate(projectAuthority, project, inventory)
 	}
-	if err = sourceinventory.Validate(contracts.Project(), project, inventory); err != nil {
+	if err != nil {
 		return err
 	}
 	absOut, err := filepath.Abs(out)
