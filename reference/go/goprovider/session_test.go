@@ -13,6 +13,62 @@ import (
 	"seme.local/reference/wire"
 )
 
+func TestIdentityBindingPreservesCanonicalFunctionAcrossProjectRename(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := DocumentSnapshot{Revision: 1, ModulePath: "example.test/continuity", PackagePath: "example.test/continuity/app", Entry: "Run", Files: map[string]string{
+		"model/value.go": "package model\nfunc Value(v int64) int64 { return v + 1 }\n",
+		"app/run.go":     "package app\nimport \"example.test/continuity/model\"\nfunc Run(v int64) int64 { return model.Value(v) }\n",
+	}}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prior := session.Apply(base)
+	if !prior.Valid {
+		t.Fatalf("prior=%#v", prior)
+	}
+	var source SourceIdentity
+	for _, candidate := range prior.Sources {
+		if candidate.Document == "model/value.go" && candidate.Name == "Value" {
+			source = candidate
+		}
+	}
+	if source.ID == "" {
+		t.Fatal("base identity missing")
+	}
+	updated := base
+	updated.Revision = 2
+	updated.Files = map[string]string{
+		"model/value.go": "package model\nfunc Reading(v int64) int64 { return v + 1 }\n",
+		"app/run.go":     "package app\nimport \"example.test/continuity/model\"\nfunc Run(v int64) int64 { return model.Reading(v) }\n",
+	}
+	updated.IdentityBindings = []IdentityBinding{{ID: source.ID, Kind: source.Kind, Document: source.Document, Name: "Reading", Start: source.Start}}
+	result := session.Apply(updated)
+	if !result.Valid {
+		t.Fatalf("updated=%#v", result)
+	}
+	found := false
+	for _, candidate := range result.Sources {
+		if candidate.Name == "Reading" {
+			found = candidate.ID == source.ID
+		}
+	}
+	if !found {
+		t.Fatalf("identity did not survive rename: prior=%#v result=%#v", source, result.Sources)
+	}
+
+	invalid := updated
+	invalid.Revision = 3
+	invalid.IdentityBindings[0].Start++
+	rejected := session.Apply(invalid)
+	if !rejected.Accepted || rejected.Valid || rejected.LastValidRevision != 2 || len(rejected.Diagnostics) != 1 || rejected.Diagnostics[0].Code != "session.identity_binding_unmatched" {
+		t.Fatalf("unmatched binding=%#v", rejected)
+	}
+}
+
 func TestIncrementalSessionPublishesStablePackageMetadata(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v35/module.g1")
 	if err != nil {
