@@ -4,20 +4,18 @@ package main
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
-	"strings"
 	"time"
 
-	"seme.local/reference/contractcatalog"
 	"seme.local/reference/goprojectplacementadapter"
 	"seme.local/reference/goupb09cmdload"
+	"seme.local/reference/goupb10bundle"
+	"seme.local/reference/goupb10cmdload"
+	"seme.local/reference/goupb10report"
 	"seme.local/reference/projectv13instance"
 	"seme.local/reference/targetplaninstance"
 )
@@ -66,7 +64,7 @@ func run(parent context.Context, arguments []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	contracts, err := resolveV13(options)
+	contracts, err := goupb10cmdload.ResolveContracts(goupb10cmdload.Paths{Base: options.base, Target: options.target, ProjectV13: options.projectV13})
 	if err != nil {
 		return err
 	}
@@ -94,73 +92,27 @@ func run(parent context.Context, arguments []string, stderr io.Writer) error {
 	if err = projectv13instance.Validate(projectInput); err != nil {
 		return err
 	}
+	bundle, err := goupb10bundle.Load(goupb10bundle.Input{
+		Contracts: contracts, Base: loaded.Bundle,
+		Policy:    goprojectplacementadapter.Policy{Name: options.targetName, Revision: options.targetRevision, AllowedFidelity: allowed},
+		Artifacts: goupb10bundle.Artifacts{Base: loaded.Bundle.Artifacts, TargetPlan: plan, ProjectV13: project},
+	})
+	if err != nil {
+		return err
+	}
+	report, err := goupb10report.Inspect(bundle)
+	if err != nil {
+		return err
+	}
+	reportBytes, err := goupb10report.Marshal(report)
+	if err != nil {
+		return err
+	}
 	baseManifest, err := strictRead(filepath.Join(options.base.Base.Bundle, "COMPLETE.sha256"))
 	if err != nil {
 		return fmt.Errorf("base_manifest:%w", err)
 	}
-	return publish(options.out, map[string][]byte{"project-v13.seme": project, "target-plan-v1.seme": plan}, baseManifest)
-}
-
-func resolveV13(options options) (contractcatalog.ProjectContractSetV13, error) {
-	p := options.base.Base
-	paths := []string{p.Foundation, p.Execution, p.Package, p.Dependency, p.Configuration, p.Resource, p.Durable, p.Presentation, p.OrderedTransport, options.base.ControlledEffects, options.target, p.ProjectV9, p.ProjectV10, p.ProjectV11, options.base.ProjectV12, options.projectV13}
-	values := make([][]byte, len(paths))
-	for index, path := range paths {
-		value, err := strictRead(path)
-		if err != nil {
-			return contractcatalog.ProjectContractSetV13{}, err
-		}
-		values[index] = value
-	}
-	return contractcatalog.ResolveProjectContractSetV13(values[0], values[1], values[2], values[3], values[4], values[5], values[6], values[7], values[8], values[9], values[10], values[11], values[12], values[13], values[14], values[15])
-}
-
-func publish(destination string, artifacts map[string][]byte, baseManifest []byte) error {
-	if _, err := os.Lstat(destination); !os.IsNotExist(err) {
-		return fmt.Errorf("output_exists")
-	}
-	parent := filepath.Dir(destination)
-	real, err := filepath.EvalSymlinks(parent)
-	if err != nil || real != parent {
-		return fmt.Errorf("output_parent")
-	}
-	temporary, err := os.MkdirTemp(parent, ".seme-upb10-placement-")
-	if err != nil {
-		return err
-	}
-	keep := false
-	defer func() {
-		if !keep {
-			_ = os.RemoveAll(temporary)
-		}
-	}()
-	names := make([]string, 0, len(artifacts))
-	for name := range artifacts {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	manifest := []byte("seme-go-upb10-placement-v1\n")
-	baseDigest := sha256.Sum256(baseManifest)
-	manifest = append(manifest, []byte("base-complete "+hex.EncodeToString(baseDigest[:])+"\n")...)
-	for _, name := range names {
-		value := artifacts[name]
-		if len(value) == 0 || strings.Contains(name, "/") {
-			return fmt.Errorf("artifact")
-		}
-		digest := sha256.Sum256(value)
-		manifest = append(manifest, []byte(name+" "+hex.EncodeToString(digest[:])+"\n")...)
-		if err = os.WriteFile(filepath.Join(temporary, name), value, 0o600); err != nil {
-			return err
-		}
-	}
-	if err = os.WriteFile(filepath.Join(temporary, "COMPLETE.sha256"), manifest, 0o600); err != nil {
-		return err
-	}
-	if err = os.Rename(temporary, destination); err != nil {
-		return fmt.Errorf("publish_commit:%w", err)
-	}
-	keep = true
-	return nil
+	return goupb10bundle.WriteDirectory(options.out, goupb10bundle.PlacementFiles{TargetPlan: plan, ProjectV13: project, Report: reportBytes}, baseManifest)
 }
 
 func strictRead(path string) ([]byte, error) {
