@@ -1,6 +1,6 @@
 # JavaScript UPB-03 acceptance design
 
-Status: accepted implementation design; unclaimed.
+Status: claimed 2026-09-11 by `scripts/check-javascript-upb-03.sh`.
 
 JavaScript UPB-03 extends Project-v3 with the existing neutral Dependency-v1
 closure and Project-v4 binding. npm remains an ecosystem adapter; package.json,
