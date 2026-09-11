@@ -231,6 +231,16 @@ func ReadManifest(path string) (Manifest, error) {
 	return m, nil
 }
 
+// NativeRevision returns the deterministic complete native-file revision used
+// by provider manifests and projection reports.
+func NativeRevision(project string) (string, error) {
+	files, _, err := nativeFiles(project)
+	if err != nil {
+		return "", err
+	}
+	return revisionOf(files), nil
+}
+
 func WriteIngestion(directory string, manifest Manifest, g1 string) error {
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		return err
