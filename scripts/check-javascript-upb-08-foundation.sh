@@ -1,0 +1,19 @@
+#!/bin/sh
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd);fixture="$repo/fixtures/javascript-upb05-configuration"
+work=$(mktemp -d "${TMPDIR:-/tmp}/seme-javascript-upb08.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM
+GOCACHE="$work/go-cache";XDG_CACHE_HOME="$work/cache";export GOCACHE XDG_CACHE_HOME
+JS_UPB07_EXPORT="$work/prior" "$repo/scripts/check-javascript-upb-07-foundation.sh"
+"$repo/scripts/check-ordered-transport-v1.sh";"$repo/scripts/check-project-contract-v11.sh"
+(cd "$repo/reference/go"&&go test -count=1 ./goorderedtransportmanifest ./goorderedtransportadapter ./orderedtransportinstance ./projectv11instance ./cmd/project-v11-compose&&go build -buildvcs=false -o "$work/compose" ./cmd/project-v11-compose)
+compose(){ selection=$1;out=$2;v10=${3:-"$work/prior/v10"};"$work/compose" -bundle-v8 "$work/prior/prior/base/bundle" -bundle-v9 "$work/prior/prior/v9" -bundle-v10 "$v10" -configuration-selection "$fixture/configuration-selection.json" -durable-selection "$fixture/durable-selection.json" -transport-selection "$selection" -foundation-contract "$repo/modules/foundation/v1/module.seme" -execution-contract "$repo/modules/execution/v36/module.seme" -package-contract "$repo/modules/package/v4/module.seme" -dependency-contract "$repo/modules/dependency/v1/module.seme" -configuration-contract "$repo/modules/configuration/v3/module.seme" -project-v8-contract "$repo/modules/project/v8/module.seme" -resource-contract "$repo/modules/resource/v1/module.seme" -project-v9-contract "$repo/modules/project/v9/module.seme" -durable-state-contract "$repo/modules/durable-state/v1/module.seme" -source-presentation-contract "$repo/modules/source-presentation/v1/module.seme" -project-v10-contract "$repo/modules/project/v10/module.seme" -ordered-transport-contract "$repo/modules/ordered-transport/v1/module.seme" -project-v11-contract "$repo/modules/project/v11/module.seme" -k0 "$repo/bootstrap/seme-k0-linux-amd64" -g1-compiler "$repo/compiler/g1-compiler.k0" -out "$out";}
+compose "$fixture/transport-selection.json" "$work/v11-a";compose "$fixture/transport-selection.json" "$work/v11-b";diff -ru "$work/v11-a" "$work/v11-b";test -s "$work/v11-a/ordered-transport-v1.seme";test -s "$work/v11-a/project-v11.seme"
+reject(){ name=$1;selection=$2;v10=${3:-"$work/prior/v10"};if compose "$selection" "$work/reject-$name" "$v10" >"$work/$name.out" 2>"$work/$name.err";then echo "JavaScript UPB-08 accepted $name" >&2;exit 1;fi;test ! -e "$work/reject-$name";test ! -s "$work/$name.out";}
+if compose "$fixture/transport-selection.json" "$work/v11-a" >"$work/collision.out" 2>"$work/collision.err";then exit 1;fi;test ! -s "$work/collision.out"
+for kind in owner dispatch same duplicate unknown;do node - "$fixture/transport-selection.json" "$work/$kind.json" "$kind" <<'NODE'
+const fs=require("fs"),d=JSON.parse(fs.readFileSync(process.argv[2])),k=process.argv[4];if(k==="owner")d.streams[0].package="missing";if(k==="dispatch")d.dispatch.name="Missing";if(k==="same")d.replay=d.dispatch;if(k==="duplicate")d.command_kinds.push(d.command_kinds[0]);if(k==="unknown")d.protocol="websocket";fs.writeFileSync(process.argv[3],JSON.stringify(d));
+NODE
+reject "$kind" "$work/$kind.json";done
+cp -R "$work/prior/v10" "$work/stale-v10";printf x >> "$work/stale-v10/project-v10.seme";reject stale-v10 "$fixture/transport-selection.json" "$work/stale-v10"
+if test -n "${JS_UPB08_EXPORT:-}";then test ! -e "$JS_UPB08_EXPORT";mkdir "$JS_UPB08_EXPORT";cp -R "$work/prior" "$JS_UPB08_EXPORT/prior";cp -R "$work/v11-a" "$JS_UPB08_EXPORT/v11";fi
+echo 'JavaScript UPB-08 foundation: Ordered-Transport-v1 and Project-v11 authorities reproduce'

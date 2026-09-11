@@ -1,0 +1,8 @@
+{"valid":[
+  {"name":"zero","arguments":[{"kind":"record","fields":{"Sequence":{"kind":"i64","i64":"0"},"Value":{"kind":"i64","i64":"0"}}}],"result":{"kind":"record","fields":{"Sequence":{"kind":"i64","i64":"0"},"Value":{"kind":"i64","i64":"1"}}}},
+  {"name":"ordered","arguments":[{"kind":"record","fields":{"Sequence":{"kind":"i64","i64":"17"},"Value":{"kind":"i64","i64":"41"}}}],"result":{"kind":"record","fields":{"Sequence":{"kind":"i64","i64":"17"},"Value":{"kind":"i64","i64":"42"}}}},
+  {"name":"wrap","arguments":[{"kind":"record","fields":{"Sequence":{"kind":"i64","i64":"9223372036854775807"},"Value":{"kind":"i64","i64":"9223372036854775807"}}}],"result":{"kind":"record","fields":{"Sequence":{"kind":"i64","i64":"9223372036854775807"},"Value":{"kind":"i64","i64":"-9223372036854775808"}}}}
+],"malformed":[
+  {"name":"missing-sequence","arguments":[{"kind":"record","fields":{"Value":{"kind":"i64","i64":"1"}}}]},
+  {"name":"wrong-value","arguments":[{"kind":"record","fields":{"Sequence":{"kind":"i64","i64":"0"},"Value":{"kind":"text","text":"1"}}}]}
+]}

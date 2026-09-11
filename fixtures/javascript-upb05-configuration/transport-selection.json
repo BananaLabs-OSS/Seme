@@ -1,0 +1,9 @@
+{
+  "version": "seme.ordered-transport-selection/v1",
+  "streams": [{"identity":"primary", "package":"example.test/javascript-upb05/transport"}],
+  "command_kinds": [{"identity":"application.command.v1", "owner":"example.test/javascript-upb05/transport", "payload":{"package":"example.test/javascript-upb05/transport", "name":"TransportCommand"}}],
+  "event_kinds": [{"identity":"application.event.v1", "owner":"example.test/javascript-upb05/transport", "payload":{"package":"example.test/javascript-upb05/transport", "name":"TransportEvent"}}],
+  "ports": [{"identity":"host.frames.v1", "package":"example.test/javascript-upb05/transport"}],
+  "dispatch": {"package":"example.test/javascript-upb05/transport", "name":"Dispatch"},
+  "replay": {"package":"example.test/javascript-upb05/transport", "name":"Replay"}
+}
