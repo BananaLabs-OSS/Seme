@@ -37,7 +37,15 @@ rg -q '^example\.test/seme/checksum v1\.2\.3 h1:iqNHCyOnAuyQDdyru3Tt6tsFgwUzMObO
 
 # shellcheck disable=SC2086
 "$work/build" -project "$projected" -out "$rebuilt" $common $contracts -selection "$projected/configuration-selection.json" -resources "$projected/resources.json" -durable-selection "$projected/durable-selection.json" -transport-selection "$projected/ordered-transport-selection.json" -effects-selection "$projected/controlled-effects-selection.json"
-for artifact in construction-v36.g1 controlled-effects-v1.seme project-v12.seme ordered-transport-v1.seme project-v11.seme; do cmp "$bundle/$artifact" "$rebuilt/$artifact"; done
+# Canonical program meaning is the fixed point. Project-layer artifacts retain
+# source provenance, so their revisions must not be falsely equated after the
+# original multi-file source is projected into one generated file per package.
+cmp "$bundle/construction-v36.g1" "$rebuilt/construction-v36.g1"
+cmp "$bundle/execution-v36.seme" "$rebuilt/execution-v36.seme"
+if cmp -s "$bundle/project-v12.seme" "$rebuilt/project-v12.seme"; then
+  echo 'project provenance revision was incorrectly erased' >&2
+  exit 1
+fi
 
 mkdir "$work/existing"
 # shellcheck disable=SC2086
