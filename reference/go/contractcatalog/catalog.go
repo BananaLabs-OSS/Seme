@@ -395,7 +395,7 @@ func ResolveProjectContractSetV14(foundation, execution, packages, dependency, c
 	if err != nil {
 		return ProjectContractSetV14{}, fmt.Errorf("language_service:%w", err)
 	}
-	q, err := Resolve(project, Expectation{Pin: Pin{projectModule, projectRevV14}, Parents: []wire.ID{projectRevV13}, ModuleVersion: 14, RequiredExports: ids("e036", "e360", "e361", "e362", "e363", "e364", "e365", "e366"), Imports: []Pin{{projectModule, projectRevV13}, {patchModule, patchRev}, {languageServiceModule, languageServiceRev}}, Digest: mustDigest("f50d418faa5b20e0db66e303a36198e5ee15bd26edaff695c0ac316d147d9495")})
+	q, err := Resolve(project, Expectation{Pin: Pin{projectModule, projectRevV14}, Parents: []wire.ID{projectRevV13}, ModuleVersion: 14, RequiredExports: ids("e036", "e360", "e361", "e362", "e363", "e364", "e365", "e366"), Imports: []Pin{{projectModule, projectRevV13}, {patchModule, patchRev}, {languageServiceModule, languageServiceRev}}, Digest: mustDigest("1ca09c3dc546229822a68c702fb84aaf9b260912bdf0f3548a6c18a3784684ec")})
 	if err != nil {
 		return ProjectContractSetV14{}, fmt.Errorf("project:%w", err)
 	}
