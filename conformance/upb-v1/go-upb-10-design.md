@@ -1,6 +1,6 @@
 # Go UPB-10 acceptance design
 
-Status: accepted implementation design; unclaimed.
+Status: implemented and claimed by `scripts/check-go-upb-10.sh` on 2026-09-11.
 
 Go UPB-10 extends the cumulative Project-v12 fixture with deterministic target
 resolution and physical placement derived from its authenticated transitive
@@ -127,8 +127,8 @@ The cumulative gate rejects:
 
 ## Claim rule
 
-Only `scripts/check-go-upb-10.sh` may claim or map Go UPB-10. It must execute
+Only `scripts/check-go-upb-10.sh` may claim or map Go UPB-10. It executes
 the complete mapped UPB-09 gate, the independent Target Contract v1 gate, the
 new Project-v13 and placement partitions, all seven evidence classes, and a
-clean deterministic second build. Until that cumulative gate passes, the
-scorecard remains 9/36 overall and 9/12 for Go.
+clean deterministic second build. The cumulative gate passes; the scorecard is
+10/36 overall and 10/12 for Go.
