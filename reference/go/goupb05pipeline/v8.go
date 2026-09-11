@@ -181,7 +181,7 @@ func buildV8Components(ctx context.Context, in V8Input) (v8Components, error) {
 	if err != nil {
 		return v8Components{}, fmt.Errorf("go_upb05_pipeline.dependency_emit:%w", err)
 	}
-	plan, err := goconfigurationadapter.ResolveV8(ctx, goconfigurationadapter.InputV8{CanonicalG1: base.CanonicalG1, Packages: base.Packages, Compile: goconfigurationadapter.Compile(in.Compile), Contracts: in.Contracts, PackageV2: packageDetail, PackageV4: packageV4, Fields: in.Selection.Fields, Runtime: in.Selection.Runtime, Units: in.Selection.Units})
+	plan, err := goconfigurationadapter.ResolveNeutralV8(ctx, goconfigurationadapter.NeutralInputV8{CanonicalG1: base.CanonicalG1, Compile: goconfigurationadapter.Compile(in.Compile), Contracts: in.Contracts, PackageV2: packageDetail, PackageV4: packageV4, Fields: in.Selection.Fields, Runtime: in.Selection.Runtime, Units: in.Selection.Units})
 	if err != nil {
 		return v8Components{}, fmt.Errorf("go_upb05_pipeline.configuration_adapter:%w", err)
 	}

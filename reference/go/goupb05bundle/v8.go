@@ -45,7 +45,7 @@ func LoadV8(ctx context.Context, in V8Input) (V8Result, error) {
 			return V8Result{}, fmt.Errorf("go_upb05_bundle.v8_missing:%s", name)
 		}
 	}
-	plan, err := goconfigurationadapter.ResolveV8(ctx, goconfigurationadapter.InputV8{CanonicalG1: a.Construction, Compile: in.Compile, Contracts: in.Contracts, PackageV2: a.PackageDetail, PackageV4: a.PackageV4, Fields: in.Selection.Fields, Runtime: in.Selection.Runtime, Units: in.Selection.Units})
+	plan, err := goconfigurationadapter.ResolveNeutralV8(ctx, goconfigurationadapter.NeutralInputV8{CanonicalG1: a.Construction, Compile: in.Compile, Contracts: in.Contracts, PackageV2: a.PackageDetail, PackageV4: a.PackageV4, Fields: in.Selection.Fields, Runtime: in.Selection.Runtime, Units: in.Selection.Units})
 	if err != nil {
 		return V8Result{}, fmt.Errorf("go_upb05_bundle.v8_selection:%w", err)
 	}
