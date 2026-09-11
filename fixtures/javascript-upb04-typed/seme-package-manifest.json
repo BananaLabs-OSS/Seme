@@ -1,0 +1,18 @@
+{
+  "identity": "example.test/javascript-upb04",
+  "root_package": "example.test/javascript-upb04/application",
+  "packages": [
+    {
+      "name": "example.test/javascript-upb04/application",
+      "interfaces": [{"name":"Run","function":"8088b2ede5446e8443cfeda42c9d23fd","parameters":["80dec2d5a0fbf1cccfa189e452f0d024","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a"],"result":"809e162c5f3c856abb00b3b86cd8ed3a"}],
+      "dependencies": [{"Name":"./policy/collections.js","Package":"example.test/javascript-upb04/policy/collections"}],
+      "effects": []
+    },
+    {
+      "name": "example.test/javascript-upb04/policy/collections",
+      "interfaces": [{"name":"Transform","function":"80b9f63f8f8c6911a071747951963a68","parameters":["80dec2d5a0fbf1cccfa189e452f0d024","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a"],"result":"809e162c5f3c856abb00b3b86cd8ed3a"}],
+      "dependencies": [],
+      "effects": []
+    }
+  ]
+}

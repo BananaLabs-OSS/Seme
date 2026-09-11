@@ -1,0 +1,7 @@
+{
+  "name": "@seme/javascript-upb04",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {"@seme/checksum": "1.2.3"}
+}
