@@ -26,6 +26,7 @@ type options struct {
 	target, projectV13    string
 	out, policy           string
 	targetName            string
+	ruleNamespace         string
 	targetRevision        uint64
 	canonicalVM, pulpCell string
 }
@@ -47,6 +48,7 @@ func run(parent context.Context, arguments []string, stderr io.Writer) error {
 	set.StringVar(&options.out, "out", "", "new output directory")
 	set.StringVar(&options.policy, "policy", "mixed", "mixed or exact-only")
 	set.StringVar(&options.targetName, "target-name", "wasm32-pulp-go-host-v1", "target identity")
+	set.StringVar(&options.ruleNamespace, "rule-namespace", "go-upb10", "placement rule identity namespace")
 	set.Uint64Var(&options.targetRevision, "target-revision", 1, "target revision")
 	set.StringVar(&options.canonicalVM, "canonical-vm", "", "canonical VM Wasm artifact")
 	set.StringVar(&options.pulpCell, "pulp-cell", "", "Pulp cell manifest")
@@ -75,7 +77,7 @@ func run(parent context.Context, arguments []string, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	planInput, err := goprojectplacementadapter.Derive(loaded.Bundle.Project, contracts.Target(), goprojectplacementadapter.Policy{Name: options.targetName, Revision: options.targetRevision, AllowedFidelity: allowed})
+	planInput, err := goprojectplacementadapter.Derive(loaded.Bundle.Project, contracts.Target(), goprojectplacementadapter.Policy{Name: options.targetName, Revision: options.targetRevision, RuleNamespace: options.ruleNamespace, AllowedFidelity: allowed})
 	if err != nil {
 		return err
 	}
@@ -125,7 +127,7 @@ func run(parent context.Context, arguments []string, stderr io.Writer) error {
 	}
 	bundle, err := goupb10bundle.Load(goupb10bundle.Input{
 		Contracts: contracts, Base: loaded.Bundle,
-		Policy:    goprojectplacementadapter.Policy{Name: options.targetName, Revision: options.targetRevision, AllowedFidelity: allowed},
+		Policy:    goprojectplacementadapter.Policy{Name: options.targetName, Revision: options.targetRevision, RuleNamespace: options.ruleNamespace, AllowedFidelity: allowed},
 		Artifacts: goupb10bundle.Artifacts{Base: loaded.Bundle.Artifacts, TargetPlan: plan, ProjectV13: project, ProviderCatalog: catalog, LaunchManifest: launch, CanonicalVM: vmBytes, PulpCell: cellBytes},
 	})
 	if err != nil {

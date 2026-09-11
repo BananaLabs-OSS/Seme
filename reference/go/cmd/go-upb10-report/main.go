@@ -21,6 +21,7 @@ func main() {
 	var paths goupb10cmdload.Paths
 	paths.Bind(set)
 	name := set.String("target-name", "wasm32-pulp-go-host-v1", "target identity")
+	ruleNamespace := set.String("rule-namespace", "go-upb10", "placement rule identity namespace")
 	revision := set.Uint64("target-revision", 1, "target revision")
 	set.Parse(os.Args[1:])
 	if set.NArg() != 0 || *name == "" || *revision == 0 {
@@ -29,7 +30,7 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	loaded, err := goupb10cmdload.Load(ctx, paths, goprojectplacementadapter.Policy{Name: *name, Revision: *revision, AllowedFidelity: []targetplaninstance.Fidelity{targetplaninstance.Exact, targetplaninstance.NativeIsland}})
+	loaded, err := goupb10cmdload.Load(ctx, paths, goprojectplacementadapter.Policy{Name: *name, Revision: *revision, RuleNamespace: *ruleNamespace, AllowedFidelity: []targetplaninstance.Fidelity{targetplaninstance.Exact, targetplaninstance.NativeIsland}})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "go-upb10-report:", err)
 		os.Exit(1)

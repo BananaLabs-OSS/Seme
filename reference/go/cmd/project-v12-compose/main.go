@@ -21,6 +21,7 @@ import (
 	"seme.local/reference/godurablemanifest"
 	"seme.local/reference/goorderedtransportmanifest"
 	"seme.local/reference/goupb08bundle"
+	"seme.local/reference/goupb09bundle"
 	"seme.local/reference/projectv12instance"
 )
 
@@ -158,7 +159,11 @@ func run() error {
 	if e = projectv12instance.Validate(pi); e != nil {
 		return e
 	}
-	return publish(*v["out"], []named{{"controlled-effects-v1.seme", ci.Artifact}, {"project-v12.seme", pi.Composed}})
+	replay, e := goupb09bundle.EncodeReplayAuthority(model.Replay, model.Bounds)
+	if e != nil {
+		return e
+	}
+	return publish(*v["out"], []named{{"controlled-effects-v1.seme", ci.Artifact}, {"project-v12.seme", pi.Composed}, {"controlled-replay-v1.json", replay}})
 }
 
 type named struct {
