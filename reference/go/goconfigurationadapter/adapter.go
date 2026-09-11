@@ -45,6 +45,21 @@ type InputV8 struct {
 	Runtime     []RuntimeInputSelection
 	Units       []UnitSelection
 }
+
+// NeutralInputV8 resolves configuration for any language provider from the
+// canonical construction and authenticated Package v2/v4 authorities. Native
+// provider session metadata is deliberately absent: Package v2 owns names and
+// declarations after ingestion, regardless of the source language.
+type NeutralInputV8 struct {
+	CanonicalG1 []byte
+	Compile     Compile
+	Contracts   contractcatalog.ProjectContractSetV8
+	PackageV2   []byte
+	PackageV4   []byte
+	Fields      []FieldSelection
+	Runtime     []RuntimeInputSelection
+	Units       []UnitSelection
+}
 type Selection struct {
 	Fields  []FieldSelection
 	Runtime []RuntimeInputSelection
@@ -191,6 +206,19 @@ func Resolve(ctx context.Context, in Input) (Plan, error) {
 
 func ResolveV8(ctx context.Context, in InputV8) (Plan, error) {
 	core := coreInput{in.Session, in.CanonicalG1, in.Packages, in.Compile, in.PackageV2, in.PackageV4, in.Fields, in.Runtime, in.Units}
+	ev, err := authenticate(ctx, core, func() error { return packagev3instance.ValidateV4(in.Contracts, in.PackageV2, in.PackageV4) })
+	if err != nil {
+		return Plan{}, err
+	}
+	p, err := resolveCore(core, ev)
+	if err == nil {
+		Deterministic(&p)
+	}
+	return p, err
+}
+
+func ResolveNeutralV8(ctx context.Context, in NeutralInputV8) (Plan, error) {
+	core := coreInput{CanonicalG1: in.CanonicalG1, Compile: in.Compile, PackageV2: in.PackageV2, PackageV3: in.PackageV4, Fields: in.Fields, Runtime: in.Runtime, Units: in.Units}
 	ev, err := authenticate(ctx, core, func() error { return packagev3instance.ValidateV4(in.Contracts, in.PackageV2, in.PackageV4) })
 	if err != nil {
 		return Plan{}, err
