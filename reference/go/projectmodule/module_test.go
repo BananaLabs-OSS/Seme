@@ -54,8 +54,30 @@ func TestEmitV2ExtendsV1WithExactAncestryAndNeutralSources(t *testing.T) {
 			t.Fatalf("language/project-specific contamination %q", bad)
 		}
 	}
-	if err := EmitVersion(&bytes.Buffer{}, 13); err == nil {
+	if err := EmitVersion(&bytes.Buffer{}, 14); err == nil {
 		t.Fatal("accepted unknown version")
+	}
+}
+
+func TestEmitV13BindsExactV12AndTargetPlan(t *testing.T) {
+	var first, second bytes.Buffer
+	if err := EmitVersion(&first, 13); err != nil {
+		t.Fatal(err)
+	}
+	if err := EmitVersion(&second, 13); err != nil || !bytes.Equal(first.Bytes(), second.Bytes()) {
+		t.Fatal("nondeterministic v13")
+	}
+	for _, want := range []string{RevisionV13ID, "pc 1\n" + RevisionV12ID,
+		"0000000000000000000000000000e02d", "0000000000000000000000000000c000", "0000000000000000000000000000c001",
+		"0000000000000000000000000000e02c", "0000000000000000000000000000e2c0", "0000000000000000000000000000e2c1", "0000000000000000000000000000e2c2", "0000000000000000000000000000c014"} {
+		if !strings.Contains(first.String(), want) {
+			t.Fatalf("v13 missing %s", want)
+		}
+	}
+	for _, bad := range []string{"go_host", "pulp", "wasm", "workbench", "workshop", "ironclad"} {
+		if strings.Contains(strings.ToLower(first.String()), bad) {
+			t.Fatalf("target/product contamination %q", bad)
+		}
 	}
 }
 
