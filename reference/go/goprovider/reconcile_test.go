@@ -62,6 +62,18 @@ func TestProjectRenameBundlePublishesCompleteReingestedEvidence(t *testing.T) {
 	if !strings.Contains(string(updated), "model.Reading") {
 		t.Fatal("project was not renamed")
 	}
+	reopened, err := ReadReconciliationBundle(destination, provider)
+	if err != nil || reopened.Result.Revision != bundle.Result.Revision || reopened.Report.IdentityBindings[0].ID != target {
+		t.Fatalf("reopen=%#v err=%v", reopened, err)
+	}
+	manifestPath := filepath.Join(destination, reconciliationDirectory, "COMPLETE.sha256")
+	complete, _ := os.ReadFile(manifestPath)
+	if err = os.WriteFile(manifestPath, append(complete, 'x'), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = ReadReconciliationBundle(destination, provider); err == nil || !strings.Contains(err.Error(), "reconciliation_manifest") {
+		t.Fatalf("tampered completeness accepted: %v", err)
+	}
 }
 
 func writeFile(t *testing.T, root, name, contents string) {

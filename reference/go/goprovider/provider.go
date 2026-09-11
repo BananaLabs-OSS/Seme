@@ -922,6 +922,10 @@ func nativeFiles(project string) ([]NativeFile, map[string][]byte, error) {
 		if !strings.HasSuffix(relative, ".go") && relative != "go.mod" && relative != "go.sum" {
 			return nil
 		}
+		info, err := entry.Info()
+		if err != nil || entry.Type()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			return errors.New("provider.unsupported_source_entry")
+		}
 		b, err := os.ReadFile(path)
 		if err != nil {
 			return err
