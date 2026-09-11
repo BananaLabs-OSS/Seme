@@ -1,6 +1,6 @@
 # JavaScript UPB-08 acceptance design
 
-Status: accepted implementation design; unclaimed.
+Status: claimed 2026-09-11 by `scripts/check-javascript-upb-08.sh`.
 
 JavaScript UPB-08 extends the cumulative Project-v10 authority with native
 transport command/event records and two pure functions selected as dispatch and
