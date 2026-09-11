@@ -1,0 +1,31 @@
+{
+  "identity": "example.test/javascript-upb01",
+  "root_package": "example.test/javascript-upb01",
+  "packages": [
+    {
+      "name": "example.test/javascript-upb01",
+      "interfaces": [
+        {
+          "name": "Run",
+          "function": "804812f6b1c00836edee4b10ce8bcd86",
+          "parameters": [
+            "809e162c5f3c856abb00b3b86cd8ed3a",
+            "809e162c5f3c856abb00b3b86cd8ed3a"
+          ],
+          "result": "809e162c5f3c856abb00b3b86cd8ed3a"
+        },
+        {
+          "name": "Sum",
+          "function": "8071c3c582779537c8339c5dcbaf70a8",
+          "parameters": [
+            "809e162c5f3c856abb00b3b86cd8ed3a",
+            "809e162c5f3c856abb00b3b86cd8ed3a"
+          ],
+          "result": "809e162c5f3c856abb00b3b86cd8ed3a"
+        }
+      ],
+      "dependencies": [],
+      "effects": []
+    }
+  ]
+}
