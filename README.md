@@ -303,9 +303,9 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 26/36 (72.2%): bounded Go and JavaScript UPB-01 through UPB-11
-and Lua UPB-01 through UPB-04 are claimed. Go and JavaScript are each
-11/12 (91.7%); Lua is 4/12 (33.3%).
+is now 27/36 (75.0%): bounded Go and JavaScript UPB-01 through UPB-11
+and Lua UPB-01 through UPB-05 are claimed. Go and JavaScript are each
+11/12 (91.7%); Lua is 5/12 (41.7%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -433,6 +433,13 @@ and Package-v2 signatures retain the aggregate boundary without flattening the
 modules or translating through another language. The authenticated dependency
 chain, native/projected Lua, canonical evaluator, Wasm, and pinned Pulp agree;
 typed boundary failures reject. Run `./scripts/check-lua-upb-04.sh`.
+
+Lua UPB-05 binds typed defaults, validation, and the deterministic
+configuration-to-policy-to-application initialization graph through neutral
+Configuration v3 and Project v8. Lua record annotations are owned by the
+package graph and survive modular projection. Native Lua, canonical, canonical
+Wasm VM, and pinned Pulp agree; ambient environment access and invalid
+lifecycle dependencies reject. Run `./scripts/check-lua-upb-05.sh`.
 
 Go UPB-03 adds a resolved, integrity-pinned local-plus-ecosystem dependency
 closure, authenticates it with Project v4, and proves that it applies to the
