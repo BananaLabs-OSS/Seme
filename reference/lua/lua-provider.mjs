@@ -390,6 +390,7 @@ function controlExpressionType(expression, context) {
   if(expression.kind==="interface_value") {const implementation=context.implementations.get(expression.implementation);if(!implementation)fail("lua.interface_implementation",expression.location);return`interface:${implementation.protocol.id}:${implementation.protocol.name}`;}
   if(expression.kind==="protocol_call"){const receiver=controlExpressionType(expression.receiver,context);if(!receiver.startsWith("interface:"))fail("lua.protocol_call_receiver",expression.location);return"i64";}
   if(expression.kind==="map_lookup")return inferComposableExpression(expression,context);
+  if(expression.kind==="slice")return "slice:i64";
   if(expression.kind==="length"||expression.kind==="index")return "i64";
   if(expression.kind==="collection_append"||expression.kind==="collection_update"||expression.kind==="slice_remove"){const base=context.symbols.get(expression.base);if(!base||base.type!=="slice:i64")fail("lua.collection_argument_type",expression.location);return base.type;}
   if(expression.kind==="map_update"||expression.kind==="map_remove"){const base=context.symbols.get(expression.base);if(!base||!base.type.startsWith("map:"))fail("lua.map_argument_type",expression.location);return base.type;}
@@ -423,6 +424,11 @@ function emitControlExpression(expression, expected, context, path) {
   if(expression.kind==="length"){const base=emitControlExpression({kind:"identifier",name:expression.base,location:expression.location},"slice:i64",context,`${path}.collection`),id=stableID("execution",context.description.id,path,"length");context.additions.push(graphEntity(id,entity(id,schema.collectionLength,[[0x9f90,ref(base)]])));return id;}
   if (expression.kind === "boolean_boundary") return emitControlExpression({kind:"identifier",name:expression.name,location:expression.location}, expected, context, path);
   if(expression.kind==="bool_literal"){const id=stableID("execution",context.description.id,path,"bool-literal");context.additions.push(graphEntity(id,entity(id,schema.boolLiteral,[[0x9b00,expression.value?"tr":"fa"]])));return id;}
+  if(expression.kind==="slice"){
+    if(expected!=="slice:i64")fail("lua.slice_construct_type",expression.location);
+    const values=expression.arguments.map((name,index)=>emitControlExpression({kind:"identifier",name,location:expression.location},"i64",context,`${path}.item.${index}`)),id=stableID("execution",context.description.id,path,"slice");
+    context.additions.push(graphEntity(id,entity(id,schema.sliceConstruct,[[0xa0680,ref(typeID(expected))],[0xa0681,refs(values)]])));return id;
+  }
   if (expression.kind === "integer_literal") { const id = stableID("execution", context.description.id, path, "literal"); context.additions.push(graphEntity(id, entity(id, schema.integerLiteral, [[0x9700, `uu ${i64Word(expression.value,expression.location)}`], [0x9701, ref(ids.i64)]]))); return id; }
   if(expression.kind==="index"){const base=emitControlExpression({kind:"identifier",name:expression.base,location:expression.location},"slice:i64",context,`${path}.collection`),index=emitControlExpression({kind:"identifier",name:expression.index,location:expression.location},"i64",context,`${path}.index`),id=stableID("execution",context.description.id,path,"dynamic-index");context.additions.push(graphEntity(id,entity(id,schema.dynamicIndexRead,[[0x9fa0,ref(base)],[0x9fa1,ref(index)]])));return id;}
   if(expression.kind==="collection_append"||expression.kind==="collection_update"){
@@ -848,11 +854,10 @@ function emitExpression(expression, context, path) {
   if (callee.resultType !== context.description.resultType) fail("lua.call_result_type", expression.location);
   for (let index = 0; index < expression.arguments.length; index += 1) {
     const argument = expression.arguments[index];
-    if (argument.kind !== "identifier") fail("lua.call_argument_profile", argument.location);
-    const source = context.description.parameters.find((parameter) => parameter.name === argument.name);
-    if (!source || source.type !== callee.parameters[index].type) fail("lua.call_argument_type", argument.location);
+    const actual=argument.kind==="identifier"?context.description.parameters.find(parameter=>parameter.name===argument.name)?.type:argument.kind==="slice"?"slice:i64":null;
+    if (!actual || actual !== callee.parameters[index].type) fail("lua.call_argument_type", argument.location);
   }
-  const arguments_ = expression.arguments.map((item, index) => emitExpression(item, context, `${path}.argument.${index}`));
+  const arguments_ = expression.arguments.map((item, index) => emitExpression(item, {...context,description:{...context.description,resultType:callee.parameters[index].type}}, `${path}.argument.${index}`));
   const id = stableID("execution", context.description.id, "expression", path, "call");
   context.additions.push(graphEntity(id, entity(id, schema.call, [[0x9600, ref(callee.id)], [0x9601, refs(arguments_)]])));
   return id;
