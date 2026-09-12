@@ -1,0 +1,1 @@
+{"version":1,"root":"seme-lua-upb03@1.0.0-1","dependencies":[{"name":"seme-checksum","version":"1.2.3-1","source":"file:../lua-upb03-external-checksum","integrity":"sha256-27ba680f16b0fbb0624507c9fd23dbae1bbee3b444e9558be4760de787a96806"}]}
