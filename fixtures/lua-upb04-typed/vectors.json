@@ -1,0 +1,9 @@
+{"valid":[
+  {"name":"first","arguments":[{"kind":"i64","i64":"1"},{"kind":"i64","i64":"2"},{"kind":"i64","i64":"0"},{"kind":"i64","i64":"9"}],"result":{"kind":"i64","i64":"9"}},
+  {"name":"second","arguments":[{"kind":"i64","i64":"-1"},{"kind":"i64","i64":"7"},{"kind":"i64","i64":"1"},{"kind":"i64","i64":"-8"}],"result":{"kind":"i64","i64":"-8"}},
+  {"name":"boundary","arguments":[{"kind":"i64","i64":"-9223372036854775808"},{"kind":"i64","i64":"9223372036854775807"},{"kind":"i64","i64":"0"},{"kind":"i64","i64":"9223372036854775807"}],"result":{"kind":"i64","i64":"9223372036854775807"}}
+],"malformed":[
+  {"name":"negative-index","arguments":[{"kind":"i64","i64":"1"},{"kind":"i64","i64":"2"},{"kind":"i64","i64":"-1"},{"kind":"i64","i64":"3"}]},
+  {"name":"index-oob","arguments":[{"kind":"i64","i64":"1"},{"kind":"i64","i64":"2"},{"kind":"i64","i64":"2"},{"kind":"i64","i64":"3"}]},
+  {"name":"wrong-type","arguments":[{"kind":"bool","bool":true},{"kind":"i64","i64":"2"},{"kind":"i64","i64":"0"},{"kind":"i64","i64":"3"}]}
+]}

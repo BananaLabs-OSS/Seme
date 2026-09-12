@@ -1,0 +1,7 @@
+{
+  "identity":"example.test/lua-upb04","root_package":"example.test/lua-upb04/application",
+  "packages":[
+    {"name":"example.test/lua-upb04/application","interfaces":[{"name":"Run","function":"80444444444444444444444444444402","parameters":["809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a"],"result":"809e162c5f3c856abb00b3b86cd8ed3a"}],"dependencies":[{"Name":"policy.collections","Package":"example.test/lua-upb04/policy/collections"}],"effects":[]},
+    {"name":"example.test/lua-upb04/policy/collections","interfaces":[{"name":"ReplaceAndRead","function":"80444444444444444444444444444401","parameters":["80dec2d5a0fbf1cccfa189e452f0d024","809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a"],"result":"809e162c5f3c856abb00b3b86cd8ed3a"}],"dependencies":[],"effects":[]}
+  ]
+}
