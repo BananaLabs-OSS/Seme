@@ -4,9 +4,11 @@
 package upb12authority
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -101,6 +103,85 @@ func Publish(destination string, files map[string][]byte) error {
 	return nil
 }
 
+func Load(root string) (map[string][]byte, error) {
+	if !filepath.IsAbs(root) || filepath.Clean(root) != root {
+		return nil, fmt.Errorf("upb12_authority.root")
+	}
+	real, err := filepath.EvalSymlinks(root)
+	if err != nil || real != root {
+		return nil, fmt.Errorf("upb12_authority.symlink")
+	}
+	info, err := os.Lstat(root)
+	if err != nil || !info.IsDir() {
+		return nil, fmt.Errorf("upb12_authority.root")
+	}
+	manifest, err := readStable(filepath.Join(root, "COMPLETE.sha256"))
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(manifest), "\n")
+	if len(lines) < 3 || lines[len(lines)-1] != "" || lines[0] != Header {
+		return nil, fmt.Errorf("upb12_authority.manifest")
+	}
+	lines = lines[1 : len(lines)-1]
+	files := map[string][]byte{}
+	prior := ""
+	for _, line := range lines {
+		parts := strings.Split(line, " ")
+		if len(parts) != 2 || !validName(parts[0]) || len(parts[1]) != 64 || parts[0] <= prior {
+			return nil, fmt.Errorf("upb12_authority.manifest")
+		}
+		prior = parts[0]
+		value, readErr := readStable(filepath.Join(root, filepath.FromSlash(parts[0])))
+		if readErr != nil {
+			return nil, readErr
+		}
+		sum := sha256.Sum256(value)
+		if hex.EncodeToString(sum[:]) != parts[1] {
+			return nil, fmt.Errorf("upb12_authority.digest")
+		}
+		if strings.HasPrefix(parts[0], "blobs/") && strings.TrimPrefix(parts[0], "blobs/") != parts[1] {
+			return nil, fmt.Errorf("upb12_authority.blob")
+		}
+		files[parts[0]] = value
+	}
+	want, err := Manifest(files)
+	if err != nil || !bytes.Equal(want, manifest) {
+		return nil, fmt.Errorf("upb12_authority.manifest")
+	}
+	count := 0
+	err = filepath.WalkDir(root, func(name string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if name == root {
+			return nil
+		}
+		relative, _ := filepath.Rel(root, name)
+		relative = filepath.ToSlash(relative)
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("upb12_authority.symlink")
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		if !entry.Type().IsRegular() {
+			return fmt.Errorf("upb12_authority.special")
+		}
+		if relative != "COMPLETE.sha256" {
+			if _, ok := files[relative]; !ok {
+				return fmt.Errorf("upb12_authority.undeclared")
+			}
+		}
+		count++
+		return nil
+	})
+	if err != nil || count != len(files)+1 {
+		return nil, fmt.Errorf("upb12_authority.closure")
+	}
+	return clone(files), nil
+}
+
 func Manifest(files map[string][]byte) ([]byte, error) {
 	if len(files) == 0 {
 		return nil, fmt.Errorf("upb12_authority.empty")
@@ -145,4 +226,32 @@ func clone(in map[string][]byte) map[string][]byte {
 		out[name] = append([]byte(nil), value...)
 	}
 	return out
+}
+func readStable(name string) ([]byte, error) {
+	real, err := filepath.EvalSymlinks(name)
+	if err != nil || real != name {
+		return nil, fmt.Errorf("upb12_authority.symlink")
+	}
+	before, err := os.Lstat(name)
+	if err != nil || !before.Mode().IsRegular() || before.Size() <= 0 || before.Size() > 64<<20 {
+		return nil, fmt.Errorf("upb12_authority.regular")
+	}
+	f, err := os.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	opened, err := f.Stat()
+	if err != nil || !os.SameFile(before, opened) {
+		return nil, fmt.Errorf("upb12_authority.changed")
+	}
+	value, err := io.ReadAll(io.LimitReader(f, 64<<20+1))
+	if err != nil || int64(len(value)) != opened.Size() {
+		return nil, fmt.Errorf("upb12_authority.changed")
+	}
+	after, err := os.Lstat(name)
+	if err != nil || !os.SameFile(before, after) || before.Size() != after.Size() || !before.ModTime().Equal(after.ModTime()) {
+		return nil, fmt.Errorf("upb12_authority.changed")
+	}
+	return value, nil
 }
