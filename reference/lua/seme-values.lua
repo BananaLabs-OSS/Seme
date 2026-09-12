@@ -9,6 +9,7 @@ function Seme.boolean(value)
   if type(value) ~= "boolean" then error("seme.expected_boolean", 2) end
   return value
 end
+Seme.bool_literal = Seme.boolean
 
 local function freeze(kind, value)
   local proxy = newproxy(true)
