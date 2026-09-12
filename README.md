@@ -303,9 +303,9 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 28/36 (77.8%): bounded Go and JavaScript UPB-01 through UPB-11
-and Lua UPB-01 through UPB-06 are claimed. Go and JavaScript are each
-11/12 (91.7%); Lua is 6/12 (50.0%).
+is now 29/36 (80.6%): bounded Go and JavaScript UPB-01 through UPB-11
+and Lua UPB-01 through UPB-07 are claimed. Go and JavaScript are each
+11/12 (91.7%); Lua is 7/12 (58.3%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
