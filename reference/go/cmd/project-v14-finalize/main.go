@@ -41,6 +41,12 @@ func main() {
 	resultPlacement := set.String("result-placement", "", "result Project-v13 placement")
 	resultSelection := set.String("result-selection", "", "result configuration selection")
 	reconciliation := set.String("reconciliation", "", "reconciled native project")
+	language := set.String("language", "javascript", "source provider language")
+	projectIdentity := set.String("project-identity", "example.test/javascript-upb05", "project semantic identity")
+	targetName := set.String("target-name", "wasm32-pulp-javascript-host-v1", "target policy name")
+	ruleNamespace := set.String("rule-namespace", "javascript-upb10", "target realization namespace")
+	reconciliationLabel := set.String("reconciliation-label", "seme-javascript-reconciliation-v1", "metadata manifest label")
+	identityEvidenceRequired := set.Bool("identity-evidence-required", true, "require provider identity evidence")
 	patchContract := set.String("patch", "", "Patch-v1 contract")
 	languageService := set.String("language-service", "", "Language Service-v1 contract")
 	projectV14 := set.String("project-v14", "", "Project-v14 contract")
@@ -51,7 +57,7 @@ func main() {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	defer cancel()
-	policy := goprojectplacementadapter.Policy{Name: "wasm32-pulp-javascript-host-v1", Revision: 1, RuleNamespace: "javascript-upb10", AllowedFidelity: []targetplaninstance.Fidelity{targetplaninstance.Exact, targetplaninstance.NativeIsland}}
+	policy := goprojectplacementadapter.Policy{Name: *targetName, Revision: 1, RuleNamespace: *ruleNamespace, AllowedFidelity: []targetplaninstance.Fidelity{targetplaninstance.Exact, targetplaninstance.NativeIsland}}
 	prior, err := goupb10cmdload.Load(ctx, paths, policy)
 	if err != nil {
 		fatal(fmt.Errorf("prior:%w", err))
@@ -65,23 +71,24 @@ func main() {
 		fatal(fmt.Errorf("result:%w", err))
 	}
 	metadata := filepath.Join(*reconciliation, ".seme-reconciliation-v1")
-	identityEvidence := mustRead(filepath.Join(metadata, "identity-evidence.json"))
 	reportBytes := mustRead(filepath.Join(metadata, "projection-report.json"))
 	priorG1 := mustRead(filepath.Join(metadata, "prior-provider.g1"))
 	resultG1 := mustRead(filepath.Join(metadata, "result-provider.g1"))
 	transcript := mustRead(filepath.Join(metadata, "native-validation.txt"))
 	artifacts := map[string][]byte{
-		"identity-evidence.json": identityEvidence,
 		"native-validation.txt":  transcript,
 		"prior-provider.g1":      priorG1,
 		"projection-report.json": reportBytes,
 		"result-provider.g1":     resultG1,
 	}
-	if !bytes.Equal(mustRead(filepath.Join(metadata, "COMPLETE.sha256")), reconciliationManifest(artifacts)) {
+	if *identityEvidenceRequired {
+		artifacts["identity-evidence.json"] = mustRead(filepath.Join(metadata, "identity-evidence.json"))
+	}
+	if !bytes.Equal(mustRead(filepath.Join(metadata, "COMPLETE.sha256")), reconciliationManifest(*reconciliationLabel, artifacts)) {
 		fatal("reconciliation_manifest")
 	}
 	var edit report
-	if json.Unmarshal(reportBytes, &edit) != nil || edit.Version != 1 || edit.Language != "javascript" || edit.Project != "example.test/javascript-upb05" || edit.ClientRevision < 2 || len(edit.Occurrences) < 2 {
+	if json.Unmarshal(reportBytes, &edit) != nil || edit.Version != 1 || edit.Language != *language || edit.Project != *projectIdentity || edit.ClientRevision < 2 || len(edit.Occurrences) < 2 {
 		fatal("reconciliation_report")
 	}
 	if !bytes.Equal(priorG1, prior.Bundle.Artifacts.Base.Base.Base.Construction) || !bytes.Equal(resultG1, result.Bundle.Artifacts.Base.Base.Base.Construction) {
@@ -134,13 +141,13 @@ func main() {
 	publish(*out, map[string][]byte{"patch-v1.seme": patch, "project-v14.seme": project, "native-validation.txt": transcript, "projection-report.json": reportBytes})
 }
 
-func reconciliationManifest(artifacts map[string][]byte) []byte {
+func reconciliationManifest(label string, artifacts map[string][]byte) []byte {
 	names := make([]string, 0, len(artifacts))
 	for name := range artifacts {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	manifest := []byte("seme-javascript-reconciliation-v1\n")
+	manifest := []byte(label + "\n")
 	for _, name := range names {
 		digest := sha256.Sum256(artifacts[name])
 		manifest = append(manifest, []byte(name+" "+hex.EncodeToString(digest[:])+"\n")...)

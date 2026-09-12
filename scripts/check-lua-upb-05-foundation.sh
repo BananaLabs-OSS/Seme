@@ -1,9 +1,9 @@
 #!/bin/sh
 set -eu
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd);fixture="$repo/fixtures/lua-upb05-configuration";project=example.test/lua-upb05;work=$(mktemp -d "${TMPDIR:-/tmp}/seme-lua-upb05.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd);fixture=${LUA_UPB_FIXTURE:-"$repo/fixtures/lua-upb05-configuration"};project=${LUA_UPB_PROJECT:-example.test/lua-upb05};revision=${LUA_UPB_REVISION:-1};work=$(mktemp -d "${TMPDIR:-/tmp}/seme-lua-upb05.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM
 GOCACHE="$work/go-cache";XDG_CACHE_HOME="$work/cache";export GOCACHE XDG_CACHE_HOME
 (cd "$repo/reference/go"&&for command in project-source-discover project-assemble source-inventory-emit package-detail-emit package-v4-upgrade dependency-emit project-v8-compose go-upb05-configure;do go build -buildvcs=false -o "$work/$command" "./cmd/$command";done)
-provider(){ node "$repo/reference/lua/lua-provider-cli.mjs" --source "$1/application.lua" --source "$1/configuration.lua" --source "$1/controlled.lua" --source "$1/policy.lua" --source "$1/state.lua" --source "$1/transport.lua" --module "$repo/modules/execution/v36/module.g1" --package "$project" --revision 1 --entry Run --out "$2"; }
+provider(){ node "$repo/reference/lua/lua-provider-cli.mjs" --source "$1/application.lua" --source "$1/configuration.lua" --source "$1/controlled.lua" --source "$1/policy.lua" --source "$1/state.lua" --source "$1/transport.lua" --module "$repo/modules/execution/v36/module.g1" --package "$project" --revision "$revision" --entry Run --out "$2"; }
 provider "$fixture" "$work/construction.g1";"$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" "$work/construction.g1" "$work/execution.seme"
 "$work/project-source-discover" -root "$fixture" -identity "$project" -language lua -toolchain "$(nvim --version|sed -n '1p')" -profile seme.lua-upb05/v1 -semantic-revision seme.lua-provider/upb05 -tracked-extensions .lua -generated-header '-- Code generated' -out "$work/snapshot.json"
 (cd "$fixture"&&node "$repo/reference/lua/lua-project-graph-cli.mjs" --files application.lua,configuration.lua,controlled.lua,policy.lua,state.lua,transport.lua --snapshot "$work/snapshot.json" --canonical-g1 "$work/construction.g1" --project "$project" --root-module application.lua --out "$work/graph.json")

@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd);fixture="$repo/fixtures/lua-upb05-configuration";work=$(mktemp -d "${TMPDIR:-/tmp}/seme-lua-upb07.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM;GOCACHE="$work/go-cache";XDG_CACHE_HOME="$work/cache";export GOCACHE XDG_CACHE_HOME
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd);fixture=${LUA_UPB_FIXTURE:-"$repo/fixtures/lua-upb05-configuration"};work=$(mktemp -d "${TMPDIR:-/tmp}/seme-lua-upb07.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM;GOCACHE="$work/go-cache";XDG_CACHE_HOME="$work/cache";export GOCACHE XDG_CACHE_HOME
 LUA_UPB06_EXPORT="$work/prior" "$repo/scripts/check-lua-upb-06-foundation.sh"
 "$repo/scripts/check-durable-state-v1.sh";"$repo/scripts/check-source-presentation-v1.sh";"$repo/scripts/check-project-contract-v10.sh"
 (cd "$repo/reference/go"&&go test -count=1 ./godurablemanifest ./godurableadapter ./durableinstance ./presentationinstance ./projectv10instance ./cmd/project-v10-compose&&go build -buildvcs=false -o "$work/compose" ./cmd/project-v10-compose)
