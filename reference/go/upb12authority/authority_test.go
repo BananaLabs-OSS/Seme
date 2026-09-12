@@ -1,6 +1,8 @@
 package upb12authority
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,10 @@ func TestManifestAndAtomicPublication(t *testing.T) {
 	if err = Publish(out, files); err != nil {
 		t.Fatal(err)
 	}
+	loaded, err := Load(out)
+	if err != nil || string(loaded[Required[0]]) != string(files[Required[0]]) {
+		t.Fatal(err)
+	}
 	if got, err := os.ReadFile(filepath.Join(out, "COMPLETE.sha256")); err != nil || string(got) != string(manifest) {
 		t.Fatal(err)
 	}
@@ -26,7 +32,9 @@ func TestManifestAndAtomicPublication(t *testing.T) {
 	}
 }
 func fixtureFiles() map[string][]byte {
-	files := map[string][]byte{"blobs/" + strings.Repeat("0", 64): []byte("blob")}
+	blob := []byte("blob")
+	sum := sha256.Sum256(blob)
+	files := map[string][]byte{"blobs/" + hex.EncodeToString(sum[:]): blob}
 	for _, name := range Required {
 		files[name] = []byte(name)
 	}
@@ -39,5 +47,34 @@ func TestRejectsNativeAndEscapingArtifacts(t *testing.T) {
 		if _, err := Manifest(files); err == nil {
 			t.Fatalf("accepted %q", name)
 		}
+	}
+}
+
+func TestLoadRejectsTamperAndUndeclaredFiles(t *testing.T) {
+	for _, kind := range []string{"tamper", "undeclared", "symlink"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			out := filepath.Join(root, "authority")
+			if err := Publish(out, fixtureFiles()); err != nil {
+				t.Fatal(err)
+			}
+			switch kind {
+			case "tamper":
+				if err := os.WriteFile(filepath.Join(out, Required[0]), []byte("changed"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "undeclared":
+				if err := os.WriteFile(filepath.Join(out, "extra.json"), []byte("{}"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "symlink":
+				if err := os.Symlink(filepath.Join(out, Required[0]), filepath.Join(out, "alias.seme")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if value, err := Load(out); err == nil || value != nil {
+				t.Fatalf("accepted %s", kind)
+			}
+		})
 	}
 }
