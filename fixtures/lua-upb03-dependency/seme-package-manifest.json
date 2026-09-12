@@ -1,0 +1,7 @@
+{
+  "identity":"example.test/lua-upb03","root_package":"example.test/lua-upb03/application",
+  "packages":[
+    {"name":"example.test/lua-upb03/application","interfaces":[{"name":"Run","function":"80333333333333333333333333333303","parameters":["809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a"],"result":"809e162c5f3c856abb00b3b86cd8ed3a"}],"dependencies":[{"Name":"math.sum","Package":"example.test/lua-upb03/math/sum"}],"effects":[]},
+    {"name":"example.test/lua-upb03/math/sum","interfaces":[{"name":"Sum","function":"80333333333333333333333333333302","parameters":["809e162c5f3c856abb00b3b86cd8ed3a","809e162c5f3c856abb00b3b86cd8ed3a"],"result":"809e162c5f3c856abb00b3b86cd8ed3a"}],"dependencies":[],"effects":[]}
+  ]
+}
