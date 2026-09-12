@@ -303,9 +303,9 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 23/36 (63.9%): bounded Go and JavaScript UPB-01 through UPB-11
-and Lua UPB-01 are claimed. Go and JavaScript are each 11/12 (91.7%);
-Lua is 1/12 (8.3%).
+is now 24/36 (66.7%): bounded Go and JavaScript UPB-01 through UPB-11
+and Lua UPB-01 through UPB-02 are claimed. Go and JavaScript are each
+11/12 (91.7%); Lua is 2/12 (16.7%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
@@ -412,6 +412,13 @@ fresh native Lua project, preserves every nonsemantic byte contract, executes
 identically under Neovim's Lua runtime, and re-lifts to identical canonical
 bytes. Digest drift, symlinks, malformed graphs, denied capabilities, and
 publication collisions reject atomically. Run `./scripts/check-lua-upb-01.sh`.
+
+Lua UPB-02 imports ordinary static `require` modules without placing Lua module
+mechanics in Core. Package v2 retains module ownership, returned-table exports,
+private members, import bindings, source locations, and canonical signatures;
+Project v3 authenticates the graph. Projection recreates the native module tree
+and exact canonical re-lift, while native Lua, canonical, Wasm, and pinned Pulp
+observations agree. Run `./scripts/check-lua-upb-02.sh`.
 
 Go UPB-03 adds a resolved, integrity-pinned local-plus-ecosystem dependency
 closure, authenticates it with Project v4, and proves that it applies to the
