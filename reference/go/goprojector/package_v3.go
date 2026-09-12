@@ -40,6 +40,24 @@ func ProjectPackagesV4(g1 []byte, contracts contractcatalog.ProjectContractSetV8
 	return ProjectPackagesV4WithAliases(g1, contracts, packageV2, packageV4, nil)
 }
 
+// OwnershipV4 returns the complete language-neutral ownership authenticated by
+// Package-v4. Native project layout is deliberately not part of this model.
+func OwnershipV4(contracts contractcatalog.ProjectContractSetV8, packageV2, packageV4 []byte) (RichPackageOwnership, error) {
+	if err := packagev3instance.ValidateV4(contracts, packageV2, packageV4); err != nil {
+		return RichPackageOwnership{}, fmt.Errorf("go_projection.package_v4:%w", err)
+	}
+	e, err := wire.Decode(packageV4)
+	if err != nil {
+		return RichPackageOwnership{}, err
+	}
+	ownership, err := richOwnershipV3(e)
+	if err != nil {
+		return RichPackageOwnership{}, err
+	}
+	NormalizeRichPackageOwnership(&ownership)
+	return ownership, nil
+}
+
 func ProjectPackagesV4WithAliases(g1 []byte, contracts contractcatalog.ProjectContractSetV8, packageV2, packageV4 []byte, aliases []AliasPresentation) (map[string][]byte, error) {
 	if err := packagev3instance.ValidateV4(contracts, packageV2, packageV4); err != nil {
 		return nil, fmt.Errorf("go_projection.package_v4:%w", err)
