@@ -209,8 +209,10 @@ function Seme.record(type_name, field_names, values)
   if type(type_name) ~= "string" or type(field_names) ~= "table" or type(values) ~= "table" then error("seme.invalid_record", 2) end
   local fields, seen = {}, {}
   for index, name in ipairs(field_names) do
-    if type(name) ~= "string" or seen[name] or (storage[values[name]] == nil and type(values[name]) ~= "boolean") then error("seme.invalid_record_field", 2) end
-    seen[name], fields[index] = true, { name = name, value = values[name] }
+    local value = values[name]
+    if type(name) ~= "string" or seen[name] or (storage[value] == nil and type(value) ~= "boolean" and type(value) ~= "string") then error("seme.invalid_record_field", 2) end
+    if type(value) == "string" then value = freeze("text", value) end
+    seen[name], fields[index] = true, { name = name, value = value }
   end
   for name in pairs(values) do if not seen[name] then error("seme.extra_record_field", 2) end end
   return freeze("record", { type_name = type_name, fields = fields })
