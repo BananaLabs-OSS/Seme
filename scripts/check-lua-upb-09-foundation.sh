@@ -1,6 +1,6 @@
 #!/bin/sh
 set -eu
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.."&&pwd);fixture="$repo/fixtures/lua-upb05-configuration";work=$(mktemp -d "${TMPDIR:-/tmp}/seme-lua-upb09.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM;GOCACHE="$work/go-cache";XDG_CACHE_HOME="$work/cache";export GOCACHE XDG_CACHE_HOME
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.."&&pwd);fixture=${LUA_UPB_FIXTURE:-"$repo/fixtures/lua-upb05-configuration"};work=$(mktemp -d "${TMPDIR:-/tmp}/seme-lua-upb09.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM;GOCACHE="$work/go-cache";XDG_CACHE_HOME="$work/cache";export GOCACHE XDG_CACHE_HOME
 LUA_UPB08_EXPORT="$work/prior" "$repo/scripts/check-lua-upb-08-foundation.sh"
 "$repo/scripts/check-controlled-effects-v1.sh";"$repo/scripts/check-project-contract-v12.sh"
 (cd "$repo/reference/go"&&go test -p=1 -count=1 ./gocontrolledeffectsmanifest ./gocontrolledeffectsadapter ./controlledeffectsinstance ./projectv12instance ./cmd/project-v12-compose&&go build -buildvcs=false -o "$work/compose" ./cmd/project-v12-compose)
