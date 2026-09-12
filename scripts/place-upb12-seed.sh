@@ -1,0 +1,14 @@
+#!/bin/sh
+# Place one authenticated Project-v12 seed under the neutral UPB12 target.
+set -eu
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.."&&pwd);base=${1:?Project-v12 bundle required};inputs=${2:?selection root required};destination=${3:?new placement required}
+test -d "$base";test -d "$inputs";test ! -e "$destination";work=$(mktemp -d "${TMPDIR:-/tmp}/seme-upb12-place.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM;GOCACHE="$work/go-cache";export GOCACHE
+(cd "$repo/reference/go"&&go build -buildvcs=false -o "$work/place" ./cmd/go-upb10-place&&go build -buildvcs=false -o "$work/report" ./cmd/go-upb10-report&&GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -buildvcs=false -o "$work/canonical-vm.wasm" ./cmd/canonical-wasm-cell)
+cp "$repo/targets/wasm/pulp-canonical-vm-v1/pulp.cell.toml" "$work/pulp.cell.toml"
+common(){ "$@" -bundle "$base" -selection "$inputs/configuration-selection.json" -durable-selection "$inputs/durable-selection.json" -transport-selection "$inputs/transport-selection.json" -effects-selection "$inputs/controlled-effects-selection.json" -foundation "$repo/modules/foundation/v1/module.seme" -execution "$repo/modules/execution/v36/module.seme" -package "$repo/modules/package/v4/module.seme" -dependency "$repo/modules/dependency/v1/module.seme" -configuration "$repo/modules/configuration/v3/module.seme" -resource "$repo/modules/resource/v1/module.seme" -durable-state "$repo/modules/durable-state/v1/module.seme" -source-presentation "$repo/modules/source-presentation/v1/module.seme" -ordered-transport "$repo/modules/ordered-transport/v1/module.seme" -controlled-effects "$repo/modules/controlled-effects/v1/module.seme" -target "$repo/modules/target/v1/module.seme" -project-v8 "$repo/modules/project/v8/module.seme" -project-v9 "$repo/modules/project/v9/module.seme" -project-v10 "$repo/modules/project/v10/module.seme" -project-v11 "$repo/modules/project/v11/module.seme" -project-v12 "$repo/modules/project/v12/module.seme" -project-v13 "$repo/modules/project/v13/module.seme" -k0 "$repo/bootstrap/seme-k0-linux-amd64" -g1-compiler "$repo/compiler/g1-compiler.k0" -target-name wasm32-pulp-upb12-host-v1 -rule-namespace upb12;}
+common "$work/place" -canonical-vm "$work/canonical-vm.wasm" -pulp-cell "$work/pulp.cell.toml" -out "$destination"
+common "$work/report" -placement "$destination" >"$work/report.json";cmp "$work/report.json" "$destination/placement-report.json"
+node - "$work/report.json" <<'NODE'
+const r=JSON.parse(require("fs").readFileSync(process.argv[2]));if(!r.executable||r.target_name!=="wasm32-pulp-upb12-host-v1"||r.fidelities.impossible!==0||r.fidelities.adapted!==0||r.fidelities.emulated!==0||r.fidelities.embedded_runtime!==0||r.fidelities.refined!==0||r.fidelities.native_island!==4||r.boundary_count!==4||r.requirement_count!==r.fidelities.exact+4)throw new Error("upb12 placement report");
+NODE
+printf 'UPB12 neutral Project-v13 placement passes\n'
