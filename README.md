@@ -303,14 +303,19 @@ versioned conformance tracks.
 
 That bounded application profile is complete at 36/36. The separate
 [`Useful Project Bridge Profile v1`](spec/useful-project-bridge-profile-v1.md)
-is now 33/36 (91.7%): bounded Go, JavaScript, and Lua UPB-01 through
-UPB-11 are claimed. Each language is 11/12 (91.7%).
+is now complete at 36/36 (100%): bounded Go, JavaScript, and Lua UPB-01
+through UPB-12 are claimed. Each language is 12/12 (100%).
 The profile measures complete
 project snapshots, package and dependency closures, resources, configuration,
 service boundaries, build placement, and project-scale reconciliation using
 seven evidence classes. Its shape-only baseline is reported by
 `./scripts/check-upb-v1-scorecard.sh`; a future score may advance only through
-authoritative project gates. Downstream products, including Workbench, remain
+authoritative project gates. The shared UPB-12 gate projects one source-free
+canonical project independently into ordinary Go, JavaScript, and Lua, executes
+4,096 observations through all native projections, canonical Seme, standalone
+Wasm, and pinned Pulp, and proves one convergent Project-v14 semantic edit.
+Run `./scripts/check-upb12-shared.sh`. Downstream products, including
+Workbench, remain
 external consumers and cannot add product-specific behavior to Seme.
 
 JavaScript UPB-01 lifts an ordinary multi-file ES-module project directly into

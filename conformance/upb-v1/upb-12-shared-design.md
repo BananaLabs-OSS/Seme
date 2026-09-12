@@ -1,6 +1,6 @@
 # Shared UPB-12 acceptance design
 
-Status: accepted implementation design; unclaimed.
+Status: claimed by `scripts/check-upb12-shared.sh`.
 
 UPB-12 is one cross-language claim, not three unrelated demonstrations. One
 canonical project authority is the source of meaning. Go, JavaScript, and Lua
@@ -73,4 +73,3 @@ evidence. A mixed-language deployment is additional evidence only.
    three languages simultaneously.
 5. Exercise the resulting language service and project authority from a bounded
    external Workbench consumer without adding Workbench concepts to Seme.
-
