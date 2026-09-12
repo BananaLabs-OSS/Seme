@@ -1,0 +1,2 @@
+import fs from "node:fs";import path from "node:path";import {projectLuaModules} from "./lua-module-projector.mjs";
+if(process.argv.length!==5)throw new Error("usage: lua-module-projector-cli CANONICAL GRAPH OUT");const output=projectLuaModules(fs.readFileSync(process.argv[2],"utf8"),JSON.parse(fs.readFileSync(process.argv[3],"utf8")));fs.mkdirSync(process.argv[4],{recursive:true});for(const[name,source]of Object.entries(output)){const target=path.join(process.argv[4],name);fs.mkdirSync(path.dirname(target),{recursive:true});fs.writeFileSync(target,source,{flag:"wx"});}
