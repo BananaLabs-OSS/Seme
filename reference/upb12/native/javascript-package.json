@@ -1,0 +1,1 @@
+{"name":"seme-upb12-service-projection","private":true,"type":"module","scripts":{"test":"node native-test.mjs"}}

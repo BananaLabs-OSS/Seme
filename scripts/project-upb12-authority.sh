@@ -21,5 +21,10 @@ node "$repo/reference/lua/lua-module-projector-cli.mjs" "$authority/construction
 cp "$work/javascript-graph.json" "$stage/javascript/package-graph.json"
 cp "$work/lua-graph.json" "$stage/lua/package-graph.json"
 cp "$repo/reference/lua/seme-values.lua" "$stage/lua/seme-values.lua"
+mkdir -p "$stage/go/controlled"
+cp "$repo/reference/upb12/native/go-controlled-test.go" "$stage/go/controlled/upb12_native_test.go"
+cp "$repo/reference/upb12/native/javascript-native-test.mjs" "$stage/javascript/native-test.mjs"
+cp "$repo/reference/upb12/native/javascript-package.json" "$stage/javascript/package.json"
+cp "$repo/reference/upb12/native/lua-native-test.lua" "$stage/lua/native-test.lua"
 mv -T -n "$stage" "$destination";test ! -e "$stage";published=true
 printf 'UPB12 projected one authority into Go, JavaScript, and Lua native module trees\n'
