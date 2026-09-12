@@ -2,7 +2,7 @@
 # Construct the neutral cumulative service once, remove its native source, and
 # publish the authenticated source-free authority consumed by every projector.
 set -eu
-repo=$(CDPATH= cd -- "$(dirname -- "$0")/.."&&pwd);destination=${1:?new authority destination required};test ! -e "$destination"
+repo=$(CDPATH= cd -- "$(dirname -- "$0")/.."&&pwd);destination=${1:?new authority destination required};export_destination=${2:-};test ! -e "$destination";test -z "$export_destination"||test ! -e "$export_destination"
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-upb12-seed.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM;GOCACHE="$work/go-cache";export GOCACHE
 cp -R "$repo/fixtures/javascript-upb05-configuration" "$work/bootstrap"
 sed -i 's#example\.test/javascript-upb05#seme.upb12/service#g' "$work/bootstrap/configuration-selection.json" "$work/bootstrap/controlled-effects-selection.json" "$work/bootstrap/durable-selection.json" "$work/bootstrap/resources.json" "$work/bootstrap/transport-selection.json"
@@ -17,3 +17,4 @@ node --input-type=module - "$repo/reference/js/upb12-descriptor.mjs" "$repo/conf
 const{verifyUPB12Descriptor}=await import(process.argv[2]);const report=verifyUPB12Descriptor(process.argv[3],process.argv[4]);process.stdout.write(`UPB12 neutral seed: ${report.packages.length} canonical packages, ${report.artifacts} source-free artifacts\n`);
 NODE
 parent=$(dirname "$destination");test "$(cd "$parent"&&pwd -P)" = "$parent";mv -T -n "$work/authority" "$destination";test ! -e "$work/authority"
+if test -n "$export_destination";then export_parent=$(dirname "$export_destination");test "$(cd "$export_parent"&&pwd -P)" = "$export_parent";mv -T -n "$work/export" "$export_destination";test ! -e "$work/export";fi
