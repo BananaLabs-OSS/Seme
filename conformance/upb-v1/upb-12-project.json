@@ -1,0 +1,23 @@
+{
+  "version": "seme.upb12-project/v1",
+  "identity": "seme.upb12/service",
+  "description": "Deterministic bounded command service projected from one canonical authority",
+  "logical_packages": [
+    {"role":"domain","canonical_packages":["application","configuration","policy","controlled"]},
+    {"role":"durable","canonical_packages":["state"]},
+    {"role":"transport","canonical_packages":["transport"]}
+  ],
+  "entry": {"package":"controlled","command":"DispatchControlled","replay":"ReplayControlled"},
+  "configuration": {"typed":true,"deterministic_order":true,"initialization":"InitializeConfig"},
+  "resources": [
+    {"identity":"seme.upb12/service/resource.marker.v1","media_type":"application/octet-stream","size":8,"sha256":"247632bca93a2c19ec3212589dea38aa5a681ae910abdba4c8dce9b054c518ca"},
+    {"identity":"seme.upb12/service/resource.notice.v1","media_type":"text/plain; charset=utf-8","size":26,"sha256":"8a9796d8ef50b6b34bf659586a0926cb45caf59c4c77cb5635bf85940ca105fc"}
+  ],
+  "durable_state": {"port":"compare-exchange","versioned":true,"migration_count":1},
+  "transport": {"framed":true,"ordered":true,"replay":true},
+  "controlled_effects": {"clock":"injected","randomness":"seeded","capability":"observability.log"},
+  "semantic_edit": {"kind":"rename","expected":"InitializePolicy","replacement":"BuildPolicy","client_revision":2},
+  "target": {"name":"wasm32-pulp-upb12-host-v1","rule_namespace":"upb12"},
+  "minimum_generated_observations": 4096,
+  "native_projections": ["go","javascript","lua"]
+}
