@@ -1,0 +1,9 @@
+{"valid":[
+  {"name":"enabled","arguments":[{"kind":"bool","bool":true},{"kind":"i64","i64":"8"}],"result":{"kind":"i64","i64":"16"}},
+  {"name":"disabled","arguments":[{"kind":"bool","bool":false},{"kind":"i64","i64":"8"}],"result":{"kind":"i64","i64":"8"}},
+  {"name":"negative","arguments":[{"kind":"bool","bool":true},{"kind":"i64","i64":"-3"}],"result":{"kind":"i64","i64":"-6"}},
+  {"name":"wrap","arguments":[{"kind":"bool","bool":true},{"kind":"i64","i64":"9223372036854775807"}],"result":{"kind":"i64","i64":"-2"}}
+],"malformed":[
+  {"name":"wrong-enabled","arguments":[{"kind":"i64","i64":"1"},{"kind":"i64","i64":"8"}]},
+  {"name":"wrong-limit","arguments":[{"kind":"bool","bool":true},{"kind":"text","text":"8"}]}
+]}

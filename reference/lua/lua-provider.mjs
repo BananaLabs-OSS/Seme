@@ -636,6 +636,7 @@ function splitGenericArguments(value, location) {
 
 function parseExpression(text, file, line) {
   text=text.trim();
+  if(text==="true"||text==="false")return{kind:"bool_literal",value:text==="true",location:{file,line,column:1}};
   const explicitClosure=/^Seme\.(mutable_closure|closure)\((.*),\s*function\(([A-Za-z_]\w*),\s*([A-Za-z_]\w*)\)\s*return\s*(.*)\s*end\)$/.exec(text);if(explicitClosure)return{kind:"canonical_closure",mutable:explicitClosure[1]==="mutable_closure",initial:parseExpression(explicitClosure[2],file,line),capture:explicitClosure[3],parameter:explicitClosure[4],body:parseExpression(explicitClosure[5],file,line),location:{file,line,column:1}};
   const boxed=/^Seme\.box_protocol\(\s*([A-Za-z_]\w*)\s*,\s*(.*)\)$/.exec(text);if(boxed)return{kind:"interface_value",implementation:boxed[1],value:parseExpression(boxed[2],file,line),location:{file,line,column:1}};
   const protocolCall=/^Seme\.protocol_call\((.*)\)$/.exec(text);if(protocolCall){const values=splitCallArguments(protocolCall[1],file,line);if(values.length!==3)fail("lua.protocol_call_arity",{file,line,column:1});const requirement=/^"([A-Za-z_]\w*)"$/.exec(values[1]);if(!requirement)fail("lua.protocol_call_requirement",{file,line,column:1});return{kind:"protocol_call",receiver:parseExpression(values[0],file,line),requirement:requirement[1],arguments:[parseExpression(values[2],file,line)],location:{file,line,column:1}};}
@@ -649,6 +650,8 @@ function parseExpression(text, file, line) {
   if (scalarDispatch) return { kind: "protocol_dispatch_value", condition: scalarDispatch[1], whenFalse: scalarDispatch[2], whenTrue: scalarDispatch[3], requirement: scalarDispatch[4], receiver: scalarDispatch[5], argument: scalarDispatch[6], location: { file, line, column: 1 } };
   const booleanBoundary = /^Seme\.boolean\(([A-Za-z_][A-Za-z0-9_]*)\)$/.exec(text);
   if (booleanBoundary) return { kind:"boolean_boundary", name:booleanBoundary[1], location:{file,line,column:1} };
+  const booleanLiteral=/^Seme\.bool_literal\((true|false)\)$/.exec(text);
+  if(booleanLiteral)return{kind:"bool_literal",value:booleanLiteral[1]==="true",location:{file,line,column:1}};
   const andAt = findTopLevelOperator(text, " and ");
   if (andAt >= 0) return { kind: "boolean_and", left: parseExpression(text.slice(0, andAt), file, line), right: parseExpression(text.slice(andAt + 5), file, line), location: { file, line, column: 1 } };
   const orAt = findTopLevelOperator(text, " or ");
@@ -834,6 +837,9 @@ function emitExpression(expression, context, path) {
     const id = stableID("execution", context.description.id, "expression", path, "integer-literal");
     context.additions.push(graphEntity(id, entity(id, schema.integerLiteral, [[0x9700, `uu ${i64Word(expression.value,expression.location)}`], [0x9701, ref(ids.i64)]])));
     return id;
+  }
+  if(expression.kind==="bool_literal"){
+    if(context.description.resultType!=="bool")fail("lua.bool_literal_result_type",expression.location);const id=stableID("execution",context.description.id,"expression",path,"bool-literal");context.additions.push(graphEntity(id,entity(id,schema.boolLiteral,[[0x9b00,expression.value?"tr":"fa"]])));return id;
   }
   if (expression.kind === "text_literal") {
     if (context.description.resultType !== "text") fail("lua.text_literal_result_type", expression.location);
@@ -1072,6 +1078,7 @@ function emitConstructor(expression, context, path) {
 function splitResult(type) {
   const parts = type.slice("result:".length).split(":");
   if(parts[0]==="transition"&&parts.length===5)return[parts.slice(0,4).join(":"),parts[4]];
+  if(parts[0]==="record"&&parts.length===4)return[parts.slice(0,3).join(":"),parts[3]];
   if (parts.length !== 2) fail("lua.nested_result_profile");
   return parts;
 }

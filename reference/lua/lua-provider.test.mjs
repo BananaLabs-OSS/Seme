@@ -178,7 +178,7 @@ test("lifts and projects structural total Option/Result/bytes matching", () => {
 test("rejects non-total or unscoped composite matching", () => {
   const module = fs.readFileSync(new URL("../../modules/execution/v32/module.g1", import.meta.url), "utf8");
   const source = `---@param value seme.option<seme.result<seme.bytes,seme.text>>\n---@return boolean\nfunction Check(value)\n  return Seme.match_option(value, false, function(some) return true end)\nend`;
-  assert.throws(() => liftLua({ sources: [{ name: "partial.lua", source }], moduleG1: module, packagePath: "example.test/lua-partial", revision: 1, entryName: "Check" }), /lua\.unknown_identifier:partial\.lua:4:1/);
+  assert.throws(() => liftLua({ sources: [{ name: "partial.lua", source }], moduleG1: module, packagePath: "example.test/lua-partial", revision: 1, entryName: "Check" }), /lua\.match_arm_expression:partial\.lua:4:1/);
 });
 
 test("lifts and projects explicit immutable v33 collection mutations", () => {
