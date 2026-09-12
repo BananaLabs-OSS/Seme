@@ -4,6 +4,7 @@
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 prior=${1:?prior source-free authority required}; result=${2:?result source-free authority required}
+evidence_destination=${3:-}; test -z "$evidence_destination" || test ! -e "$evidence_destination"
 work=$(mktemp -d "${TMPDIR:-/tmp}/seme-upb12-convergence.XXXXXX"); trap 'rm -rf "$work"' EXIT HUP INT TERM
 GOCACHE="$work/go-cache"; XDG_CACHE_HOME="$work/cache"; export GOCACHE XDG_CACHE_HOME
 target=807557c5737cee0105a083f3608c7d07
@@ -24,4 +25,18 @@ for language in go javascript lua; do cmp "$result/construction-v36.g1" "$work/$
 "$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" "$prior/construction-v36.g1" "$work/prior.seme"
 "$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" "$result/construction-v36.g1" "$work/result.seme"
 "$work/revision-verify" -prior "$work/prior.seme" -result "$work/result.seme" -target "$target" -expected InitializePolicy -replacement BuildPolicy
+if test -n "$evidence_destination"; then
+  mkdir "$work/evidence" "$work/evidence/.seme-reconciliation-v1"
+  cp "$prior/construction-v36.g1" "$work/evidence/.seme-reconciliation-v1/prior-provider.g1"
+  cp "$result/construction-v36.g1" "$work/evidence/.seme-reconciliation-v1/result-provider.g1"
+  result_digest=$(sha256sum "$result/construction-v36.g1" | cut -d ' ' -f 1)
+  printf 'seme-upb12-shared-native-validation-v1\nlanguages go,javascript,lua\nobservations 4096\ncanonical_sha256 %s\n' "$result_digest" > "$work/evidence/.seme-reconciliation-v1/native-validation.txt"
+  node - "$work/evidence/.seme-reconciliation-v1/projection-report.json" "$target" <<'NODE'
+const fs=require("fs"),target=process.argv[3];fs.writeFileSync(process.argv[2],JSON.stringify({version:1,Language:"shared",Project:"seme.upb12/service",client_revision:2,Target:target,Field:"00000000000000000000000000009110",Expected:"InitializePolicy",Replacement:"BuildPolicy",Occurrences:[{language:"go"},{language:"javascript"},{language:"lua"}]})+"\n");
+NODE
+  node - "$work/evidence/.seme-reconciliation-v1" <<'NODE'
+const fs=require("fs"),crypto=require("crypto"),root=process.argv[2],names=["native-validation.txt","prior-provider.g1","projection-report.json","result-provider.g1"].sort();let out="seme-upb12-shared-reconciliation-v1\n";for(const name of names)out+=`${name} ${crypto.createHash("sha256").update(fs.readFileSync(`${root}/${name}`)).digest("hex")}\n`;fs.writeFileSync(`${root}/COMPLETE.sha256`,out);
+NODE
+  evidence_parent=$(dirname "$evidence_destination"); test "$(cd "$evidence_parent" && pwd -P)" = "$evidence_parent"; mv -T -n "$work/evidence" "$evidence_destination"; test ! -e "$work/evidence"
+fi
 printf 'UPB12 revision convergence: Go, JavaScript, and Lua native edits recover one exact canonical revision\n'
