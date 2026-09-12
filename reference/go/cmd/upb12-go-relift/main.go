@@ -24,8 +24,9 @@ func main() {
 	configuration := flag.String("configuration", "", "Configuration contract")
 	project := flag.String("project", "", "Project-v8 contract")
 	out := flag.String("out", "", "new canonical G1")
+	nativeTest := flag.String("native-test", "", "trusted projected native test")
 	flag.Parse()
-	if flag.NArg() != 0 || *authority == "" || *projectRoot == "" || *module == "" || *out == "" {
+	if flag.NArg() != 0 || *authority == "" || *projectRoot == "" || *module == "" || *nativeTest == "" || *out == "" {
 		fatal("arguments")
 	}
 	files, err := upb12authority.Load(*authority)
@@ -90,6 +91,14 @@ func main() {
 	})
 	if err != nil || len(want) != 0 {
 		fatal(fmt.Errorf("project:%w:missing=%d", err, len(want)))
+	}
+	gotTest, err := strictRead(filepath.Join(*projectRoot, "controlled", "upb12_native_test.go"))
+	if err != nil {
+		fatal(err)
+	}
+	wantTest, err := strictRead(*nativeTest)
+	if err != nil || !bytes.Equal(gotTest, wantTest) {
+		fatal("native_test")
 	}
 	if !filepath.IsAbs(*out) || filepath.Clean(*out) != *out {
 		fatal("output")
