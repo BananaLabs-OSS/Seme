@@ -1,0 +1,6 @@
+#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+import {reconcileLuaProject} from "./lua-project-reconcile.mjs";
+const args=parse(process.argv.slice(2));reconcileLuaProject({project:path.resolve(required(args,"project")),destination:path.resolve(required(args,"out")),projectPath:required(args,"project-path"),files:list(required(args,"files")),structuredReferences:list(args.get("structured-references")??""),moduleG1:path.resolve(required(args,"module")),entryName:required(args,"entry"),target:required(args,"target"),expected:required(args,"expected"),replacement:required(args,"replacement"),revision:Number(required(args,"revision")),baseRevision:required(args,"base-revision"),nativeRunner:path.resolve(required(args,"native-runner")),nativeAdapter:path.resolve(required(args,"native-adapter"))});
+function parse(values){const out=new Map();for(let i=0;i<values.length;i+=2){if(!values[i]?.startsWith("--")||values[i+1]===undefined)throw Error("lua_reconcile_cli.arguments");out.set(values[i].slice(2),values[i+1]);}return out;}function required(args,key){const value=args.get(key);if(!value)throw Error(`lua_reconcile_cli.${key}`);return value;}function list(value){return value?value.split(","):[];}

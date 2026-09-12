@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+import path from "node:path";
+import {readLuaReconciliation} from "./lua-project-reconcile.mjs";
+const args=parse(process.argv.slice(2)),result=readLuaReconciliation({project:path.resolve(required(args,"project")),projectPath:required(args,"project-path"),files:list(required(args,"files")),structuredReferences:list(args.get("structured-references")??""),moduleG1:path.resolve(required(args,"module")),entryName:required(args,"entry"),nativeRunner:path.resolve(required(args,"native-runner")),nativeAdapter:path.resolve(required(args,"native-adapter"))});process.stdout.write(`${JSON.stringify(result.report,null,2)}\n`);
+function parse(values){const out=new Map();for(let i=0;i<values.length;i+=2){if(!values[i]?.startsWith("--")||values[i+1]===undefined)throw Error("lua_reconcile_verify.arguments");out.set(values[i].slice(2),values[i+1]);}return out;}function required(args,key){const value=args.get(key);if(!value)throw Error(`lua_reconcile_verify.${key}`);return value;}function list(value){return value?value.split(","):[];}
