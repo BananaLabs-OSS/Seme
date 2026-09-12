@@ -1,6 +1,6 @@
 # Seme progress dashboard
 
-Snapshot: 2026-09-12 after the bounded Lua UPB-11 project-reconciliation proof.
+Snapshot: 2026-09-12 after the shared UPB-12 cumulative project proof.
 
 Percentages answer different questions and must not be conflated:
 
@@ -12,7 +12,7 @@ Percentages answer different questions and must not be conflated:
 | Bounded Go/JavaScript semantic bridge | about 82% | Estimate for the deliberately supported, tested language subset—not either complete language. |
 | Useful small-application subset | about 75% | Estimate against the semantics needed for modest deterministic applications. |
 | Useful Application Bridge Profile v1 | 36/36 cells (100%) | UAB-01 through UAB-11 pass all five evidence classes independently for Go, JavaScript, and Lua. UAB-12 projects one shared application into all three languages, requires byte-identical re-lift, and passes 2,048 observations through native, canonical, Wasm, and pinned-Pulp realizations. This is 100% of the frozen bounded profile, not complete language support. |
-| Useful Project Bridge Profile v1 | 33/36 cells (91.7%); Go 11/12 (91.7%); JavaScript 11/12 (91.7%); Lua 11/12 (91.7%) | Go, JavaScript, and Lua UPB-01 through UPB-11 each pass all seven mapped evidence classes. |
+| Useful Project Bridge Profile v1 | 36/36 cells (100%); Go 12/12; JavaScript 12/12; Lua 12/12 | One source-free canonical six-package project independently projects, tests, and exactly re-lifts in all three ecosystems. A 4,096-case corpus agrees across native, canonical, Wasm, and pinned Pulp; one identity-bound edit converges on a shared Project-v14 revision; twin publications and atomic adversaries pass. |
 | Go UPB-02 package graph | complete for the bounded profile | Package v2 and Project v3 commit full membership, native visibility, import bindings, aliases, source ownership, spans, and digests. The production three-package pipeline, strict projection, authenticated report, native/canonical/Wasm/Pulp parity, deterministic re-lift, and fail-closed adversaries pass. |
 | Go UPB-03 dependency closure | complete for the bounded profile | Dependency v1 and Project v4 commit a pinned local-plus-ecosystem closure with integrity and source evidence. Go applicability binds it to the exact package edge, source inventory, and `go.mod`; offline repeat, projection, native/canonical/Wasm/Pulp parity, and fail-closed adversaries pass. External dependency calls remain outside this cell. |
 | Go UPB-04 typed package behavior | complete for the bounded profile | Package v3 and Project v5 authenticate complete declaration ownership and typed local cross-package calls. The three-package cumulative application passes 2,048 canonical/Wasm/Pulp observations, native projection, exact semantic re-lift, deterministic reporting, and fail-closed adversaries. Ecosystem calls remain unclaimed. |
