@@ -166,8 +166,9 @@ and use the same provider, patch, target-contract, and conformance boundaries.
 
 ## 7. Useful Project Bridge v1
 
-Status: 9/36 cells (25%); Go UPB-01 through UPB-09 pass all seven evidence
-classes, placing the Go column at 9/12 (75%).
+Status: complete at 36/36 cells (100%); Go, JavaScript, and Lua each pass
+UPB-01 through UPB-12 with all seven evidence classes. This is completion of
+the finite bounded profile, not complete support for any of those languages.
 
 The completed UAB-v1 proves a bounded application semantic vocabulary. It does
 not by itself prove that Seme can preserve an ordinary project's source closure,
@@ -274,3 +275,17 @@ sampling and effect delivery remain an authenticated Go host boundary; ambient
 Pulp time/entropy substitutions reject. Deterministic bundles, a real
 canonical replay, source-free ordinary-Go projection, exact semantic re-lift,
 and atomic adversaries pass.
+
+UPB-10 through UPB-12 complete the bounded project bridge with explicit target
+placement, native-island boundaries, project-scale semantic revision, and one
+shared cumulative six-package authority. The shared project independently
+projects to ordinary Go, JavaScript, and Lua, re-lifts exactly through its
+source-bound projection contracts, and produces 4,096 matching observations
+across all native projections, canonical Seme, standalone Wasm, and pinned
+Pulp. One identity-bound edit in every projection converges on the same
+Project-v14 revision. See `progress-dashboard.md` for the per-language details
+and `../conformance/upb-v1/upb-12-shared.md` for the cumulative evidence.
+
+`../scripts/check-upb-v1-claimed.sh` derives all 34 unique authoritative gates
+from the checked evidence mapping, executes each once, and revalidates the
+36-cell score. No hand-maintained subset is accepted as the complete runner.
