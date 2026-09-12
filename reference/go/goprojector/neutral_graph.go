@@ -53,6 +53,15 @@ func ProjectionGraphV4(g1 []byte, contracts contractcatalog.ProjectContractSetV8
 	if err = ValidateRichPackageOwnership(g1, ownership); err != nil {
 		return ProjectionGraph{}, err
 	}
+	// A synthetic Go family package is native realization mechanics. Structural
+	// JavaScript and Lua projections keep their native result representation.
+	filtered := ownership.Packages[:0]
+	for _, p := range ownership.Packages {
+		if p.Name != "seme_runtime" {
+			filtered = append(filtered, p)
+		}
+	}
+	ownership.Packages = filtered
 	entities, err := parse(g1)
 	if err != nil {
 		return ProjectionGraph{}, err
