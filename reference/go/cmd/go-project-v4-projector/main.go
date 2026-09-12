@@ -107,7 +107,12 @@ func run(args []string) error {
 	if err != nil {
 		return err
 	}
-	projected, err := goprojector.ProjectPackagesV4(g1, contracts, p2, p4)
+	var projected map[string][]byte
+	if *authority != "" {
+		projected, err = goprojector.ProjectPackagesV4Universal(g1, contracts, p2, p4)
+	} else {
+		projected, err = goprojector.ProjectPackagesV4(g1, contracts, p2, p4)
+	}
 	if err != nil {
 		return err
 	}

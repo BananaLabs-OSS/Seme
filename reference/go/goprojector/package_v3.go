@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"sort"
+	"strings"
 
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/packagev3instance"
@@ -72,6 +73,33 @@ func ProjectPackagesV4WithAliases(g1 []byte, contracts contractcatalog.ProjectCo
 	}
 	NormalizeRichPackageOwnership(&ownership)
 	return ProjectPackagesRichWithAliases(g1, ownership, aliases)
+}
+
+// ProjectPackagesV4Universal adapts structural source-language type references
+// to Go imports. Original Package-v4 call dependencies are validated before
+// the target-only type closure is added, so missing semantic call edges cannot
+// be hidden by this realization step.
+func ProjectPackagesV4Universal(g1 []byte, contracts contractcatalog.ProjectContractSetV8, packageV2, packageV4 []byte) (map[string][]byte, error) {
+	ownership, err := OwnershipV4(contracts, packageV2, packageV4)
+	if err != nil {
+		return nil, err
+	}
+	if err = ValidateRichPackageOwnership(g1, ownership); err != nil {
+		return nil, err
+	}
+	for index := range ownership.Packages {
+		seen := map[string]bool{}
+		for _, dependency := range ownership.Packages[index].Dependencies {
+			seen[dependency] = true
+		}
+		for _, candidate := range ownership.Packages {
+			if candidate.Identity != ownership.Packages[index].Identity && !seen[candidate.Identity] {
+				ownership.Packages[index].Dependencies = append(ownership.Packages[index].Dependencies, candidate.Identity)
+			}
+		}
+		sort.Strings(ownership.Packages[index].Dependencies)
+	}
+	return ProjectPackagesRich(g1, ownership)
 }
 
 func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
@@ -146,6 +174,7 @@ func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
 		out.Packages = append(out.Packages, p)
 	}
 	families := map[string]OwnedFamily{}
+	familyOwners := map[string]map[string]bool{}
 	items := e.Entities[complete[0]].Fields[wid("b291")].List
 	for _, v := range items {
 		q := e.Entities[v.Reference]
@@ -179,12 +208,48 @@ func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
 			default:
 				return RichPackageOwnership{}, fmt.Errorf("go_projection.package_v3_family_schema")
 			}
-			if prior, ok := families[fk]; ok && (prior.Package != owner || prior.Name != fn) {
-				return RichPackageOwnership{}, fmt.Errorf("go_projection.package_v3_family_owner")
+			if prior, ok := families[fk]; ok {
+				if prior.Name != fn {
+					return RichPackageOwnership{}, fmt.Errorf("go_projection.package_v3_family_name")
+				}
+				// Structural source languages may reference the same canonical
+				// family from several packages. Go still needs one physical generic
+				// declaration owner; selecting the least canonical package identity
+				// is deterministic target realization, not additional Core meaning.
+				if prior.Package < owner {
+					owner = prior.Package
+				}
 			}
 			families[fk] = OwnedFamily{Kind: fk, Package: owner, Name: fn}
+			if familyOwners[fk] == nil {
+				familyOwners[fk] = map[string]bool{}
+			}
+			familyOwners[fk][packageNames[pid]] = true
 		default:
 			return RichPackageOwnership{}, fmt.Errorf("go_projection.package_v3_kind")
+		}
+	}
+	multiple := false
+	for kind, owners := range familyOwners {
+		if len(owners) > 1 {
+			multiple = true
+			family := families[kind]
+			family.Package = syntheticRuntimePackage(out.Packages)
+			families[kind] = family
+		}
+	}
+	if multiple {
+		runtime := syntheticRuntimePackage(out.Packages)
+		for _, p := range out.Packages {
+			if p.Identity == runtime {
+				return RichPackageOwnership{}, fmt.Errorf("go_projection.package_v3_runtime_collision")
+			}
+		}
+		out.Packages = append(out.Packages, RichPackage{Identity: runtime, Name: "seme_runtime"})
+		for index := range out.Packages {
+			if out.Packages[index].Identity != runtime {
+				out.Packages[index].Dependencies = append(out.Packages[index].Dependencies, runtime)
+			}
 		}
 	}
 	for _, f := range families {
@@ -192,6 +257,30 @@ func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
 	}
 	NormalizeRichPackageOwnership(&out)
 	return out, nil
+}
+
+func syntheticRuntimePackage(packages []RichPackage) string {
+	if len(packages) == 0 {
+		return "seme_runtime"
+	}
+	parts := strings.Split(packages[0].Identity, "/")
+	for _, p := range packages[1:] {
+		other := strings.Split(p.Identity, "/")
+		n := len(parts)
+		if len(other) < n {
+			n = len(other)
+		}
+		i := 0
+		for i < n && parts[i] == other[i] {
+			i++
+		}
+		parts = parts[:i]
+	}
+	base := strings.Join(parts, "/")
+	if base == "" {
+		return "seme_runtime"
+	}
+	return base + "/seme_runtime"
 }
 
 func withWireSchema(e wire.Envelope, s wire.ID) []wire.ID {
