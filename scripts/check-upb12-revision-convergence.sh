@@ -18,10 +18,16 @@ cmp "$work/edited-go/SEME-EDIT.json" "$work/edited-javascript/SEME-EDIT.json"; c
 env XDG_DATA_HOME="$work/lua-data" XDG_STATE_HOME="$work/lua-state" XDG_CACHE_HOME="$work/lua-cache" nvim --clean -u NONE -n --headless -l "$work/edited-lua/native-test.lua" "$work/edited-lua"
 (cd "$repo/reference/go" && go build -buildvcs=false -o "$work/go-relift" ./cmd/upb12-go-relift && go build -buildvcs=false -o "$work/revision-verify" ./cmd/upb12-revision-verify)
 # shellcheck disable=SC2086 -- fixed repository-owned contract flags.
-"$work/go-relift" -authority "$result" -project-root "$work/edited-go" -module seme.upb12/service $contracts -out "$work/go.g1"
+"$work/go-relift" -authority "$result" -project-root "$work/edited-go" -module seme.upb12/service -native-test "$repo/reference/upb12/native/go-controlled-test.go" $contracts -out "$work/go.g1"
 node "$repo/reference/js/upb12-native-relift-cli.mjs" --authority "$result" --graph "$work/result/javascript/package-graph.json" --project "$work/edited-javascript" --language javascript --out "$work/javascript.g1"
 node "$repo/reference/js/upb12-native-relift-cli.mjs" --authority "$result" --graph "$work/result/lua/package-graph.json" --project "$work/edited-lua" --language lua --out "$work/lua.g1"
 for language in go javascript lua; do cmp "$result/construction-v36.g1" "$work/$language.g1"; done
+# Native-test bytes are part of the projection boundary, not unauthenticated
+# decoration. A forged test must not be able to certify altered source.
+cp -R "$work/edited-go" "$work/tampered-go"; printf '\n// forged\n' >> "$work/tampered-go/controlled/upb12_native_test.go"
+if "$work/go-relift" -authority "$result" -project-root "$work/tampered-go" -module seme.upb12/service -native-test "$repo/reference/upb12/native/go-controlled-test.go" $contracts -out "$work/tampered-go.g1" > "$work/tampered-go.out" 2> "$work/tampered-go.err"; then echo 'UPB12 accepted a forged Go native test' >&2; exit 1; fi
+test ! -e "$work/tampered-go.g1"; test ! -s "$work/tampered-go.out"
+for language in javascript lua; do cp -R "$work/edited-$language" "$work/tampered-$language"; if test "$language" = javascript; then test_file=native-test.mjs; graph="$work/result/javascript/package-graph.json"; else test_file=native-test.lua; graph="$work/result/lua/package-graph.json"; fi; printf '\n-- forged\n' >> "$work/tampered-$language/$test_file"; if node "$repo/reference/js/upb12-native-relift-cli.mjs" --authority "$result" --graph "$graph" --project "$work/tampered-$language" --language "$language" --out "$work/tampered-$language.g1" > "$work/tampered-$language.out" 2> "$work/tampered-$language.err"; then echo "UPB12 accepted a forged $language native test" >&2; exit 1; fi; test ! -e "$work/tampered-$language.g1"; test ! -s "$work/tampered-$language.out"; done
 "$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" "$prior/construction-v36.g1" "$work/prior.seme"
 "$repo/bootstrap/seme-k0-linux-amd64" "$repo/compiler/g1-compiler.k0" "$result/construction-v36.g1" "$work/result.seme"
 "$work/revision-verify" -prior "$work/prior.seme" -result "$work/result.seme" -target "$target" -expected InitializePolicy -replacement BuildPolicy
