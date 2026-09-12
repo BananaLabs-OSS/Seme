@@ -7,7 +7,8 @@ export const UPB12_REQUIRED=Object.freeze([
   "construction-v36.g1","execution-v36.seme","package-detail-v4.seme","package-v4.seme",
   "dependency-v1.seme","configuration-v3.seme","resource-v1.seme","durable-state-v1.seme",
   "source-presentation-v1.seme","ordered-transport-v1.seme","controlled-effects-v1.seme",
-  "project-v12.seme","target-plan-v1.seme","project-v13.seme",
+  "project-v12.seme","target-plan-v1.seme","project-v13.seme","controlled-replay-v1.json",
+  "configuration-selection-v1.json","durable-selection-v1.json","transport-selection-v1.json","effects-selection-v1.json",
 ]);
 const canonicalName=/^(?:[a-z0-9]+(?:-[a-z0-9]+)*\.(?:g1|seme|json)|blobs\/[0-9a-f]{64})$/;
 
