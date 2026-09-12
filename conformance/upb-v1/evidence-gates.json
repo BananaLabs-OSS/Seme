@@ -108,6 +108,10 @@
     "lua/UPB-05": {
       "gate": "scripts/check-lua-upb-05.sh",
       "evidence": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"]
+    },
+    "lua/UPB-06": {
+      "gate": "scripts/check-lua-upb-06.sh",
+      "evidence": ["native_project", "project_lift", "canonical_parity", "resolution_fidelity", "target_parity", "project_round_trip", "atomic_rejection"]
     }
   }
 }
