@@ -23,8 +23,9 @@ type Paths struct {
 }
 
 type Result struct {
-	Bundle    goupb10bundle.Result
-	Placement goupb10bundle.PlacementFiles
+	Bundle                                                                         goupb10bundle.Result
+	Placement                                                                      goupb10bundle.PlacementFiles
+	ConfigurationSelection, DurableSelection, TransportSelection, EffectsSelection []byte
 }
 
 func (paths *Paths) Bind(set *flag.FlagSet) {
@@ -55,7 +56,8 @@ func Load(ctx context.Context, paths Paths, policy goprojectplacementadapter.Pol
 	if err != nil {
 		return Result{}, err
 	}
-	return Result{Bundle: bundle, Placement: placement}, nil
+	clone := func(value []byte) []byte { return append([]byte(nil), value...) }
+	return Result{Bundle: bundle, Placement: placement, ConfigurationSelection: clone(base.ConfigurationSelection), DurableSelection: clone(base.DurableSelection), TransportSelection: clone(base.TransportSelection), EffectsSelection: clone(base.EffectsSelection)}, nil
 }
 
 func ResolveContracts(paths Paths) (contractcatalog.ProjectContractSetV13, error) {
