@@ -14,6 +14,7 @@ import (
 
 	"seme.local/reference/contractcatalog"
 	"seme.local/reference/goprojector"
+	"seme.local/reference/upb12authority"
 )
 
 func main() {
@@ -29,6 +30,7 @@ func run(args []string) error {
 	construction := f.String("construction", "", "canonical construction G1")
 	packageDetail := f.String("package-detail", "", "Package-v2 detail authority")
 	packageV4 := f.String("package-v4", "", "Package-v4 authority")
+	authority := f.String("authority", "", "closed source-free UPB12 authority")
 	module := f.String("module", "", "Go module identity")
 	out := f.String("out", "", "new project directory")
 	foundation := f.String("foundation", "", "Foundation-v1 contract")
@@ -40,11 +42,15 @@ func run(args []string) error {
 	if err := f.Parse(args); err != nil || f.NArg() != 0 {
 		return fmt.Errorf("arguments")
 	}
-	values := []*string{construction, packageDetail, packageV4, module, out, foundation, execution, packages, dependency, configuration, project}
+	values := []*string{module, out, foundation, execution, packages, dependency, configuration, project}
 	for _, value := range values {
 		if *value == "" {
 			return fmt.Errorf("arguments")
 		}
+	}
+	nativeArtifactsComplete := *construction != "" && *packageDetail != "" && *packageV4 != ""
+	if (*authority == "" && !nativeArtifactsComplete) || (*authority != "" && (*construction != "" || *packageDetail != "" || *packageV4 != "")) {
+		return fmt.Errorf("authority_or_artifacts")
 	}
 	if strings.TrimSpace(*module) != *module || strings.HasPrefix(*module, "/") || strings.HasSuffix(*module, "/") || strings.Contains(*module, "..") {
 		return fmt.Errorf("module")
@@ -66,17 +72,29 @@ func run(args []string) error {
 		}
 		return value, nil
 	}
-	g1, err := read(*construction)
-	if err != nil {
-		return err
-	}
-	p2, err := read(*packageDetail)
-	if err != nil {
-		return err
-	}
-	p4, err := read(*packageV4)
-	if err != nil {
-		return err
+	var g1, p2, p4 []byte
+	if *authority != "" {
+		if *construction != "" || *packageDetail != "" || *packageV4 != "" {
+			return fmt.Errorf("authority_or_artifacts")
+		}
+		files, e := upb12authority.Load(*authority)
+		if e != nil {
+			return e
+		}
+		g1, p2, p4 = files["construction-v36.g1"], files["package-detail-v4.seme"], files["package-v4.seme"]
+	} else {
+		g1, err = read(*construction)
+		if err != nil {
+			return err
+		}
+		p2, err = read(*packageDetail)
+		if err != nil {
+			return err
+		}
+		p4, err = read(*packageV4)
+		if err != nil {
+			return err
+		}
 	}
 	contractsRaw := make([][]byte, 6)
 	for index, path := range []string{*foundation, *execution, *packages, *dependency, *configuration, *project} {
