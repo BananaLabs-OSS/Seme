@@ -81,6 +81,12 @@ func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
 		return RichPackageOwnership{}, fmt.Errorf("go_projection.package_v3_graph")
 	}
 	packageNames := map[wire.ID]string{}
+	root := wire.ID{}
+	for _, q := range e.Entities {
+		if q.Schema == wid("e011") {
+			root = q.Fields[wid("e113")].Reference
+		}
+	}
 	for x, q := range e.Entities {
 		if q.Schema == wid("b010") {
 			v := q.Fields[wid("b100")]
@@ -104,7 +110,7 @@ func richOwnershipV3(e wire.Envelope) (RichPackageOwnership, error) {
 			return RichPackageOwnership{}, fmt.Errorf("go_projection.package_v3_package_identity")
 		}
 		detailPackage[d.ID] = pid
-		p := RichPackage{Identity: identity, Name: name}
+		p := RichPackage{Identity: identity, Name: name, Root: pid == root}
 		dependencies := map[string]bool{}
 		for _, iv := range d.Fields[wid("b212")].List {
 			binding := e.Entities[iv.Reference]

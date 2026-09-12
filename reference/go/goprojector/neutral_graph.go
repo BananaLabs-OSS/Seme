@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"seme.local/reference/contractcatalog"
-	"seme.local/reference/packagedetailmetadata"
 )
 
 // ProjectionGraph is the source-layout-neutral ownership view consumed by the
@@ -54,14 +53,6 @@ func ProjectionGraphV4(g1 []byte, contracts contractcatalog.ProjectContractSetV8
 	if err = ValidateRichPackageOwnership(g1, ownership); err != nil {
 		return ProjectionGraph{}, err
 	}
-	detail, err := packagedetailmetadata.Extract(packageV2)
-	if err != nil {
-		return ProjectionGraph{}, err
-	}
-	roots := map[string]bool{}
-	for _, p := range detail.Packages {
-		roots[p.Projection.Name] = p.Projection.Root
-	}
 	entities, err := parse(g1)
 	if err != nil {
 		return ProjectionGraph{}, err
@@ -94,7 +85,7 @@ func ProjectionGraphV4(g1 []byte, contracts contractcatalog.ProjectContractSetV8
 	}
 	var out ProjectionGraph
 	for _, p := range ownership.Packages {
-		item := ProjectionPackage{Identity: p.Identity, Root: roots[p.Identity], Sources: []ProjectionSource{{Path: files[p.Identity]}}, Members: []ProjectionMember{}, Imports: []ProjectionImport{}, Effects: []string{}}
+		item := ProjectionPackage{Identity: p.Identity, Root: p.Root, Sources: []ProjectionSource{{Path: files[p.Identity]}}, Members: []ProjectionMember{}, Imports: []ProjectionImport{}, Effects: []string{}}
 		imports := map[string]ProjectionImport{}
 		for _, d := range byPackage[p.Identity] {
 			item.Members = append(item.Members, ProjectionMember{Identity: d.ID, Name: d.Name, ExportName: func() string {
