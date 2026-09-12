@@ -1,0 +1,2 @@
+import fs from "node:fs";import {reliftUPB12Native}from"./upb12-native-relift.mjs";
+const options=new Map();for(let i=2;i<process.argv.length;i+=2)options.set(process.argv[i],process.argv[i+1]);for(const key of["--authority","--graph","--project","--language","--out"])if(!options.has(key))throw new Error(`upb12_native_relift.missing:${key}`);const value=reliftUPB12Native({authorityRoot:options.get("--authority"),graphPath:options.get("--graph"),projectRoot:options.get("--project"),language:options.get("--language")});fs.writeFileSync(options.get("--out"),value,{flag:"wx"});
