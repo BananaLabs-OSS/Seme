@@ -18,6 +18,7 @@ type RichPackageOwnership struct {
 type RichPackage struct {
 	Identity     string
 	Name         string
+	Root         bool
 	Dependencies []string
 }
 
