@@ -98,7 +98,7 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
     for (const [name, value] of unit.implementations) { if (implementationBindings.has(name)) fail("lua.duplicate_implementation_binding"); implementationBindings.set(name, value); }
   }
   const protocolTypes=new Map([...protocolBindings.values()].map(item=>[item.name,{id:stableID("execution","interface",packagePath,item.name),name:item.name}]));
-  const declarations = sources.flatMap(({ name, source }) => parseSource(stripProtocolDeclarations(source), name, records,protocolTypes));
+  const declarations = sources.flatMap(({ name, source }) => parseSource(normalizeModuleSyntax(stripProtocolDeclarations(source), name), name, records,protocolTypes));
   const byName = new Map();
   for (const declaration of declarations) {
     if (byName.has(declaration.name)) fail("lua.duplicate_function", declaration.location);
@@ -201,6 +201,29 @@ export function liftLua({ sources, packagePath, revision, moduleG1, entryName })
     [0x9150, refs(functionIDs)], [0x9151, ref(descriptionsByName.get(entry.name).id)],
   ])));
   return compose(moduleG1, stableID("session-revision", packagePath, String(revision)), additions);
+}
+
+// Lua modules are provider mechanics, not Core semantics.  The bounded project
+// provider resolves static require bindings before the ordinary expression
+// lifter sees calls, while Package-v2 retains the original module boundary.
+function normalizeModuleSyntax(source, file) {
+  const aliases = new Map();
+  const exported = new Set();
+  for (const table of source.matchAll(/^\s*return\s*\{([^}]*)\}\s*$/gm)) for (const item of table[1].split(",").map(value => value.trim()).filter(Boolean)) {
+    const binding = /^([A-Za-z_]\w*)\s*=\s*([A-Za-z_]\w*)$/.exec(item);
+    if (!binding || binding[1] !== binding[2] || exported.has(binding[1])) fail("lua.module_export_shape", { file, line: source.slice(0, table.index).split(/\r?\n/).length, column: 1 });
+    exported.add(binding[1]);
+  }
+  let normalized = source.replace(/^(\s*)local\s+([A-Za-z_]\w*)\s*=\s*require\s*\(\s*["']([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)["']\s*\)\s*$/gm,
+    (whole, indent, alias, requested) => {
+      if (aliases.has(alias)) fail("lua.duplicate_require_alias", { file, line: source.slice(0, source.indexOf(whole)).split(/\r?\n/).length, column: 1 });
+      aliases.set(alias, requested);
+      return "";
+    });
+  normalized = normalized.replace(/^\s*return\s*\{\s*(?:[A-Za-z_]\w*\s*=\s*[A-Za-z_]\w*\s*,?\s*)+\}\s*$/gm, "");
+  for (const alias of aliases.keys()) normalized = normalized.replace(new RegExp(`\\b${alias}\\.([A-Za-z_]\\w*)`, "g"), "$1");
+  for (const name of exported) normalized = normalized.replace(new RegExp(`^(\\s*)local\\s+function\\s+${name}\\b`, "m"), `$1function ${name}`);
+  return normalized;
 }
 
 function verifyProjectionEnvelope(sources) {
