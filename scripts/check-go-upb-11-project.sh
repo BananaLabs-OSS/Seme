@@ -148,4 +148,14 @@ if finalize "$work/final-a" >"$work/final-collision.out" 2>"$work/final-collisio
 fi
 test -s "$work/final-a/patch-v1.seme"
 test -s "$work/final-a/project-v14.seme"
+if test -n "${GO_UPB11_EXPORT:-}"; then
+  test ! -e "$GO_UPB11_EXPORT"
+  mkdir "$GO_UPB11_EXPORT"
+  cp -R "$work/result-source" "$GO_UPB11_EXPORT/source"
+  cp -R "$work/prior-base" "$GO_UPB11_EXPORT/prior-base"
+  cp -R "$work/result-base" "$GO_UPB11_EXPORT/result-base"
+  cp -R "$work/prior-placement" "$GO_UPB11_EXPORT/prior-placement"
+  cp -R "$work/result-placement" "$GO_UPB11_EXPORT/result-placement"
+  cp -R "$work/final-a" "$GO_UPB11_EXPORT/final"
+fi
 printf 'Go UPB-11 full Project-v14 reconciliation and deterministic publication pass\n'

@@ -139,4 +139,14 @@ if finalize "$work/tampered-final" "$work/tampered-source" >"$work/tampered-fina
 fi
 test ! -e "$work/tampered-final"
 test ! -s "$work/tampered-final.out"
+if test -n "${JS_UPB11_EXPORT:-}"; then
+  test ! -e "$JS_UPB11_EXPORT"
+  mkdir "$JS_UPB11_EXPORT"
+  cp -R "$work/result-source" "$JS_UPB11_EXPORT/source"
+  cp -R "$work/prior-base" "$JS_UPB11_EXPORT/prior-base"
+  cp -R "$work/result-base" "$JS_UPB11_EXPORT/result-base"
+  cp -R "$work/prior-placement" "$JS_UPB11_EXPORT/prior-placement"
+  cp -R "$work/result-placement" "$JS_UPB11_EXPORT/result-placement"
+  cp -R "$work/final-a" "$JS_UPB11_EXPORT/final"
+fi
 printf 'JavaScript UPB-11 full Project-v14 reconciliation and deterministic publication pass\n'
