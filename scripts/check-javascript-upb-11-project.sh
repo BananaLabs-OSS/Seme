@@ -148,5 +148,7 @@ if test -n "${JS_UPB11_EXPORT:-}"; then
   cp -R "$work/prior-placement" "$JS_UPB11_EXPORT/prior-placement"
   cp -R "$work/result-placement" "$JS_UPB11_EXPORT/result-placement"
   cp -R "$work/final-a" "$JS_UPB11_EXPORT/final"
+  mkdir "$JS_UPB11_EXPORT/inputs"
+  for name in configuration-selection.json durable-selection.json transport-selection.json controlled-effects-selection.json; do cp "$work/result-source/$name" "$JS_UPB11_EXPORT/inputs/$name"; done
 fi
 printf 'JavaScript UPB-11 full Project-v14 reconciliation and deterministic publication pass\n'

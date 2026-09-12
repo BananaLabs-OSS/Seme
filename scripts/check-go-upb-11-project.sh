@@ -157,5 +157,10 @@ if test -n "${GO_UPB11_EXPORT:-}"; then
   cp -R "$work/prior-placement" "$GO_UPB11_EXPORT/prior-placement"
   cp -R "$work/result-placement" "$GO_UPB11_EXPORT/result-placement"
   cp -R "$work/final-a" "$GO_UPB11_EXPORT/final"
+  mkdir "$GO_UPB11_EXPORT/inputs"
+  cp "$work/result-source/configuration-selection.json" "$GO_UPB11_EXPORT/inputs/configuration-selection.json"
+  cp "$work/result-source/durable-selection.json" "$GO_UPB11_EXPORT/inputs/durable-selection.json"
+  cp "$repo/fixtures/go-upb08-transport-overlay/transport-selection.json" "$GO_UPB11_EXPORT/inputs/transport-selection.json"
+  cp "$work/result-source/controlled-effects-selection.json" "$GO_UPB11_EXPORT/inputs/controlled-effects-selection.json"
 fi
 printf 'Go UPB-11 full Project-v14 reconciliation and deterministic publication pass\n'
