@@ -1,7 +1,12 @@
 #!/bin/sh
 set -eu
 repo=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd);fixture="$repo/fixtures/lua-upb05-configuration";work=$(mktemp -d "${TMPDIR:-/tmp}/seme-lua-upb10-placement.XXXXXX");trap 'rm -rf "$work"' EXIT HUP INT TERM;GOCACHE="$work/go-cache";XDG_CACHE_HOME="$work/cache";export GOCACHE XDG_CACHE_HOME
-LUA_UPB09_EXPORT="$work/upb09" "$repo/scripts/check-lua-upb-09-foundation.sh"
+if test -n "${LUA_UPB09_INPUT:-}";then
+  test -d "$LUA_UPB09_INPUT/prior";test -d "$LUA_UPB09_INPUT/v11-bundle";test -d "$LUA_UPB09_INPUT/v12"
+  cp -R "$LUA_UPB09_INPUT" "$work/upb09"
+else
+  LUA_UPB09_EXPORT="$work/upb09" "$repo/scripts/check-lua-upb-09-foundation.sh"
+fi
 (cd "$repo/reference/go"&&go build -buildvcs=false -o "$work/place" ./cmd/go-upb10-place&&go build -buildvcs=false -o "$work/report" ./cmd/go-upb10-report&&go build -buildvcs=false -o "$work/policy" ./cmd/go-upb10-policy-check&&go build -buildvcs=false -o "$work/closure" ./cmd/canonical-closure-check&&GOOS=wasip1 GOARCH=wasm go build -buildmode=c-shared -buildvcs=false -o "$work/canonical-vm.wasm" ./cmd/canonical-wasm-cell)
 cp "$repo/targets/wasm/pulp-canonical-vm-v1/pulp.cell.toml" "$work/pulp.cell.toml"
 base="$work/base";cp -R "$work/upb09/v11-bundle" "$base";rm "$base/COMPLETE.sha256";cp "$work/upb09/v12/controlled-effects-v1.seme" "$base/controlled-effects-v1.seme";cp "$work/upb09/v12/project-v12.seme" "$base/project-v12.seme";cp "$work/upb09/v12/controlled-replay-v1.json" "$base/controlled-replay-v1.json"
