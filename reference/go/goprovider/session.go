@@ -370,8 +370,11 @@ func (loader *snapshotSourceImporter) Import(path string) (*types.Package, error
 		if path == module || strings.HasPrefix(path, module+"/") {
 			return nil, fmt.Errorf("go.local_import_missing:%s", path)
 		}
-		pkg, err := build.Default.Import(path, "", build.FindOnly)
-		if err != nil || !pkg.Goroot {
+		// Native Go dependencies may supply type information without claiming
+		// canonical Seme ownership. The configured build context bounds where the
+		// source importer can resolve them; missing packages remain unsupported.
+		_, err := build.Default.Import(path, "", build.FindOnly)
+		if err != nil {
 			return nil, fmt.Errorf("go.external_import_unsupported:%s", path)
 		}
 		if loader.standard == nil {
