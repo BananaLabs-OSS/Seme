@@ -9,6 +9,17 @@ import (
 	"strconv"
 )
 
+func goUnderlying(info *types.Info, expression ast.Expr) types.Type {
+	if info == nil || expression == nil {
+		return nil
+	}
+	typeOf := info.TypeOf(expression)
+	if typeOf == nil {
+		return nil
+	}
+	return typeOf.Underlying()
+}
+
 type goExpressionKind uint8
 
 const (
@@ -1139,7 +1150,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return &goExpression{kind: goCollectionAppend, left: collection, right: value}, nil
 		}
 		if ok && identifier.Name == "len" && info.Uses[identifier] == types.Universe.Lookup("len") && len(expression.Args) == 1 && !expression.Ellipsis.IsValid() {
-			underlying := info.TypeOf(expression.Args[0]).Underlying()
+			underlying := goUnderlying(info, expression.Args[0])
 			array, arrayOK := underlying.(*types.Array)
 			slice, sliceOK := underlying.(*types.Slice)
 			if (!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !isInt64(slice.Elem())) {
@@ -1414,7 +1425,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return &goExpression{kind: goStateTransition, left: state, right: result, typeID: goTransitionTypeID(stateType, resultType)}, nil
 		}
-		if array, ok := info.TypeOf(expression).Underlying().(*types.Array); ok {
+		if array, ok := goUnderlying(info, expression).(*types.Array); ok {
 			if array.Len() < 0 || array.Len() > 32 || !isInt64(array.Elem()) || int64(len(expression.Elts)) != array.Len() {
 				return nil, fmt.Errorf("expression.unsupported_fixed_array")
 			}
@@ -1432,7 +1443,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			length := uint64(array.Len())
 			return &goExpression{kind: goFixedArrayConstruct, arrayType: stableID("execution", "type", "fixed-array", "i64", strconv.FormatUint(length, 10)), arrayLen: length, values: values}, nil
 		}
-		if slice, ok := info.TypeOf(expression).Underlying().(*types.Slice); ok && isInt64(slice.Elem()) {
+		if slice, ok := goUnderlying(info, expression).(*types.Slice); ok && isInt64(slice.Elem()) {
 			if len(expression.Elts) > 512 {
 				return nil, fmt.Errorf("expression.slice_construct_bounds")
 			}
@@ -1618,11 +1629,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		return &goExpression{kind: goFieldRead, left: record, field: fieldID}, nil
 	case *ast.IndexExpr:
-		underlying := info.TypeOf(expression.X).Underlying()
+		underlying := goUnderlying(info, expression.X)
 		array, arrayOK := underlying.(*types.Array)
 		slice, sliceOK := underlying.(*types.Slice)
 		mapping, mapOK := underlying.(*types.Map)
-		indexBasic, indexOK := info.TypeOf(expression.Index).Underlying().(*types.Basic)
+		indexBasic, indexOK := goUnderlying(info, expression.Index).(*types.Basic)
 		if ((!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !isInt64(slice.Elem())) && (!mapOK || !isInt64(mapping.Key()) || !isInt64(mapping.Elem()))) || !indexOK || (indexBasic.Kind() != types.Int && indexBasic.Kind() != types.Int64) {
 			return nil, fmt.Errorf("expression.unsupported_index_read")
 		}

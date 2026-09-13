@@ -316,7 +316,7 @@ func matchGoRuntimeMapTally(statements []ast.Stmt, signature *types.Signature, i
 	}
 	counts, countsOK := bind.Lhs[0].(*ast.Ident)
 	empty, emptyOK := bind.Rhs[0].(*ast.CompositeLit)
-	mapType, mapOK := info.TypeOf(empty).Underlying().(*types.Map)
+	mapType, mapOK := goUnderlying(info, empty).(*types.Map)
 	if !countsOK || !emptyOK || !mapOK || !isInt64(mapType.Key()) || !isInt64(mapType.Elem()) || len(empty.Elts) != 0 {
 		return nil, false
 	}
@@ -577,8 +577,11 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			// MapLookupOption, so later stages never need Go's tuple convention.
 			if statement.Tok == token.DEFINE && len(statement.Lhs) == 2 && len(statement.Rhs) == 1 {
 				lookup, ok := ast.Unparen(statement.Rhs[0]).(*ast.IndexExpr)
-				mapping, mapOK := info.TypeOf(lookup.X).Underlying().(*types.Map)
-				if !ok || !mapOK || !isInt64(mapping.Key()) || !isInt64(mapping.Elem()) {
+				if !ok {
+					return nil, fmt.Errorf("control.multi_binding_shape")
+				}
+				mapping, mapOK := goUnderlying(info, lookup.X).(*types.Map)
+				if !mapOK || !isInt64(mapping.Key()) || !isInt64(mapping.Elem()) {
 					return nil, fmt.Errorf("control.multi_binding_shape")
 				}
 				mapExpression, err := analyzeGoExpressionWithProgram(lookup.X, signature, info, locals, functions, records, mutable)
