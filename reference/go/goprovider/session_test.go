@@ -13,6 +13,25 @@ import (
 	"seme.local/reference/wire"
 )
 
+func TestPartialPackageRetainsTypedNativeIsland(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/partial", Entry: "Keep", Files: map[string]string{"main.go": "package partial\nfunc Keep(v int64) int64 { return v }\nfunc Native(v int) int { return v }\n"}})
+	if !result.Valid || len(result.NativeIslands) != 1 {
+		t.Fatalf("partial package not retained: %+v", result)
+	}
+	island := result.NativeIslands[0]
+	if island.Name != "Native" || island.Signature == "" || island.Reason == "" || island.Document != "main.go" {
+		t.Fatalf("bad island: %+v", island)
+	}
+}
+
 func TestIdentityBindingPreservesCanonicalFunctionAcrossProjectRename(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
 	if err != nil {
