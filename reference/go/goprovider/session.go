@@ -134,9 +134,10 @@ type SessionResult struct {
 // source and not a claim of cross-language equivalence.
 type NativeIslandDeclaration struct {
 	ID, Name, Package, Document, Signature, Reason, Receiver string
-	Parameters                                               []string
+	Parameters, ParameterTypes, ResultTypes                  []string
 	Line, Column                                             int
 	Method                                                   bool
+	Variadic                                                 bool
 }
 
 func nativeParameterNames(signature *types.Signature) []string {
@@ -149,6 +150,19 @@ func nativeParameterNames(signature *types.Signature) []string {
 		parameters[index] = name
 	}
 	return parameters
+}
+
+func nativeTupleTypes(tuple *types.Tuple) []string {
+	values := make([]string, tuple.Len())
+	for index := range values {
+		values[index] = types.TypeString(tuple.At(index).Type(), func(pkg *types.Package) string {
+			if pkg == nil {
+				return ""
+			}
+			return pkg.Path()
+		})
+	}
+	return values
 }
 
 // PackageMetadata is the immutable language-neutral ownership/signature view
@@ -905,7 +919,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 					return ""
 				}
 				return pkg.Path()
-			}), Reason: diagnostic.Code, Receiver: receiver, Parameters: nativeParameterNames(function.sig), Line: position.Line, Column: position.Column, Method: function.method})
+			}), Reason: diagnostic.Code, Receiver: receiver, Parameters: nativeParameterNames(function.sig), ParameterTypes: nativeTupleTypes(function.sig.Params()), ResultTypes: nativeTupleTypes(function.sig.Results()), Variadic: function.sig.Variadic(), Line: position.Line, Column: position.Column, Method: function.method})
 			continue
 		}
 		instances = append(instances, entities...)
