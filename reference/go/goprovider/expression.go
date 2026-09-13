@@ -81,6 +81,7 @@ const (
 	goOptionMatch
 	goResultMatch
 	goBytesEqual
+	goUnitValue
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -129,6 +130,12 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			return "", fmt.Errorf("expression.nil")
 		}
 		switch expression.kind {
+		case goUnitValue:
+			typeID := stableID("execution", "type", "unit")
+			id := expressionNodeID(owner, path, "unit")
+			emitted[typeID] = graphEntity{typeID, entity(typeID, "0000000000000000000000000000a06a", nil)}
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a06b", []graphField{refField(0xa06b0, typeID)})}
+			return id, nil
 		case goParameterRead:
 			if expression.parameter < 0 || expression.parameter >= len(parameterIDs) {
 				return "", fmt.Errorf("expression.parameter_out_of_range")

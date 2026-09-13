@@ -1026,7 +1026,11 @@ func buildPackageMetadata(root string, units []*checkedSessionPackage, functions
 				continue
 			}
 			position := f.fset.Position(f.fn.Name.Pos())
-			m := PackageFunctionMetadata{ID: f.id, Name: f.name, Result: goSemanticTypeIdentity(f.sig.Results().At(0).Type()), Exported: ast.IsExported(f.name), Document: f.file, Line: position.Line, Column: position.Column}
+			result := stableID("execution", "type", "unit")
+			if f.sig.Results().Len() != 0 {
+				result = goSemanticTypeIdentity(f.sig.Results().At(0).Type())
+			}
+			m := PackageFunctionMetadata{ID: f.id, Name: f.name, Result: result, Exported: ast.IsExported(f.name), Document: f.file, Line: position.Line, Column: position.Column}
 			for i := 0; i < f.sig.Params().Len(); i++ {
 				m.Parameters = append(m.Parameters, goSemanticTypeIdentity(f.sig.Params().At(i).Type()))
 			}
@@ -1129,13 +1133,23 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	diagnostic := func(code, message string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 		return nil, SourceIdentity{}, &SessionDiagnostic{Code: code, Message: message, File: function.file, Line: position.Line, Column: position.Column, Severity: "warning"}
 	}
-	if function.sig.Results().Len() != 1 {
+	if function.sig.Results().Len() > 1 {
 		return diagnostic("session.unsupported_function_shape", "supported functions require one result")
 	}
-	resultType := function.sig.Results().At(0).Type()
+	unitResult := function.sig.Results().Len() == 0
+	var resultType types.Type
+	if !unitResult {
+		resultType = function.sig.Results().At(0).Type()
+	}
 	resultTypeID := integerID
-	transitionState, transitionResult, isTransition := goTransitionTypes(resultType)
-	if isTransition {
+	var transitionState, transitionResult types.Type
+	isTransition := false
+	if !unitResult {
+		transitionState, transitionResult, isTransition = goTransitionTypes(resultType)
+	}
+	if unitResult {
+		resultTypeID = stableID("execution", "type", "unit")
+	} else if isTransition {
 		var ok bool
 		resultTypeID, ok = goSupportedTypeID(resultType, integerID, booleanID, stringID, records)
 		if !ok {
@@ -1181,12 +1195,19 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		}
 		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a004", []graphField{refField(0xa0040, stateTypeID), refField(0xa0041, valueTypeID)})})
 	}
-	instances = append(instances, goBridgeTypeEntities(resultType, integerID, booleanID, stringID)...)
-	if isI64Slice(function.sig.Results().At(0).Type()) {
+	if !unitResult {
+		instances = append(instances, goBridgeTypeEntities(resultType, integerID, booleanID, stringID)...)
+	}
+	if unitResult {
+		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a06a", nil)})
+	}
+	if !unitResult && isI64Slice(resultType) {
 		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
 	}
-	if _, ok := goFunctionSignature(resultType); ok {
-		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a020", []graphField{refsField(0xa0200, []string{integerID}), refField(0xa0201, integerID)})})
+	if !unitResult {
+		if _, ok := goFunctionSignature(resultType); ok {
+			instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a020", []graphField{refsField(0xa0200, []string{integerID}), refField(0xa0201, integerID)})})
+		}
 	}
 	for index := range parameterIDs {
 		parameterTypeID := integerID

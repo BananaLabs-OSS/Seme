@@ -38,6 +38,9 @@ func analyzeGoBlockWithCalls(statements []ast.Stmt, signature *types.Signature, 
 }
 
 func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goBlock, error) {
+	if signature.Results().Len() == 0 && len(statements) == 0 {
+		return &goBlock{statements: []*goStatement{{returned: &goExpression{kind: goUnitValue}}}}, nil
+	}
 	if tagged, ok := matchGoTotalTaggedValue(statements, signature, info, functions, records); ok {
 		return &goBlock{statements: []*goStatement{{returned: tagged}}}, nil
 	}
@@ -745,8 +748,12 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer, mutable: mutable[object]})
 			locals[object] = local
 		case *ast.ReturnStmt:
-			if index != len(statements)-1 || len(statement.Results) != 1 {
+			if index != len(statements)-1 || (len(statement.Results) != 1 && !(signature.Results().Len() == 0 && len(statement.Results) == 0)) {
 				return nil, fmt.Errorf("control.return_arity")
+			}
+			if len(statement.Results) == 0 {
+				block.statements = append(block.statements, &goStatement{returned: &goExpression{kind: goUnitValue}})
+				continue
 			}
 			expression, err := analyzeGoExpressionWithProgram(statement.Results[0], signature, info, locals, functions, records, mutable)
 			if err != nil {
@@ -870,7 +877,11 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 		}
 	}
 	if requireReturn && (len(block.statements) == 0 || block.statements[len(block.statements)-1].returned == nil) {
-		return nil, fmt.Errorf("control.block_not_total")
+		if signature.Results().Len() == 0 {
+			block.statements = append(block.statements, &goStatement{returned: &goExpression{kind: goUnitValue}})
+		} else {
+			return nil, fmt.Errorf("control.block_not_total")
+		}
 	}
 	if !requireReturn && len(block.statements) == 0 {
 		return nil, fmt.Errorf("control.loop_body_empty")
