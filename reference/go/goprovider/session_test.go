@@ -32,6 +32,31 @@ func TestPartialPackageRetainsTypedNativeIsland(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsNoResultCompletionAsNeutralUnit(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v37/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, body := range []string{"{}", "{ return }"} {
+		result := session.Apply(DocumentSnapshot{Revision: uint64(index + 1), PackagePath: "example.test/unit", Entry: "Complete", Files: map[string]string{"unit.go": "package unit\nfunc Complete() " + body + "\n"}})
+		if !result.Valid || len(result.NativeIslands) != 0 {
+			t.Fatalf("unit completion %s was not lifted exactly: %#v", body, result)
+		}
+		if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a06a") || !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a06b") {
+			t.Fatalf("unit completion %s omitted canonical Unit: %q", body, result.CanonicalG1)
+		}
+		for _, diagnostic := range result.Diagnostics {
+			if diagnostic.Code == "session.unsupported_function_shape" {
+				t.Fatalf("no-result function remained an island: %#v", result.Diagnostics)
+			}
+		}
+	}
+}
+
 func TestIdentityBindingPreservesCanonicalFunctionAcrossProjectRename(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
 	if err != nil {
