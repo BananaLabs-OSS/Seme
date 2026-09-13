@@ -27,7 +27,7 @@ func TestPartialPackageRetainsTypedNativeIsland(t *testing.T) {
 		t.Fatalf("partial package not retained: %+v", result)
 	}
 	island := result.NativeIslands[0]
-	if island.Name != "Native" || island.Signature == "" || island.Reason == "" || island.Document != "main.go" {
+	if island.Name != "Native" || island.Signature == "" || island.Reason == "" || island.Document != "main.go" || !reflect.DeepEqual(island.Parameters, []string{"v"}) {
 		t.Fatalf("bad island: %+v", island)
 	}
 }

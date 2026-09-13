@@ -133,9 +133,22 @@ type SessionResult struct {
 // body is not yet canonical. It is an honest realization boundary, not omitted
 // source and not a claim of cross-language equivalence.
 type NativeIslandDeclaration struct {
-	ID, Name, Package, Document, Signature, Reason string
-	Line, Column                                   int
-	Method                                         bool
+	ID, Name, Package, Document, Signature, Reason, Receiver string
+	Parameters                                               []string
+	Line, Column                                             int
+	Method                                                   bool
+}
+
+func nativeParameterNames(signature *types.Signature) []string {
+	parameters := make([]string, signature.Params().Len())
+	for index := range parameters {
+		name := signature.Params().At(index).Name()
+		if name == "" || name == "_" {
+			name = "arg" + strconv.Itoa(index+1)
+		}
+		parameters[index] = name
+	}
+	return parameters
 }
 
 // PackageMetadata is the immutable language-neutral ownership/signature view
@@ -878,12 +891,21 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 		if diagnostic != nil {
 			diagnostics = append(diagnostics, *diagnostic)
 			position := function.fset.Position(function.fn.Pos())
+			receiver := ""
+			if function.sig.Recv() != nil {
+				receiver = types.TypeString(function.sig.Recv().Type(), func(pkg *types.Package) string {
+					if pkg == nil {
+						return ""
+					}
+					return pkg.Path()
+				})
+			}
 			islands = append(islands, NativeIslandDeclaration{ID: function.id, Name: function.name, Package: function.packagePath, Document: function.file, Signature: types.TypeString(function.sig, func(pkg *types.Package) string {
 				if pkg == nil {
 					return ""
 				}
 				return pkg.Path()
-			}), Reason: diagnostic.Code, Line: position.Line, Column: position.Column, Method: function.method})
+			}), Reason: diagnostic.Code, Receiver: receiver, Parameters: nativeParameterNames(function.sig), Line: position.Line, Column: position.Column, Method: function.method})
 			continue
 		}
 		instances = append(instances, entities...)
