@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func TestAnalyzeGoBlockRejectsMissingIndexTypeWithoutPanic(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "invalid.go", "package p\nfunc Read() int64 { value, ok := missing[0]; _ = ok; return value }", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	function := file.Decls[0].(*ast.FuncDecl)
+	info := &types.Info{Defs: map[*ast.Ident]types.Object{}, Uses: map[*ast.Ident]types.Object{}, Types: map[ast.Expr]types.TypeAndValue{}}
+	signature := types.NewSignatureType(nil, nil, nil, types.NewTuple(), types.NewTuple(types.NewVar(token.NoPos, nil, "", types.Typ[types.Int64])), false)
+	if _, err := analyzeGoBlock(function.Body.List, signature, info); err == nil {
+		t.Fatal("missing map type accepted")
+	}
+}
+
 func TestAnalyzeGoBlockNormalizesNestedTotalReturns(t *testing.T) {
 	source := `package p
 func Decide(enabled bool, value, limit int64) bool {
