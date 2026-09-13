@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/build"
+	"go/build/constraint"
 	"go/importer"
 	"go/parser"
 	"go/scanner"
@@ -26,9 +27,56 @@ type DocumentSnapshot struct {
 	PackagePath string
 	Entry       string
 	Files       map[string]string
+	// GOOS and GOARCH select the source files that belong to this Go realization.
+	// Empty values use the Go toolchain's current target.
+	GOOS   string
+	GOARCH string
 	// IdentityBindings are explicit reconciliation authority supplied by a
 	// semantic patch. Ordinary ingestion leaves this empty and derives IDs.
 	IdentityBindings []IdentityBinding
+}
+
+func snapshotTarget(snapshot DocumentSnapshot) (string, string) {
+	goos, goarch := snapshot.GOOS, snapshot.GOARCH
+	if goos == "" {
+		goos = build.Default.GOOS
+	}
+	if goarch == "" {
+		goarch = build.Default.GOARCH
+	}
+	return goos, goarch
+}
+
+var knownGOOS = map[string]bool{"aix": true, "android": true, "darwin": true, "dragonfly": true, "freebsd": true, "hurd": true, "illumos": true, "ios": true, "js": true, "linux": true, "netbsd": true, "openbsd": true, "plan9": true, "solaris": true, "wasip1": true, "windows": true}
+var knownGOARCH = map[string]bool{"386": true, "amd64": true, "arm": true, "arm64": true, "loong64": true, "mips": true, "mips64": true, "mips64le": true, "mipsle": true, "ppc64": true, "ppc64le": true, "riscv64": true, "s390x": true, "sparc64": true, "wasm": true}
+
+func snapshotFileMatches(snapshot DocumentSnapshot, name, source string) bool {
+	goos, goarch := snapshotTarget(snapshot)
+	base := strings.TrimSuffix(filepath.Base(name), ".go")
+	parts := strings.Split(base, "_")
+	if n := len(parts); n > 1 {
+		last := parts[n-1]
+		if knownGOOS[last] && last != goos || knownGOARCH[last] && last != goarch {
+			return false
+		}
+		if n > 2 && knownGOOS[parts[n-2]] && parts[n-2] != goos {
+			return false
+		}
+	}
+	for _, line := range strings.Split(source, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//go:build ") {
+			expr, err := constraint.Parse(trimmed)
+			if err != nil {
+				return true
+			}
+			return expr.Eval(func(tag string) bool { return tag == goos || tag == goarch || tag == "gc" })
+		}
+		if trimmed != "" && !strings.HasPrefix(trimmed, "//") {
+			break
+		}
+	}
+	return true
 }
 
 type IdentityBinding struct {
@@ -452,7 +500,7 @@ func checkSessionPackages(snapshot DocumentSnapshot) ([]*checkedSessionPackage, 
 		return nil, sortedDiagnostics(diagnostics)
 	}
 	for name, source := range snapshot.Files {
-		if filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
+		if filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") || !snapshotFileMatches(snapshot, name, source) {
 			continue
 		}
 		directory := filepath.ToSlash(filepath.Dir(name))
