@@ -31,6 +31,9 @@ type DocumentSnapshot struct {
 	// Empty values use the Go toolchain's current target.
 	GOOS   string
 	GOARCH string
+	// ExternalImporter supplies types for dependencies that remain outside
+	// canonical Seme ownership, such as module-aware native islands.
+	ExternalImporter types.Importer
 	// IdentityBindings are explicit reconciliation authority supplied by a
 	// semantic patch. Ordinary ingestion leaves this empty and derives IDs.
 	IdentityBindings []IdentityBinding
@@ -369,6 +372,13 @@ func (loader *snapshotSourceImporter) Import(path string) (*types.Package, error
 		}
 		if path == module || strings.HasPrefix(path, module+"/") {
 			return nil, fmt.Errorf("go.local_import_missing:%s", path)
+		}
+		if loader.snapshot.ExternalImporter != nil {
+			pkg, err := loader.snapshot.ExternalImporter.Import(path)
+			if err != nil {
+				return nil, fmt.Errorf("go.external_import_unsupported:%s", path)
+			}
+			return pkg, nil
 		}
 		// Native Go dependencies may supply type information without claiming
 		// canonical Seme ownership. The configured build context bounds where the
