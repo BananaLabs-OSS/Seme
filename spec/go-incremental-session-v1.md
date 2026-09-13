@@ -30,7 +30,8 @@ Results use three dispositions:
   snapshot; session state did not change.
 
 An accepted invalid snapshot returns located diagnostics and retains the last
-valid canonical graph, canonical revision, source mappings, and package
+valid canonical graph, canonical revision, source mappings, resolved reference
+occurrences, and package
 metadata. This permits an editor to remain runnable while a user is midway
 through an incomplete edit.
 Unsupported but well-typed declarations produce located warnings; supported
@@ -45,6 +46,12 @@ metadata comes from the same typed walk as the canonical graph; it is not
 recovered by parsing G1 text and contains neither source bytes nor the client
 revision. It is intended as provider evidence for a later Project Contract
 instance, not as a claim about unsupported declarations or external packages.
+
+Each typed identifier use that resolves to a supported local declaration is
+reported as a half-open source occurrence carrying that declaration's stable
+semantic identity. Occurrences are deterministically ordered and retained with
+the last-valid result. They are navigation evidence only: unresolved or
+unsupported names are omitted rather than matched heuristically.
 
 The current bounded lift includes sibling local-package calls, named functions
 and supported value-receiver methods, lexical locals and places, structured

@@ -41,16 +41,17 @@ type protocolError struct {
 }
 
 type state struct {
-	Initialized       bool                           `json:"initialized"`
-	Revision          uint64                         `json:"revision"`
-	Accepted          bool                           `json:"accepted"`
-	Valid             bool                           `json:"valid"`
-	LastValidRevision uint64                         `json:"last_valid_revision"`
-	ContentDigest     string                         `json:"content_digest,omitempty"`
-	Disposition       string                         `json:"disposition,omitempty"`
-	CanonicalG1       string                         `json:"canonical_g1,omitempty"`
-	Diagnostics       []goprovider.SessionDiagnostic `json:"diagnostics"`
-	Sources           []goprovider.SourceIdentity    `json:"sources"`
+	Initialized       bool                             `json:"initialized"`
+	Revision          uint64                           `json:"revision"`
+	Accepted          bool                             `json:"accepted"`
+	Valid             bool                             `json:"valid"`
+	LastValidRevision uint64                           `json:"last_valid_revision"`
+	ContentDigest     string                           `json:"content_digest,omitempty"`
+	Disposition       string                           `json:"disposition,omitempty"`
+	CanonicalG1       string                           `json:"canonical_g1,omitempty"`
+	Diagnostics       []goprovider.SessionDiagnostic   `json:"diagnostics"`
+	Sources           []goprovider.SourceIdentity      `json:"sources"`
+	References        []goprovider.ReferenceOccurrence `json:"references"`
 }
 
 type liveSession struct {
@@ -195,12 +196,13 @@ func dispatch(line, module []byte, sessions map[string]*liveSession) response {
 }
 
 func emptyState() *state {
-	return &state{Initialized: true, Diagnostics: []goprovider.SessionDiagnostic{}, Sources: []goprovider.SourceIdentity{}}
+	return &state{Initialized: true, Diagnostics: []goprovider.SessionDiagnostic{}, Sources: []goprovider.SourceIdentity{}, References: []goprovider.ReferenceOccurrence{}}
 }
 
 func stateFromResult(result goprovider.SessionResult) state {
 	diagnostics := append([]goprovider.SessionDiagnostic(nil), result.Diagnostics...)
 	sources := append([]goprovider.SourceIdentity(nil), result.Sources...)
+	references := append([]goprovider.ReferenceOccurrence(nil), result.References...)
 	sort.SliceStable(diagnostics, func(i, j int) bool {
 		if diagnostics[i].File != diagnostics[j].File {
 			return diagnostics[i].File < diagnostics[j].File
@@ -214,7 +216,13 @@ func stateFromResult(result goprovider.SessionResult) state {
 		return diagnostics[i].Code < diagnostics[j].Code
 	})
 	sort.SliceStable(sources, func(i, j int) bool { return sources[i].ID < sources[j].ID })
-	return state{Initialized: true, Revision: result.Revision, Accepted: result.Accepted, Valid: result.Valid, LastValidRevision: result.LastValidRevision, ContentDigest: result.ContentDigest, Disposition: result.Disposition, CanonicalG1: result.CanonicalG1, Diagnostics: diagnostics, Sources: sources}
+	sort.SliceStable(references, func(i, j int) bool {
+		if references[i].Document != references[j].Document {
+			return references[i].Document < references[j].Document
+		}
+		return references[i].Start < references[j].Start
+	})
+	return state{Initialized: true, Revision: result.Revision, Accepted: result.Accepted, Valid: result.Valid, LastValidRevision: result.LastValidRevision, ContentDigest: result.ContentDigest, Disposition: result.Disposition, CanonicalG1: result.CanonicalG1, Diagnostics: diagnostics, Sources: sources, References: references}
 }
 
 func validID(id json.RawMessage) bool {
