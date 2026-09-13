@@ -722,6 +722,23 @@ func TestIncrementalSessionLiftsClosedFunctionCalls(t *testing.T) {
 	if strings.Count(result.CanonicalG1, "00000000000000000000000000009060") != 6 {
 		t.Fatal("canonical function calls missing")
 	}
+	declarations := map[string]SourceIdentity{}
+	for _, source := range result.Sources {
+		declarations[source.ID] = source
+	}
+	crossFile := false
+	for _, reference := range result.References {
+		target, exists := declarations[reference.TargetID]
+		if !exists || reference.Document == "" || reference.End <= reference.Start || reference.Line < 1 || reference.Column < 1 {
+			t.Fatalf("unresolved reference occurrence = %#v", reference)
+		}
+		if reference.Document != target.Document {
+			crossFile = true
+		}
+	}
+	if len(result.References) == 0 || !crossFile {
+		t.Fatalf("resolved cross-file references = %#v", result.References)
+	}
 
 	// File-map insertion order is not semantic. A fresh session presented with
 	// the same package in another order must produce byte-identical canonical

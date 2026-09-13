@@ -648,7 +648,9 @@ The bounded [`Go incremental session v1`](spec/go-incremental-session-v1.md)
 parses and type-checks complete in-memory module snapshots, including a bounded
 closure of sibling local packages. It compositionally lifts supported
 functions, methods, locals, and declared effects, rejects stale revisions, and
-executes the resulting canonical graph. This remains a bounded source closure,
+executes the resulting canonical graph. Valid results include typed reference
+occurrences bound to stable semantic declaration identities, allowing editors
+to navigate without name-based inference. This remains a bounded source closure,
 not general dependency or build-variant support. Run
 `./scripts/check-language-service-v1.sh` and
 `./scripts/check-go-session-v1.sh`.

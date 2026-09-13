@@ -51,6 +51,17 @@ type SourceIdentity struct {
 	Line, Column             int
 }
 
+// ReferenceOccurrence binds a source-language use site to a stable semantic
+// declaration identity. Consumers navigate by TargetID, never by name guesses.
+type ReferenceOccurrence struct {
+	TargetID string `json:"target_id"`
+	Document string `json:"document"`
+	Start    int    `json:"start"`
+	End      int    `json:"end"`
+	Line     int    `json:"line"`
+	Column   int    `json:"column"`
+}
+
 type SessionResult struct {
 	Revision          uint64
 	Accepted          bool
@@ -59,6 +70,7 @@ type SessionResult struct {
 	LastValidRevision uint64
 	Diagnostics       []SessionDiagnostic
 	Sources           []SourceIdentity
+	References        []ReferenceOccurrence
 	ContentDigest     string
 	Disposition       string
 	Packages          []PackageMetadata
@@ -135,6 +147,7 @@ type IncrementalSession struct {
 	lastValidRevision   uint64
 	lastValidGraph      string
 	lastValidSources    []SourceIdentity
+	lastValidReferences []ReferenceOccurrence
 	lastValidPackages   []PackageMetadata
 	lastValidResolution ResolutionManifest
 }
@@ -155,6 +168,7 @@ func (session *IncrementalSession) Apply(snapshot DocumentSnapshot) SessionResul
 			CanonicalG1: session.lastValidGraph, LastValidRevision: session.lastValidRevision,
 			Diagnostics:   []SessionDiagnostic{{Code: "session.stale_revision", Message: "revision must be strictly newer than the last accepted snapshot", Severity: "error"}},
 			Sources:       cloneSources(session.lastValidSources),
+			References:    cloneReferences(session.lastValidReferences),
 			Packages:      clonePackageMetadata(session.lastValidPackages),
 			Resolution:    cloneResolutionManifest(session.lastValidResolution),
 			ContentDigest: snapshotDigest(snapshot), Disposition: "rejected-stale",
@@ -162,9 +176,9 @@ func (session *IncrementalSession) Apply(snapshot DocumentSnapshot) SessionResul
 	}
 	session.currentRevision = snapshot.Revision
 	resolution, resolutionDiagnostics := resolveSnapshot(snapshot)
-	graph, sources, packages, diagnostics := "", []SourceIdentity(nil), []PackageMetadata(nil), resolutionDiagnostics
+	graph, sources, references, packages, diagnostics := "", []SourceIdentity(nil), []ReferenceOccurrence(nil), []PackageMetadata(nil), resolutionDiagnostics
 	if len(diagnostics) == 0 {
-		graph, sources, packages, diagnostics = liftDocumentSnapshot(snapshot, session.moduleG1)
+		graph, sources, references, packages, diagnostics = liftDocumentSnapshot(snapshot, session.moduleG1)
 	}
 	valid := graph != ""
 	if valid {
@@ -172,6 +186,7 @@ func (session *IncrementalSession) Apply(snapshot DocumentSnapshot) SessionResul
 		session.lastValidRevision = snapshot.Revision
 		session.lastValidGraph = graph
 		session.lastValidSources = cloneSources(sources)
+		session.lastValidReferences = cloneReferences(references)
 		session.lastValidPackages = clonePackageMetadata(packages)
 		session.lastValidResolution = cloneResolutionManifest(resolution)
 	}
@@ -179,6 +194,7 @@ func (session *IncrementalSession) Apply(snapshot DocumentSnapshot) SessionResul
 		Revision: snapshot.Revision, Accepted: true, Valid: valid,
 		CanonicalG1: session.lastValidGraph, LastValidRevision: session.lastValidRevision,
 		Diagnostics: diagnostics, Sources: cloneSources(session.lastValidSources),
+		References:    cloneReferences(session.lastValidReferences),
 		Packages:      clonePackageMetadata(session.lastValidPackages),
 		Resolution:    cloneResolutionManifest(session.lastValidResolution),
 		ContentDigest: snapshotDigest(snapshot), Disposition: map[bool]string{true: "accepted-valid", false: "accepted-invalid"}[valid],
@@ -239,6 +255,10 @@ func clonePackageFunctions(in []PackageFunctionMetadata) []PackageFunctionMetada
 
 func cloneSources(sources []SourceIdentity) []SourceIdentity {
 	return append([]SourceIdentity(nil), sources...)
+}
+
+func cloneReferences(references []ReferenceOccurrence) []ReferenceOccurrence {
+	return append([]ReferenceOccurrence(nil), references...)
 }
 
 type sessionFunction struct {
@@ -506,13 +526,13 @@ type goInterfaceInfo struct {
 	requirementIDs []string
 }
 
-func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, []SourceIdentity, []PackageMetadata, []SessionDiagnostic) {
+func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, []SourceIdentity, []ReferenceOccurrence, []PackageMetadata, []SessionDiagnostic) {
 	if snapshot.PackagePath == "" {
-		return "", nil, nil, []SessionDiagnostic{{Code: "session.package_path_missing", Message: "package path is required", Severity: "error"}}
+		return "", nil, nil, nil, []SessionDiagnostic{{Code: "session.package_path_missing", Message: "package path is required", Severity: "error"}}
 	}
 	units, diagnostics := checkSessionPackages(snapshot)
 	if len(diagnostics) != 0 || len(units) == 0 {
-		return "", nil, nil, diagnostics
+		return "", nil, nil, nil, diagnostics
 	}
 	var functions []sessionFunction
 	for _, unit := range units {
@@ -799,14 +819,14 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	for _, instance := range instances {
 		if callee, ok := graphFunctionCallCallee(instance.text); ok && !supportedFunctions[callee] {
 			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.call_target_unsupported", Message: "supported function calls an omitted declaration", Severity: "error"})
-			return "", nil, nil, sortedDiagnostics(diagnostics)
+			return "", nil, nil, nil, sortedDiagnostics(diagnostics)
 		}
 	}
 	if len(functionIDs) == 0 {
 		if len(diagnostics) == 0 {
 			diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.no_supported_declarations", Message: "snapshot contains no supported package functions", Severity: "error"})
 		}
-		return "", nil, nil, sortedDiagnostics(diagnostics)
+		return "", nil, nil, nil, sortedDiagnostics(diagnostics)
 	}
 	entryID := ""
 	for _, function := range functions {
@@ -829,7 +849,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	}
 	if entryID == "" {
 		diagnostics = append(diagnostics, SessionDiagnostic{Code: "session.entry_missing", Message: "requested root-package entry function is not supported", Severity: "error"})
-		return "", nil, nil, sortedDiagnostics(diagnostics)
+		return "", nil, nil, nil, sortedDiagnostics(diagnostics)
 	}
 	programID := stableID("session-program", snapshot.PackagePath)
 	instances = append(instances, graphEntity{programID, entity(programID, "00000000000000000000000000009015", []graphField{
@@ -839,9 +859,33 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	metadata := buildPackageMetadata(snapshot.PackagePath, units, functions, supportedFunctions, instances)
 	if diagnostic := attachSemanticOwnership(metadata, units, functions, instances); diagnostic != nil {
 		diagnostics = append(diagnostics, *diagnostic)
-		return "", nil, nil, sortedDiagnostics(diagnostics)
+		return "", nil, nil, nil, sortedDiagnostics(diagnostics)
 	}
-	return composeExecutionG1(moduleG1, revision, instances), sources, metadata, sortedDiagnostics(diagnostics)
+	sourceIDs := map[string]bool{}
+	for _, source := range sources {
+		sourceIDs[source.ID] = true
+	}
+	var references []ReferenceOccurrence
+	for _, unit := range units {
+		for identifier, object := range unit.info.Uses {
+			target := functionObjects[object]
+			if target == "" || !sourceIDs[target] {
+				continue
+			}
+			start, end := unit.fset.Position(identifier.Pos()), unit.fset.Position(identifier.End())
+			references = append(references, ReferenceOccurrence{TargetID: target, Document: filepath.ToSlash(start.Filename), Start: start.Offset, End: end.Offset, Line: start.Line, Column: start.Column})
+		}
+	}
+	sort.Slice(references, func(i, j int) bool {
+		if references[i].Document != references[j].Document {
+			return references[i].Document < references[j].Document
+		}
+		if references[i].Start != references[j].Start {
+			return references[i].Start < references[j].Start
+		}
+		return references[i].TargetID < references[j].TargetID
+	})
+	return composeExecutionG1(moduleG1, revision, instances), sources, references, metadata, sortedDiagnostics(diagnostics)
 }
 
 func buildPackageMetadata(root string, units []*checkedSessionPackage, functions []sessionFunction, supported map[string]bool, instances []graphEntity) []PackageMetadata {
