@@ -296,6 +296,31 @@ func TestProjectsImportedPackageBindingBackToGoSyntax(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) { if Output() == nil { t.Fatal("stdout") } }`)
 }
 
+func TestProjectsExplicitNativeConversionsBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v92/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/conversion", Entry: "Text", Files: map[string]string{
+		"conversion.go": "package sample\nfunc Text(value []byte) string { return string(value) }\n",
+	}})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "return string(value)") {
+		t.Fatalf("projection lacks native conversion:\n%s", projected)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) { if Text([]byte("snow")) != "snow" { t.Fatal("text") } }`)
+}
+
 func TestProjectsMutableParameterThroughCanonicalPlace(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v64/module.g1")
 	if err != nil {
