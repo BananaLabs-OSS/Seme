@@ -133,11 +133,11 @@ type SessionResult struct {
 // body is not yet canonical. It is an honest realization boundary, not omitted
 // source and not a claim of cross-language equivalence.
 type NativeIslandDeclaration struct {
-	ID, Name, Package, Document, Signature, Reason, Receiver string
-	Parameters, ParameterTypes, ResultTypes                  []string
-	Line, Column                                             int
-	Method                                                   bool
-	Variadic                                                 bool
+	ID, Name, Package, Document, Signature, Reason, Detail, Receiver string
+	Parameters, ParameterTypes, ResultTypes                          []string
+	Line, Column                                                     int
+	Method                                                           bool
+	Variadic                                                         bool
 }
 
 func nativeParameterNames(signature *types.Signature) []string {
@@ -919,7 +919,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 					return ""
 				}
 				return pkg.Path()
-			}), Reason: diagnostic.Code, Receiver: receiver, Parameters: nativeParameterNames(function.sig), ParameterTypes: nativeTupleTypes(function.sig.Params()), ResultTypes: nativeTupleTypes(function.sig.Results()), Variadic: function.sig.Variadic(), Line: position.Line, Column: position.Column, Method: function.method})
+			}), Reason: diagnostic.Code, Detail: diagnostic.Message, Receiver: receiver, Parameters: nativeParameterNames(function.sig), ParameterTypes: nativeTupleTypes(function.sig.Params()), ResultTypes: nativeTupleTypes(function.sig.Results()), Variadic: function.sig.Variadic(), Line: position.Line, Column: position.Column, Method: function.method})
 			continue
 		}
 		instances = append(instances, entities...)
