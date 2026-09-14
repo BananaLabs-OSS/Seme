@@ -2254,6 +2254,22 @@ func TestIncrementalSessionRetainsPredeclaredErrorMethod(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsMixedProductShortDeclaration(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v78/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "package sample\nfunc Pair(value int64, failure error) (int64, error) { return value, failure }\nfunc Read(value int64, failure error) int64 { err := failure; first, err := Pair(value, err); if err != nil { return 0 }; return first }\n"
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/mixed-short", Entry: "Read", Files: map[string]string{"mixed.go": source}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("mixed short declaration lift = %#v", result)
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {

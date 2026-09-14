@@ -97,7 +97,8 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 					compound = true
 				}
 			}
-			if !ok || assignment.Tok != token.ASSIGN && !compound {
+			mixedDefinition := ok && goExecutionModuleVersion(functions) >= 78 && assignment.Tok == token.DEFINE
+			if !ok || assignment.Tok != token.ASSIGN && !compound && !mixedDefinition {
 				return true
 			}
 			for _, target := range assignment.Lhs {
@@ -772,8 +773,10 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 							continue
 						}
 						object := info.Defs[name]
-						if statement.Tok == token.ASSIGN {
+						reassign := statement.Tok == token.ASSIGN
+						if reassign || goExecutionModuleVersion(functions) >= 78 && object == nil {
 							object = info.Uses[name]
+							reassign = true
 						}
 						if object == nil {
 							return nil, fmt.Errorf("control.local_binding_type")
@@ -786,7 +789,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 							return nil, fmt.Errorf("control.local_binding_type")
 						}
 						projected := &goExpression{kind: goProductProject, left: &goExpression{kind: goLocalRead, local: productLocal}, typeID: productType, elementTypeID: goSemanticTypeIdentity(tuple.At(resultIndex).Type()), productIndex: uint64(resultIndex), productTypes: productTypes}
-						if statement.Tok == token.ASSIGN {
+						if reassign {
 							local, exists := locals[object]
 							if !exists || !mutable[object] {
 								return nil, fmt.Errorf("control.assignment_target")

@@ -578,6 +578,30 @@ func (f failure) Error() string { return string(f) }
 func TestNative(t *testing.T) { if Text(failure("broken")) != "broken" { t.Fatal("method") } }`)
 }
 
+func TestProjectsMixedProductShortDeclaration(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v78/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "package sample\nfunc Pair(value int64, failure error) (int64, error) { return value, failure }\nfunc Read(value int64, failure error) int64 { err := failure; first, err := Pair(value, err); if err != nil { return 0 }; return first }\n"
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/mixed-short", Entry: "Read", Files: map[string]string{"mixed.go": source}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("mixed short declaration lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "first, err := Pair(value, err)") {
+		t.Fatalf("projection lacks mixed short declaration:\n%s", projected)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) { if Read(12, nil) != 12 { t.Fatal("mixed") } }`)
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

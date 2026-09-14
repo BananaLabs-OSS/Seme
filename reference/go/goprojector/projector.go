@@ -612,19 +612,41 @@ func projectProductBinding(index int, statements []string, c context) (string, [
 		names[itemIndex] = "_"
 	}
 	consumed := []int{}
+	hasDefinition := false
 	for candidateIndex := index + 1; candidateIndex < len(statements); candidateIndex++ {
 		candidate := c.graph[statements[candidateIndex]]
-		if candidate.schema != sBindLocal {
+		if candidate.schema != sBindLocal && candidate.schema != sAssignPlace {
 			break
 		}
-		projectedBindingID, e := ref(candidate, "00000000000000000000000000009d10")
-		projectedBinding, exists := c.graph[projectedBindingID]
-		if e != nil || !exists || projectedBinding.schema != sLocalBinding {
-			break
+		projectedBindingID := ""
+		projectID := ""
+		projectedName := ""
+		if candidate.schema == sBindLocal {
+			projectedBindingID, err = ref(candidate, "00000000000000000000000000009d10")
+			projectedBinding, exists := c.graph[projectedBindingID]
+			if err != nil || !exists || projectedBinding.schema != sLocalBinding {
+				break
+			}
+			projectID, err = ref(projectedBinding, "00000000000000000000000000009d02")
+			projectedName, err = text(projectedBinding, "00000000000000000000000000009d00")
+			if err != nil || !identifier(projectedName) {
+				return "", nil, false, fmt.Errorf("go_projection.invalid_local_name:%s:%q", projectedBindingID, projectedName)
+			}
+			projectedName = availableLocalName(projectedName, c)
+			hasDefinition = true
+		} else {
+			projectedBindingID, err = ref(candidate, "00000000000000000000000000009e30")
+			if err != nil {
+				break
+			}
+			projectedName = c.locals[projectedBindingID]
+			if projectedName == "" {
+				return "", nil, false, fmt.Errorf("go_projection.place_scope")
+			}
+			projectID, err = ref(candidate, "00000000000000000000000000009e31")
 		}
-		projectID, e := ref(projectedBinding, "00000000000000000000000000009d02")
 		project, exists := c.graph[projectID]
-		if e != nil || !exists || project.schema != sProductProject {
+		if err != nil || !exists || project.schema != sProductProject {
 			break
 		}
 		productID, e := ref(project, "000000000000000000000000000a0700")
@@ -640,19 +662,18 @@ func projectProductBinding(index int, statements []string, c context) (string, [
 		if e != nil || position >= uint64(len(names)) || names[position] != "_" {
 			return "", nil, false, fmt.Errorf("go_projection.invalid_product_projection")
 		}
-		name, e := text(projectedBinding, "00000000000000000000000000009d00")
-		if e != nil || !identifier(name) {
-			return "", nil, false, fmt.Errorf("go_projection.invalid_local_name:%s:%q", projectedBindingID, name)
-		}
-		name = availableLocalName(name, c)
-		names[position] = name
-		c.locals[projectedBindingID] = name
+		names[position] = projectedName
+		c.locals[projectedBindingID] = projectedName
 		consumed = append(consumed, candidateIndex)
 	}
 	if len(consumed) == 0 {
 		return "", nil, false, nil
 	}
-	return strings.Join(names, ", ") + " := " + initializer, consumed, true, nil
+	operator := " = "
+	if hasDefinition {
+		operator = " := "
+	}
+	return strings.Join(names, ", ") + operator + initializer, consumed, true, nil
 }
 
 func projectBlock(id string, c context) (string, error) {

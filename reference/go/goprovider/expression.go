@@ -1643,9 +1643,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				return nil, err
 			}
 			if calleeSignature != nil && index < calleeSignature.Params().Len() {
-				if interfaceNamed, ok := calleeSignature.Params().At(index).Type().(*types.Named); ok {
+				parameterType := calleeSignature.Params().At(index).Type()
+				if interfaceNamed, ok := parameterType.(*types.Named); ok && !types.Identical(types.Unalias(info.TypeOf(argument)), types.Unalias(parameterType)) {
 					if _, interfaceOK := interfaceNamed.Underlying().(*types.Interface); interfaceOK {
 						if concreteNamed, concreteOK := info.TypeOf(argument).(*types.Named); concreteOK {
+							if interfaceNamed.Obj().Pkg() == nil || concreteNamed.Obj().Pkg() == nil {
+								return nil, fmt.Errorf("expression.interface_argument_identity")
+							}
 							interfaceID := stableID("execution", "interface", interfaceNamed.Obj().Pkg().Path(), interfaceNamed.Obj().Name())
 							if record, exists := findGoRecord(records, interfaceNamed); exists {
 								interfaceID = record.id
