@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(64); err == nil {
+	if _, err := Declarations(65); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -461,6 +461,20 @@ func TestVersion63AddsNativeFieldAssignment(t *testing.T) {
 	}
 	if len(current) != len(previous)+1 || current[len(current)-1].Name != "NativeFieldAssignment" {
 		t.Fatalf("v63 declarations = %#v", current[len(previous):])
+	}
+}
+
+func TestVersion64PreservesVersion63Schema(t *testing.T) {
+	previous, err := Declarations(63)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous) {
+		t.Fatalf("v64 declaration count = %d, want %d", len(current), len(previous))
 	}
 }
 

@@ -78,7 +78,34 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 			return true
 		})
 	}
-	return analyzeGoBlockScoped(statements, signature, info, map[types.Object]int{}, functions, records, mutable, &next, true)
+	inherited := map[types.Object]int{}
+	prefix := []*goStatement{}
+	if goExecutionModuleVersion(functions) >= 64 {
+		for index := 0; index < signature.Params().Len(); index++ {
+			parameter := signature.Params().At(index)
+			if !mutable[parameter] {
+				continue
+			}
+			localType, ok := goLocalSemanticType(parameter.Type(), records)
+			if !ok {
+				continue
+			}
+			local := next
+			next++
+			name := parameter.Name()
+			if name == "" {
+				name = "parameter_" + strconv.Itoa(index)
+			}
+			prefix = append(prefix, &goStatement{localName: "seme_mutable_" + name, localType: localType, local: local, initializer: &goExpression{kind: goParameterRead, parameter: index}, mutable: true})
+			inherited[parameter] = local
+		}
+	}
+	block, err := analyzeGoBlockScoped(statements, signature, info, inherited, functions, records, mutable, &next, true)
+	if err != nil {
+		return nil, err
+	}
+	block.statements = append(prefix, block.statements...)
+	return block, nil
 }
 
 func matchGoTotalTaggedValue(statements []ast.Stmt, signature *types.Signature, info *types.Info, functions map[types.Object]string, records map[*types.Named]goRecordInfo) (*goExpression, bool) {

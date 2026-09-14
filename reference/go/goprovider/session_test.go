@@ -1964,6 +1964,28 @@ func TestIncrementalSessionLiftsNativeFieldAssignment(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsMutableParameterAsCanonicalPlace(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v64/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/mutable-parameter", Entry: "Normalize", Files: map[string]string{
+		"parameter.go": "package sample\nimport \"strings\"\nfunc Normalize(value string) string { value = strings.TrimSpace(value); return value }\n",
+	}, ExternalImporter: importer.Default()})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("mutable parameter = %#v", result)
+	}
+	for _, schema := range []string{"000000000000000000000000000090e0", "000000000000000000000000000090e2", "000000000000000000000000000090e3"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("mutable parameter schema %s missing", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {
