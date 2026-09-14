@@ -376,6 +376,32 @@ func TestProjectsNativeCollectionBuiltinsBackToGoSyntax(t *testing.T) {
 }`)
 }
 
+func TestProjectsNativeMapRangeBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v70/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-map-range", Entry: "Total", Files: map[string]string{
+		"range.go": "package sample\nfunc Total(values map[string]int64) int64 { total := int64(0); for _, value := range values { total = total + value }; return total }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native map range lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "for _, value := range values") {
+		t.Fatalf("projection lacks map range:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Total(map[string]int64{"a": 2, "b": 3}) != 5 { t.Fatal("range") } }`)
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

@@ -35,6 +35,13 @@ test("rejects nearby Lua semantics with located diagnostics", () => {
   assert.throws(() => liftLua({ ...base, sources: [{ name: "bad.lua", source: "---@param value boolean\n---@return boolean\nfunction Run(value)\n value = false\n return value\nend" }] }), /lua\.assignment_scope:bad\.lua:4:1/);
 });
 
+test("projects Go-owned map range through an explicit Lua adapter", () => {
+  const canonical = fs.readFileSync(new URL("../../fixtures/go-execution-v70/program.g1", import.meta.url), "utf8");
+  const projected = projectLua(canonical);
+  assert.match(projected, /Seme\.native_range\("go"/);
+  assert.match(projected, /value/);
+});
+
 test("lifts typed UAB-03 blocks and projects them byte-identically", () => {
   const source = fs.readFileSync(new URL("../../fixtures/lua-uab-03/program.lua", import.meta.url), "utf8");
   const options = { sources:[{name:"program.lua",source}], moduleG1, packagePath:"example.test/lua-uab03", revision:1, entryName:"Accumulate" };

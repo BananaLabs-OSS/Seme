@@ -787,6 +787,10 @@ inside mixed native expressions. Run `./scripts/check-execution-v68.sh`.
 from locally declared Go-owned structures so surrounding collection and
 registry logic can remain canonical. Run `./scripts/check-execution-v69.sh`.
 
+[`Core Execution v70`](spec/core-execution-v70.md) preserves Go map iteration
+as an explicit typed native range while keeping the loop body canonical and
+projectable. Run `./scripts/check-execution-v70.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
