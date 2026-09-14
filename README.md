@@ -791,6 +791,10 @@ registry logic can remain canonical. Run `./scripts/check-execution-v69.sh`.
 as an explicit typed native range while keeping the loop body canonical and
 projectable. Run `./scripts/check-execution-v70.sh`.
 
+[`Core Execution v71`](spec/core-execution-v71.md) preserves typed native
+slicing with optional low, high, and maximum bounds and explicit Go,
+JavaScript, and Lua realizations. Run `./scripts/check-execution-v71.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

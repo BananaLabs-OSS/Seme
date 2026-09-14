@@ -2119,6 +2119,26 @@ func TestIncrementalSessionRetainsTypedNativeMapRange(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsTypedNativeSlice(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-slice", Entry: "Tail", Files: map[string]string{
+		"slice.go": "package sample\nfunc Tail(values []string, start int) []string { return values[start:] }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native slice = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a07d") {
+		t.Fatal("NativeSlice missing")
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {

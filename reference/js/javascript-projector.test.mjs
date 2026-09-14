@@ -51,6 +51,11 @@ test("projects Go-owned map range through an explicit JavaScript adapter", () =>
   assert.match(projected, /value/);
 });
 
+test("projects Go-owned slicing through an explicit JavaScript adapter", () => {
+  const canonical = fs.readFileSync(new URL("../../fixtures/go-execution-v71/program.g1", import.meta.url), "utf8");
+  assert.match(projectJavaScript(canonical), /Seme\.nativeSlice\("go"/);
+});
+
 test("projection rejects duplicate semantic identities", () => {
   const canonical = liftJavaScript({ source, moduleG1, packagePath: "example.test/duplicate", revision: 1 });
   const entity = canonical.slice(canonical.indexOf("\nen ") + 1);
