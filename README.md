@@ -884,6 +884,10 @@ result identities. Run `./scripts/check-execution-v92.sh`.
 to their language-neutral Unicode scalar integer meaning, including when used
 inside typed native calls. Run `./scripts/check-execution-v93.sh`.
 
+[`Core Execution v94`](spec/core-execution-v94.md) preserves assignments to
+package-owned state as explicit native binding mutations while keeping assigned
+values visible. Run `./scripts/check-execution-v94.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
