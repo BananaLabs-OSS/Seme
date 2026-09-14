@@ -7,6 +7,7 @@ import (
 	"go/token"
 	"go/types"
 	"strconv"
+	"strings"
 )
 
 func goUnderlying(info *types.Info, expression ast.Expr) types.Type {
@@ -1700,6 +1701,45 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		named, ok := types.Unalias(info.TypeOf(expression)).(*types.Named)
 		record, exists := findGoRecord(records, named)
 		if !ok || !exists {
+			if functions[nil] == "native-default" {
+				nativeType := info.TypeOf(expression)
+				nativeID, native := goNativeTypeID(nativeType)
+				spelling, spellingOK := goNativeTypeSpelling(nativeType)
+				if native && spellingOK {
+					arguments := make([]*goExpression, 0, len(expression.Elts)*2)
+					shape := make([]string, 0, len(expression.Elts))
+					_, structLiteral := goUnderlying(info, expression).(*types.Struct)
+					for _, element := range expression.Elts {
+						valueNode := element
+						if keyed, keyedOK := element.(*ast.KeyValueExpr); keyedOK {
+							valueNode = keyed.Value
+							if identifier, identifierOK := keyed.Key.(*ast.Ident); structLiteral && identifierOK {
+								shape = append(shape, "field:"+identifier.Name)
+							} else {
+								key, err := analyzeGoExpressionWithProgram(keyed.Key, signature, info, locals, functions, records, mutableLocals)
+								if err != nil {
+									return nil, err
+								}
+								shape = append(shape, "key")
+								arguments = append(arguments, key)
+							}
+						} else {
+							shape = append(shape, "position")
+						}
+						value, err := analyzeGoExpressionWithProgram(valueNode, signature, info, locals, functions, records, mutableLocals)
+						if err != nil {
+							return nil, err
+						}
+						arguments = append(arguments, value)
+					}
+					return &goExpression{
+						kind: goNativeInvocation, arguments: arguments, nativeLanguage: "go",
+						nativeTarget:    "builtin.composite_literal[" + spelling + ";" + strings.Join(shape, ",") + "]",
+						nativeSignature: "func(...) " + spelling, nativeResultType: nativeID,
+						nativeTypes: map[string]string{nativeID: spelling},
+					}, nil
+				}
+			}
 			return nil, fmt.Errorf("expression.unsupported_record_construct")
 		}
 		values := make([]*goExpression, len(record.ordered))

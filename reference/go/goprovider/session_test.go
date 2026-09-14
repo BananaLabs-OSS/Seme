@@ -510,6 +510,29 @@ func TestIncrementalSessionRetainsBlankAssignmentEvaluation(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsNativeApplicationCompositeLiteral(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v52/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-composite", Entry: "Make", Files: map[string]string{
+		"make.go": `package nativecomposite
+type Pair struct { Name string; Next *Pair }
+func Make(name string) Pair { return Pair{Name: name} }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native application composite literal rejected: %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "6275696c74696e2e636f6d706f736974655f6c69746572616c") {
+		t.Fatal("native composite literal target omitted")
+	}
+}
+
 func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {
