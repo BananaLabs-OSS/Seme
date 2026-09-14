@@ -675,7 +675,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	}
 	if executionModuleVersion(moduleG1) >= 43 {
 		// nil is reserved metadata, never a Go declaration object.
-		functionObjects[nil] = "core-v43"
+		functionObjects[nil] = "native-observation"
 	}
 	integerID := stableID("execution", "type", "i64")
 	booleanID := stableID("execution", "type", "bool")

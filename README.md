@@ -668,6 +668,12 @@ retains typed native binding reads, Unit-returning procedures, and native items
 inside ordered product results. Run
 `./scripts/check-execution-v43.sh`.
 
+[`Core Execution v44`](spec/core-execution-v44.md) completes the first typed
+native-value flow through Go local bindings. Ordered native call products can
+be projected once into locals, and Go-owned pointer or interface methods remain
+explicit native invocations rather than becoming false neutral semantics. Run
+`./scripts/check-execution-v44.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

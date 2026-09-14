@@ -582,13 +582,16 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if statement.Tok == token.DEFINE && len(statement.Lhs) > 1 && len(statement.Rhs) == 1 {
 				_, callOK := ast.Unparen(statement.Rhs[0]).(*ast.CallExpr)
 				if tuple, ok := types.Unalias(info.TypeOf(statement.Rhs[0])).(*types.Tuple); callOK && ok && tuple.Len() == len(statement.Lhs) {
-					productType, productTypes, supported := goProductTypeID(tuple, records)
-					if !supported {
-						return nil, fmt.Errorf("control.multi_result_type")
-					}
 					value, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
 					if err != nil {
 						return nil, err
+					}
+					productType, productTypes, supported := goProductTypeID(tuple, records)
+					if !supported && value.kind == goNativeInvocation && len(value.nativeResultTypes) == tuple.Len() {
+						productType, productTypes, supported = value.nativeResultType, value.nativeResultTypes, true
+					}
+					if !supported {
+						return nil, fmt.Errorf("control.multi_result_type")
 					}
 					productLocal := *next
 					*next++
@@ -606,6 +609,9 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 							return nil, fmt.Errorf("control.local_binding_type")
 						}
 						localType, typeOK := goLocalSemanticType(object.Type(), records)
+						if !typeOK && value.kind == goNativeInvocation && resultIndex < len(productTypes) {
+							localType, typeOK = productTypes[resultIndex], true
+						}
 						if !typeOK {
 							return nil, fmt.Errorf("control.local_binding_type")
 						}
@@ -744,13 +750,16 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if object == nil {
 				return nil, fmt.Errorf("control.local_binding_type")
 			}
-			localType, typeOK := goLocalSemanticType(object.Type(), records)
-			if !typeOK {
-				return nil, fmt.Errorf("control.local_binding_type")
-			}
 			initializer, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
 			if err != nil {
 				return nil, err
+			}
+			localType, typeOK := goLocalSemanticType(object.Type(), records)
+			if !typeOK && initializer.kind == goNativeInvocation {
+				localType, typeOK = initializer.nativeResultType, localType != ""
+			}
+			if !typeOK {
+				return nil, fmt.Errorf("control.local_binding_type")
 			}
 			if statement.Tok == token.ASSIGN {
 				local, exists := locals[object]
@@ -917,7 +926,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			}
 			block.statements = append(block.statements, &goStatement{evaluated: evaluated})
 		default:
-			return nil, fmt.Errorf("control.unsupported_statement")
+			return nil, fmt.Errorf("control.unsupported_statement:%T", raw)
 		}
 	}
 	if requireReturn && (len(block.statements) == 0 || block.statements[len(block.statements)-1].returned == nil && len(block.statements[len(block.statements)-1].returns) == 0) {

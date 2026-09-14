@@ -373,6 +373,50 @@ func TestIncrementalSessionRetainsTypedNativeValueMethod(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsTypedNativePointerMethod(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-pointer-method", Entry: "Close", Files: map[string]string{
+		"close.go": "package nativepointermethod\nimport \"os\"\nfunc Close(file *os.File) error { return file.Close() }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("typed native pointer method rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a06e", "6f732e282a6f732e46696c65292e436c6f7365"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native pointer method missing %q: %q", want, result.CanonicalG1)
+		}
+	}
+}
+
+func TestIncrementalSessionRetainsNativeProductItemsInLocals(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-product-local", Entry: "Exists", Files: map[string]string{
+		"exists.go": "package nativeproductlocal\nimport \"os\"\nfunc Exists(path string) bool { info, err := os.Stat(path); return err == nil && !info.IsDir() }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native product local rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a06f", "696f2f66732e46696c65496e666f", "696f2f66732e28696f2f66732e46696c65496e666f292e4973446972"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native product local missing %q: %q", want, result.CanonicalG1)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsScopedIfInitializer(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v40/module.g1")
 	if err != nil {
