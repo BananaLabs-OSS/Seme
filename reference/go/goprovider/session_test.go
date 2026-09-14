@@ -2,6 +2,7 @@ package goprovider
 
 import (
 	"context"
+	"encoding/hex"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1855,6 +1856,28 @@ func TestIncrementalSessionLiftsRuntimeSizedSliceFold(t *testing.T) {
 	}
 	if !strings.Contains(result.CanonicalG1, "000000000000000000000000000090f8") || !strings.Contains(result.CanonicalG1, "000000000000000000000000000090f7") {
 		t.Fatal("slice or fold schema missing")
+	}
+}
+
+func TestIncrementalSessionLiftsNativeElementSliceRange(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v58/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-range", Entry: "Total", Files: map[string]string{
+		"range.go": "package sample\ntype Item struct { Value int64 }\nfunc Total(values []Item) int64 { total := int64(0); for _, value := range values { total = total + value.Value }; return total }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 {
+		t.Fatalf("native range result = %#v", result)
+	}
+	for _, target := range []string{"builtin.index[[]example.test/native-range.Item]", "builtin.len[[]example.test/native-range.Item]", "builtin.compare[<;int;int]"} {
+		if !strings.Contains(result.CanonicalG1, hex.EncodeToString([]byte(target))) {
+			t.Fatalf("native range target %q missing", target)
+		}
 	}
 }
 
