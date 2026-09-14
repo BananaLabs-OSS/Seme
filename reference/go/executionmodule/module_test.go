@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(73); err == nil {
+	if _, err := Declarations(74); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -587,6 +587,20 @@ func TestVersion72AddsTypedNativeDereference(t *testing.T) {
 	}
 	if len(current) != len(previous)+1 || current[len(previous)].Name != "NativeDereference" {
 		t.Fatalf("v72 declarations = %#v", current[len(previous):])
+	}
+}
+
+func TestVersion73AddsTypedNativeBinary(t *testing.T) {
+	previous, err := Declarations(72)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(73)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].Name != "NativeBinary" {
+		t.Fatalf("v73 declarations = %#v", current[len(previous):])
 	}
 }
 

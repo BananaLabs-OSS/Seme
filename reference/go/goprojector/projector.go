@@ -91,6 +91,7 @@ const (
 	sNativeRange         = "0000000000000000000000000000a07c"
 	sNativeSlice         = "0000000000000000000000000000a07d"
 	sNativeDereference   = "0000000000000000000000000000a07e"
+	sNativeBinary        = "0000000000000000000000000000a07f"
 	sNativeBranch        = "0000000000000000000000000000a079"
 	sNativeAddress       = "0000000000000000000000000000a07a"
 	sWhen                = "000000000000000000000000000090f0"
@@ -2319,6 +2320,25 @@ func expr(id string, c context) (string, error) {
 			return "", err
 		}
 		return "*(" + operand + ")", nil
+	case sNativeBinary:
+		language, languageErr := text(e, "000000000000000000000000000a07f0")
+		operator, operatorErr := text(e, "000000000000000000000000000a07f1")
+		leftID, leftErr := ref(e, "000000000000000000000000000a07f2")
+		rightID, rightErr := ref(e, "000000000000000000000000000a07f3")
+		_, typeErr := ref(e, "000000000000000000000000000a07f4")
+		allowed := map[string]bool{"/": true, "%": true, "<<": true, ">>": true, "|": true, "&": true, "^": true, "&^": true}
+		if languageErr != nil || operatorErr != nil || leftErr != nil || rightErr != nil || typeErr != nil || language != "go" || !allowed[operator] {
+			return "", fmt.Errorf("go_projection.native_binary")
+		}
+		left, err := expr(leftID, c)
+		if err != nil {
+			return "", err
+		}
+		right, err := expr(rightID, c)
+		if err != nil {
+			return "", err
+		}
+		return "(" + left + " " + operator + " " + right + ")", nil
 	case sAdd, sConcat, sMultiply, sSubtract, sLessEqual, sAnd, sOr:
 		leftField, rightField := "00000000000000000000000000009140", "00000000000000000000000000009141"
 		op := "+"

@@ -2159,6 +2159,26 @@ func TestIncrementalSessionRetainsTypedNativeDereference(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsTypedNativeBinaryOperators(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v73/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-binary", Entry: "Mix", Files: map[string]string{
+		"binary.go": "package sample\nfunc Mix(value uint64, shift uint) uint64 { return (value << shift) | (value % 3) }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native binary = %#v", result)
+	}
+	if got := strings.Count(result.CanonicalG1, "0000000000000000000000000000a07f"); got != 3 {
+		t.Fatalf("NativeBinary count = %d", got)
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {

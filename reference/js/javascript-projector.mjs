@@ -48,6 +48,7 @@ const schema = {
   nativeRange: "0000000000000000000000000000a07c",
   nativeSlice: "0000000000000000000000000000a07d",
   nativeDereference: "0000000000000000000000000000a07e",
+  nativeBinary: "0000000000000000000000000000a07f",
   nativeInvocation: "0000000000000000000000000000a06d",
   nativeType: "0000000000000000000000000000a071",
   when: "000000000000000000000000000090f0",
@@ -397,6 +398,7 @@ function projectExpression(id, context) {
   if (expression.schema === schema.nativeAddress) return `Seme.nativeAddress(${JSON.stringify(text(field(expression, 0xa07a0)))}, ${projectExpression(reference(field(expression, 0xa07a1)), context)}, ${JSON.stringify(reference(field(expression, 0xa07a2)))})`;
   if (expression.schema === schema.nativeSlice) { const optional=(id)=>{const values=references(field(expression,id));if(values.length>1)fail("javascript_projection.native_slice_bound");return values.length?projectExpression(values[0],context):"undefined";}; return `Seme.nativeSlice(${JSON.stringify(text(field(expression,0xa07d0)))}, ${projectExpression(reference(field(expression,0xa07d1)),context)}, ${optional(0xa07d2)}, ${optional(0xa07d3)}, ${optional(0xa07d4)}, ${JSON.stringify(reference(field(expression,0xa07d5)))})`; }
   if (expression.schema === schema.nativeDereference) return `Seme.nativeDereference(${JSON.stringify(text(field(expression, 0xa07e0)))}, ${projectExpression(reference(field(expression, 0xa07e1)), context)}, ${JSON.stringify(reference(field(expression, 0xa07e2)))})`;
+  if (expression.schema === schema.nativeBinary) return `Seme.nativeBinary(${JSON.stringify(text(field(expression, 0xa07f0)))}, ${JSON.stringify(text(field(expression, 0xa07f1)))}, ${projectExpression(reference(field(expression, 0xa07f2)), context)}, ${projectExpression(reference(field(expression, 0xa07f3)), context)}, ${JSON.stringify(reference(field(expression, 0xa07f4)))})`;
   if (expression.schema === schema.captureRead) {
     const capture = context.captures?.get(reference(field(expression, 0xa0220)));
     if (!capture) fail("javascript_projection.capture_scope");

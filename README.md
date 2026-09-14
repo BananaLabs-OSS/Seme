@@ -799,6 +799,10 @@ JavaScript, and Lua realizations. Run `./scripts/check-execution-v71.sh`.
 pointer dereference while exposing explicit JavaScript and Lua adapter views.
 Run `./scripts/check-execution-v72.sh`.
 
+[`Core Execution v73`](spec/core-execution-v73.md) preserves typed Go division,
+remainder, shift, and bitwise operators with explicit JavaScript and Lua adapter
+views. Run `./scripts/check-execution-v73.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
