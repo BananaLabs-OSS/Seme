@@ -3,6 +3,7 @@ package goprovider
 import (
 	"context"
 	"encoding/hex"
+	"go/importer"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1920,6 +1921,26 @@ func TestIncrementalSessionLiftsGoDeferAsNativeControl(t *testing.T) {
 	}
 	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a075") {
 		t.Fatal("NativeDefer schema missing")
+	}
+}
+
+func TestIncrementalSessionPreservesIgnoredParallelResults(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v62/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/ignored-results", Entry: "Run", Files: map[string]string{
+		"ignored.go": "package ignored\nimport \"fmt\"\nfunc Run() { _, _ = fmt.Print(\"ignored-result\") }\n",
+	}, ExternalImporter: importer.Default()})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("ignored results = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, hex.EncodeToString([]byte("fmt.Print"))) {
+		t.Fatal("ignored native invocation missing")
 	}
 }
 

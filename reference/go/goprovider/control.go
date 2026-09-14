@@ -637,7 +637,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 		case *ast.AssignStmt:
 			// A multi-result call is one product-valued evaluation. Bind that product
 			// once, then project each Go binding from it in source order.
-			if statement.Tok == token.DEFINE && len(statement.Lhs) > 1 && len(statement.Rhs) == 1 {
+			if (statement.Tok == token.DEFINE || goExecutionModuleVersion(functions) >= 62 && statement.Tok == token.ASSIGN) && len(statement.Lhs) > 1 && len(statement.Rhs) == 1 {
 				_, callOK := ast.Unparen(statement.Rhs[0]).(*ast.CallExpr)
 				_, assertionOK := ast.Unparen(statement.Rhs[0]).(*ast.TypeAssertExpr)
 				if tuple, ok := types.Unalias(info.TypeOf(statement.Rhs[0])).(*types.Tuple); (callOK || assertionOK) && ok && tuple.Len() == len(statement.Lhs) {
@@ -652,6 +652,15 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					if !supported {
 						return nil, fmt.Errorf("control.multi_result_type")
 					}
+					allBlank := statement.Tok == token.ASSIGN
+					for _, target := range statement.Lhs {
+						name, nameOK := target.(*ast.Ident)
+						allBlank = allBlank && nameOK && name.Name == "_"
+					}
+					if allBlank {
+						block.statements = append(block.statements, &goStatement{evaluated: value})
+						continue
+					}
 					productLocal := *next
 					*next++
 					block.statements = append(block.statements, &goStatement{localName: fmt.Sprintf("seme_product_%d", productLocal), localType: productType, local: productLocal, initializer: value})
@@ -664,6 +673,9 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 							continue
 						}
 						object := info.Defs[name]
+						if statement.Tok == token.ASSIGN {
+							object = info.Uses[name]
+						}
 						if object == nil {
 							return nil, fmt.Errorf("control.local_binding_type")
 						}
@@ -674,11 +686,19 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 						if !typeOK {
 							return nil, fmt.Errorf("control.local_binding_type")
 						}
-						local := *next
-						*next++
 						projected := &goExpression{kind: goProductProject, left: &goExpression{kind: goLocalRead, local: productLocal}, typeID: productType, elementTypeID: goSemanticTypeIdentity(tuple.At(resultIndex).Type()), productIndex: uint64(resultIndex), productTypes: productTypes}
-						block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: projected, mutable: mutable[object]})
-						locals[object] = local
+						if statement.Tok == token.ASSIGN {
+							local, exists := locals[object]
+							if !exists || !mutable[object] {
+								return nil, fmt.Errorf("control.assignment_target")
+							}
+							block.statements = append(block.statements, &goStatement{local: local, mutable: true, assignment: projected})
+						} else {
+							local := *next
+							*next++
+							block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: projected, mutable: mutable[object]})
+							locals[object] = local
+						}
 					}
 					continue
 				}
@@ -747,8 +767,15 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				if statement.Tok == token.ASSIGN {
 					for i, target := range statement.Lhs {
 						name, ok := target.(*ast.Ident)
-						if !ok || name.Name == "_" {
+						if !ok {
 							return nil, fmt.Errorf("control.multi_binding_target")
+						}
+						if name.Name == "_" {
+							if goExecutionModuleVersion(functions) < 62 {
+								return nil, fmt.Errorf("control.multi_binding_target")
+							}
+							block.statements = append(block.statements, &goStatement{evaluated: initializers[i]})
+							continue
 						}
 						object := info.Uses[name]
 						if object == nil {
@@ -775,8 +802,17 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				}
 				for i, target := range statement.Lhs {
 					name, ok := target.(*ast.Ident)
-					if !ok || name.Name == "_" {
+					if !ok {
 						return nil, fmt.Errorf("control.multi_binding_target")
+					}
+					if name.Name == "_" {
+						if goExecutionModuleVersion(functions) < 62 {
+							return nil, fmt.Errorf("control.multi_binding_target")
+						}
+						if statement.Tok == token.DEFINE {
+							block.statements = append(block.statements, &goStatement{evaluated: initializers[i]})
+						}
+						continue
 					}
 					object := info.Defs[name]
 					if statement.Tok == token.ASSIGN {
