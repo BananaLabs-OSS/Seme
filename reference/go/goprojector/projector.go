@@ -12,6 +12,7 @@ import (
 	"go/format"
 	"go/parser"
 	"go/token"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,6 +55,7 @@ const (
 	sMapUpdate           = "0000000000000000000000000000a043"
 	sSliceRemove         = "0000000000000000000000000000a066"
 	sMapRemove           = "0000000000000000000000000000a067"
+	sNativeInvocation    = "0000000000000000000000000000a06d"
 	sSliceConstruct      = "0000000000000000000000000000a068"
 	sBooleanNot          = "0000000000000000000000000000a069"
 	sBytes               = "00000000000000000000000000009041"
@@ -77,6 +79,7 @@ const (
 	sPlaceRead           = "000000000000000000000000000090e2"
 	sAssignPlace         = "000000000000000000000000000090e3"
 	sWhile               = "000000000000000000000000000090e4"
+	sNativeDefer         = "0000000000000000000000000000a075"
 	sWhen                = "000000000000000000000000000090f0"
 	sIf                  = "000000000000000000000000000090c0"
 	sLessEqual           = "00000000000000000000000000009021"
@@ -198,19 +201,36 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 	var out strings.Builder
 	fmt.Fprintf(&out, "package %s\n\n", packageName)
 	writeProjectionEnvelope(&out, g1)
-	imports := []string{}
+	importSet := map[string]bool{}
 	if graphHasSchema(graph, sBytesEqual) {
-		imports = append(imports, "bytes")
+		importSet["bytes"] = true
 	}
 	if graphHasSchema(graph, sCollectionUpdate) || graphHasSchema(graph, sSliceRemove) {
-		imports = append(imports, "slices")
+		importSet["slices"] = true
 	}
 	if graphHasUnfoldedMapUpdate(graph) || graphHasSchema(graph, sMapRemove) {
-		imports = append(imports, "maps")
+		importSet["maps"] = true
 	}
 	if graphHasSchema(graph, sEffectInvoke) {
-		imports = append(imports, "log")
+		importSet["log"] = true
 	}
+	for _, e := range graph {
+		if e.schema != sNativeInvocation {
+			continue
+		}
+		language, languageErr := text(e, "000000000000000000000000000a06d0")
+		callable, callableErr := text(e, "000000000000000000000000000a06d1")
+		if languageErr == nil && callableErr == nil && language == "go" {
+			if dot := strings.LastIndexByte(callable, '.'); dot > 0 {
+				importSet[callable[:dot]] = true
+			}
+		}
+	}
+	imports := make([]string, 0, len(importSet))
+	for path := range importSet {
+		imports = append(imports, path)
+	}
+	sort.Strings(imports)
 	if len(imports) == 1 {
 		fmt.Fprintf(&out, "import %q\n\n", imports[0])
 	} else if len(imports) > 1 {
@@ -680,6 +700,19 @@ func projectBlock(id string, c context) (string, error) {
 				return "", err
 			}
 			lines = append(lines, "\t"+keyword+condition+" {", indentBlock(body), "\t}")
+		case sNativeDefer:
+			if language, err := text(statement, "000000000000000000000000000a0750"); err != nil || language != "go" {
+				return "", fmt.Errorf("go_projection.native_defer_language")
+			}
+			invocationID, err := ref(statement, "000000000000000000000000000a0751")
+			if err != nil {
+				return "", err
+			}
+			invocation, err := expr(invocationID, c)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\tdefer "+invocation)
 		case sIf:
 			conditionID, err := ref(statement, "00000000000000000000000000009c00")
 			if err != nil {
@@ -1895,6 +1928,41 @@ func expr(id string, c context) (string, error) {
 			return "", err
 		}
 		return "!(" + projected + ")", nil
+	case sNativeInvocation:
+		language, err := text(e, "000000000000000000000000000a06d0")
+		if err != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_invocation_language")
+		}
+		callable, err := text(e, "000000000000000000000000000a06d1")
+		if err != nil {
+			return "", err
+		}
+		dot := strings.LastIndexByte(callable, '.')
+		if dot <= 0 || dot == len(callable)-1 {
+			return "", fmt.Errorf("go_projection.native_invocation_callable")
+		}
+		path, name := callable[:dot], callable[dot+1:]
+		if !identifier(name) {
+			return "", fmt.Errorf("go_projection.native_invocation_callable")
+		}
+		argumentIDs, err := refs(e, "000000000000000000000000000a06d3")
+		if err != nil {
+			return "", err
+		}
+		arguments := make([]string, len(argumentIDs))
+		for index, argumentID := range argumentIDs {
+			arguments[index], err = expr(argumentID, c)
+			if err != nil {
+				return "", err
+			}
+		}
+		// slices.Replace's indices are native Go ints. Seme's neutral integer
+		// projections are int64, so restore the checked native call boundary.
+		if callable == "slices.Replace" && len(arguments) >= 3 {
+			arguments[1] = "int(" + arguments[1] + ")"
+			arguments[2] = "int(" + arguments[2] + ")"
+		}
+		return filepath.Base(path) + "." + name + "(" + strings.Join(arguments, ", ") + ")", nil
 	case sAdd, sConcat, sMultiply, sSubtract, sLessEqual, sAnd, sOr:
 		leftField, rightField := "00000000000000000000000000009140", "00000000000000000000000000009141"
 		op := "+"

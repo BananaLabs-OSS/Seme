@@ -172,6 +172,30 @@ func TestProjectsTypedMultiFileCallGraphAndRelifts(t *testing.T) {
 	runNative(t, map[string]string{"projected.go": string(projected)})
 }
 
+func TestProjectsNativeDeferBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v61/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-defer", Entry: "Run", Files: map[string]string{
+		"defer.go": "package sample\nfunc Finish(value int64) int64 { return value }\nfunc Run(value int64) int64 { defer Finish(value); return value }\n",
+	}})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "defer Finish(value)") {
+		t.Fatalf("projection lacks defer:\n%s", projected)
+	}
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

@@ -25,6 +25,7 @@ type goStatement struct {
 	effect      string
 	effectArgs  []*goExpression
 	evaluated   *goExpression
+	deferred    *goExpression
 }
 
 type goBlock struct {
@@ -812,7 +813,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				}
 				continue
 			}
-			if statement.Tok != token.DEFINE && statement.Tok != token.ASSIGN && len(statement.Lhs) == 1 && len(statement.Rhs) == 1 {
+			if goExecutionModuleVersion(functions) >= 59 && statement.Tok != token.DEFINE && statement.Tok != token.ASSIGN && len(statement.Lhs) == 1 && len(statement.Rhs) == 1 {
 				name, nameOK := statement.Lhs[0].(*ast.Ident)
 				object := info.Uses[name]
 				local, exists := locals[object]
@@ -1054,6 +1055,15 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				return nil, err
 			}
 			block.statements = append(block.statements, rangeStatements...)
+		case *ast.DeferStmt:
+			if goExecutionModuleVersion(functions) < 61 {
+				return nil, fmt.Errorf("control.unsupported_statement:%T", statement)
+			}
+			invocation, err := analyzeGoExpressionWithProgram(statement.Call, signature, info, locals, functions, records, mutable)
+			if err != nil {
+				return nil, err
+			}
+			block.statements = append(block.statements, &goStatement{deferred: invocation})
 		case *ast.ExprStmt:
 			call, ok := statement.X.(*ast.CallExpr)
 			if !ok {
@@ -1099,7 +1109,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 // silently recast as neutral Seme values. Map and string range have different
 // ordering and rune semantics and deliberately remain native islands here.
 func analyzeGoIndexedRange(statement *ast.RangeStmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool, next *int) ([]*goStatement, error) {
-	if functions[nil] != "native-default" || statement.Tok != token.DEFINE {
+	if goExecutionModuleVersion(functions) < 59 || functions[nil] != "native-default" || statement.Tok != token.DEFINE {
 		return nil, fmt.Errorf("control.unsupported_statement:%T", statement)
 	}
 	collectionType := info.TypeOf(statement.X)
@@ -1580,6 +1590,14 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, expressions...)
 			statementID = stableID("execution", owner, statementPath, "evaluate")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a06c", []graphField{refField(0xa06c0, valueID)})})
+		} else if statement.deferred != nil {
+			expressions, invocationID, err := emitCanonicalExpressionWithLocals(statement.deferred, owner+":"+statementPath+":defer", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, expressions...)
+			statementID = stableID("execution", owner, statementPath, "native-defer")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a075", []graphField{bytesField(0xa0750, "go"), refField(0xa0751, invocationID)})})
 		} else {
 			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+statementPath+":condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {

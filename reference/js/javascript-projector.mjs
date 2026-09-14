@@ -37,6 +37,7 @@ const schema = {
   placeRead: "000000000000000000000000000090e2",
   assignPlace: "000000000000000000000000000090e3",
   whileLoop: "000000000000000000000000000090e4",
+  nativeDefer: "0000000000000000000000000000a075",
   when: "000000000000000000000000000090f0",
   effectInvoke: "000000000000000000000000000090f1",
   effect: "00000000000000000000000000000015",
@@ -224,6 +225,12 @@ function projectBlock(id, context, indent) {
       const condition = projectExpression(reference(field(statement, 0x9e40)), localContext);
       const body = projectBlock(reference(field(statement, 0x9e41)), localContext, `${indent}  `);
       lines.push(`${indent}while (${condition}) {\n${body}\n${indent}}`);
+      continue;
+    }
+    if (statement.schema === schema.nativeDefer) {
+      const language = text(field(statement, 0xa0750));
+      const invocation = projectExpression(reference(field(statement, 0xa0751)), localContext);
+      lines.push(`${indent}Seme.deferNative(${JSON.stringify(language)}, () => ${invocation});`);
       continue;
     }
     if (statement.schema === schema.when) {
