@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(95); err == nil {
+	if _, err := Declarations(96); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -895,6 +895,20 @@ func TestVersion94AddsNativeBindingAssignment(t *testing.T) {
 	}
 	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa082 || current[len(previous)].Name != "NativeBindingAssignment" {
 		t.Fatalf("v94 declarations = %#v", current[len(previous):])
+	}
+}
+
+func TestVersion95AddsNativeDereferenceAssignment(t *testing.T) {
+	previous, err := Declarations(94)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(95)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa083 || current[len(previous)].Name != "NativeDereferenceAssignment" {
+		t.Fatalf("v95 declarations = %#v", current[len(previous):])
 	}
 }
 

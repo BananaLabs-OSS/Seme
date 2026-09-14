@@ -371,6 +371,31 @@ func TestProjectsPackageBindingAssignmentBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": string(projected), "binding.go": "package nativeproof\nvar Enabled bool\n"}, `func TestNative(t *testing.T) { Enable(true); if !Enabled { t.Fatal("binding") } }`)
 }
 
+func TestProjectsPointerAssignmentBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v95/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/pointer", Entry: "Set", Files: map[string]string{
+		"pointer.go": "package sample\nfunc Set(target *string, value string) { *target = value }\n",
+	}})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "*(target) = value") {
+		t.Fatalf("projection lacks pointer assignment:\n%s", projected)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) { value := "before"; Set(&value, "after"); if value != "after" { t.Fatal(value) } }`)
+}
+
 func TestProjectsMutableParameterThroughCanonicalPlace(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v64/module.g1")
 	if err != nil {

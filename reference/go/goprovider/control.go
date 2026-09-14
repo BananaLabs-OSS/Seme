@@ -35,6 +35,8 @@ type goStatement struct {
 	nativeIndexValue      *goExpression
 	nativeBindingName     string
 	nativeBindingValue    *goExpression
+	nativePointer         *goExpression
+	nativePointerValue    *goExpression
 	nativeSwitchSubject   *goExpression
 	nativeSwitchCases     []goSwitchCase
 	nativeSwitchDefault   *goBlock
@@ -767,6 +769,20 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				}
 			}
 		case *ast.AssignStmt:
+			if goExecutionModuleVersion(functions) >= 95 && functions[nil] == "native-default" && statement.Tok == token.ASSIGN && len(statement.Lhs) == 1 && len(statement.Rhs) == 1 {
+				if dereference, ok := ast.Unparen(statement.Lhs[0]).(*ast.StarExpr); ok {
+					pointer, err := analyzeGoExpressionWithProgram(dereference.X, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					value, err := analyzeGoExpressionExpected(statement.Rhs[0], info.TypeOf(dereference), signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					block.statements = append(block.statements, &goStatement{nativePointer: pointer, nativePointerValue: value})
+					continue
+				}
+			}
 			if goExecutionModuleVersion(functions) >= 94 && functions[nil] == "native-default" && statement.Tok == token.ASSIGN && len(statement.Lhs) == 1 && len(statement.Rhs) == 1 {
 				if name, ok := ast.Unparen(statement.Lhs[0]).(*ast.Ident); ok {
 					if object, ok := info.Uses[name].(*types.Var); ok && object.Pkg() != nil && object.Parent() == object.Pkg().Scope() {
@@ -2233,6 +2249,19 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, valueEntities...)
 			statementID = stableID("execution", owner, statementPath, "native-field-assignment")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a076", []graphField{bytesField(0xa0760, "go"), bytesField(0xa0761, statement.nativeFieldName), refField(0xa0762, receiverID), refField(0xa0763, valueID)})})
+		} else if statement.nativePointer != nil {
+			pointerEntities, pointerID, err := emitCanonicalExpressionWithLocals(statement.nativePointer, owner+":"+statementPath+":native-pointer", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			valueEntities, valueID, err := emitCanonicalExpressionWithLocals(statement.nativePointerValue, owner+":"+statementPath+":native-pointer-value", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, pointerEntities...)
+			*instances = append(*instances, valueEntities...)
+			statementID = stableID("execution", owner, statementPath, "native-dereference-assignment")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a083", []graphField{bytesField(0xa0830, "go"), refField(0xa0831, pointerID), refField(0xa0832, valueID)})})
 		} else if statement.nativeBindingValue != nil {
 			valueEntities, valueID, err := emitCanonicalExpressionWithLocals(statement.nativeBindingValue, owner+":"+statementPath+":native-binding-value", parameterIDs, localIDs, integerTypeID)
 			if err != nil {
