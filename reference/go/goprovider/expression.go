@@ -90,6 +90,7 @@ const (
 	goNativeBindingRead
 	goNativeDefaultValue
 	goNativeAddress
+	goNativeSlice
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -130,6 +131,9 @@ type goExpression struct {
 	nativeResultType  string
 	nativeResultTypes []string
 	nativeTypes       map[string]string
+	nativeSliceLow    *goExpression
+	nativeSliceHigh   *goExpression
+	nativeSliceMax    *goExpression
 	elementTypeID     string
 	productIndex      uint64
 	productTypes      []string
@@ -252,6 +256,42 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a07a", []graphField{
 				bytesField(0xa07a0, expression.nativeLanguage), refField(0xa07a1, operand), refField(0xa07a2, expression.nativeResultType),
 			})}
+			return id, nil
+		case goNativeSlice:
+			if expression.nativeLanguage == "" || expression.nativeResultType == "" || expression.left == nil {
+				return "", fmt.Errorf("expression.native_slice_incomplete")
+			}
+			collection, err := emit(expression.left, path+".collection")
+			if err != nil {
+				return "", err
+			}
+			emitOptional := func(value *goExpression, suffix string) ([]string, error) {
+				if value == nil {
+					return nil, nil
+				}
+				id, err := emit(value, path+suffix)
+				if err != nil {
+					return nil, err
+				}
+				return []string{id}, nil
+			}
+			low, err := emitOptional(expression.nativeSliceLow, ".low")
+			if err != nil {
+				return "", err
+			}
+			high, err := emitOptional(expression.nativeSliceHigh, ".high")
+			if err != nil {
+				return "", err
+			}
+			maximum, err := emitOptional(expression.nativeSliceMax, ".max")
+			if err != nil {
+				return "", err
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, expression.nativeLanguage), bytesField(0xa0711, spelling)})}
+			}
+			id := expressionNodeID(owner, path, "native-slice")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a07d", []graphField{bytesField(0xa07d0, expression.nativeLanguage), refField(0xa07d1, collection), refsField(0xa07d2, low), refsField(0xa07d3, high), refsField(0xa07d4, maximum), refField(0xa07d5, expression.nativeResultType)})}
 			return id, nil
 		case goNativeMethodInvocation:
 			if expression.nativeLanguage == "" || expression.nativeTarget == "" || expression.nativeSignature == "" || expression.nativeResultType == "" || expression.left == nil {
@@ -2039,8 +2079,52 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			kind = goMapLookup
 		}
 		return &goExpression{kind: kind, left: collection, right: index}, nil
+	case *ast.SliceExpr:
+		if goExecutionModuleVersion(functions) < 71 || functions[nil] != "native-default" {
+			return nil, fmt.Errorf("expression.unsupported_node:%T", expression)
+		}
+		collection, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+		if err != nil {
+			return nil, err
+		}
+		resultType := info.TypeOf(expression)
+		resultID, ok := goSupportedTypeID(resultType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+		nativeTypes := map[string]string{}
+		if !ok {
+			resultID, ok = goNativeTypeID(resultType)
+			if spelling, native := goNativeTypeSpelling(resultType); native {
+				nativeTypes[resultID] = spelling
+			}
+		}
+		if !ok {
+			return nil, fmt.Errorf("expression.native_slice_result")
+		}
+		intType := types.Universe.Lookup("int").Type()
+		bound := func(node ast.Expr) (*goExpression, error) {
+			if node == nil {
+				return nil, nil
+			}
+			value, id, spelling, err := analyzeNativeGoOperand(node, intType, signature, info, locals, functions, records, mutableLocals)
+			if err == nil {
+				nativeTypes[id] = spelling
+			}
+			return value, err
+		}
+		low, err := bound(expression.Low)
+		if err != nil {
+			return nil, err
+		}
+		high, err := bound(expression.High)
+		if err != nil {
+			return nil, err
+		}
+		maximum, err := bound(expression.Max)
+		if err != nil {
+			return nil, err
+		}
+		return &goExpression{kind: goNativeSlice, left: collection, nativeLanguage: "go", nativeResultType: resultID, nativeTypes: nativeTypes, nativeSliceLow: low, nativeSliceHigh: high, nativeSliceMax: maximum}, nil
 	default:
-		return nil, fmt.Errorf("expression.unsupported_node")
+		return nil, fmt.Errorf("expression.unsupported_node:%T", expression)
 	}
 }
 

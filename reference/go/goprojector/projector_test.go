@@ -402,6 +402,32 @@ func TestProjectsNativeMapRangeBackToGoSyntax(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Total(map[string]int64{"a": 2, "b": 3}) != 5 { t.Fatal("range") } }`)
 }
 
+func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-slice", Entry: "Window", Files: map[string]string{
+		"slice.go": "package sample\nfunc Window(values []int64, low int, high int) []int64 { return values[low:high] }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native slice lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "values[int(low):int(high)]") {
+		t.Fatalf("projection lacks native slice:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { got := Window([]int64{1,2,3}, 1, 3); if len(got)!=2 || got[0]!=2 || got[1]!=3 { t.Fatal(got) } }`)
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

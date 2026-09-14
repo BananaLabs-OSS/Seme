@@ -89,6 +89,7 @@ const (
 	sNativeSwitch        = "0000000000000000000000000000a078"
 	sNativeRangeBinding  = "0000000000000000000000000000a07b"
 	sNativeRange         = "0000000000000000000000000000a07c"
+	sNativeSlice         = "0000000000000000000000000000a07d"
 	sNativeBranch        = "0000000000000000000000000000a079"
 	sNativeAddress       = "0000000000000000000000000000a07a"
 	sWhen                = "000000000000000000000000000090f0"
@@ -2261,6 +2262,50 @@ func expr(id string, c context) (string, error) {
 			return "", err
 		}
 		return "&(" + operand + ")", nil
+	case sNativeSlice:
+		language, err := text(e, "000000000000000000000000000a07d0")
+		if err != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_slice_language")
+		}
+		collectionID, err := ref(e, "000000000000000000000000000a07d1")
+		if err != nil {
+			return "", err
+		}
+		collection, err := expr(collectionID, c)
+		if err != nil {
+			return "", err
+		}
+		optional := func(field string) (string, bool, error) {
+			ids, err := refs(e, field)
+			if err != nil || len(ids) > 1 {
+				return "", false, fmt.Errorf("go_projection.native_slice_bound")
+			}
+			if len(ids) == 0 {
+				return "", false, nil
+			}
+			value, err := expr(ids[0], c)
+			return value, true, err
+		}
+		low, _, err := optional("000000000000000000000000000a07d2")
+		if err != nil {
+			return "", err
+		}
+		high, _, err := optional("000000000000000000000000000a07d3")
+		if err != nil {
+			return "", err
+		}
+		maximum, hasMax, err := optional("000000000000000000000000000a07d4")
+		if err != nil {
+			return "", err
+		}
+		if _, err := ref(e, "000000000000000000000000000a07d5"); err != nil {
+			return "", err
+		}
+		inside := low + ":" + high
+		if hasMax {
+			inside += ":" + maximum
+		}
+		return collection + "[" + inside + "]", nil
 	case sAdd, sConcat, sMultiply, sSubtract, sLessEqual, sAnd, sOr:
 		leftField, rightField := "00000000000000000000000000009140", "00000000000000000000000000009141"
 		op := "+"
