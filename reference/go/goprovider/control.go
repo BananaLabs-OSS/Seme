@@ -1140,7 +1140,8 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 		case *ast.IfStmt:
 			ifLocals, ifMutable := locals, mutable
 			var initializer []*goStatement
-			if statement.Else == nil && !blockContainsReturn(statement.Body.List) || statement.Else != nil && (index < len(statements)-1 || !requireReturn) {
+			nonterminalGuard := statement.Else == nil && (!blockContainsReturn(statement.Body.List) || goExecutionModuleVersion(functions) >= 80 && !requireReturn)
+			if nonterminalGuard || statement.Else != nil && (index < len(statements)-1 || !requireReturn) {
 				var err error
 				ifLocals, ifMutable, initializer, err = analyzeGoIfInitializer(statement.Init, signature, info, locals, functions, records, mutable, next)
 				if err != nil {
