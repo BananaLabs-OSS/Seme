@@ -259,6 +259,31 @@ func Method(request *http.Request) string { return request.Method }
 	}
 }
 
+func TestIncrementalSessionRetainsNestedTypedNativeFieldRead(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-field", Entry: "Path", Files: map[string]string{
+		"field.go": `package nativefield
+import "net/http"
+func Path(request *http.Request) string { return request.URL.Path }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("nested typed native field read rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a071", "0000000000000000000000000000a072", "2a6e65742f687474702e526571756573742e55524c", "2a6e65742f75726c2e55524c2e50617468"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("nested native field read omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {

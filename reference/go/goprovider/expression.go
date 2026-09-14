@@ -315,6 +315,9 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			if err != nil {
 				return "", err
 			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, expression.nativeLanguage), bytesField(0xa0711, spelling)})}
+			}
 			id := expressionNodeID(owner, path, "native-field-read")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a072", []graphField{
 				bytesField(0xa0720, expression.nativeLanguage), bytesField(0xa0721, expression.nativeTarget),
@@ -1826,6 +1829,14 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			receiverType := info.TypeOf(expression.X)
 			resultType := info.TypeOf(expression)
 			resultTypeID, resultOK := goSupportedTypeID(resultType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+			nativeTypes := map[string]string(nil)
+			if !resultOK && ownerPath != "" && goTypeOwnedOutsidePackage(resultType, ownerPath) {
+				if nativeID, ok := goNativeTypeID(resultType); ok {
+					resultTypeID, resultOK = nativeID, true
+					spelling, _ := goNativeTypeSpelling(resultType)
+					nativeTypes = map[string]string{nativeID: spelling}
+				}
+			}
 			if functions[nil] != "" && ownerPath != "" && goTypeOwnedOutsidePackage(receiverType, ownerPath) && resultOK {
 				receiver, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
 				if err != nil {
@@ -1837,7 +1848,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 					}
 					return pkg.Path()
 				}) + "." + field.Name()
-				return &goExpression{kind: goNativeFieldRead, left: receiver, nativeLanguage: "go", nativeTarget: target, nativeResultType: resultTypeID}, nil
+				return &goExpression{kind: goNativeFieldRead, left: receiver, nativeLanguage: "go", nativeTarget: target, nativeResultType: resultTypeID, nativeTypes: nativeTypes}, nil
 			}
 			return nil, fmt.Errorf("expression.unknown_record_field:%s:%s", types.TypeString(receiverType, nil), field.Name())
 		}

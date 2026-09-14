@@ -685,6 +685,11 @@ flow symmetric: single results and ordered product items from native functions
 or methods can enter ordinary local bindings without losing their native type
 identity. Run `./scripts/check-execution-v46.sh`.
 
+[`Core Execution v47`](spec/core-execution-v47.md) preserves runtime-owned
+intermediate field values as explicit native types, so nested observations such
+as Go's `request.URL.Path` remain attributable and can return neutral values to
+canonical Seme. Run `./scripts/check-execution-v47.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
