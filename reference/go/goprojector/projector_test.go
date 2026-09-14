@@ -530,6 +530,27 @@ func TestProjectsCompoundAssignmentAsCanonicalMutation(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) { if Add(5)!=7 { t.Fatal(Add(5)) } }`)
 }
 
+func TestProjectsNativeMultiResultAndIfInitializerBindings(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "package sample\nfunc Pair(value int64) (int64, *int64) { return value, &value }\nfunc Read(value int64) int64 { first, pointer := Pair(value); if current := pointer; current == pointer { return first }; return 0 }\n"
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-bindings", Entry: "Read", Files: map[string]string{"bindings.go": source}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native bindings lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) { if Read(11)!=11 { t.Fatal(Read(11)) } }`)
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

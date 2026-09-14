@@ -57,6 +57,8 @@ const (
 	sSliceRemove         = "0000000000000000000000000000a066"
 	sMapRemove           = "0000000000000000000000000000a067"
 	sNativeInvocation    = "0000000000000000000000000000a06d"
+	sProductType         = "0000000000000000000000000000a06f"
+	sProductProject      = "0000000000000000000000000000a070"
 	sUnitType            = "0000000000000000000000000000a06a"
 	sUnitValue           = "0000000000000000000000000000a06b"
 	sNativeType          = "0000000000000000000000000000a071"
@@ -336,7 +338,7 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 			if e != nil {
 				return nil, e
 			}
-			result, e := typeName(graph, resultID)
+			result, e := resultTypeName(graph, resultID)
 			if e != nil {
 				return nil, e
 			}
@@ -393,7 +395,7 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 		if e != nil {
 			return nil, e
 		}
-		result, e := typeName(graph, resultID)
+		result, e := resultTypeName(graph, resultID)
 		if e != nil {
 			return nil, e
 		}
@@ -441,7 +443,7 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 		if e != nil {
 			return nil, e
 		}
-		result, e := typeName(graph, resultID)
+		result, e := resultTypeName(graph, resultID)
 		if e != nil {
 			return nil, e
 		}
@@ -575,6 +577,83 @@ func graphHasUnfoldedMapUpdate(graph map[string]entity) bool {
 	return false
 }
 
+// projectProductBinding recognizes the canonical form used for one evaluated
+// product followed by ordered projections and reconstructs one Go destructuring
+// declaration. Missing projections are represented by Go's blank identifier.
+func projectProductBinding(index int, statements []string, c context) (string, []int, bool, error) {
+	statement := c.graph[statements[index]]
+	bindingID, err := ref(statement, "00000000000000000000000000009d10")
+	if err != nil {
+		return "", nil, false, nil
+	}
+	binding, ok := c.graph[bindingID]
+	if !ok || binding.schema != sLocalBinding {
+		return "", nil, false, nil
+	}
+	typeID, err := ref(binding, "00000000000000000000000000009d01")
+	if err != nil || c.graph[typeID].schema != sProductType {
+		return "", nil, false, nil
+	}
+	items, err := refs(c.graph[typeID], "000000000000000000000000000a06f0")
+	if err != nil || len(items) < 2 {
+		return "", nil, false, fmt.Errorf("go_projection.invalid_product_type")
+	}
+	initializerID, err := ref(binding, "00000000000000000000000000009d02")
+	if err != nil {
+		return "", nil, false, err
+	}
+	initializer, err := expr(initializerID, c)
+	if err != nil {
+		return "", nil, false, err
+	}
+	names := make([]string, len(items))
+	for itemIndex := range names {
+		names[itemIndex] = "_"
+	}
+	consumed := []int{}
+	for candidateIndex := index + 1; candidateIndex < len(statements); candidateIndex++ {
+		candidate := c.graph[statements[candidateIndex]]
+		if candidate.schema != sBindLocal {
+			break
+		}
+		projectedBindingID, e := ref(candidate, "00000000000000000000000000009d10")
+		projectedBinding, exists := c.graph[projectedBindingID]
+		if e != nil || !exists || projectedBinding.schema != sLocalBinding {
+			break
+		}
+		projectID, e := ref(projectedBinding, "00000000000000000000000000009d02")
+		project, exists := c.graph[projectID]
+		if e != nil || !exists || project.schema != sProductProject {
+			break
+		}
+		productID, e := ref(project, "000000000000000000000000000a0700")
+		productRead, exists := c.graph[productID]
+		if e != nil || !exists || productRead.schema != sLocalRead {
+			break
+		}
+		owner, e := ref(productRead, "00000000000000000000000000009d20")
+		if e != nil || owner != bindingID {
+			break
+		}
+		position, e := unsigned(project, "000000000000000000000000000a0702")
+		if e != nil || position >= uint64(len(names)) || names[position] != "_" {
+			return "", nil, false, fmt.Errorf("go_projection.invalid_product_projection")
+		}
+		name, e := text(projectedBinding, "00000000000000000000000000009d00")
+		if e != nil || !identifier(name) {
+			return "", nil, false, fmt.Errorf("go_projection.invalid_local_name:%s:%q", projectedBindingID, name)
+		}
+		name = availableLocalName(name, c)
+		names[position] = name
+		c.locals[projectedBindingID] = name
+		consumed = append(consumed, candidateIndex)
+	}
+	if len(consumed) == 0 {
+		return "", nil, false, nil
+	}
+	return strings.Join(names, ", ") + " := " + initializer, consumed, true, nil
+}
+
 func projectBlock(id string, c context) (string, error) {
 	b, ok := c.graph[id]
 	if !ok || b.schema != sBlock {
@@ -595,13 +674,26 @@ func projectBlock(id string, c context) (string, error) {
 		}
 	}
 	lines := []string{}
+	skipped := map[int]bool{}
 	for index, statementID := range statements {
+		if skipped[index] {
+			continue
+		}
 		statement, ok := c.graph[statementID]
 		if !ok {
 			return "", fmt.Errorf("go_projection.unsupported_statement")
 		}
 		switch statement.schema {
 		case sBindLocal:
+			if line, consumed, ok, err := projectProductBinding(index, statements, c); err != nil {
+				return "", err
+			} else if ok {
+				lines = append(lines, "\t"+line)
+				for _, item := range consumed {
+					skipped[item] = true
+				}
+				continue
+			}
 			bindingID, err := ref(statement, "00000000000000000000000000009d10")
 			if err != nil {
 				return "", err
@@ -963,8 +1055,19 @@ func projectBlock(id string, c context) (string, error) {
 				return "", fmt.Errorf("go_projection.return_not_terminal")
 			}
 			values, err := refs(statement, "00000000000000000000000000009810")
-			if err != nil || len(values) != 1 {
+			if err != nil || len(values) == 0 {
 				return "", fmt.Errorf("go_projection.return_arity")
+			}
+			if len(values) > 1 {
+				rendered := make([]string, len(values))
+				for valueIndex, valueID := range values {
+					rendered[valueIndex], err = expr(valueID, c)
+					if err != nil {
+						return "", err
+					}
+				}
+				lines = append(lines, "\treturn "+strings.Join(rendered, ", "))
+				continue
 			}
 			if value, ok := c.graph[values[0]]; ok && value.schema == sUnitValue {
 				lines = append(lines, "\treturn")
@@ -2195,7 +2298,17 @@ func expr(id string, c context) (string, error) {
 				if len(arguments) != 1 {
 					return "", fmt.Errorf("go_projection.native_builtin_arity")
 				}
-				return payload + "(" + arguments[0] + ")", nil
+				// Pointer and composite literal type spellings require parentheses
+				// in conversion position; named and scalar types retain idiomatic
+				// Go syntax such as Item(value) and int(index).
+				conversionType := payload
+				if strings.HasPrefix(payload, "*") || strings.HasPrefix(payload, "[") ||
+					strings.HasPrefix(payload, "map[") || strings.HasPrefix(payload, "chan ") ||
+					strings.HasPrefix(payload, "<-chan ") || strings.HasPrefix(payload, "func(") ||
+					strings.HasPrefix(payload, "interface{") || strings.HasPrefix(payload, "struct{") {
+					conversionType = "(" + payload + ")"
+				}
+				return conversionType + "(" + arguments[0] + ")", nil
 			case "index":
 				if len(arguments) != 2 {
 					return "", fmt.Errorf("go_projection.native_builtin_arity")
@@ -2540,6 +2653,28 @@ func expressionTypeName(expressionID, bindingID string, graph map[string]entity)
 
 func typeName(g map[string]entity, id string) (string, error) {
 	return typeNameRelative(g, id, nil, nil)
+}
+
+// resultTypeName renders Seme's ordered product as Go's native multiple-result
+// syntax. ProductType remains a neutral semantic type; this spelling belongs
+// only to the Go projection.
+func resultTypeName(g map[string]entity, id string) (string, error) {
+	value, ok := g[id]
+	if !ok || value.schema != sProductType {
+		return typeName(g, id)
+	}
+	items, err := refs(value, "000000000000000000000000000a06f0")
+	if err != nil || len(items) < 2 {
+		return "", fmt.Errorf("go_projection.invalid_product_type")
+	}
+	rendered := make([]string, len(items))
+	for index, item := range items {
+		rendered[index], err = typeName(g, item)
+		if err != nil || rendered[index] == "" {
+			return "", fmt.Errorf("go_projection.invalid_product_item")
+		}
+	}
+	return "(" + strings.Join(rendered, ", ") + ")", nil
 }
 
 // typeNameRelative renders declaration and generic-family names relative to

@@ -742,6 +742,9 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 						return nil, err
 					}
 					productType, productTypes, supported := goProductTypeID(tuple, records)
+					if !supported && goExecutionModuleVersion(functions) >= 76 && functions[nil] == "native-default" {
+						productType, productTypes, _, supported = goProductTypeIDWithNative(tuple, records, "", true)
+					}
 					if !supported && (value.kind == goNativeInvocation || value.kind == goNativeMethodInvocation) && len(value.nativeResultTypes) == tuple.Len() {
 						productType, productTypes, supported = value.nativeResultType, value.nativeResultTypes, true
 					}
@@ -776,7 +779,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 							return nil, fmt.Errorf("control.local_binding_type")
 						}
 						localType, typeOK := goLocalSemanticType(object.Type(), records)
-						if !typeOK && (value.kind == goNativeInvocation || value.kind == goNativeMethodInvocation) && resultIndex < len(productTypes) {
+						if !typeOK && resultIndex < len(productTypes) && (goExecutionModuleVersion(functions) >= 76 || value.kind == goNativeInvocation || value.kind == goNativeMethodInvocation) {
 							localType, typeOK = productTypes[resultIndex], true
 						}
 						if !typeOK {
@@ -1625,6 +1628,9 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 			return nil, nil, nil, err
 		}
 		productType, productTypes, supported := goProductTypeID(tuple, records)
+		if !supported && goExecutionModuleVersion(functions) >= 76 && functions[nil] == "native-default" {
+			productType, productTypes, _, supported = goProductTypeIDWithNative(tuple, records, "", true)
+		}
 		if !supported && (value.kind == goNativeInvocation || value.kind == goNativeMethodInvocation) && len(value.nativeResultTypes) == tuple.Len() {
 			productType, productTypes, supported = value.nativeResultType, value.nativeResultTypes, true
 		}
@@ -1652,7 +1658,7 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 				return nil, nil, nil, fmt.Errorf("control.if_init_binding")
 			}
 			localType, typeOK := goLocalSemanticType(object.Type(), records)
-			if !typeOK && (value.kind == goNativeInvocation || value.kind == goNativeMethodInvocation) {
+			if !typeOK && (goExecutionModuleVersion(functions) >= 76 || value.kind == goNativeInvocation || value.kind == goNativeMethodInvocation) {
 				localType, typeOK = productTypes[resultIndex], true
 			}
 			if !typeOK {
@@ -1688,13 +1694,19 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 	if object == nil {
 		return nil, nil, nil, fmt.Errorf("control.if_init_binding")
 	}
-	localType, ok := goLocalSemanticType(object.Type(), records)
-	if !ok {
-		return nil, nil, nil, fmt.Errorf("control.if_init_type")
-	}
 	value, err := analyzeGoExpressionWithProgram(assignment.Rhs[0], signature, info, locals, functions, records, mutable)
 	if err != nil {
 		return nil, nil, nil, err
+	}
+	localType, ok := goLocalSemanticType(object.Type(), records)
+	if !ok && goExecutionModuleVersion(functions) >= 76 && functions[nil] == "native-default" {
+		// The Go type checker has already proved the initializer assignable to
+		// this binding. Retain an exact native type without manufacturing a Go
+		// conversion (which is invalid for identities such as *T -> *T).
+		localType, ok = goNativeTypeID(object.Type())
+	}
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("control.if_init_type")
 	}
 	scopedLocals := cloneLocalScope(locals)
 	scopedMutable := cloneMutableScope(mutable)

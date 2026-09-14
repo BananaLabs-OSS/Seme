@@ -2216,6 +2216,22 @@ func TestIncrementalSessionRecognizesCompoundAssignmentMutability(t *testing.T) 
 	}
 }
 
+func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "package sample\nfunc Pair(value int64) (int64, *int64) { return value, &value }\nfunc Read(value int64) int64 { first, pointer := Pair(value); if current := pointer; current == pointer { return first }; return 0 }\n"
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-bindings", Entry: "Read", Files: map[string]string{"bindings.go": source}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native bindings = %#v", result)
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {
