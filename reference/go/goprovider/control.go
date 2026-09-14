@@ -775,7 +775,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					if err != nil {
 						return nil, err
 					}
-					value, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
+					value, err := analyzeGoExpressionExpected(statement.Rhs[0], info.TypeOf(indexed), signature, info, locals, functions, records, mutable)
 					if err != nil {
 						return nil, err
 					}
@@ -793,7 +793,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					if err != nil {
 						return nil, err
 					}
-					value, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
+					value, err := analyzeGoExpressionExpected(statement.Rhs[0], field.Type(), signature, info, locals, functions, records, mutable)
 					if err != nil {
 						return nil, err
 					}

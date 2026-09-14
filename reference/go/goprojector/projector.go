@@ -2435,6 +2435,14 @@ func expr(id string, c context) (string, error) {
 			}
 			return name + "(" + strings.Join(arguments, ", ") + ")", nil
 		}
+		ellipsis := strings.HasSuffix(callable, ".ellipsis")
+		if ellipsis {
+			callable = strings.TrimSuffix(callable, ".ellipsis")
+			if len(arguments) == 0 {
+				return "", fmt.Errorf("go_projection.native_invocation_ellipsis")
+			}
+			arguments[len(arguments)-1] += "..."
+		}
 		dot := strings.LastIndexByte(callable, '.')
 		if dot <= 0 || dot == len(callable)-1 {
 			return "", fmt.Errorf("go_projection.native_invocation_callable")

@@ -2525,12 +2525,15 @@ func goUntypedType(value types.Type) bool {
 // explicit realization boundary. The surrounding function remains canonical;
 // targets that cannot provide the declared Go mechanic must reject placement.
 func analyzeNativeGoInvocation(function *types.Func, argumentsAST []ast.Expr, ellipsis bool, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
-	if function == nil || function.Pkg() == nil || ellipsis {
+	if function == nil || function.Pkg() == nil {
 		return nil, fmt.Errorf("expression.native_call_target")
 	}
 	callSignature, ok := function.Type().(*types.Signature)
 	if !ok {
 		return nil, fmt.Errorf("expression.native_call_signature")
+	}
+	if ellipsis && (goExecutionModuleVersion(functions) < 89 || !callSignature.Variadic()) {
+		return nil, fmt.Errorf("expression.native_call_target")
 	}
 	resultType, resultTypes, nativeTypes, ok := nativeGoResultTypeID(callSignature, records)
 	if !ok {
@@ -2538,10 +2541,7 @@ func analyzeNativeGoInvocation(function *types.Func, argumentsAST []ast.Expr, el
 	}
 	arguments := make([]*goExpression, len(argumentsAST))
 	for index, argument := range argumentsAST {
-		var expected types.Type
-		if index < callSignature.Params().Len() {
-			expected = callSignature.Params().At(index).Type()
-		}
+		expected := goCallArgumentType(callSignature, index, ellipsis, len(argumentsAST))
 		analyzed, err := analyzeGoExpressionExpected(argument, expected, signature, info, locals, functions, records, mutableLocals)
 		if err != nil {
 			return nil, err
@@ -2549,12 +2549,36 @@ func analyzeNativeGoInvocation(function *types.Func, argumentsAST []ast.Expr, el
 		arguments[index] = analyzed
 	}
 	target := function.Pkg().Path() + "." + function.Name()
+	if ellipsis {
+		target += ".ellipsis"
+	}
 	return &goExpression{kind: goNativeInvocation, arguments: arguments, nativeLanguage: "go", nativeTarget: target, nativeSignature: types.TypeString(callSignature, func(pkg *types.Package) string {
 		if pkg == nil {
 			return ""
 		}
 		return pkg.Path()
 	}), nativeResultType: resultType, nativeResultTypes: resultTypes, nativeTypes: nativeTypes}, nil
+}
+
+func goCallArgumentType(signature *types.Signature, index int, ellipsis bool, argumentCount int) types.Type {
+	if signature == nil || signature.Params().Len() == 0 {
+		return nil
+	}
+	last := signature.Params().Len() - 1
+	if !signature.Variadic() || index < last {
+		if index < signature.Params().Len() {
+			return signature.Params().At(index).Type()
+		}
+		return nil
+	}
+	variadic := signature.Params().At(last).Type()
+	if ellipsis && index == argumentCount-1 {
+		return variadic
+	}
+	if slice, ok := types.Unalias(variadic).Underlying().(*types.Slice); ok {
+		return slice.Elem()
+	}
+	return nil
 }
 
 func nativeGoResultTypeID(signature *types.Signature, records map[*types.Named]goRecordInfo) (string, []string, map[string]string, bool) {
