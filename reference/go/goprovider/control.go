@@ -812,6 +812,48 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				}
 				continue
 			}
+			if statement.Tok != token.DEFINE && statement.Tok != token.ASSIGN && len(statement.Lhs) == 1 && len(statement.Rhs) == 1 {
+				name, nameOK := statement.Lhs[0].(*ast.Ident)
+				object := info.Uses[name]
+				local, exists := locals[object]
+				if !nameOK || object == nil || !exists || !mutable[object] {
+					return nil, fmt.Errorf("control.local_binding_shape")
+				}
+				right, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
+				left := &goExpression{kind: goPlaceRead, local: local}
+				var value *goExpression
+				switch statement.Tok {
+				case token.ADD_ASSIGN:
+					if isInt64(object.Type()) {
+						value = &goExpression{kind: goIntegerAdd, left: left, right: right}
+					} else if isPureString(object.Type()) {
+						value = &goExpression{kind: goStringConcat, left: left, right: right}
+					}
+				case token.SUB_ASSIGN:
+					if isInt64(object.Type()) {
+						value = &goExpression{kind: goIntegerSubtract, left: left, right: right}
+					}
+				case token.MUL_ASSIGN:
+					if isInt64(object.Type()) {
+						value = &goExpression{kind: goIntegerMultiply, left: left, right: right}
+					}
+				}
+				if value == nil && functions[nil] == "native-default" {
+					spelling, native := goNativeTypeSpelling(object.Type())
+					resultID, idOK := goNativeTypeID(object.Type())
+					if native && idOK {
+						value = &goExpression{kind: goNativeInvocation, arguments: []*goExpression{left, right}, nativeLanguage: "go", nativeTarget: "builtin.compound[" + statement.Tok.String() + ";" + spelling + "]", nativeSignature: "func(" + spelling + ", ...) " + spelling, nativeResultType: resultID, nativeTypes: map[string]string{resultID: spelling}}
+					}
+				}
+				if value == nil {
+					return nil, fmt.Errorf("control.local_binding_shape")
+				}
+				block.statements = append(block.statements, &goStatement{local: local, mutable: true, assignment: value})
+				continue
+			}
 			if (statement.Tok != token.DEFINE && statement.Tok != token.ASSIGN) || len(statement.Lhs) != 1 || len(statement.Rhs) != 1 {
 				return nil, fmt.Errorf("control.local_binding_shape")
 			}
@@ -1006,6 +1048,12 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				return nil, err
 			}
 			block.statements = append(block.statements, &goStatement{condition: condition, loopBlock: body})
+		case *ast.RangeStmt:
+			rangeStatements, err := analyzeGoIndexedRange(statement, signature, info, locals, functions, records, mutable, next)
+			if err != nil {
+				return nil, err
+			}
+			block.statements = append(block.statements, rangeStatements...)
 		case *ast.ExprStmt:
 			call, ok := statement.X.(*ast.CallExpr)
 			if !ok {
@@ -1042,6 +1090,107 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 		return nil, fmt.Errorf("control.loop_body_empty")
 	}
 	return block, nil
+}
+
+// analyzeGoIndexedRange preserves Go's array/slice range mechanics while
+// expressing the control flow through Seme's ordinary places and while loop.
+// The range expression is evaluated exactly once. Its native Go type is retained
+// because Go's index is `int` and application-owned element types must not be
+// silently recast as neutral Seme values. Map and string range have different
+// ordering and rune semantics and deliberately remain native islands here.
+func analyzeGoIndexedRange(statement *ast.RangeStmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool, next *int) ([]*goStatement, error) {
+	if functions[nil] != "native-default" || statement.Tok != token.DEFINE {
+		return nil, fmt.Errorf("control.unsupported_statement:%T", statement)
+	}
+	collectionType := info.TypeOf(statement.X)
+	underlying := collectionType.Underlying()
+	var elementType types.Type
+	switch value := underlying.(type) {
+	case *types.Array:
+		elementType = value.Elem()
+	case *types.Slice:
+		elementType = value.Elem()
+	default:
+		return nil, fmt.Errorf("control.unsupported_statement:%T", statement)
+	}
+	collection, err := analyzeGoExpressionWithProgram(statement.X, signature, info, locals, functions, records, mutable)
+	if err != nil {
+		return nil, err
+	}
+	collection, collectionID, ok := nativeGoAssignmentValue(collection, collectionType)
+	if !ok {
+		return nil, fmt.Errorf("control.range_collection_type")
+	}
+	collectionSpelling, _ := goNativeTypeSpelling(collectionType)
+	intType := types.Universe.Lookup("int").Type()
+	intID, _ := goNativeTypeID(intType)
+	intSpelling, _ := goNativeTypeSpelling(intType)
+	collectionLocal := *next
+	*next++
+	indexLocal := *next
+	*next++
+	out := []*goStatement{
+		{localName: "seme_range_collection", localType: collectionID, local: collectionLocal, initializer: collection},
+		{localName: "seme_range_index", localType: intID, local: indexLocal, initializer: &goExpression{kind: goNativeDefaultValue, nativeLanguage: "go", nativeResultType: intID, nativeTypes: map[string]string{intID: intSpelling}}, mutable: true},
+	}
+	loopLocals := cloneLocalScope(locals)
+	loopMutable := cloneMutableScope(mutable)
+	key, keyOK := statement.Key.(*ast.Ident)
+	if !keyOK {
+		return nil, fmt.Errorf("control.range_binding")
+	}
+	bodyPrefix := []*goStatement{}
+	if key.Name != "_" {
+		object := info.Defs[key]
+		if object == nil {
+			return nil, fmt.Errorf("control.range_binding")
+		}
+		local := *next
+		*next++
+		bodyPrefix = append(bodyPrefix, &goStatement{localName: key.Name, localType: intID, local: local, initializer: &goExpression{kind: goLocalRead, local: indexLocal}})
+		loopLocals[object] = local
+	}
+	if statement.Value != nil {
+		value, valueOK := statement.Value.(*ast.Ident)
+		if !valueOK {
+			return nil, fmt.Errorf("control.range_binding")
+		}
+		if value.Name != "_" {
+			object := info.Defs[value]
+			if object == nil {
+				return nil, fmt.Errorf("control.range_binding")
+			}
+			resultID, resultOK := goLocalSemanticType(elementType, records)
+			nativeTypes := map[string]string{collectionID: collectionSpelling, intID: intSpelling}
+			if !resultOK {
+				resultID, resultOK = goNativeTypeID(elementType)
+				if spelling, native := goNativeTypeSpelling(elementType); native {
+					nativeTypes[resultID] = spelling
+				}
+			}
+			if !resultOK {
+				return nil, fmt.Errorf("control.range_element_type")
+			}
+			local := *next
+			*next++
+			index := &goExpression{kind: goNativeInvocation, arguments: []*goExpression{{kind: goLocalRead, local: collectionLocal}, {kind: goLocalRead, local: indexLocal}}, nativeLanguage: "go", nativeTarget: "builtin.index[" + collectionSpelling + "]", nativeSignature: "func(" + collectionSpelling + ", int) " + types.TypeString(elementType, nil), nativeResultType: resultID, nativeTypes: nativeTypes}
+			bodyPrefix = append(bodyPrefix, &goStatement{localName: value.Name, localType: resultID, local: local, initializer: index, mutable: mutable[object]})
+			loopLocals[object] = local
+			loopMutable[object] = mutable[object]
+		}
+	}
+	body, err := analyzeGoBlockScoped(statement.Body.List, signature, info, loopLocals, functions, records, loopMutable, next, false)
+	if err != nil {
+		return nil, err
+	}
+	body.statements = append(bodyPrefix, body.statements...)
+	one, _, _ := nativeGoAssignmentValue(&goExpression{kind: goIntegerLiteral, integer: 1}, intType)
+	add := &goExpression{kind: goNativeInvocation, arguments: []*goExpression{{kind: goPlaceRead, local: indexLocal}, one}, nativeLanguage: "go", nativeTarget: "builtin.add[int]", nativeSignature: "func(int, int) int", nativeResultType: intID, nativeTypes: map[string]string{intID: intSpelling}}
+	body.statements = append(body.statements, &goStatement{local: indexLocal, mutable: true, assignment: add})
+	length := &goExpression{kind: goNativeInvocation, arguments: []*goExpression{{kind: goLocalRead, local: collectionLocal}}, nativeLanguage: "go", nativeTarget: "builtin.len[" + collectionSpelling + "]", nativeSignature: "func(" + collectionSpelling + ") int", nativeResultType: intID, nativeTypes: map[string]string{collectionID: collectionSpelling, intID: intSpelling}}
+	condition := &goExpression{kind: goNativeInvocation, arguments: []*goExpression{{kind: goPlaceRead, local: indexLocal}, length}, nativeLanguage: "go", nativeTarget: "builtin.compare[<;int;int]", nativeSignature: "func(int, int) bool", nativeResultType: stableID("execution", "type", "bool"), nativeTypes: map[string]string{intID: intSpelling}}
+	out = append(out, &goStatement{condition: condition, loopBlock: body})
+	return out, nil
 }
 
 func nativeGoAssignmentValue(value *goExpression, target types.Type) (*goExpression, string, bool) {

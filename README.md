@@ -737,6 +737,12 @@ explicit typed native operations. Run `./scripts/check-execution-v57.sh`.
 collections as an explicit typed native operation returning Go `int`. Run
 `./scripts/check-execution-v58.sh`.
 
+[`Core Execution v59`](spec/core-execution-v59.md) expresses Go array and slice
+range through canonical control flow while retaining exact typed Go mechanics
+for collection evaluation, indexing, and `int` iteration. It also retains
+general native indexing and compound assignment without widening neutral Core.
+Run `./scripts/check-execution-v59.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

@@ -1980,6 +1980,9 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		mapping, mapOK := underlying.(*types.Map)
 		indexBasic, indexOK := goUnderlying(info, expression.Index).(*types.Basic)
 		if ((!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !(isInt64(slice.Elem()) || isBool(slice.Elem()) || isPureString(slice.Elem()))) && (!mapOK || !isInt64(mapping.Key()) || !isInt64(mapping.Elem()))) || !indexOK || (indexBasic.Kind() != types.Int && indexBasic.Kind() != types.Int64) {
+			if functions[nil] == "native-default" {
+				return analyzeNativeGoIndex(expression, signature, info, locals, functions, records, mutableLocals)
+			}
 			return nil, fmt.Errorf("expression.unsupported_index_read")
 		}
 		collection, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
@@ -2000,6 +2003,54 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}
+}
+
+func analyzeNativeGoIndex(expression *ast.IndexExpr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
+	collectionType := info.TypeOf(expression.X)
+	resultType := info.TypeOf(expression)
+	if collectionType == nil || resultType == nil {
+		return nil, fmt.Errorf("expression.unsupported_index_read")
+	}
+	var indexType types.Type
+	switch collectionType.Underlying().(type) {
+	case *types.Array, *types.Slice:
+		indexType = types.Universe.Lookup("int").Type()
+	case *types.Map:
+		indexType = collectionType.Underlying().(*types.Map).Key()
+	case *types.Basic:
+		basic := collectionType.Underlying().(*types.Basic)
+		if basic.Kind() != types.String {
+			return nil, fmt.Errorf("expression.unsupported_index_read")
+		}
+		indexType = types.Universe.Lookup("int").Type()
+	default:
+		return nil, fmt.Errorf("expression.unsupported_index_read")
+	}
+	collection, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+	if err != nil {
+		return nil, err
+	}
+	collection, collectionID, collectionOK := nativeGoAssignmentValue(collection, collectionType)
+	index, indexID, indexSpelling, err := analyzeNativeGoOperand(expression.Index, indexType, signature, info, locals, functions, records, mutableLocals)
+	if err != nil || !collectionOK {
+		return nil, fmt.Errorf("expression.unsupported_index_read")
+	}
+	resultID, resultOK := goSupportedTypeID(resultType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+	nativeTypes := map[string]string{indexID: indexSpelling}
+	collectionSpelling, _ := goNativeTypeSpelling(collectionType)
+	nativeTypes[collectionID] = collectionSpelling
+	resultSpelling := types.TypeString(resultType, nil)
+	if !resultOK {
+		resultID, resultOK = goNativeTypeID(resultType)
+		if spelling, native := goNativeTypeSpelling(resultType); native {
+			resultSpelling = spelling
+			nativeTypes[resultID] = spelling
+		}
+	}
+	if !resultOK {
+		return nil, fmt.Errorf("expression.unsupported_index_read")
+	}
+	return &goExpression{kind: goNativeInvocation, arguments: []*goExpression{collection, index}, nativeLanguage: "go", nativeTarget: "builtin.index[" + collectionSpelling + "]", nativeSignature: "func(" + collectionSpelling + ", " + indexSpelling + ") " + resultSpelling, nativeResultType: resultID, nativeTypes: nativeTypes}, nil
 }
 
 func analyzeNativeGoComparison(operator token.Token, leftNode, rightNode ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
