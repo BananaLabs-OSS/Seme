@@ -860,6 +860,10 @@ Run `./scripts/check-execution-v86.sh`.
 and decrement statements to mutable-place updates.
 Run `./scripts/check-execution-v87.sh`.
 
+[`Core Execution v88`](spec/core-execution-v88.md) preserves contextually typed
+Go `nil` operands as explicit native defaults inside calls and assignments.
+Run `./scripts/check-execution-v88.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

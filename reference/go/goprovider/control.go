@@ -728,7 +728,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					var initializer *goExpression
 					var err error
 					if len(spec.Values) != 0 {
-						initializer, err = analyzeGoExpressionWithProgram(spec.Values[valueIndex], signature, info, locals, functions, records, mutable)
+						initializer, err = analyzeGoExpressionExpected(spec.Values[valueIndex], object.Type(), signature, info, locals, functions, records, mutable)
 					} else {
 						initializer, err = zeroGoExpression(object.Type(), records, map[string]bool{}, 0)
 						if err != nil {
@@ -1137,7 +1137,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if object == nil {
 				return nil, fmt.Errorf("control.local_binding_type")
 			}
-			initializer, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
+			initializer, err := analyzeGoExpressionExpected(statement.Rhs[0], object.Type(), signature, info, locals, functions, records, mutable)
 			if err != nil {
 				return nil, err
 			}

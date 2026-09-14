@@ -1357,11 +1357,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return &goExpression{kind: kind, left: mapping, initial: key, right: value}, nil
 		}
 		if selector, ok := ast.Unparen(expression.Fun).(*ast.SelectorExpr); ok && isBytesFunction(info, selector, "Equal") && len(expression.Args) == 2 && !expression.Ellipsis.IsValid() {
-			left, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+			left, err := analyzeGoExpressionExpected(expression.Args[0], info.TypeOf(expression.Args[0]), signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
 				return nil, err
 			}
-			right, err := analyzeGoExpressionWithProgram(expression.Args[1], signature, info, locals, functions, records, mutableLocals)
+			right, err := analyzeGoExpressionExpected(expression.Args[1], info.TypeOf(expression.Args[1]), signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
 				return nil, err
 			}
@@ -1385,8 +1385,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 					return nil, err
 				}
 				arguments := make([]*goExpression, len(expression.Args))
+				methodSignature, _ := selection.Obj().Type().(*types.Signature)
 				for index, argument := range expression.Args {
-					arguments[index], err = analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
+					var expected types.Type
+					if methodSignature != nil && index < methodSignature.Params().Len() {
+						expected = methodSignature.Params().At(index).Type()
+					}
+					arguments[index], err = analyzeGoExpressionExpected(argument, expected, signature, info, locals, functions, records, mutableLocals)
 					if err != nil {
 						return nil, err
 					}
@@ -1403,9 +1408,15 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			if info.Selections[selector] == nil {
 				if callee, exists := functions[info.Uses[selector.Sel]]; exists && !expression.Ellipsis.IsValid() {
 					arguments := make([]*goExpression, len(expression.Args))
+					calleeFunction, _ := info.Uses[selector.Sel].(*types.Func)
+					calleeSignature, _ := calleeFunction.Type().(*types.Signature)
 					for index, argument := range expression.Args {
 						var err error
-						arguments[index], err = analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
+						var expected types.Type
+						if calleeSignature != nil && index < calleeSignature.Params().Len() {
+							expected = calleeSignature.Params().At(index).Type()
+						}
+						arguments[index], err = analyzeGoExpressionExpected(argument, expected, signature, info, locals, functions, records, mutableLocals)
 						if err != nil {
 							return nil, err
 						}
@@ -1638,7 +1649,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		calleeFunction, _ := info.Uses[identifier].(*types.Func)
 		calleeSignature, _ := calleeFunction.Type().(*types.Signature)
 		for index, argument := range expression.Args {
-			analyzed, err := analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
+			var expected types.Type
+			if calleeSignature != nil && index < calleeSignature.Params().Len() {
+				expected = calleeSignature.Params().At(index).Type()
+			}
+			analyzed, err := analyzeGoExpressionExpected(argument, expected, signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
 				return nil, err
 			}
@@ -1863,15 +1878,30 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				if native && spellingOK {
 					arguments := make([]*goExpression, 0, len(expression.Elts)*2)
 					shape := make([]string, 0, len(expression.Elts))
-					_, structLiteral := goUnderlying(info, expression).(*types.Struct)
-					for _, element := range expression.Elts {
+					underlying := goUnderlying(info, expression)
+					structType, structLiteral := underlying.(*types.Struct)
+					mapType, mapLiteral := underlying.(*types.Map)
+					arrayType, arrayLiteral := underlying.(*types.Array)
+					sliceType, sliceLiteral := underlying.(*types.Slice)
+					for position, element := range expression.Elts {
 						valueNode := element
+						var expected types.Type
 						if keyed, keyedOK := element.(*ast.KeyValueExpr); keyedOK {
 							valueNode = keyed.Value
 							if identifier, identifierOK := keyed.Key.(*ast.Ident); structLiteral && identifierOK {
 								shape = append(shape, "field:"+identifier.Name)
+								for fieldIndex := 0; fieldIndex < structType.NumFields(); fieldIndex++ {
+									if structType.Field(fieldIndex).Name() == identifier.Name {
+										expected = structType.Field(fieldIndex).Type()
+										break
+									}
+								}
 							} else {
-								key, err := analyzeGoExpressionWithProgram(keyed.Key, signature, info, locals, functions, records, mutableLocals)
+								var keyExpected types.Type
+								if mapLiteral {
+									keyExpected, expected = mapType.Key(), mapType.Elem()
+								}
+								key, err := analyzeGoExpressionExpected(keyed.Key, keyExpected, signature, info, locals, functions, records, mutableLocals)
 								if err != nil {
 									return nil, err
 								}
@@ -1880,8 +1910,15 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 							}
 						} else {
 							shape = append(shape, "position")
+							if structLiteral && position < structType.NumFields() {
+								expected = structType.Field(position).Type()
+							} else if arrayLiteral {
+								expected = arrayType.Elem()
+							} else if sliceLiteral {
+								expected = sliceType.Elem()
+							}
 						}
-						value, err := analyzeGoExpressionWithProgram(valueNode, signature, info, locals, functions, records, mutableLocals)
+						value, err := analyzeGoExpressionExpected(valueNode, expected, signature, info, locals, functions, records, mutableLocals)
 						if err != nil {
 							return nil, err
 						}
@@ -1925,7 +1962,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				return nil, fmt.Errorf("expression.duplicate_record_field")
 			}
 			seen[field] = true
-			value, err := analyzeGoExpressionWithProgram(valueExpression, signature, info, locals, functions, records, mutableLocals)
+			value, err := analyzeGoExpressionExpected(valueExpression, field.Type(), signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
 				return nil, err
 			}
@@ -2187,6 +2224,32 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		return &goExpression{kind: goNativeDereference, left: operand, nativeLanguage: "go", nativeResultType: resultID, nativeTypes: nativeTypes}, nil
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node:%T", expression)
+	}
+}
+
+// analyzeGoExpressionExpected preserves Go's contextually typed nil without
+// pretending that nil is a language-neutral value. The native default remains
+// explicit in canonical Seme, while its surrounding expression stays visible.
+func analyzeGoExpressionExpected(expression ast.Expr, expected types.Type, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
+	if goExecutionModuleVersion(functions) >= 88 && functions[nil] == "native-default" && isGoNil(expression) && goNilableType(expected) {
+		typeID, idOK := goNativeTypeID(expected)
+		spelling, spellingOK := goNativeTypeSpelling(expected)
+		if idOK && spellingOK {
+			return &goExpression{kind: goNativeDefaultValue, nativeLanguage: "go", nativeResultType: typeID, nativeTypes: map[string]string{typeID: spelling}}, nil
+		}
+	}
+	return analyzeGoExpressionWithProgram(expression, signature, info, locals, functions, records, mutableLocals)
+}
+
+func goNilableType(value types.Type) bool {
+	if value == nil {
+		return false
+	}
+	switch types.Unalias(value).Underlying().(type) {
+	case *types.Pointer, *types.Slice, *types.Map, *types.Chan, *types.Signature, *types.Interface:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -2475,7 +2538,11 @@ func analyzeNativeGoInvocation(function *types.Func, argumentsAST []ast.Expr, el
 	}
 	arguments := make([]*goExpression, len(argumentsAST))
 	for index, argument := range argumentsAST {
-		analyzed, err := analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
+		var expected types.Type
+		if index < callSignature.Params().Len() {
+			expected = callSignature.Params().At(index).Type()
+		}
+		analyzed, err := analyzeGoExpressionExpected(argument, expected, signature, info, locals, functions, records, mutableLocals)
 		if err != nil {
 			return nil, err
 		}
@@ -2585,7 +2652,11 @@ func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast
 	}
 	arguments := make([]*goExpression, len(argumentsAST))
 	for index, argument := range argumentsAST {
-		arguments[index], err = analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
+		var expected types.Type
+		if index < declared.Params().Len() {
+			expected = declared.Params().At(index).Type()
+		}
+		arguments[index], err = analyzeGoExpressionExpected(argument, expected, signature, info, locals, functions, records, mutableLocals)
 		if err != nil {
 			return nil, err
 		}
