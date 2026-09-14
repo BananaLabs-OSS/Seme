@@ -1505,6 +1505,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return &goExpression{kind: goSliceRemove, left: collection, right: index}, nil
 		}
+		if ok {
+			if _, builtin := info.Uses[identifier].(*types.Builtin); builtin {
+				if invocation, builtinErr := analyzeNativeGoBuiltinCall(identifier.Name, expression, signature, info, locals, functions, records, mutableLocals); builtinErr == nil {
+					return invocation, nil
+				}
+			}
+		}
 		callee, exists := functions[info.Uses[identifier]]
 		if !ok || !exists || expression.Ellipsis.IsValid() {
 			if ok {
@@ -2003,6 +2010,108 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}
+}
+
+func analyzeNativeGoBuiltinCall(name string, call *ast.CallExpr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
+	if functions[nil] != "native-default" {
+		return nil, fmt.Errorf("expression.native_builtin_disabled")
+	}
+	var expected []types.Type
+	resultType := info.TypeOf(call)
+	switch name {
+	case "make":
+		if len(call.Args) < 1 || resultType == nil {
+			return nil, fmt.Errorf("expression.native_builtin_shape")
+		}
+		intType := types.Universe.Lookup("int").Type()
+		for range call.Args[1:] {
+			expected = append(expected, intType)
+		}
+	case "append":
+		if len(call.Args) < 2 || resultType == nil {
+			return nil, fmt.Errorf("expression.native_builtin_shape")
+		}
+		slice, ok := resultType.Underlying().(*types.Slice)
+		if !ok {
+			return nil, fmt.Errorf("expression.native_builtin_shape")
+		}
+		expected = append(expected, resultType)
+		for index := 1; index < len(call.Args); index++ {
+			valueType := slice.Elem()
+			if call.Ellipsis.IsValid() && index == len(call.Args)-1 {
+				valueType = resultType
+			}
+			expected = append(expected, valueType)
+		}
+	case "delete":
+		if len(call.Args) != 2 {
+			return nil, fmt.Errorf("expression.native_builtin_shape")
+		}
+		mapping, ok := info.TypeOf(call.Args[0]).Underlying().(*types.Map)
+		if !ok {
+			return nil, fmt.Errorf("expression.native_builtin_shape")
+		}
+		expected = []types.Type{info.TypeOf(call.Args[0]), mapping.Key()}
+		resultType = nil
+	case "copy":
+		if len(call.Args) != 2 {
+			return nil, fmt.Errorf("expression.native_builtin_shape")
+		}
+		expected = []types.Type{info.TypeOf(call.Args[0]), info.TypeOf(call.Args[1])}
+	case "new":
+		if len(call.Args) != 1 || resultType == nil {
+			return nil, fmt.Errorf("expression.native_builtin_shape")
+		}
+		expected = nil
+	case "cap":
+		if len(call.Args) != 1 || resultType == nil {
+			return nil, fmt.Errorf("expression.native_builtin_shape")
+		}
+		expected = []types.Type{info.TypeOf(call.Args[0])}
+	case "clear":
+		if len(call.Args) != 1 {
+			return nil, fmt.Errorf("expression.native_builtin_shape")
+		}
+		expected = []types.Type{info.TypeOf(call.Args[0])}
+		resultType = nil
+	default:
+		return nil, fmt.Errorf("expression.native_builtin_unsupported")
+	}
+	start := 0
+	if name == "make" || name == "new" {
+		start = 1
+	}
+	arguments := make([]*goExpression, 0, len(expected))
+	nativeTypes := map[string]string{}
+	for index, target := range expected {
+		node := call.Args[start+index]
+		value, typeID, spelling, err := analyzeNativeGoOperand(node, target, signature, info, locals, functions, records, mutableLocals)
+		if err != nil {
+			return nil, err
+		}
+		arguments = append(arguments, value)
+		nativeTypes[typeID] = spelling
+	}
+	resultID := stableID("execution", "type", "unit")
+	resultSpelling := "unit"
+	if resultType != nil {
+		resultID, _ = goSupportedTypeID(resultType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+		resultSpelling = types.TypeString(resultType, nil)
+		if resultID == "" {
+			var ok bool
+			resultID, ok = goNativeTypeID(resultType)
+			if !ok {
+				return nil, fmt.Errorf("expression.native_builtin_result")
+			}
+			resultSpelling, _ = goNativeTypeSpelling(resultType)
+			nativeTypes[resultID] = resultSpelling
+		}
+	}
+	target := "builtin." + name + "[" + resultSpelling + "]"
+	if call.Ellipsis.IsValid() {
+		target += ".ellipsis"
+	}
+	return &goExpression{kind: goNativeInvocation, arguments: arguments, nativeLanguage: "go", nativeTarget: target, nativeSignature: types.TypeString(info.TypeOf(call.Fun), nil), nativeResultType: resultID, nativeTypes: nativeTypes}, nil
 }
 
 func analyzeNativeGoIndex(expression *ast.IndexExpr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
