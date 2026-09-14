@@ -64,6 +64,7 @@ const (
 	sUnitValue           = "0000000000000000000000000000a06b"
 	sNativeType          = "0000000000000000000000000000a071"
 	sNativeFieldRead     = "0000000000000000000000000000a072"
+	sNativeBindingRead   = "0000000000000000000000000000a073"
 	sSliceConstruct      = "0000000000000000000000000000a068"
 	sBooleanNot          = "0000000000000000000000000000a069"
 	sBytes               = "00000000000000000000000000009041"
@@ -235,11 +236,15 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 		importSet["log"] = true
 	}
 	for _, e := range graph {
-		if e.schema != sNativeInvocation {
+		if e.schema != sNativeInvocation && e.schema != sNativeBindingRead {
 			continue
 		}
-		language, languageErr := text(e, "000000000000000000000000000a06d0")
-		callable, callableErr := text(e, "000000000000000000000000000a06d1")
+		languageField, targetField := "000000000000000000000000000a06d0", "000000000000000000000000000a06d1"
+		if e.schema == sNativeBindingRead {
+			languageField, targetField = "000000000000000000000000000a0730", "000000000000000000000000000a0731"
+		}
+		language, languageErr := text(e, languageField)
+		callable, callableErr := text(e, targetField)
 		if languageErr == nil && callableErr == nil && language == "go" {
 			if strings.HasPrefix(callable, "builtin.") {
 				continue
@@ -2481,6 +2486,20 @@ func expr(id string, c context) (string, error) {
 			return "", err
 		}
 		return "(" + receiver + ")." + target[dot+1:], nil
+	case sNativeBindingRead:
+		language, err := text(e, "000000000000000000000000000a0730")
+		if err != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_binding_read_language")
+		}
+		target, err := text(e, "000000000000000000000000000a0731")
+		if err != nil {
+			return "", err
+		}
+		dot := strings.LastIndexByte(target, '.')
+		if dot <= 0 || dot == len(target)-1 || !identifier(target[dot+1:]) {
+			return "", fmt.Errorf("go_projection.native_binding_read_target")
+		}
+		return filepath.Base(target[:dot]) + "." + target[dot+1:], nil
 	case sNativeMethodCall:
 		language, err := text(e, "000000000000000000000000000a06e0")
 		if err != nil || language != "go" {

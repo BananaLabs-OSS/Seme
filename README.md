@@ -872,6 +872,10 @@ Run `./scripts/check-execution-v89.sh`.
 assignments with receiver-before-RHS evaluation and source-order mutation.
 Run `./scripts/check-execution-v90.sh`.
 
+[`Core Execution v91`](spec/core-execution-v91.md) preserves typed reads of
+imported Go package variables as explicit native bindings, including their
+package identity and native result type. Run `./scripts/check-execution-v91.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
