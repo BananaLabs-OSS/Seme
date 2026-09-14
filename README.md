@@ -717,6 +717,10 @@ declarations. Run `./scripts/check-execution-v52.sh`.
 application-owned composite literals and returned values as explicit typed Go
 native boundaries. Run `./scripts/check-execution-v53.sh`.
 
+[`Core Execution v54`](spec/core-execution-v54.md) extends typed application
+boundaries through multi-result signatures and resolves returned `nil` values
+from their exact Go result types. Run `./scripts/check-execution-v54.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

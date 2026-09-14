@@ -860,7 +860,21 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			}
 			values := make([]*goExpression, len(statement.Results))
 			for resultIndex, result := range statement.Results {
-				expression, err := analyzeGoExpressionWithProgram(result, signature, info, locals, functions, records, mutable)
+				var expression *goExpression
+				var err error
+				if identifier, nilResult := ast.Unparen(result).(*ast.Ident); nilResult && identifier.Name == "nil" && !forwardedProduct {
+					expected := signature.Results().At(resultIndex).Type()
+					expression, err = zeroGoExpression(expected, records, map[string]bool{}, 0)
+					if err != nil && functions[nil] == "native-default" {
+						if spelling, native := goNativeTypeSpelling(expected); native {
+							typeID := stableID("execution", "type", "native", "go", spelling)
+							expression = &goExpression{kind: goNativeDefaultValue, nativeLanguage: "go", nativeResultType: typeID, nativeTypes: map[string]string{typeID: spelling}}
+							err = nil
+						}
+					}
+				} else {
+					expression, err = analyzeGoExpressionWithProgram(result, signature, info, locals, functions, records, mutable)
+				}
 				if err != nil {
 					return nil, err
 				}
