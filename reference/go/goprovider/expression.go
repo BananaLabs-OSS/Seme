@@ -82,40 +82,45 @@ const (
 	goResultMatch
 	goBytesEqual
 	goUnitValue
+	goNativeInvocation
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
 // Go AST details out of canonical emission and normalizes equivalent source
 // spellings before a target profile decides which tree shapes it supports.
 type goExpression struct {
-	kind        goExpressionKind
-	parameter   int
-	local       int
-	integer     uint64
-	boolean     bool
-	text        string
-	left        *goExpression
-	right       *goExpression
-	callee      string
-	arguments   []*goExpression
-	recordType  string
-	field       string
-	values      []*goExpression
-	mutable     bool
-	arrayType   string
-	arrayLen    uint64
-	initial     *goExpression
-	body        *goExpression
-	bindingID   string
-	accName     string
-	elementName string
-	receiverID  string
-	methodID    string
-	typeID      string
-	witnessID   string
-	alternate   *goExpression
-	errorName   string
-	errorTypeID string
+	kind             goExpressionKind
+	parameter        int
+	local            int
+	integer          uint64
+	boolean          bool
+	text             string
+	left             *goExpression
+	right            *goExpression
+	callee           string
+	arguments        []*goExpression
+	recordType       string
+	field            string
+	values           []*goExpression
+	mutable          bool
+	arrayType        string
+	arrayLen         uint64
+	initial          *goExpression
+	body             *goExpression
+	bindingID        string
+	accName          string
+	elementName      string
+	receiverID       string
+	methodID         string
+	typeID           string
+	witnessID        string
+	alternate        *goExpression
+	errorName        string
+	errorTypeID      string
+	nativeLanguage   string
+	nativeTarget     string
+	nativeSignature  string
+	nativeResultType string
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -173,6 +178,24 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := expressionNodeID(owner, path, "function-call")
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009060", []graphField{refField(0x9600, expression.callee), refsField(0x9601, arguments)})}
+			return id, nil
+		case goNativeInvocation:
+			if expression.nativeLanguage == "" || expression.nativeTarget == "" || expression.nativeSignature == "" || expression.nativeResultType == "" {
+				return "", fmt.Errorf("expression.native_invocation_incomplete")
+			}
+			arguments := make([]string, len(expression.arguments))
+			for index, argument := range expression.arguments {
+				id, err := emit(argument, path+".argument."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+				arguments[index] = id
+			}
+			id := expressionNodeID(owner, path, "native-invocation")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a06d", []graphField{
+				bytesField(0xa06d0, expression.nativeLanguage), bytesField(0xa06d1, expression.nativeTarget),
+				bytesField(0xa06d2, expression.nativeSignature), refsField(0xa06d3, arguments), refField(0xa06d4, expression.nativeResultType),
+			})}
 			return id, nil
 		case goRecordConstruct:
 			values := make([]string, len(expression.values))
@@ -1084,6 +1107,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 					}
 					return &goExpression{kind: goFunctionCall, callee: callee, arguments: arguments}, nil
 				}
+				if function, exists := info.Uses[selector.Sel].(*types.Func); exists {
+					if native, err := analyzeNativeGoInvocation(function, expression.Args, expression.Ellipsis.IsValid(), signature, info, locals, functions, records, mutableLocals); err == nil {
+						return native, nil
+					}
+				}
 			}
 		}
 		identifier, ok := ast.Unparen(expression.Fun).(*ast.Ident)
@@ -1258,6 +1286,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		callee, exists := functions[info.Uses[identifier]]
 		if !ok || !exists || expression.Ellipsis.IsValid() {
+			if ok {
+				if function, native := info.Uses[identifier].(*types.Func); native {
+					if invocation, err := analyzeNativeGoInvocation(function, expression.Args, expression.Ellipsis.IsValid(), signature, info, locals, functions, records, mutableLocals); err == nil {
+						return invocation, nil
+					}
+				}
+			}
 			return nil, fmt.Errorf("expression.unsupported_call")
 		}
 		arguments := make([]*goExpression, len(expression.Args))
@@ -1662,6 +1697,45 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}
+}
+
+// analyzeNativeGoInvocation retains a typed call to a Go-runtime callable as an
+// explicit realization boundary. The surrounding function remains canonical;
+// targets that cannot provide the declared Go mechanic must reject placement.
+func analyzeNativeGoInvocation(function *types.Func, argumentsAST []ast.Expr, ellipsis bool, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
+	if function == nil || function.Pkg() == nil || ellipsis {
+		return nil, fmt.Errorf("expression.native_call_target")
+	}
+	callSignature, ok := function.Type().(*types.Signature)
+	if !ok || callSignature.Results().Len() != 1 || callSignature.Variadic() {
+		return nil, fmt.Errorf("expression.native_call_signature")
+	}
+	resultType := ""
+	switch result := callSignature.Results().At(0).Type(); {
+	case isInt64(result):
+		resultType = stableID("execution", "type", "i64")
+	case isBool(result):
+		resultType = stableID("execution", "type", "bool")
+	case isPureString(result):
+		resultType = stableID("execution", "type", "string")
+	default:
+		return nil, fmt.Errorf("expression.native_call_result_type")
+	}
+	arguments := make([]*goExpression, len(argumentsAST))
+	for index, argument := range argumentsAST {
+		analyzed, err := analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
+		if err != nil {
+			return nil, err
+		}
+		arguments[index] = analyzed
+	}
+	target := function.Pkg().Path() + "." + function.Name()
+	return &goExpression{kind: goNativeInvocation, arguments: arguments, nativeLanguage: "go", nativeTarget: target, nativeSignature: types.TypeString(callSignature, func(pkg *types.Package) string {
+		if pkg == nil {
+			return ""
+		}
+		return pkg.Path()
+	}), nativeResultType: resultType}, nil
 }
 
 // zeroGoExpression realizes fields omitted from a keyed Go struct literal.

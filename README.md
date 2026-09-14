@@ -625,6 +625,15 @@ Result/Option matching, and exact byte literals/equality. Both are additive;
 neither imports a source language's null, tuple, exception, or object model.
 Run `./scripts/check-execution-v31.sh` and `./scripts/check-execution-v32.sh`.
 
+[`Core Execution v37`](spec/core-execution-v37.md) adds neutral `UnitType` and
+`UnitValue`; [`v38`](spec/core-execution-v38.md) adds ordered expression
+evaluation with a discarded result. [`v39`](spec/core-execution-v39.md) adds a
+typed native-invocation boundary so canonical surrounding logic can retain an
+exact language/runtime callable without claiming that mechanic is portable.
+Targets must supply the named realization or reject it. Run
+`./scripts/check-execution-v37.sh`, `./scripts/check-execution-v38.sh`, and
+`./scripts/check-execution-v39.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
