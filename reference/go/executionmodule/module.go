@@ -32,7 +32,7 @@ func ValidateSliceConstructElementCount(count int) error {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 72 {
+	if version < 2 || version > 73 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -379,6 +379,15 @@ func Declarations(version int) ([]Schema, error) {
 			field(0xa07e0, "native_dereference.language", 4, 0, 0),
 			field(0xa07e1, "native_dereference.operand", 5, 0, 0),
 			field(0xa07e2, "native_dereference.result_type", 5, 0, 0),
+		}})
+	}
+	if version >= 73 {
+		schemas = append(schemas, Schema{0xa07f, "NativeBinary", []Field{
+			field(0xa07f0, "native_binary.language", 4, 0, 0),
+			field(0xa07f1, "native_binary.operator", 4, 0, 0),
+			field(0xa07f2, "native_binary.left", 5, 0, 0),
+			field(0xa07f3, "native_binary.right", 5, 0, 0),
+			field(0xa07f4, "native_binary.result_type", 5, 0, 0),
 		}})
 	}
 	return schemas, nil

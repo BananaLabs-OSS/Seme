@@ -52,6 +52,13 @@ test("projects Go-owned pointer dereference through an explicit Lua adapter", ()
   assert.match(projectLua(canonical), /Seme\.native_dereference\("go"/);
 });
 
+test("projects Go-owned binary operators through explicit Lua adapters", () => {
+  const canonical = fs.readFileSync(new URL("../../fixtures/go-execution-v73/program.g1", import.meta.url), "utf8");
+  const projected = projectLua(canonical);
+  assert.match(projected, /Seme\.native_binary\("go", "<<"/);
+  assert.match(projected, /Seme\.native_binary\("go", "\|"/);
+});
+
 test("lifts typed UAB-03 blocks and projects them byte-identically", () => {
   const source = fs.readFileSync(new URL("../../fixtures/lua-uab-03/program.lua", import.meta.url), "utf8");
   const options = { sources:[{name:"program.lua",source}], moduleG1, packagePath:"example.test/lua-uab03", revision:1, entryName:"Accumulate" };

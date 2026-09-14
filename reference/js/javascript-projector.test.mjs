@@ -61,6 +61,13 @@ test("projects Go-owned pointer dereference through an explicit JavaScript adapt
   assert.match(projectJavaScript(canonical), /Seme\.nativeDereference\("go"/);
 });
 
+test("projects Go-owned binary operators through explicit JavaScript adapters", () => {
+  const canonical = fs.readFileSync(new URL("../../fixtures/go-execution-v73/program.g1", import.meta.url), "utf8");
+  const projected = projectJavaScript(canonical);
+  assert.match(projected, /Seme\.nativeBinary\("go", "<<"/);
+  assert.match(projected, /Seme\.nativeBinary\("go", "\|"/);
+});
+
 test("projection rejects duplicate semantic identities", () => {
   const canonical = liftJavaScript({ source, moduleG1, packagePath: "example.test/duplicate", revision: 1 });
   const entity = canonical.slice(canonical.indexOf("\nen ") + 1);

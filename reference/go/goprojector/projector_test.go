@@ -454,6 +454,34 @@ func TestProjectsNativeDereferenceBackToGoSyntax(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { value := int64(9); if Value(&value) != 9 { t.Fatal("dereference") } }`)
 }
 
+func TestProjectsNativeBinaryBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v73/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-binary", Entry: "Mix", Files: map[string]string{
+		"binary.go": "package sample\nfunc Mix(value uint64, shift uint) uint64 { return (value << shift) | (value % 3) }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native binary lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	for _, operator := range []string{" << ", " | ", " % "} {
+		if !strings.Contains(source, operator) {
+			t.Fatalf("projection lacks %q:\n%s", operator, source)
+		}
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Mix(5, 2) != 22 { t.Fatal(Mix(5, 2)) } }`)
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

@@ -92,6 +92,7 @@ const (
 	goNativeAddress
 	goNativeSlice
 	goNativeDereference
+	goNativeBinary
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -307,6 +308,24 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := expressionNodeID(owner, path, "native-dereference")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a07e", []graphField{bytesField(0xa07e0, expression.nativeLanguage), refField(0xa07e1, operand), refField(0xa07e2, expression.nativeResultType)})}
+			return id, nil
+		case goNativeBinary:
+			if expression.nativeLanguage == "" || expression.nativeTarget == "" || expression.nativeResultType == "" || expression.left == nil || expression.right == nil {
+				return "", fmt.Errorf("expression.native_binary_incomplete")
+			}
+			left, err := emit(expression.left, path+".left")
+			if err != nil {
+				return "", err
+			}
+			right, err := emit(expression.right, path+".right")
+			if err != nil {
+				return "", err
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, expression.nativeLanguage), bytesField(0xa0711, spelling)})}
+			}
+			id := expressionNodeID(owner, path, "native-binary")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a07f", []graphField{bytesField(0xa07f0, expression.nativeLanguage), bytesField(0xa07f1, expression.nativeTarget), refField(0xa07f2, left), refField(0xa07f3, right), refField(0xa07f4, expression.nativeResultType)})}
 			return id, nil
 		case goNativeMethodInvocation:
 			if expression.nativeLanguage == "" || expression.nativeTarget == "" || expression.nativeSignature == "" || expression.nativeResultType == "" || expression.left == nil {
@@ -1217,6 +1236,9 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				return analyzeNativeGoComparison(expression.Op, left, right, signature, info, locals, functions, records, mutableLocals)
 			}
 		default:
+			if goExecutionModuleVersion(functions) >= 73 {
+				return analyzeNativeGoBinary(expression, signature, info, locals, functions, records, mutableLocals)
+			}
 			return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
 		}
 		analyzedLeft, err := analyzeGoExpressionWithProgram(left, signature, info, locals, functions, records, mutableLocals)
@@ -2355,6 +2377,56 @@ func analyzeNativeGoComparison(operator token.Token, leftNode, rightNode ast.Exp
 		nativeSignature:  "func(" + leftSpelling + ", " + rightSpelling + ") bool",
 		nativeResultType: stableID("execution", "type", "bool"), nativeTypes: typesByID,
 	}, nil
+}
+
+func analyzeNativeGoBinary(expression *ast.BinaryExpr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
+	if functions[nil] != "native-default" {
+		return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
+	}
+	switch expression.Op {
+	case token.QUO, token.REM, token.SHL, token.SHR, token.OR, token.AND, token.XOR, token.AND_NOT:
+	default:
+		return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
+	}
+	leftType, rightType := info.TypeOf(expression.X), info.TypeOf(expression.Y)
+	resultType := info.TypeOf(expression)
+	leftExpected, rightExpected := leftType, rightType
+	if goUntypedType(leftExpected) {
+		leftExpected = resultType
+		if goUntypedType(leftExpected) {
+			leftExpected = types.Default(leftExpected)
+		}
+	}
+	if expression.Op == token.SHL || expression.Op == token.SHR {
+		if goUntypedType(rightExpected) {
+			rightExpected = types.Universe.Lookup("uint").Type()
+		}
+	} else if goUntypedType(rightExpected) {
+		rightExpected = leftExpected
+	}
+	left, leftID, leftSpelling, err := analyzeNativeGoOperand(expression.X, leftExpected, signature, info, locals, functions, records, mutableLocals)
+	if err != nil {
+		return nil, err
+	}
+	right, rightID, rightSpelling, err := analyzeNativeGoOperand(expression.Y, rightExpected, signature, info, locals, functions, records, mutableLocals)
+	if err != nil {
+		return nil, err
+	}
+	resultID, ok := goSupportedTypeID(resultType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+	nativeTypes := map[string]string{leftID: leftSpelling, rightID: rightSpelling}
+	if !ok {
+		if goUntypedType(resultType) {
+			resultType = types.Default(resultType)
+		}
+		resultID, ok = goNativeTypeID(resultType)
+		if spelling, native := goNativeTypeSpelling(resultType); native {
+			nativeTypes[resultID] = spelling
+		}
+	}
+	if !ok {
+		return nil, fmt.Errorf("expression.native_binary_result")
+	}
+	return &goExpression{kind: goNativeBinary, left: left, right: right, nativeLanguage: "go", nativeTarget: expression.Op.String(), nativeResultType: resultID, nativeTypes: nativeTypes}, nil
 }
 
 func analyzeNativeGoOperand(node ast.Expr, expected types.Type, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, string, string, error) {
