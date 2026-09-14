@@ -1147,7 +1147,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					return nil, err
 				}
 			}
-			if statement.Else == nil && !blockContainsReturn(statement.Body.List) {
+			if statement.Else == nil && (!blockContainsReturn(statement.Body.List) || goExecutionModuleVersion(functions) >= 79 && !requireReturn) {
 				condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, ifLocals, functions, records, ifMutable)
 				if err != nil {
 					return nil, err

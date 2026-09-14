@@ -824,6 +824,10 @@ Run `./scripts/check-execution-v77.sh`.
 across Go mixed short declarations that define new names while assigning
 existing mutable places. Run `./scripts/check-execution-v78.sh`.
 
+[`Core Execution v79`](spec/core-execution-v79.md) preserves returning guards
+inside loops and other nonterminal blocks while retaining ordinary fallthrough.
+Run `./scripts/check-execution-v79.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
