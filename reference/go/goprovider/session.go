@@ -1154,6 +1154,8 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	}
 	resultTypeID := integerID
 	resultNative := false
+	var resultProductTypes []string
+	var resultProductNative []types.Type
 	var transitionState, transitionResult types.Type
 	isTransition := false
 	if !unitResult {
@@ -1163,7 +1165,7 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		resultTypeID = stableID("execution", "type", "unit")
 	} else if multiResult {
 		var ok bool
-		resultTypeID, _, ok = goProductTypeID(function.sig.Results(), records)
+		resultTypeID, resultProductTypes, resultProductNative, ok = goProductTypeIDWithNative(function.sig.Results(), records, function.packagePath, allowNativeOwnedTypes)
 		if !ok {
 			return diagnostic("session.unsupported_result_type", "product result items must have supported semantic types")
 		}
@@ -1226,7 +1228,17 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a004", []graphField{refField(0xa0040, stateTypeID), refField(0xa0041, valueTypeID)})})
 	}
 	if !unitResult {
-		instances = append(instances, goBridgeTypeEntities(resultType, integerID, booleanID, stringID)...)
+		if multiResult {
+			for index := 0; index < function.sig.Results().Len(); index++ {
+				instances = append(instances, goBridgeTypeEntities(function.sig.Results().At(index).Type(), integerID, booleanID, stringID)...)
+			}
+			for _, nativeType := range resultProductNative {
+				instances = append(instances, goNativeTypeEntity(nativeType))
+			}
+			instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a06f", []graphField{refsField(0xa06f0, resultProductTypes)})})
+		} else {
+			instances = append(instances, goBridgeTypeEntities(resultType, integerID, booleanID, stringID)...)
+		}
 		if resultNative {
 			instances = append(instances, goNativeTypeEntity(resultType))
 		}
@@ -1524,6 +1536,34 @@ func goProductTypeID(tuple *types.Tuple, records map[*types.Named]goRecordInfo) 
 		parts = append(parts, item)
 	}
 	return stableID(parts...), itemTypes, true
+}
+
+func goProductTypeIDWithNative(tuple *types.Tuple, records map[*types.Named]goRecordInfo, packagePath string, allowNative bool) (string, []string, []types.Type, bool) {
+	if tuple == nil || tuple.Len() < 2 || tuple.Len() > 16 {
+		return "", nil, nil, false
+	}
+	itemTypes := make([]string, tuple.Len())
+	nativeTypes := []types.Type{}
+	parts := []string{"execution", "type", "product"}
+	integerID := stableID("execution", "type", "i64")
+	booleanID := stableID("execution", "type", "bool")
+	stringID := stableID("execution", "type", "string")
+	for index := 0; index < tuple.Len(); index++ {
+		value := tuple.At(index).Type()
+		item, ok := goSupportedTypeID(value, integerID, booleanID, stringID, records)
+		if !ok && allowNative && goTypeOwnedOutsidePackage(value, packagePath) {
+			item, ok = goNativeTypeID(value)
+			if ok {
+				nativeTypes = append(nativeTypes, value)
+			}
+		}
+		if !ok {
+			return "", nil, nil, false
+		}
+		itemTypes[index] = item
+		parts = append(parts, item)
+	}
+	return stableID(parts...), itemTypes, nativeTypes, true
 }
 
 func goOptionValueType(value types.Type) (types.Type, bool) {
