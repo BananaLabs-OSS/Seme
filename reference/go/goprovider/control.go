@@ -617,6 +617,10 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					if !typeOK && initializer.kind == goNativeDefaultValue {
 						localType, typeOK = initializer.nativeResultType, true
 					}
+					if !typeOK && (initializer.kind == goNativeInvocation || initializer.kind == goNativeMethodInvocation) {
+						localType = initializer.nativeResultType
+						typeOK = localType != ""
+					}
 					if !typeOK {
 						return nil, fmt.Errorf("control.local_declaration_type")
 					}
@@ -637,7 +641,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 						return nil, err
 					}
 					productType, productTypes, supported := goProductTypeID(tuple, records)
-					if !supported && value.kind == goNativeInvocation && len(value.nativeResultTypes) == tuple.Len() {
+					if !supported && (value.kind == goNativeInvocation || value.kind == goNativeMethodInvocation) && len(value.nativeResultTypes) == tuple.Len() {
 						productType, productTypes, supported = value.nativeResultType, value.nativeResultTypes, true
 					}
 					if !supported {
@@ -659,7 +663,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 							return nil, fmt.Errorf("control.local_binding_type")
 						}
 						localType, typeOK := goLocalSemanticType(object.Type(), records)
-						if !typeOK && value.kind == goNativeInvocation && resultIndex < len(productTypes) {
+						if !typeOK && (value.kind == goNativeInvocation || value.kind == goNativeMethodInvocation) && resultIndex < len(productTypes) {
 							localType, typeOK = productTypes[resultIndex], true
 						}
 						if !typeOK {
@@ -746,6 +750,10 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 							return nil, fmt.Errorf("control.local_binding_type")
 						}
 						localType, ok := goLocalSemanticType(object.Type(), records)
+						if !ok && (initializers[i].kind == goNativeInvocation || initializers[i].kind == goNativeMethodInvocation) {
+							localType = initializers[i].nativeResultType
+							ok = localType != ""
+						}
 						if !ok {
 							return nil, fmt.Errorf("control.local_binding_type")
 						}
@@ -768,6 +776,10 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 						return nil, fmt.Errorf("control.local_binding_type")
 					}
 					localType, ok := goLocalSemanticType(object.Type(), records)
+					if !ok && (initializers[i].kind == goNativeInvocation || initializers[i].kind == goNativeMethodInvocation) {
+						localType = initializers[i].nativeResultType
+						ok = localType != ""
+					}
 					if !ok {
 						return nil, fmt.Errorf("control.local_binding_type")
 					}
@@ -805,8 +817,9 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				return nil, err
 			}
 			localType, typeOK := goLocalSemanticType(object.Type(), records)
-			if !typeOK && initializer.kind == goNativeInvocation {
-				localType, typeOK = initializer.nativeResultType, localType != ""
+			if !typeOK && (initializer.kind == goNativeInvocation || initializer.kind == goNativeMethodInvocation) {
+				localType = initializer.nativeResultType
+				typeOK = localType != ""
 			}
 			if !typeOK {
 				return nil, fmt.Errorf("control.local_binding_type")
