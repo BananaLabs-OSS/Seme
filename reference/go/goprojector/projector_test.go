@@ -196,6 +196,30 @@ func TestProjectsNativeDeferBackToGoSyntax(t *testing.T) {
 	}
 }
 
+func TestProjectsNativeFieldAssignmentBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v63/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-field-assignment", Entry: "Set", Files: map[string]string{
+		"field.go": "package sample\ntype State struct { Name string }\nfunc Set(state *State, name string) { state.Name = name }\n",
+	}})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "state.Name = name") {
+		t.Fatalf("projection lacks field assignment:\n%s", projected)
+	}
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

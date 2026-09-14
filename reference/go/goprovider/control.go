@@ -9,23 +9,26 @@ import (
 )
 
 type goStatement struct {
-	condition   *goExpression
-	returned    *goExpression
-	returns     []*goExpression
-	thenBlock   *goBlock
-	elseBlock   *goBlock
-	localName   string
-	localType   string
-	local       int
-	initializer *goExpression
-	mutable     bool
-	assignment  *goExpression
-	loopBlock   *goBlock
-	whenBlock   *goBlock
-	effect      string
-	effectArgs  []*goExpression
-	evaluated   *goExpression
-	deferred    *goExpression
+	condition           *goExpression
+	returned            *goExpression
+	returns             []*goExpression
+	thenBlock           *goBlock
+	elseBlock           *goBlock
+	localName           string
+	localType           string
+	local               int
+	initializer         *goExpression
+	mutable             bool
+	assignment          *goExpression
+	loopBlock           *goBlock
+	whenBlock           *goBlock
+	effect              string
+	effectArgs          []*goExpression
+	evaluated           *goExpression
+	deferred            *goExpression
+	nativeFieldReceiver *goExpression
+	nativeFieldName     string
+	nativeFieldValue    *goExpression
 }
 
 type goBlock struct {
@@ -635,6 +638,24 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				}
 			}
 		case *ast.AssignStmt:
+			if goExecutionModuleVersion(functions) >= 63 && statement.Tok == token.ASSIGN && len(statement.Lhs) == 1 && len(statement.Rhs) == 1 {
+				if selector, ok := ast.Unparen(statement.Lhs[0]).(*ast.SelectorExpr); ok {
+					field, fieldOK := info.Uses[selector.Sel].(*types.Var)
+					if !fieldOK || !field.IsField() {
+						return nil, fmt.Errorf("control.native_field_assignment_target")
+					}
+					receiver, err := analyzeGoExpressionWithProgram(selector.X, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					value, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					block.statements = append(block.statements, &goStatement{nativeFieldReceiver: receiver, nativeFieldName: selector.Sel.Name, nativeFieldValue: value})
+					continue
+				}
+			}
 			// A multi-result call is one product-valued evaluation. Bind that product
 			// once, then project each Go binding from it in source order.
 			if (statement.Tok == token.DEFINE || goExecutionModuleVersion(functions) >= 62 && statement.Tok == token.ASSIGN) && len(statement.Lhs) > 1 && len(statement.Rhs) == 1 {
@@ -1634,6 +1655,19 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, expressions...)
 			statementID = stableID("execution", owner, statementPath, "native-defer")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a075", []graphField{bytesField(0xa0750, "go"), refField(0xa0751, invocationID)})})
+		} else if statement.nativeFieldReceiver != nil {
+			receiverEntities, receiverID, err := emitCanonicalExpressionWithLocals(statement.nativeFieldReceiver, owner+":"+statementPath+":native-field-receiver", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			valueEntities, valueID, err := emitCanonicalExpressionWithLocals(statement.nativeFieldValue, owner+":"+statementPath+":native-field-value", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, receiverEntities...)
+			*instances = append(*instances, valueEntities...)
+			statementID = stableID("execution", owner, statementPath, "native-field-assignment")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a076", []graphField{bytesField(0xa0760, "go"), bytesField(0xa0761, statement.nativeFieldName), refField(0xa0762, receiverID), refField(0xa0763, valueID)})})
 		} else {
 			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+statementPath+":condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {

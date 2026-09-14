@@ -1944,6 +1944,26 @@ func TestIncrementalSessionPreservesIgnoredParallelResults(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsNativeFieldAssignment(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v63/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-field-assignment", Entry: "Set", Files: map[string]string{
+		"field.go": "package sample\ntype State struct { Name string }\nfunc Set(state *State, name string) { state.Name = name }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native field assignment = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a076") {
+		t.Fatal("NativeFieldAssignment schema missing")
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {
