@@ -806,6 +806,14 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if !ok {
 				return nil, fmt.Errorf("control.local_binding_shape")
 			}
+			if statement.Tok == token.ASSIGN && name.Name == "_" {
+				evaluated, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
+				block.statements = append(block.statements, &goStatement{evaluated: evaluated})
+				continue
+			}
 			object := info.Defs[name]
 			if statement.Tok == token.ASSIGN {
 				object = info.Uses[name]

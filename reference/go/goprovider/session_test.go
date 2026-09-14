@@ -493,6 +493,23 @@ func IsCloser(holder *Holder) bool { return holder.IsCloser() }
 	}
 }
 
+func TestIncrementalSessionRetainsBlankAssignmentEvaluation(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v51/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/blank-assignment", Entry: "Ignore", Files: map[string]string{
+		"ignore.go": "package blankassignment\nfunc Ignore(value int64) { _ = value }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("blank assignment evaluation rejected: %#v", result)
+	}
+}
+
 func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {
