@@ -132,6 +132,29 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 			inherited[parameter] = local
 		}
 	}
+	if goExecutionModuleVersion(functions) >= 85 {
+		for index := 0; index < signature.Results().Len(); index++ {
+			result := signature.Results().At(index)
+			if result.Name() == "" {
+				continue
+			}
+			initializer, err := zeroGoExpression(result.Type(), records, map[string]bool{}, 0)
+			localType, typeOK := goLocalSemanticType(result.Type(), records)
+			if err != nil || !typeOK {
+				spelling, native := goNativeTypeSpelling(result.Type())
+				if !native || functions[nil] != "native-default" {
+					continue
+				}
+				localType = stableID("execution", "type", "native", "go", spelling)
+				initializer = &goExpression{kind: goNativeDefaultValue, nativeLanguage: "go", nativeResultType: localType, nativeTypes: map[string]string{localType: spelling}}
+			}
+			local := next
+			next++
+			prefix = append(prefix, &goStatement{localName: result.Name(), localType: localType, local: local, initializer: initializer, mutable: true})
+			inherited[result] = local
+			mutable[result] = true
+		}
+	}
 	block, err := analyzeGoBlockScoped(statements, signature, info, inherited, functions, records, mutable, &next, true)
 	if err != nil {
 		return nil, err
