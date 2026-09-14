@@ -1986,6 +1986,35 @@ func TestIncrementalSessionLiftsMutableParameterAsCanonicalPlace(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsTypedNativeSwitches(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v65/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, source, entry string
+	}{
+		{"tagged", "package sample\nfunc Select(value string) string { switch value { case \"a\", \"b\": return \"match\"; default: return \"other\" } }\n", "Select"},
+		{"expressionless", "package sample\nfunc Classify(value int64) string { switch { case value <= 0: return \"low\"; case value <= 10: return \"mid\"; default: return \"high\" } }\n", "Classify"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			session, err := NewIncrementalSession(module)
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-switch-" + test.name, Entry: test.entry, Files: map[string]string{"switch.go": test.source}})
+			if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+				t.Fatalf("native switch = %#v", result)
+			}
+			for _, schema := range []string{"0000000000000000000000000000a077", "0000000000000000000000000000a078"} {
+				if !strings.Contains(result.CanonicalG1, schema) {
+					t.Fatalf("native switch schema %s missing", schema)
+				}
+			}
+		})
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {

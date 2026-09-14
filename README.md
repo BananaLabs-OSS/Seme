@@ -766,6 +766,11 @@ parameters to canonical mutable places, so later reads observe the updated
 value without importing Go's parameter mechanics into neutral core. Run
 `./scripts/check-execution-v64.sh`.
 
+[`Core Execution v65`](spec/core-execution-v65.md) preserves native switch
+selection as typed cases containing canonical expressions and blocks, including
+tagged, expressionless, multi-value, and default forms. Run
+`./scripts/check-execution-v65.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

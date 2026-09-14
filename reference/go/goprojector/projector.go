@@ -84,6 +84,8 @@ const (
 	sWhile               = "000000000000000000000000000090e4"
 	sNativeDefer         = "0000000000000000000000000000a075"
 	sNativeFieldAssign   = "0000000000000000000000000000a076"
+	sNativeSwitchCase    = "0000000000000000000000000000a077"
+	sNativeSwitch        = "0000000000000000000000000000a078"
 	sWhen                = "000000000000000000000000000090f0"
 	sIf                  = "000000000000000000000000000090c0"
 	sLessEqual           = "00000000000000000000000000009021"
@@ -567,7 +569,7 @@ func projectBlock(id string, c context) (string, error) {
 		return "", fmt.Errorf("go_projection.invalid_block")
 	}
 	statements, err := refs(b, "00000000000000000000000000009800")
-	if err != nil || len(statements) == 0 {
+	if err != nil {
 		return "", fmt.Errorf("go_projection.unsupported_block")
 	}
 	if len(statements) == 1 {
@@ -742,6 +744,75 @@ func projectBlock(id string, c context) (string, error) {
 				return "", err
 			}
 			lines = append(lines, "\t"+receiver+"."+name+" = "+value)
+		case sNativeSwitch:
+			if language, err := text(statement, "000000000000000000000000000a0780"); err != nil || language != "go" {
+				return "", fmt.Errorf("go_projection.native_switch_language")
+			}
+			subjectID, err := ref(statement, "000000000000000000000000000a0781")
+			if err != nil {
+				return "", err
+			}
+			header := "\tswitch"
+			if subject, ok := c.graph[subjectID]; !ok || subject.schema != sUnitValue {
+				projected, err := expr(subjectID, c)
+				if err != nil {
+					return "", err
+				}
+				header += " " + projected
+			}
+			lines = append(lines, header+" {")
+			caseIDs, err := refs(statement, "000000000000000000000000000a0782")
+			if err != nil {
+				return "", err
+			}
+			for _, caseID := range caseIDs {
+				switchCase, ok := c.graph[caseID]
+				if !ok || switchCase.schema != sNativeSwitchCase {
+					return "", fmt.Errorf("go_projection.native_switch_case")
+				}
+				valueIDs, err := refs(switchCase, "000000000000000000000000000a0770")
+				if err != nil || len(valueIDs) == 0 {
+					return "", fmt.Errorf("go_projection.native_switch_case_values")
+				}
+				values := make([]string, len(valueIDs))
+				for valueIndex, valueID := range valueIDs {
+					values[valueIndex], err = expr(valueID, c)
+					if err != nil {
+						return "", err
+					}
+				}
+				bodyID, err := ref(switchCase, "000000000000000000000000000a0771")
+				if err != nil {
+					return "", err
+				}
+				child := c
+				child.locals = cloneNames(c.locals)
+				body, err := projectBlock(bodyID, child)
+				if err != nil {
+					return "", err
+				}
+				lines = append(lines, "\tcase "+strings.Join(values, ", ")+":")
+				if body != "" {
+					lines = append(lines, indentBlock(body))
+				}
+			}
+			defaultIDs, err := refs(statement, "000000000000000000000000000a0783")
+			if err != nil || len(defaultIDs) > 1 {
+				return "", fmt.Errorf("go_projection.native_switch_default")
+			}
+			if len(defaultIDs) == 1 {
+				child := c
+				child.locals = cloneNames(c.locals)
+				body, err := projectBlock(defaultIDs[0], child)
+				if err != nil {
+					return "", err
+				}
+				lines = append(lines, "\tdefault:")
+				if body != "" {
+					lines = append(lines, indentBlock(body))
+				}
+			}
+			lines = append(lines, "\t}")
 		case sIf:
 			conditionID, err := ref(statement, "00000000000000000000000000009c00")
 			if err != nil {
