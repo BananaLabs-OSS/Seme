@@ -811,6 +811,10 @@ assignment with exact Go and explicit JavaScript/Lua adapter views. Run
 assignments during mutability analysis so existing typed updates compose
 correctly. Run `./scripts/check-execution-v75.sh`.
 
+[`Core Execution v76`](spec/core-execution-v76.md) applies native-aware type
+resolution consistently to multi-result bindings and scoped `if` initializers.
+Run `./scripts/check-execution-v76.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
