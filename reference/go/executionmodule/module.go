@@ -32,7 +32,7 @@ func ValidateSliceConstructElementCount(count int) error {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 37 {
+	if version < 2 || version > 38 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -252,6 +252,11 @@ func Declarations(version int) ([]Schema, error) {
 		schemas = append(schemas,
 			Schema{0xa06a, "UnitType", nil},
 			Schema{0xa06b, "UnitValue", []Field{field(0xa06b0, "unit_value.type", 5, 0xa06a, 0)}},
+		)
+	}
+	if version >= 38 {
+		schemas = append(schemas,
+			Schema{0xa06c, "Evaluate", []Field{field(0xa06c0, "evaluate.value", 5, 0, 0)}},
 		)
 	}
 	return schemas, nil
