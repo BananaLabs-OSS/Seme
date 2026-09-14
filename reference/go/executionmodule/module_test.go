@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(84); err == nil {
+	if _, err := Declarations(85); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -741,6 +741,20 @@ func TestVersion83PreservesVersion82Schema(t *testing.T) {
 	}
 	if !reflect.DeepEqual(current, previous) {
 		t.Fatal("v83 unexpectedly changed canonical schema")
+	}
+}
+
+func TestVersion84PreservesVersion83Schema(t *testing.T) {
+	previous, err := Declarations(83)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(84)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatal("v84 unexpectedly changed canonical schema")
 	}
 }
 

@@ -1202,8 +1202,16 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				continue
 			}
 			if statement.Else != nil && (index < len(statements)-1 || !requireReturn) {
-				alternate, ok := statement.Else.(*ast.BlockStmt)
-				if !ok {
+				var alternateStatements []ast.Stmt
+				switch alternate := statement.Else.(type) {
+				case *ast.BlockStmt:
+					alternateStatements = alternate.List
+				case *ast.IfStmt:
+					if goExecutionModuleVersion(functions) < 84 {
+						return nil, fmt.Errorf("control.else_unsupported")
+					}
+					alternateStatements = []ast.Stmt{alternate}
+				default:
 					return nil, fmt.Errorf("control.else_unsupported")
 				}
 				condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, ifLocals, functions, records, ifMutable)
@@ -1214,7 +1222,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				if err != nil {
 					return nil, err
 				}
-				elseBlock, err := analyzeGoBlockScoped(alternate.List, signature, info, ifLocals, functions, records, ifMutable, next, false)
+				elseBlock, err := analyzeGoBlockScoped(alternateStatements, signature, info, ifLocals, functions, records, ifMutable, next, false)
 				if err != nil {
 					return nil, err
 				}

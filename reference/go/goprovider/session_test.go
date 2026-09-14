@@ -66,6 +66,34 @@ func CountTo(limit int64) int64 {
 	}
 }
 
+func TestSessionLiftsNonterminalElseIfAtVersion84(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v84/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{
+		Revision:    1,
+		ModulePath:  "example.test/elseif",
+		PackagePath: "example.test/elseif",
+		Files: map[string]string{"elseif.go": `package elseif
+func Classify(value int64) int64 {
+	result := int64(0)
+	if value < 0 { result = 2 } else if value > 0 { result = 1 }
+	return result
+}`},
+	})
+	if !result.Valid {
+		t.Fatalf("diagnostics = %#v", result.Diagnostics)
+	}
+	if strings.Count(result.CanonicalG1, "00000000000000000000000000009021") < 2 {
+		t.Fatalf("nested canonical conditions missing:\n%s", result.CanonicalG1)
+	}
+}
+
 func TestIncrementalSessionLiftsNoResultCompletionAsNeutralUnit(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v37/module.g1")
 	if err != nil {
