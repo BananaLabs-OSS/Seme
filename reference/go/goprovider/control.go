@@ -1073,7 +1073,7 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 		return locals, mutable, nil, nil
 	}
 	assignment, ok := initializer.(*ast.AssignStmt)
-	if !ok || assignment.Tok != token.DEFINE || len(assignment.Rhs) != 1 {
+	if !ok || assignment.Tok != token.DEFINE && assignment.Tok != token.ASSIGN || len(assignment.Rhs) != 1 {
 		return nil, nil, nil, fmt.Errorf("control.if_init_shape")
 	}
 	if len(assignment.Lhs) > 1 {
@@ -1107,6 +1107,9 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 				continue
 			}
 			object := info.Defs[name]
+			if assignment.Tok == token.ASSIGN {
+				object = info.Uses[name]
+			}
 			if object == nil {
 				return nil, nil, nil, fmt.Errorf("control.if_init_binding")
 			}
@@ -1117,13 +1120,24 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 			if !typeOK {
 				return nil, nil, nil, fmt.Errorf("control.if_init_type")
 			}
-			local := *next
-			*next++
 			projected := &goExpression{kind: goProductProject, left: &goExpression{kind: goLocalRead, local: productLocal}, typeID: productType, elementTypeID: productTypes[resultIndex], productIndex: uint64(resultIndex), productTypes: productTypes}
-			statements = append(statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: projected, mutable: scopedMutable[object]})
-			scopedLocals[object] = local
+			if assignment.Tok == token.ASSIGN {
+				local, exists := scopedLocals[object]
+				if !exists || !scopedMutable[object] {
+					return nil, nil, nil, fmt.Errorf("control.if_init_assignment_target")
+				}
+				statements = append(statements, &goStatement{local: local, mutable: true, assignment: projected})
+			} else {
+				local := *next
+				*next++
+				statements = append(statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: projected, mutable: scopedMutable[object]})
+				scopedLocals[object] = local
+			}
 		}
 		return scopedLocals, scopedMutable, statements, nil
+	}
+	if assignment.Tok != token.DEFINE {
+		return nil, nil, nil, fmt.Errorf("control.if_init_shape")
 	}
 	if len(assignment.Lhs) != 1 {
 		return nil, nil, nil, fmt.Errorf("control.if_init_shape")
@@ -1174,7 +1188,11 @@ func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signat
 	if err != nil {
 		return nil, err
 	}
-	thenBlock, err := analyzeGoBlockScoped(statement.Body.List, signature, info, ifLocals, functions, records, ifMutable, next, true)
+	thenStatements := statement.Body.List
+	if statement.Else == nil && !blockAlwaysReturns(statement.Body.List) {
+		thenStatements = append(append([]ast.Stmt(nil), statement.Body.List...), following...)
+	}
+	thenBlock, err := analyzeGoBlockScoped(thenStatements, signature, info, ifLocals, functions, records, ifMutable, next, true)
 	if err != nil {
 		return nil, err
 	}
@@ -1201,6 +1219,29 @@ func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signat
 		return nil, err
 	}
 	return &goBlock{statements: append(initializer, &goStatement{condition: condition, thenBlock: thenBlock, elseBlock: elseBlock})}, nil
+}
+
+func blockAlwaysReturns(statements []ast.Stmt) bool {
+	if len(statements) == 0 {
+		return false
+	}
+	switch last := statements[len(statements)-1].(type) {
+	case *ast.ReturnStmt:
+		return true
+	case *ast.BlockStmt:
+		return blockAlwaysReturns(last.List)
+	case *ast.IfStmt:
+		if last.Else == nil || !blockAlwaysReturns(last.Body.List) {
+			return false
+		}
+		switch alternate := last.Else.(type) {
+		case *ast.BlockStmt:
+			return blockAlwaysReturns(alternate.List)
+		case *ast.IfStmt:
+			return blockAlwaysReturns([]ast.Stmt{alternate})
+		}
+	}
+	return false
 }
 
 func emitCanonicalBlock(block *goBlock, owner, path string, parameterIDs []string, integerTypeID string, instances *[]graphEntity) (string, error) {
