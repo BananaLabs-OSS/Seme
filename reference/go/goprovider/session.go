@@ -673,6 +673,10 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	for _, function := range functions {
 		functionObjects[function.info.Defs[function.fn.Name]] = function.id
 	}
+	if executionModuleVersion(moduleG1) >= 43 {
+		// nil is reserved metadata, never a Go declaration object.
+		functionObjects[nil] = "core-v43"
+	}
 	integerID := stableID("execution", "type", "i64")
 	booleanID := stableID("execution", "type", "bool")
 	stringID := stableID("execution", "type", "string")

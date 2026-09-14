@@ -660,6 +660,14 @@ spelling while continuing to reject unsupported local semantic records. This
 adds no schema and does not make native fields, operators, memory, or methods
 portable. Run `./scripts/check-execution-v42.sh`.
 
+[`Core Execution v43`](spec/core-execution-v43.md) adds typed native field
+observation with an explicit language, qualified field identity, receiver, and
+canonical result type. The Go provider retains exported observations on
+runtime-owned values without reclassifying unsupported local records. It also
+retains typed native binding reads, Unit-returning procedures, and native items
+inside ordered product results. Run
+`./scripts/check-execution-v43.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

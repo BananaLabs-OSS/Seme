@@ -234,6 +234,78 @@ func Identity(request *http.Request) *http.Request { return request }
 	}
 }
 
+func TestIncrementalSessionRetainsTypedNativeFieldRead(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-field", Entry: "Method", Files: map[string]string{
+		"field.go": `package nativefield
+import "net/http"
+func Method(request *http.Request) string { return request.Method }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("typed native field read rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a072", "2a6e65742f687474702e526571756573742e4d6574686f64"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native field read omitted %s", want)
+		}
+	}
+}
+
+func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-binding", Entry: "IsEnabled", Files: map[string]string{
+		"binding.go": "package nativebinding\nvar Enabled = true\nfunc IsEnabled() bool { return Enabled }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("typed native binding read rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a073", "6578616d706c652e746573742f6e61746976652d62696e64696e672e456e61626c6564"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native binding read omitted %s", want)
+		}
+	}
+}
+
+func TestIncrementalSessionRetainsNativeProcedureAsUnit(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-procedure", Entry: "Write", Files: map[string]string{
+		"procedure.go": `package nativeprocedure
+import "net/http"
+func Write(w http.ResponseWriter) { http.Error(w, "no", 400) }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native procedure rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a06a", "0000000000000000000000000000a06d"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native procedure omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsNativeValueErrorProduct(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v41/module.g1")
 	if err != nil {
