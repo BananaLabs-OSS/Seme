@@ -221,6 +221,30 @@ func TestProjectsNativeFieldAssignmentBackToGoSyntax(t *testing.T) {
 	}
 }
 
+func TestProjectsNativeVariadicExpansionBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v89/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-ellipsis", Entry: "Expand", Files: map[string]string{
+		"ellipsis.go": "package sample\nimport \"fmt\"\nfunc Expand(values []any) string { return fmt.Sprint(values...) }\n",
+	}, ExternalImporter: importer.Default()})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "fmt.Sprint(values...)") {
+		t.Fatalf("projection lacks variadic expansion:\n%s", projected)
+	}
+}
+
 func TestProjectsMutableParameterThroughCanonicalPlace(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v64/module.g1")
 	if err != nil {
