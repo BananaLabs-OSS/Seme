@@ -1164,6 +1164,17 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return &goExpression{kind: goStringLiteral, text: value}, nil
 		}
+		if expression.Kind == token.CHAR && goExecutionModuleVersion(functions) >= 93 {
+			value, err := strconv.Unquote(expression.Value)
+			if err != nil {
+				return nil, fmt.Errorf("expression.invalid_character_literal")
+			}
+			runes := []rune(value)
+			if len(runes) != 1 {
+				return nil, fmt.Errorf("expression.invalid_character_literal")
+			}
+			return &goExpression{kind: goIntegerLiteral, integer: uint64(runes[0])}, nil
+		}
 		if expression.Kind != token.INT {
 			return nil, fmt.Errorf("expression.unsupported_literal")
 		}
