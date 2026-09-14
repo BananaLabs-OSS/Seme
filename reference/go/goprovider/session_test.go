@@ -308,6 +308,82 @@ func Pair(value string, offset int) (string, int) { return value, offset }
 	}
 }
 
+func TestIncrementalSessionRetainsNativeFieldsInApplicationRecord(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v48/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-record", Entry: "Make", Files: map[string]string{
+		"record.go": `package nativerecord
+type Summary struct { Name string; Count int }
+func Make(name string, count int) Summary { return Summary{Name: name, Count: count} }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("application record with native field rejected: %#v", result)
+	}
+	for _, want := range []string{"00000000000000000000000000009030", "0000000000000000000000000000a071", "by 696e74"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("application record with native field omitted %s", want)
+		}
+	}
+}
+
+func TestIncrementalSessionDefaultsOmittedNativeApplicationRecordField(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v48/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-record", Entry: "Make", Files: map[string]string{
+		"record.go": `package nativerecord
+type Summary struct { Name string; Count int }
+func Make(name string) Summary { return Summary{Name: name} }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("omitted native record field rejected: %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a074") {
+		t.Fatal("omitted native record field did not retain native default")
+	}
+}
+
+func TestIncrementalSessionRetainsMultiResultIfInitializer(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v48/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/if-init", Entry: "Valid", Files: map[string]string{
+		"valid.go": `package ifinit
+import "strconv"
+func Valid(text string) bool {
+	if _, err := strconv.Atoi(text); err == nil { return true }
+	return false
+}
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("multi-result if initializer rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a06d", "0000000000000000000000000000a06f", "0000000000000000000000000000a070"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("multi-result if initializer omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {

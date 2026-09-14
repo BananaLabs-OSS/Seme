@@ -1073,7 +1073,59 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 		return locals, mutable, nil, nil
 	}
 	assignment, ok := initializer.(*ast.AssignStmt)
-	if !ok || assignment.Tok != token.DEFINE || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+	if !ok || assignment.Tok != token.DEFINE || len(assignment.Rhs) != 1 {
+		return nil, nil, nil, fmt.Errorf("control.if_init_shape")
+	}
+	if len(assignment.Lhs) > 1 {
+		_, callOK := ast.Unparen(assignment.Rhs[0]).(*ast.CallExpr)
+		tuple, tupleOK := types.Unalias(info.TypeOf(assignment.Rhs[0])).(*types.Tuple)
+		if !callOK || !tupleOK || tuple.Len() != len(assignment.Lhs) {
+			return nil, nil, nil, fmt.Errorf("control.if_init_shape")
+		}
+		value, err := analyzeGoExpressionWithProgram(assignment.Rhs[0], signature, info, locals, functions, records, mutable)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		productType, productTypes, supported := goProductTypeID(tuple, records)
+		if !supported && (value.kind == goNativeInvocation || value.kind == goNativeMethodInvocation) && len(value.nativeResultTypes) == tuple.Len() {
+			productType, productTypes, supported = value.nativeResultType, value.nativeResultTypes, true
+		}
+		if !supported {
+			return nil, nil, nil, fmt.Errorf("control.if_init_type")
+		}
+		scopedLocals := cloneLocalScope(locals)
+		scopedMutable := cloneMutableScope(mutable)
+		productLocal := *next
+		*next++
+		statements := []*goStatement{{localName: fmt.Sprintf("seme_product_%d", productLocal), localType: productType, local: productLocal, initializer: value}}
+		for resultIndex, target := range assignment.Lhs {
+			name, nameOK := target.(*ast.Ident)
+			if !nameOK {
+				return nil, nil, nil, fmt.Errorf("control.if_init_binding")
+			}
+			if name.Name == "_" {
+				continue
+			}
+			object := info.Defs[name]
+			if object == nil {
+				return nil, nil, nil, fmt.Errorf("control.if_init_binding")
+			}
+			localType, typeOK := goLocalSemanticType(object.Type(), records)
+			if !typeOK && (value.kind == goNativeInvocation || value.kind == goNativeMethodInvocation) {
+				localType, typeOK = productTypes[resultIndex], true
+			}
+			if !typeOK {
+				return nil, nil, nil, fmt.Errorf("control.if_init_type")
+			}
+			local := *next
+			*next++
+			projected := &goExpression{kind: goProductProject, left: &goExpression{kind: goLocalRead, local: productLocal}, typeID: productType, elementTypeID: productTypes[resultIndex], productIndex: uint64(resultIndex), productTypes: productTypes}
+			statements = append(statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: projected, mutable: scopedMutable[object]})
+			scopedLocals[object] = local
+		}
+		return scopedLocals, scopedMutable, statements, nil
+	}
+	if len(assignment.Lhs) != 1 {
 		return nil, nil, nil, fmt.Errorf("control.if_init_shape")
 	}
 	name, ok := assignment.Lhs[0].(*ast.Ident)
@@ -1093,14 +1145,19 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 		return nil, nil, nil, err
 	}
 	scopedLocals := cloneLocalScope(locals)
-	scopedMutable := make(map[types.Object]bool, len(mutable))
-	for object, value := range mutable {
-		scopedMutable[object] = value
-	}
+	scopedMutable := cloneMutableScope(mutable)
 	local := *next
 	*next++
 	scopedLocals[object] = local
 	return scopedLocals, scopedMutable, []*goStatement{{localName: name.Name, localType: localType, local: local, initializer: value, mutable: scopedMutable[object]}}, nil
+}
+
+func cloneMutableScope(mutable map[types.Object]bool) map[types.Object]bool {
+	cloned := make(map[types.Object]bool, len(mutable))
+	for object, value := range mutable {
+		cloned[object] = value
+	}
+	return cloned
 }
 
 func analyzeTerminalIf(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info) (*goBlock, error) {

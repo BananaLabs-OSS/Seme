@@ -684,6 +684,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	booleanID := stableID("execution", "type", "bool")
 	stringID := stableID("execution", "type", "string")
 	bytesID := stableID("execution", "type", "bytes")
+	allowNativeRecordFields := executionModuleVersion(moduleG1) >= 42
 	instances := []graphEntity{
 		{integerID, entity(integerID, "00000000000000000000000000009010", []graphField{unsignedField(0x9100, 64), {0x9101, "tr"}, unsignedField(0x9102, 0)})},
 		{booleanID, entity(booleanID, "00000000000000000000000000009020", nil)},
@@ -745,6 +746,12 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 			if isBool(fieldType) || isPureString(fieldType) || isPrimitiveSlice(fieldType) || isI64Map(fieldType) || isBytes(fieldType) || isInt64(fieldType) {
 				continue
 			}
+			ownerPath := candidate.named.Obj().Pkg().Path()
+			if allowNativeRecordFields && goTypeOwnedOutsidePackage(fieldType, ownerPath) {
+				if _, ok := goNativeTypeID(fieldType); ok {
+					continue
+				}
+			}
 			nested, ok := types.Unalias(fieldType).(*types.Named)
 			if !ok || !validateRecord(nested, visiting, depth+1) {
 				return false
@@ -782,6 +789,16 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 				}
 			case isInt64(field.Type()):
 			default:
+				ownerPath := candidate.named.Obj().Pkg().Path()
+				if allowNativeRecordFields && goTypeOwnedOutsidePackage(field.Type(), ownerPath) {
+					if nativeID, ok := goNativeTypeID(field.Type()); ok {
+						typeID = nativeID
+						if !hasGraphEntity(instances, nativeID) {
+							instances = append(instances, goNativeTypeEntity(field.Type()))
+						}
+						break
+					}
+				}
 				nested, ok := types.Unalias(field.Type()).(*types.Named)
 				if !ok {
 					invalidRecords[candidate.named] = true
