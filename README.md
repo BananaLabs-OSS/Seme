@@ -880,6 +880,10 @@ package identity and native result type. Run `./scripts/check-execution-v91.sh`.
 conversions as typed native mechanics while retaining canonical operand and
 result identities. Run `./scripts/check-execution-v92.sh`.
 
+[`Core Execution v93`](spec/core-execution-v93.md) lifts Go character literals
+to their language-neutral Unicode scalar integer meaning, including when used
+inside typed native calls. Run `./scripts/check-execution-v93.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
