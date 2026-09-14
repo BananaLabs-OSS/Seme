@@ -1121,7 +1121,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			} else if isGoIntegerExpression(left, info) && isGoIntegerExpression(right, info) && stableIntegerComparisonOperand(left, info) && stableIntegerComparisonOperand(right, info) {
 				kind = goBooleanAnd
 			} else {
-				return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
+				return analyzeNativeGoComparison(expression.Op, left, right, signature, info, locals, functions, records, mutableLocals)
 			}
 		case token.LEQ:
 			kind = goIntegerLessEqual
@@ -1131,12 +1131,18 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		case token.LSS:
 			kind = goIntegerLessEqual
 			left, right, negate = right, left, true
+		case token.GTR:
+			if !isGoIntegerExpression(left, info) || !isGoIntegerExpression(right, info) || !stableIntegerComparisonOperand(left, info) || !stableIntegerComparisonOperand(right, info) {
+				return analyzeNativeGoComparison(expression.Op, left, right, signature, info, locals, functions, records, mutableLocals)
+			}
+			kind = goIntegerLessEqual
+			left, right, negate = left, right, true
 		case token.NEQ:
 			if isGoStringExpression(left, info) && isGoStringExpression(right, info) {
 				kind = goStringEqual
 				negate = true
 			} else if !isGoIntegerExpression(left, info) || !isGoIntegerExpression(right, info) || !stableIntegerComparisonOperand(left, info) || !stableIntegerComparisonOperand(right, info) {
-				return nil, fmt.Errorf("expression.unsupported_integer_not_equal_operands")
+				return analyzeNativeGoComparison(expression.Op, left, right, signature, info, locals, functions, records, mutableLocals)
 			}
 		default:
 			return nil, fmt.Errorf("expression.unsupported_operator:%s", expression.Op)
@@ -1973,6 +1979,69 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node")
 	}
+}
+
+func analyzeNativeGoComparison(operator token.Token, leftNode, rightNode ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
+	if functions[nil] != "native-default" {
+		if operator == token.NEQ {
+			return nil, fmt.Errorf("expression.unsupported_integer_not_equal_operands")
+		}
+		return nil, fmt.Errorf("expression.unsupported_operator:%s", operator)
+	}
+	leftType, rightType := info.TypeOf(leftNode), info.TypeOf(rightNode)
+	leftExpected, rightExpected := leftType, rightType
+	if goUntypedType(leftType) {
+		leftExpected = rightType
+	}
+	if goUntypedType(rightType) {
+		rightExpected = leftType
+	}
+	left, leftID, leftSpelling, err := analyzeNativeGoOperand(leftNode, leftExpected, signature, info, locals, functions, records, mutableLocals)
+	if err != nil {
+		return nil, err
+	}
+	right, rightID, rightSpelling, err := analyzeNativeGoOperand(rightNode, rightExpected, signature, info, locals, functions, records, mutableLocals)
+	if err != nil {
+		return nil, err
+	}
+	typesByID := map[string]string{}
+	if leftID != "" {
+		typesByID[leftID] = leftSpelling
+	}
+	if rightID != "" {
+		typesByID[rightID] = rightSpelling
+	}
+	return &goExpression{
+		kind: goNativeInvocation, arguments: []*goExpression{left, right}, nativeLanguage: "go",
+		nativeTarget:     "builtin.compare[" + operator.String() + ";" + leftSpelling + ";" + rightSpelling + "]",
+		nativeSignature:  "func(" + leftSpelling + ", " + rightSpelling + ") bool",
+		nativeResultType: stableID("execution", "type", "bool"), nativeTypes: typesByID,
+	}, nil
+}
+
+func analyzeNativeGoOperand(node ast.Expr, expected types.Type, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, string, string, error) {
+	spelling, native := goNativeTypeSpelling(expected)
+	if !native {
+		return nil, "", "", fmt.Errorf("expression.native_comparison_type")
+	}
+	typeID, _ := goNativeTypeID(expected)
+	if identifier, nilValue := ast.Unparen(node).(*ast.Ident); nilValue && identifier.Name == "nil" {
+		return &goExpression{kind: goNativeDefaultValue, nativeLanguage: "go", nativeResultType: typeID, nativeTypes: map[string]string{typeID: spelling}}, typeID, spelling, nil
+	}
+	value, err := analyzeGoExpressionWithProgram(node, signature, info, locals, functions, records, mutableLocals)
+	if err != nil {
+		return nil, "", "", err
+	}
+	value, _, ok := nativeGoAssignmentValue(value, expected)
+	if !ok {
+		return nil, "", "", fmt.Errorf("expression.native_comparison_type")
+	}
+	return value, typeID, spelling, nil
+}
+
+func goUntypedType(value types.Type) bool {
+	basic, ok := types.Unalias(value).(*types.Basic)
+	return ok && basic.Info()&types.IsUntyped != 0
 }
 
 // analyzeNativeGoInvocation retains a typed call to a Go-runtime callable as an

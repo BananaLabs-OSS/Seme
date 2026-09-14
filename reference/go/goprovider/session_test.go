@@ -621,6 +621,29 @@ func TestIncrementalSessionRetainsNativeAssignmentConversion(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsNativeComparisons(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v56/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-comparison", Entry: "Present", Files: map[string]string{
+		"compare.go": `package nativecomparison
+type Holder struct { Next *Holder }
+func Present(holder *Holder, count int) bool { return holder != nil && count > 0 }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native comparisons rejected: %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "6275696c74696e2e636f6d70617265") {
+		t.Fatal("native comparison target omitted")
+	}
+}
+
 func TestIncrementalSessionRetainsNativeProcedureAsUnit(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {
