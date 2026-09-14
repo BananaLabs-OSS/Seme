@@ -75,6 +75,28 @@ func TestIncrementalSessionLiftsDiscardedLocalCallAsEvaluate(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsTypedNativeGoInvocation(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v39/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/nativecall", Entry: "Clean", Files: map[string]string{
+		"native.go": "package nativecall\nimport \"strings\"\nfunc Clean(value string) string { return strings.TrimSpace(value) }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("typed native invocation was not retained inside canonical code: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a06d", "676f", "737472696e67732e5472696d5370616365"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native invocation missing %q: %q", want, result.CanonicalG1)
+		}
+	}
+}
+
 func TestIdentityBindingPreservesCanonicalFunctionAcrossProjectRename(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
 	if err != nil {
