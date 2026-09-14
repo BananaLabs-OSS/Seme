@@ -729,6 +729,10 @@ package-level application state as exact typed Go-native binding reads. Run
 assignment conversion for non-neutral local types as an explicit typed native
 operation. Run `./scripts/check-execution-v56.sh`.
 
+[`Core Execution v57`](spec/core-execution-v57.md) retains comparisons over
+Go-owned pointers, interfaces, integers, named values, and contextual `nil` as
+explicit typed native operations. Run `./scripts/check-execution-v57.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
