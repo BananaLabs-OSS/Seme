@@ -85,6 +85,8 @@ const (
 	goNativeInvocation
 	goNativeMethodInvocation
 	goProductProject
+	goNativeFieldRead
+	goNativeBindingRead
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -124,6 +126,7 @@ type goExpression struct {
 	nativeSignature   string
 	nativeResultType  string
 	nativeResultTypes []string
+	nativeTypes       map[string]string
 	elementTypeID     string
 	productIndex      uint64
 	productTypes      []string
@@ -198,6 +201,10 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 				arguments[index] = id
 			}
 			id := expressionNodeID(owner, path, "native-invocation")
+			unitType := stableID("execution", "type", "unit")
+			if expression.nativeResultType == unitType {
+				emitted[unitType] = graphEntity{unitType, entity(unitType, "0000000000000000000000000000a06a", nil)}
+			}
 			if len(expression.nativeResultTypes) > 1 {
 				emitted[expression.nativeResultType] = graphEntity{expression.nativeResultType, entity(expression.nativeResultType, "0000000000000000000000000000a06f", []graphField{refsField(0xa06f0, expression.nativeResultTypes)})}
 			}
@@ -206,6 +213,9 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 				if resultType == nativeError {
 					emitted[nativeError] = graphEntity{nativeError, entity(nativeError, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, "go"), bytesField(0xa0711, "error")})}
 				}
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, "go"), bytesField(0xa0711, spelling)})}
 			}
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a06d", []graphField{
 				bytesField(0xa06d0, expression.nativeLanguage), bytesField(0xa06d1, expression.nativeTarget),
@@ -229,6 +239,10 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 				arguments[index] = id
 			}
 			id := expressionNodeID(owner, path, "native-method-invocation")
+			unitType := stableID("execution", "type", "unit")
+			if expression.nativeResultType == unitType {
+				emitted[unitType] = graphEntity{unitType, entity(unitType, "0000000000000000000000000000a06a", nil)}
+			}
 			if len(expression.nativeResultTypes) > 1 {
 				emitted[expression.nativeResultType] = graphEntity{expression.nativeResultType, entity(expression.nativeResultType, "0000000000000000000000000000a06f", []graphField{refsField(0xa06f0, expression.nativeResultTypes)})}
 			}
@@ -237,6 +251,9 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 				if resultType == nativeError {
 					emitted[nativeError] = graphEntity{nativeError, entity(nativeError, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, "go"), bytesField(0xa0711, "error")})}
 				}
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, "go"), bytesField(0xa0711, spelling)})}
 			}
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a06e", []graphField{
 				bytesField(0xa06e0, expression.nativeLanguage), bytesField(0xa06e1, expression.nativeTarget), bytesField(0xa06e2, expression.nativeSignature),
@@ -276,6 +293,29 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := expressionNodeID(owner, path, "field-read")
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009032", []graphField{refField(0x9320, record), refField(0x9321, expression.field)})}
+			return id, nil
+		case goNativeFieldRead:
+			if expression.left == nil || expression.nativeLanguage == "" || expression.nativeTarget == "" || expression.nativeResultType == "" {
+				return "", fmt.Errorf("expression.native_field_read_incomplete")
+			}
+			receiver, err := emit(expression.left, path+".receiver")
+			if err != nil {
+				return "", err
+			}
+			id := expressionNodeID(owner, path, "native-field-read")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a072", []graphField{
+				bytesField(0xa0720, expression.nativeLanguage), bytesField(0xa0721, expression.nativeTarget),
+				refField(0xa0722, receiver), refField(0xa0723, expression.nativeResultType),
+			})}
+			return id, nil
+		case goNativeBindingRead:
+			if expression.nativeLanguage == "" || expression.nativeTarget == "" || expression.nativeResultType == "" {
+				return "", fmt.Errorf("expression.native_binding_read_incomplete")
+			}
+			id := expressionNodeID(owner, path, "native-binding-read")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a073", []graphField{
+				bytesField(0xa0730, expression.nativeLanguage), bytesField(0xa0731, expression.nativeTarget), refField(0xa0732, expression.nativeResultType),
+			})}
 			return id, nil
 		case goFixedArrayConstruct:
 			values := make([]string, len(expression.values))
@@ -989,6 +1029,14 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				return &goExpression{kind: goBooleanLiteral, boolean: constant.BoolVal(object.Val())}, nil
 			case constant.String:
 				return &goExpression{kind: goStringLiteral, text: constant.StringVal(object.Val())}, nil
+			}
+		}
+		if functions[nil] == "core-v43" {
+			if object, ok := info.Uses[expression].(*types.Var); ok && object.Pkg() != nil && object.Parent() == object.Pkg().Scope() {
+				resultTypeID, supported := goSupportedTypeID(object.Type(), stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+				if supported {
+					return &goExpression{kind: goNativeBindingRead, nativeLanguage: "go", nativeTarget: object.Pkg().Path() + "." + object.Name(), nativeResultType: resultTypeID}, nil
+				}
 			}
 		}
 		return nil, fmt.Errorf("expression.unresolved_parameter:%s", expression.Name)
@@ -1750,7 +1798,30 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 		}
 		if fieldID == "" {
-			return nil, fmt.Errorf("expression.unknown_record_field:%s:%s", types.TypeString(info.TypeOf(expression.X), nil), field.Name())
+			ownerPath := ""
+			for object := range functions {
+				if object != nil && object.Pkg() != nil {
+					ownerPath = object.Pkg().Path()
+					break
+				}
+			}
+			receiverType := info.TypeOf(expression.X)
+			resultType := info.TypeOf(expression)
+			resultTypeID, resultOK := goSupportedTypeID(resultType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+			if functions[nil] == "core-v43" && ownerPath != "" && goTypeOwnedOutsidePackage(receiverType, ownerPath) && resultOK {
+				receiver, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+				if err != nil {
+					return nil, err
+				}
+				target := types.TypeString(receiverType, func(pkg *types.Package) string {
+					if pkg == nil {
+						return ""
+					}
+					return pkg.Path()
+				}) + "." + field.Name()
+				return &goExpression{kind: goNativeFieldRead, left: receiver, nativeLanguage: "go", nativeTarget: target, nativeResultType: resultTypeID}, nil
+			}
+			return nil, fmt.Errorf("expression.unknown_record_field:%s:%s", types.TypeString(receiverType, nil), field.Name())
 		}
 		record, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
 		if err != nil {
@@ -1794,10 +1865,10 @@ func analyzeNativeGoInvocation(function *types.Func, argumentsAST []ast.Expr, el
 		return nil, fmt.Errorf("expression.native_call_target")
 	}
 	callSignature, ok := function.Type().(*types.Signature)
-	if !ok || callSignature.Results().Len() == 0 {
+	if !ok {
 		return nil, fmt.Errorf("expression.native_call_signature")
 	}
-	resultType, resultTypes, ok := nativeGoResultTypeID(callSignature, records)
+	resultType, resultTypes, nativeTypes, ok := nativeGoResultTypeID(callSignature, records)
 	if !ok {
 		return nil, fmt.Errorf("expression.native_call_result_type")
 	}
@@ -1815,30 +1886,49 @@ func analyzeNativeGoInvocation(function *types.Func, argumentsAST []ast.Expr, el
 			return ""
 		}
 		return pkg.Path()
-	}), nativeResultType: resultType, nativeResultTypes: resultTypes}, nil
+	}), nativeResultType: resultType, nativeResultTypes: resultTypes, nativeTypes: nativeTypes}, nil
 }
 
-func nativeGoResultTypeID(signature *types.Signature, records map[*types.Named]goRecordInfo) (string, []string, bool) {
-	if signature == nil || signature.Results().Len() == 0 {
-		return "", nil, false
+func nativeGoResultTypeID(signature *types.Signature, records map[*types.Named]goRecordInfo) (string, []string, map[string]string, bool) {
+	if signature == nil {
+		return "", nil, nil, false
+	}
+	if signature.Results().Len() == 0 {
+		return stableID("execution", "type", "unit"), nil, nil, true
 	}
 	if signature.Results().Len() > 1 {
-		id, items, ok := goProductTypeID(signature.Results(), records)
-		return id, items, ok
+		items := make([]string, signature.Results().Len())
+		native := map[string]string{}
+		parts := []string{"execution", "type", "product"}
+		for index := range items {
+			value := signature.Results().At(index).Type()
+			item, ok := goSupportedTypeID(value, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+			if !ok {
+				spelling, nativeOK := goNativeTypeSpelling(value)
+				if !nativeOK {
+					return "", nil, nil, false
+				}
+				item = stableID("execution", "type", "native", "go", spelling)
+				native[item] = spelling
+			}
+			items[index] = item
+			parts = append(parts, item)
+		}
+		return stableID(parts...), items, native, true
 	}
 	result := signature.Results().At(0).Type()
 	switch {
 	case isInt64(result):
-		return stableID("execution", "type", "i64"), nil, true
+		return stableID("execution", "type", "i64"), nil, nil, true
 	case isBool(result):
-		return stableID("execution", "type", "bool"), nil, true
+		return stableID("execution", "type", "bool"), nil, nil, true
 	case isPureString(result):
-		return stableID("execution", "type", "string"), nil, true
+		return stableID("execution", "type", "string"), nil, nil, true
 	case isGoErrorType(result):
 		id := stableID("execution", "type", "native", "go", "error")
-		return id, []string{id}, true
+		return id, []string{id}, map[string]string{id: "error"}, true
 	default:
-		return "", nil, false
+		return "", nil, nil, false
 	}
 }
 
@@ -1874,7 +1964,7 @@ func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast
 	if _, dynamic := types.Unalias(selection.Recv()).Underlying().(*types.Interface); dynamic {
 		return nil, fmt.Errorf("expression.native_method_dynamic_receiver")
 	}
-	resultType, resultTypes, ok := nativeGoResultTypeID(declared, records)
+	resultType, resultTypes, nativeTypes, ok := nativeGoResultTypeID(declared, records)
 	if !ok {
 		return nil, fmt.Errorf("expression.native_method_result_type")
 	}
@@ -1901,7 +1991,7 @@ func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast
 			return ""
 		}
 		return pkg.Path()
-	}), nativeResultType: resultType, nativeResultTypes: resultTypes}, nil
+	}), nativeResultType: resultType, nativeResultTypes: resultTypes, nativeTypes: nativeTypes}, nil
 }
 
 // zeroGoExpression realizes fields omitted from a keyed Go struct literal.

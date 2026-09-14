@@ -417,8 +417,30 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(43); err == nil {
+	if _, err := Declarations(44); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersion43AddsTypedNativeFieldRead(t *testing.T) {
+	previous, err := Declarations(42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(43)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+2 || current[len(previous)].ID != 0xa072 || current[len(previous)].Name != "NativeFieldRead" || current[len(previous)+1].ID != 0xa073 || current[len(previous)+1].Name != "NativeBindingRead" {
+		t.Fatalf("v43 declarations = %#v", current[len(previous):])
+	}
+	fields := current[len(previous)].Fields
+	if len(fields) != 4 || fields[0].Kind != 4 || fields[1].Kind != 4 || fields[2].Kind != 5 || fields[3].Kind != 5 {
+		t.Fatalf("NativeFieldRead fields = %#v", fields)
+	}
+	bindingFields := current[len(previous)+1].Fields
+	if len(bindingFields) != 3 || bindingFields[0].Kind != 4 || bindingFields[1].Kind != 4 || bindingFields[2].Kind != 5 {
+		t.Fatalf("NativeBindingRead fields = %#v", bindingFields)
 	}
 }
 

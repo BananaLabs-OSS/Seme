@@ -32,7 +32,7 @@ func ValidateSliceConstructElementCount(count int) error {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 42 {
+	if version < 2 || version > 43 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -287,6 +287,21 @@ func Declarations(version int) ([]Schema, error) {
 			Schema{0xa06f, "ProductType", []Field{field(0xa06f0, "product.item_types", 5, 0, 2)}},
 			Schema{0xa070, "ProductProject", []Field{field(0xa0700, "product_project.product", 5, 0, 0), field(0xa0701, "product_project.type", 5, 0xa06f, 0), field(0xa0702, "product_project.index", 2, 0, 0), field(0xa0703, "product_project.item_type", 5, 0, 0)}},
 			Schema{0xa071, "NativeType", []Field{field(0xa0710, "native_type.language", 4, 0, 0), field(0xa0711, "native_type.spelling", 4, 0, 0)}},
+		)
+	}
+	if version >= 43 {
+		schemas = append(schemas,
+			Schema{0xa072, "NativeFieldRead", []Field{
+				field(0xa0720, "native_field_read.language", 4, 0, 0),
+				field(0xa0721, "native_field_read.field", 4, 0, 0),
+				field(0xa0722, "native_field_read.receiver", 5, 0, 0),
+				field(0xa0723, "native_field_read.result_type", 5, 0, 0),
+			}},
+			Schema{0xa073, "NativeBindingRead", []Field{
+				field(0xa0730, "native_binding_read.language", 4, 0, 0),
+				field(0xa0731, "native_binding_read.binding", 4, 0, 0),
+				field(0xa0732, "native_binding_read.result_type", 5, 0, 0),
+			}},
 		)
 	}
 	return schemas, nil
