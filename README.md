@@ -753,6 +753,10 @@ defer statement, preserving registration-time capture and native LIFO function
 exit mechanics without treating defer as an immediate call. Run
 `./scripts/check-execution-v61.sh`.
 
+[`Core Execution v62`](spec/core-execution-v62.md) preserves ignored targets in
+Go parallel and multi-result assignments without losing evaluation or effects.
+Run `./scripts/check-execution-v62.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
