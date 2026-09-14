@@ -34,6 +34,38 @@ func TestPartialPackageRetainsTypedNativeIsland(t *testing.T) {
 	}
 }
 
+func TestSessionLiftsUnconditionedLoopAtVersion83(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v83/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{
+		Revision:    1,
+		ModulePath:  "example.test/loop",
+		PackagePath: "example.test/loop",
+		Files: map[string]string{"loop.go": `package loop
+func CountTo(limit int64) int64 {
+	count := int64(0)
+	for {
+		if count >= limit { break }
+		count += 1
+	}
+	return count
+}`},
+	})
+	if !result.Valid {
+		t.Fatalf("diagnostics = %#v", result.Diagnostics)
+	}
+	if !strings.Contains(result.CanonicalG1, "00000000000000000000000000009021") ||
+		!strings.Contains(result.CanonicalG1, "0000000000000000000000000000a079") {
+		t.Fatalf("canonical loop/branch missing:\n%s", result.CanonicalG1)
+	}
+}
+
 func TestIncrementalSessionLiftsNoResultCompletionAsNeutralUnit(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v37/module.g1")
 	if err != nil {
