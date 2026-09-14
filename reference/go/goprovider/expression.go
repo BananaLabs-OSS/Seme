@@ -1539,6 +1539,8 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			if _, builtin := info.Uses[identifier].(*types.Builtin); builtin {
 				if invocation, builtinErr := analyzeNativeGoBuiltinCall(identifier.Name, expression, signature, info, locals, functions, records, mutableLocals); builtinErr == nil {
 					return invocation, nil
+				} else {
+					return nil, fmt.Errorf("expression.unsupported_call:%v", builtinErr)
 				}
 			}
 		}
@@ -1982,7 +1984,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			resultType := info.TypeOf(expression)
 			resultTypeID, resultOK := goSupportedTypeID(resultType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
 			nativeTypes := map[string]string(nil)
-			if !resultOK && ownerPath != "" && goTypeOwnedOutsidePackage(resultType, ownerPath) {
+			if !resultOK && ownerPath != "" {
 				if nativeID, ok := goNativeTypeID(resultType); ok {
 					resultTypeID, resultOK = nativeID, true
 					spelling, _ := goNativeTypeSpelling(resultType)

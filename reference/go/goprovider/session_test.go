@@ -2075,6 +2075,28 @@ func TestIncrementalSessionLiftsNativeLength(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsLocalNativeFieldInBuiltin(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v69/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/local-native-field", Entry: "Count", Files: map[string]string{
+		"count.go": "package sample\nimport \"sync\"\ntype Registry struct { mu sync.Mutex; entries map[string]*Registry }\nfunc Count(registry *Registry) int { return len(registry.entries) }\n",
+	}, ExternalImporter: importer.Default()})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("local native field = %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a072", hex.EncodeToString([]byte("entries")), hex.EncodeToString([]byte("builtin.len["))} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("local native field omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {
