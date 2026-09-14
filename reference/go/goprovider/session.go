@@ -735,7 +735,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 		defer delete(visiting, candidate.named)
 		for index := 0; index < candidate.structure.NumFields(); index++ {
 			fieldType := candidate.structure.Field(index).Type()
-			if isBool(fieldType) || isPureString(fieldType) || isI64Slice(fieldType) || isI64Map(fieldType) || isBytes(fieldType) || isInt64(fieldType) {
+			if isBool(fieldType) || isPureString(fieldType) || isPrimitiveSlice(fieldType) || isI64Map(fieldType) || isBytes(fieldType) || isInt64(fieldType) {
 				continue
 			}
 			nested, ok := types.Unalias(fieldType).(*types.Named)
@@ -766,7 +766,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 				typeID = booleanID
 			case isPureString(field.Type()):
 				typeID = stringID
-			case isI64Slice(field.Type()) || isI64Map(field.Type()) || isBytes(field.Type()):
+			case isPrimitiveSlice(field.Type()) || isI64Map(field.Type()) || isBytes(field.Type()):
 				typeID = goSemanticTypeIdentity(field.Type())
 				for _, typeEntity := range goBridgeTypeEntities(field.Type(), integerID, booleanID, stringID) {
 					if !hasGraphEntity(instances, typeEntity.id) {
@@ -1159,8 +1159,9 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		resultTypeID = booleanID
 	} else if isPureString(function.sig.Results().At(0).Type()) {
 		resultTypeID = stringID
-	} else if isI64Slice(function.sig.Results().At(0).Type()) {
-		resultTypeID = stableID("execution", "type", "slice", "i64")
+	} else if element, ok := goPrimitiveSliceElement(function.sig.Results().At(0).Type()); ok {
+		tag, _ := goPrimitiveTypeTag(element)
+		resultTypeID = stableID("execution", "type", "slice", tag)
 	} else if isBytes(resultType) {
 		resultTypeID = stableID("execution", "type", "bytes")
 	} else if _, ok := goOptionValueType(resultType); ok {
@@ -1201,9 +1202,6 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	if unitResult {
 		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a06a", nil)})
 	}
-	if !unitResult && isI64Slice(resultType) {
-		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
-	}
 	if !unitResult {
 		if _, ok := goFunctionSignature(resultType); ok {
 			instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a020", []graphField{refsField(0xa0200, []string{integerID}), refField(0xa0201, integerID)})})
@@ -1219,11 +1217,6 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 			parameterTypeID = stableID("execution", "type", "fixed-array", "i64", strconv.FormatUint(length, 10))
 			if !hasGraphEntity(instances, parameterTypeID) {
 				instances = append(instances, graphEntity{parameterTypeID, entity(parameterTypeID, "000000000000000000000000000090f2", []graphField{refField(0x9f20, integerID), unsignedField(0x9f21, length)})})
-			}
-		} else if isI64Slice(function.sig.Params().At(index).Type()) {
-			parameterTypeID = stableID("execution", "type", "slice", "i64")
-			if !hasGraphEntity(instances, parameterTypeID) {
-				instances = append(instances, graphEntity{parameterTypeID, entity(parameterTypeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})})
 			}
 		} else if supported, ok := goSupportedTypeID(function.sig.Params().At(index).Type(), integerID, booleanID, stringID, records); ok {
 			parameterTypeID = supported
@@ -1338,8 +1331,9 @@ func goSemanticTypeIdentity(value types.Type) string {
 	if isBytes(value) {
 		return stableID("execution", "type", "bytes")
 	}
-	if isI64Slice(value) {
-		return stableID("execution", "type", "slice", "i64")
+	if element, ok := goPrimitiveSliceElement(value); ok {
+		tag, _ := goPrimitiveTypeTag(element)
+		return stableID("execution", "type", "slice", tag)
 	}
 	if isI64Map(value) {
 		return stableID("execution", "type", "map", "i64", "i64")
@@ -1370,8 +1364,9 @@ func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, 
 	if isPureString(value) {
 		return stringID, true
 	}
-	if isI64Slice(value) {
-		return stableID("execution", "type", "slice", "i64"), true
+	if element, ok := goPrimitiveSliceElement(value); ok {
+		tag, _ := goPrimitiveTypeTag(element)
+		return stableID("execution", "type", "slice", tag), true
 	}
 	if isI64Map(value) {
 		return stableID("execution", "type", "map", "i64", "i64"), true
@@ -1426,9 +1421,11 @@ func goResultTypes(value types.Type) (types.Type, types.Type, bool) {
 	return success, failure, types.Identical(structure.Field(1).Type(), success) && types.Identical(structure.Field(2).Type(), failure)
 }
 func goBridgeTypeEntities(value types.Type, integerID, booleanID, stringID string) []graphEntity {
-	if isI64Slice(value) {
-		id := stableID("execution", "type", "slice", "i64")
-		return []graphEntity{{id, entity(id, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})}}
+	if element, ok := goPrimitiveSliceElement(value); ok {
+		elementID := goSemanticTypeIdentity(element)
+		tag, _ := goPrimitiveTypeTag(element)
+		id := stableID("execution", "type", "slice", tag)
+		return []graphEntity{{id, entity(id, "000000000000000000000000000090f8", []graphField{refField(0x9f80, elementID)})}}
 	}
 	if isI64Map(value) {
 		id := stableID("execution", "type", "map", "i64", "i64")

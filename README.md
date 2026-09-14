@@ -634,6 +634,16 @@ Targets must supply the named realization or reject it. Run
 `./scripts/check-execution-v37.sh`, `./scripts/check-execution-v38.sh`, and
 `./scripts/check-execution-v39.sh`.
 
+[`Core Execution v40`](spec/core-execution-v40.md) adds a typed native value
+method boundary with an explicit receiver, ordered arguments, native signature,
+and canonical result type. The Go provider evaluates the receiver once and
+retains only non-variadic value methods whose result is representable; pointer
+mutation and dynamic dispatch remain native islands rather than receiving a
+false portability claim. The same provider milestone generalizes its existing
+slice semantics across `int64`, `bool`, and `string` without changing the
+established `[]int64` identity, and lifts single-binding Go `if` initializers
+with their true lexical scope. Run `./scripts/check-execution-v40.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

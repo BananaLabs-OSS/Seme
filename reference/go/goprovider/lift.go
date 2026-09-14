@@ -319,6 +319,42 @@ func isI64Slice(value types.Type) bool {
 	slice, ok := value.Underlying().(*types.Slice)
 	return ok && isInt64(slice.Elem())
 }
+
+func goPrimitiveSliceElement(value types.Type) (types.Type, bool) {
+	slice, ok := types.Unalias(value).Underlying().(*types.Slice)
+	if !ok || isBytes(value) {
+		return nil, false
+	}
+	element := slice.Elem()
+	return element, isInt64(element) || isBool(element) || isPureString(element)
+}
+
+func isPrimitiveSlice(value types.Type) bool {
+	_, ok := goPrimitiveSliceElement(value)
+	return ok
+}
+
+func goPrimitiveTypeTag(value types.Type) (string, bool) {
+	switch {
+	case isInt64(value):
+		return "i64", true
+	case isBool(value):
+		return "bool", true
+	case isPureString(value):
+		return "string", true
+	default:
+		return "", false
+	}
+}
+
+func goPrimitiveSliceTypeID(value types.Type) (string, bool) {
+	element, ok := goPrimitiveSliceElement(value)
+	if !ok {
+		return "", false
+	}
+	tag, _ := goPrimitiveTypeTag(element)
+	return stableID("execution", "type", "slice", tag), true
+}
 func packagePathOf(nativeKey string) string {
 	parts := strings.Split(nativeKey, "\x00")
 	if len(parts) == 0 {
