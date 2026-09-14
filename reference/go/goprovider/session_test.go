@@ -57,6 +57,24 @@ func TestIncrementalSessionLiftsNoResultCompletionAsNeutralUnit(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsDiscardedLocalCallAsEvaluate(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v38/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/evaluate", Entry: "Run", Files: map[string]string{"evaluate.go": "package evaluate\nfunc Step() {}\nfunc Run() { Step() }\n"}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("discarded local call was not lifted exactly: %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a06c") || !strings.Contains(result.CanonicalG1, "00000000000000000000000000009060") {
+		t.Fatalf("Evaluate or FunctionCall missing from canonical graph: %q", result.CanonicalG1)
+	}
+}
+
 func TestIdentityBindingPreservesCanonicalFunctionAcrossProjectRename(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
 	if err != nil {

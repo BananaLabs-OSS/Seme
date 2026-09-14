@@ -23,6 +23,7 @@ type goStatement struct {
 	whenBlock   *goBlock
 	effect      string
 	effectArgs  []*goExpression
+	evaluated   *goExpression
 }
 
 type goBlock struct {
@@ -856,22 +857,25 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			block.statements = append(block.statements, &goStatement{condition: condition, loopBlock: body})
 		case *ast.ExprStmt:
 			call, ok := statement.X.(*ast.CallExpr)
-			if !ok || len(call.Args) != 1 {
+			if !ok {
 				return nil, fmt.Errorf("control.effect_shape")
 			}
-			selector, ok := call.Fun.(*ast.SelectorExpr)
-			if !ok {
-				return nil, fmt.Errorf("control.unsupported_effect")
+			if selector, selectorOK := call.Fun.(*ast.SelectorExpr); selectorOK && len(call.Args) == 1 {
+				function, functionOK := info.Uses[selector.Sel].(*types.Func)
+				if functionOK && function.Pkg() != nil && function.Pkg().Path() == "log" && function.Name() == "Print" {
+					argument, err := analyzeGoExpressionWithProgram(call.Args[0], signature, info, locals, functions, records, mutable)
+					if err != nil || !isBool(info.TypeOf(call.Args[0])) {
+						return nil, fmt.Errorf("control.effect_argument")
+					}
+					block.statements = append(block.statements, &goStatement{effect: "observability.log", effectArgs: []*goExpression{argument}})
+					continue
+				}
 			}
-			function, functionOK := info.Uses[selector.Sel].(*types.Func)
-			if !functionOK || function.Pkg() == nil || function.Pkg().Path() != "log" || function.Name() != "Print" {
-				return nil, fmt.Errorf("control.unsupported_effect")
+			evaluated, err := analyzeGoExpressionWithProgram(statement.X, signature, info, locals, functions, records, mutable)
+			if err != nil {
+				return nil, err
 			}
-			argument, err := analyzeGoExpressionWithProgram(call.Args[0], signature, info, locals, functions, records, mutable)
-			if err != nil || !isBool(info.TypeOf(call.Args[0])) {
-				return nil, fmt.Errorf("control.effect_argument")
-			}
-			block.statements = append(block.statements, &goStatement{effect: "observability.log", effectArgs: []*goExpression{argument}})
+			block.statements = append(block.statements, &goStatement{evaluated: evaluated})
 		default:
 			return nil, fmt.Errorf("control.unsupported_statement")
 		}
@@ -1090,6 +1094,14 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			}
 			statementID = stableID("execution", owner, statementPath, "effect-invoke")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "000000000000000000000000000090f1", []graphField{refField(0x9f10, effectID), refsField(0x9f11, argumentIDs)})})
+		} else if statement.evaluated != nil {
+			expressions, valueID, err := emitCanonicalExpressionWithLocals(statement.evaluated, owner+":"+statementPath+":evaluate", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, expressions...)
+			statementID = stableID("execution", owner, statementPath, "evaluate")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a06c", []graphField{refField(0xa06c0, valueID)})})
 		} else {
 			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+statementPath+":condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {
