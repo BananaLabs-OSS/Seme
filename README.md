@@ -852,6 +852,10 @@ Run `./scripts/check-execution-v84.sh`.
 variables as initialized function-scoped mutable bindings.
 Run `./scripts/check-execution-v85.sh`.
 
+[`Core Execution v86`](spec/core-execution-v86.md) preserves arbitrary Go
+two-result map lookups as one typed native operation with canonical projections.
+Run `./scripts/check-execution-v86.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
