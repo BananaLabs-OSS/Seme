@@ -709,6 +709,10 @@ application-owned Go values as explicit typed native boundaries, including
 receiver fields and comma-ok type assertions, while preserving canonical
 surrounding control flow. Run `./scripts/check-execution-v51.sh`.
 
+[`Core Execution v52`](spec/core-execution-v52.md) represents single blank
+assignments as exactly-once discarded evaluations instead of malformed local
+declarations. Run `./scripts/check-execution-v52.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
