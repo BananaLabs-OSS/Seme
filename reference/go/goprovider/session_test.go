@@ -384,6 +384,59 @@ func Valid(text string) bool {
 	}
 }
 
+func TestIncrementalSessionRetainsMultiResultAssignmentIfInitializer(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v49/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/if-assign", Entry: "Home", Files: map[string]string{
+		"home.go": `package ifassign
+import "os"
+func Home() string {
+	dir, err := os.UserConfigDir()
+	if dir, err = os.UserHomeDir(); err != nil { return "" }
+	return dir
+}
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("multi-result assignment if initializer rejected: %#v", result)
+	}
+	for _, want := range []string{"000000000000000000000000000090e2", "0000000000000000000000000000a070"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("multi-result assignment if initializer omitted %s", want)
+		}
+	}
+}
+
+func TestIncrementalSessionThreadsFallthroughThroughNestedConditionalReturn(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v49/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/nested-return", Entry: "Choose", Files: map[string]string{
+		"choose.go": `package nestedreturn
+func Choose(outer bool, inner bool, value string) string {
+	if outer {
+		if inner { return "early" }
+	}
+	return value
+}
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("nested conditional fallthrough rejected: %#v", result)
+	}
+}
+
 func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {
