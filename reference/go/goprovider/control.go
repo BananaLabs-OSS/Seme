@@ -980,9 +980,59 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			// the bindings in source order. This is general tuple-free Go syntax, not
 			// Go's special multi-result convention.
 			if len(statement.Lhs) > 1 && len(statement.Lhs) == len(statement.Rhs) && (statement.Tok == token.DEFINE || statement.Tok == token.ASSIGN) {
+				receiverLocals := make([]int, len(statement.Lhs))
+				for i := range receiverLocals {
+					receiverLocals[i] = -1
+				}
+				if statement.Tok == token.ASSIGN && goExecutionModuleVersion(functions) >= 90 {
+					// Go evaluates every field receiver before any RHS. Materialize
+					// them first so later assignments cannot change which object an
+					// earlier selector denoted.
+					for i, target := range statement.Lhs {
+						selector, selectorOK := ast.Unparen(target).(*ast.SelectorExpr)
+						if !selectorOK {
+							continue
+						}
+						field, fieldOK := info.Uses[selector.Sel].(*types.Var)
+						if !fieldOK || !field.IsField() {
+							return nil, fmt.Errorf("control.multi_binding_target")
+						}
+						receiver, err := analyzeGoExpressionWithProgram(selector.X, signature, info, locals, functions, records, mutable)
+						if err != nil {
+							return nil, err
+						}
+						receiverType := info.TypeOf(selector.X)
+						localType, ok := goLocalSemanticType(receiverType, records)
+						if !ok && functions[nil] == "native-default" {
+							receiver, localType, ok = nativeGoAssignmentValue(receiver, receiverType)
+						}
+						if !ok {
+							return nil, fmt.Errorf("control.multi_binding_target")
+						}
+						temporary := *next
+						*next++
+						block.statements = append(block.statements, &goStatement{localName: fmt.Sprintf("seme_parallel_receiver_%d", i), localType: localType, local: temporary, initializer: receiver})
+						receiverLocals[i] = temporary
+					}
+				}
 				initializers := make([]*goExpression, len(statement.Rhs))
 				for i, rhs := range statement.Rhs {
-					value, err := analyzeGoExpressionWithProgram(rhs, signature, info, locals, functions, records, mutable)
+					var expected types.Type
+					switch target := ast.Unparen(statement.Lhs[i]).(type) {
+					case *ast.Ident:
+						object := info.Defs[target]
+						if statement.Tok == token.ASSIGN {
+							object = info.Uses[target]
+						}
+						if object != nil {
+							expected = object.Type()
+						}
+					case *ast.SelectorExpr:
+						if field, ok := info.Uses[target.Sel].(*types.Var); ok && field.IsField() {
+							expected = field.Type()
+						}
+					}
+					value, err := analyzeGoExpressionExpected(rhs, expected, signature, info, locals, functions, records, mutable)
 					if err != nil {
 						return nil, err
 					}
@@ -990,9 +1040,24 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				}
 				if statement.Tok == token.ASSIGN {
 					for i, target := range statement.Lhs {
-						name, ok := target.(*ast.Ident)
-						if !ok {
+						name, ok := ast.Unparen(target).(*ast.Ident)
+						if !ok && receiverLocals[i] < 0 {
 							return nil, fmt.Errorf("control.multi_binding_target")
+						}
+						if !ok {
+							field := info.Uses[ast.Unparen(target).(*ast.SelectorExpr).Sel].(*types.Var)
+							localType, typeOK := goLocalSemanticType(field.Type(), records)
+							if !typeOK && functions[nil] == "native-default" {
+								initializers[i], localType, typeOK = nativeGoAssignmentValue(initializers[i], field.Type())
+							}
+							if !typeOK {
+								return nil, fmt.Errorf("control.local_binding_type")
+							}
+							temporary := *next
+							*next++
+							block.statements = append(block.statements, &goStatement{localName: fmt.Sprintf("seme_parallel_%d", i), localType: localType, local: temporary, initializer: initializers[i]})
+							initializers[i] = &goExpression{kind: goLocalRead, local: temporary}
+							continue
 						}
 						if name.Name == "_" {
 							if goExecutionModuleVersion(functions) < 62 {
@@ -1025,7 +1090,12 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					}
 				}
 				for i, target := range statement.Lhs {
-					name, ok := target.(*ast.Ident)
+					if receiverLocals[i] >= 0 {
+						selector := ast.Unparen(target).(*ast.SelectorExpr)
+						block.statements = append(block.statements, &goStatement{nativeFieldReceiver: &goExpression{kind: goLocalRead, local: receiverLocals[i]}, nativeFieldName: selector.Sel.Name, nativeFieldValue: initializers[i]})
+						continue
+					}
+					name, ok := ast.Unparen(target).(*ast.Ident)
 					if !ok {
 						return nil, fmt.Errorf("control.multi_binding_target")
 					}

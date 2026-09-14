@@ -63,6 +63,7 @@ const (
 	sUnitType            = "0000000000000000000000000000a06a"
 	sUnitValue           = "0000000000000000000000000000a06b"
 	sNativeType          = "0000000000000000000000000000a071"
+	sNativeFieldRead     = "0000000000000000000000000000a072"
 	sSliceConstruct      = "0000000000000000000000000000a068"
 	sBooleanNot          = "0000000000000000000000000000a069"
 	sBytes               = "00000000000000000000000000009041"
@@ -2458,6 +2459,28 @@ func expr(id string, c context) (string, error) {
 			arguments[2] = "int(" + arguments[2] + ")"
 		}
 		return filepath.Base(path) + "." + name + "(" + strings.Join(arguments, ", ") + ")", nil
+	case sNativeFieldRead:
+		language, err := text(e, "000000000000000000000000000a0720")
+		if err != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_field_read_language")
+		}
+		target, err := text(e, "000000000000000000000000000a0721")
+		if err != nil {
+			return "", err
+		}
+		dot := strings.LastIndexByte(target, '.')
+		if dot < 0 || dot == len(target)-1 || !identifier(target[dot+1:]) {
+			return "", fmt.Errorf("go_projection.native_field_read_target")
+		}
+		receiverID, err := ref(e, "000000000000000000000000000a0722")
+		if err != nil {
+			return "", err
+		}
+		receiver, err := expr(receiverID, c)
+		if err != nil {
+			return "", err
+		}
+		return "(" + receiver + ")." + target[dot+1:], nil
 	case sNativeMethodCall:
 		language, err := text(e, "000000000000000000000000000a06e0")
 		if err != nil || language != "go" {

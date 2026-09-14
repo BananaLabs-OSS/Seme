@@ -245,6 +245,32 @@ func TestProjectsNativeVariadicExpansionBackToGoSyntax(t *testing.T) {
 	}
 }
 
+func TestProjectsParallelFieldAssignmentWithGoOrdering(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v90/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/parallel-fields", Entry: "Swap", Files: map[string]string{
+		"swap.go": "package sample\ntype Pair struct { Left, Right string }\nfunc Swap(pair *Pair) { pair.Left, pair.Right = pair.Right, pair.Left }\n",
+	}})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) {
+	value := &Pair{Left: "left", Right: "right"}
+	Swap(value)
+	if value.Left != "right" || value.Right != "left" { t.Fatal(value) }
+}`)
+}
+
 func TestProjectsMutableParameterThroughCanonicalPlace(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v64/module.g1")
 	if err != nil {

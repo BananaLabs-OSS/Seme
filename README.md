@@ -868,6 +868,10 @@ Run `./scripts/check-execution-v88.sh`.
 variadic slice expansion in typed native invocations and Go projection.
 Run `./scripts/check-execution-v89.sh`.
 
+[`Core Execution v90`](spec/core-execution-v90.md) preserves Go parallel field
+assignments with receiver-before-RHS evaluation and source-order mutation.
+Run `./scripts/check-execution-v90.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
