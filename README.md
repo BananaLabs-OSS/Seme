@@ -848,6 +848,10 @@ Run `./scripts/check-execution-v83.sh`.
 `else if` chains into nested canonical conditional branches.
 Run `./scripts/check-execution-v84.sh`.
 
+[`Core Execution v85`](spec/core-execution-v85.md) represents named result
+variables as initialized function-scoped mutable bindings.
+Run `./scripts/check-execution-v85.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
