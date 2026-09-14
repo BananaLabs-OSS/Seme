@@ -417,8 +417,22 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(55); err == nil {
+	if _, err := Declarations(56); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersion55PreservesVersion54Schema(t *testing.T) {
+	previous, err := Declarations(54)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(55)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous) {
+		t.Fatalf("v55 declaration count = %d, want %d", len(current), len(previous))
 	}
 }
 

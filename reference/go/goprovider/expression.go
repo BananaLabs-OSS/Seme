@@ -1051,8 +1051,16 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		if functions[nil] != "" {
 			if object, ok := info.Uses[expression].(*types.Var); ok && object.Pkg() != nil && object.Parent() == object.Pkg().Scope() {
 				resultTypeID, supported := goSupportedTypeID(object.Type(), stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+				nativeTypes := map[string]string(nil)
+				if !supported && functions[nil] == "native-default" {
+					if nativeID, native := goNativeTypeID(object.Type()); native {
+						resultTypeID, supported = nativeID, true
+						spelling, _ := goNativeTypeSpelling(object.Type())
+						nativeTypes = map[string]string{nativeID: spelling}
+					}
+				}
 				if supported {
-					return &goExpression{kind: goNativeBindingRead, nativeLanguage: "go", nativeTarget: object.Pkg().Path() + "." + object.Name(), nativeResultType: resultTypeID}, nil
+					return &goExpression{kind: goNativeBindingRead, nativeLanguage: "go", nativeTarget: object.Pkg().Path() + "." + object.Name(), nativeResultType: resultTypeID, nativeTypes: nativeTypes}, nil
 				}
 			}
 		}
