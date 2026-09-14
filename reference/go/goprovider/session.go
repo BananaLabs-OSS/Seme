@@ -673,7 +673,10 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	for _, function := range functions {
 		functionObjects[function.info.Defs[function.fn.Name]] = function.id
 	}
-	if executionModuleVersion(moduleG1) >= 43 {
+	if executionModuleVersion(moduleG1) >= 45 {
+		// nil is reserved metadata, never a Go declaration object.
+		functionObjects[nil] = "native-default"
+	} else if executionModuleVersion(moduleG1) >= 43 {
 		// nil is reserved metadata, never a Go declaration object.
 		functionObjects[nil] = "native-observation"
 	}

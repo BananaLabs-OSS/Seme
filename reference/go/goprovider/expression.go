@@ -87,6 +87,7 @@ const (
 	goProductProject
 	goNativeFieldRead
 	goNativeBindingRead
+	goNativeDefaultValue
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -220,6 +221,18 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a06d", []graphField{
 				bytesField(0xa06d0, expression.nativeLanguage), bytesField(0xa06d1, expression.nativeTarget),
 				bytesField(0xa06d2, expression.nativeSignature), refsField(0xa06d3, arguments), refField(0xa06d4, expression.nativeResultType),
+			})}
+			return id, nil
+		case goNativeDefaultValue:
+			if expression.nativeLanguage == "" || expression.nativeResultType == "" {
+				return "", fmt.Errorf("expression.native_default_incomplete")
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, expression.nativeLanguage), bytesField(0xa0711, spelling)})}
+			}
+			id := expressionNodeID(owner, path, "native-default")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a074", []graphField{
+				bytesField(0xa0740, expression.nativeLanguage), refField(0xa0741, expression.nativeResultType),
 			})}
 			return id, nil
 		case goNativeMethodInvocation:
@@ -1031,7 +1044,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				return &goExpression{kind: goStringLiteral, text: constant.StringVal(object.Val())}, nil
 			}
 		}
-		if functions[nil] == "native-observation" {
+		if functions[nil] != "" {
 			if object, ok := info.Uses[expression].(*types.Var); ok && object.Pkg() != nil && object.Parent() == object.Pkg().Scope() {
 				resultTypeID, supported := goSupportedTypeID(object.Type(), stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
 				if supported {
@@ -1808,7 +1821,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			receiverType := info.TypeOf(expression.X)
 			resultType := info.TypeOf(expression)
 			resultTypeID, resultOK := goSupportedTypeID(resultType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
-			if functions[nil] == "native-observation" && ownerPath != "" && goTypeOwnedOutsidePackage(receiverType, ownerPath) && resultOK {
+			if functions[nil] != "" && ownerPath != "" && goTypeOwnedOutsidePackage(receiverType, ownerPath) && resultOK {
 				receiver, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
 				if err != nil {
 					return nil, err
