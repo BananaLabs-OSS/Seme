@@ -704,6 +704,11 @@ initializers once into branch-scoped typed products. Run
 assignment initializers once and threads fallthrough continuations through
 nested early-return branches. Run `./scripts/check-execution-v50.sh`.
 
+[`Core Execution v51`](spec/core-execution-v51.md) keeps unsupported
+application-owned Go values as explicit typed native boundaries, including
+receiver fields and comma-ok type assertions, while preserving canonical
+surrounding control flow. Run `./scripts/check-execution-v51.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
