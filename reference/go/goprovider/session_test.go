@@ -601,6 +601,26 @@ func Current() *Holder { return current }
 	}
 }
 
+func TestIncrementalSessionRetainsNativeAssignmentConversion(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v55/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-assignment", Entry: "Count", Files: map[string]string{
+		"count.go": "package nativeassignment\nfunc Count() int { count := 0; return count }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native assignment conversion rejected: %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "6275696c74696e2e61737369676e6d656e745f636f6e76657274") {
+		t.Fatal("native assignment conversion target omitted")
+	}
+}
+
 func TestIncrementalSessionRetainsNativeProcedureAsUnit(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {

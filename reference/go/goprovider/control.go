@@ -621,6 +621,9 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 						localType = initializer.nativeResultType
 						typeOK = localType != ""
 					}
+					if !typeOK && functions[nil] == "native-default" {
+						initializer, localType, typeOK = nativeGoAssignmentValue(initializer, object.Type())
+					}
 					if !typeOK {
 						return nil, fmt.Errorf("control.local_declaration_type")
 					}
@@ -756,7 +759,12 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 							ok = localType != ""
 						}
 						if !ok {
-							return nil, fmt.Errorf("control.local_binding_type")
+							if functions[nil] == "native-default" {
+								initializers[i], localType, ok = nativeGoAssignmentValue(initializers[i], object.Type())
+							}
+							if !ok {
+								return nil, fmt.Errorf("control.local_binding_type")
+							}
 						}
 						temporary := *next
 						*next++
@@ -782,7 +790,12 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 						ok = localType != ""
 					}
 					if !ok {
-						return nil, fmt.Errorf("control.local_binding_type")
+						if functions[nil] == "native-default" {
+							initializers[i], localType, ok = nativeGoAssignmentValue(initializers[i], object.Type())
+						}
+						if !ok {
+							return nil, fmt.Errorf("control.local_binding_type")
+						}
 					}
 					if statement.Tok == token.ASSIGN {
 						local, exists := locals[object]
@@ -829,6 +842,9 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if !typeOK && (initializer.kind == goNativeInvocation || initializer.kind == goNativeMethodInvocation) {
 				localType = initializer.nativeResultType
 				typeOK = localType != ""
+			}
+			if !typeOK && functions[nil] == "native-default" {
+				initializer, localType, typeOK = nativeGoAssignmentValue(initializer, object.Type())
 			}
 			if !typeOK {
 				return nil, fmt.Errorf("control.local_binding_type")
@@ -1026,6 +1042,26 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 		return nil, fmt.Errorf("control.loop_body_empty")
 	}
 	return block, nil
+}
+
+func nativeGoAssignmentValue(value *goExpression, target types.Type) (*goExpression, string, bool) {
+	if value == nil || target == nil {
+		return value, "", false
+	}
+	typeID, ok := goNativeTypeID(target)
+	if !ok {
+		return value, "", false
+	}
+	spelling, ok := goNativeTypeSpelling(target)
+	if !ok {
+		return value, "", false
+	}
+	return &goExpression{
+		kind: goNativeInvocation, arguments: []*goExpression{value}, nativeLanguage: "go",
+		nativeTarget:    "builtin.assignment_convert[" + spelling + "]",
+		nativeSignature: "func(...) " + spelling, nativeResultType: typeID,
+		nativeTypes: map[string]string{typeID: spelling},
+	}, typeID, true
 }
 
 func goLocalSemanticType(t types.Type, records map[*types.Named]goRecordInfo) (string, bool) {
