@@ -877,7 +877,60 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					return nil, fmt.Errorf("control.multi_binding_shape")
 				}
 				mapping, mapOK := goUnderlying(info, lookup.X).(*types.Map)
-				if !mapOK || !isInt64(mapping.Key()) || !isInt64(mapping.Elem()) {
+				if !mapOK {
+					return nil, fmt.Errorf("control.multi_binding_shape")
+				}
+				if goExecutionModuleVersion(functions) >= 86 && (!isInt64(mapping.Key()) || !isInt64(mapping.Elem())) {
+					mapExpression, err := analyzeGoExpressionWithProgram(lookup.X, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					mapExpression, mapTypeID, mapOK := nativeGoAssignmentValue(mapExpression, info.TypeOf(lookup.X))
+					keyExpression, keyTypeID, keySpelling, err := analyzeNativeGoOperand(lookup.Index, mapping.Key(), signature, info, locals, functions, records, mutable)
+					if err != nil || !mapOK {
+						return nil, fmt.Errorf("control.multi_binding_shape")
+					}
+					boolType := types.Universe.Lookup("bool").Type()
+					tuple := types.NewTuple(types.NewVar(token.NoPos, nil, "value", mapping.Elem()), types.NewVar(token.NoPos, nil, "present", boolType))
+					productType, productTypes, nativeResultTypes, supported := goProductTypeIDWithNative(tuple, records, "", true)
+					if !supported {
+						return nil, fmt.Errorf("control.multi_binding_shape")
+					}
+					mapSpelling, _ := goNativeTypeSpelling(info.TypeOf(lookup.X))
+					elementSpelling := types.TypeString(mapping.Elem(), nil)
+					nativeTypes := map[string]string{mapTypeID: mapSpelling, keyTypeID: keySpelling}
+					for _, nativeType := range nativeResultTypes {
+						id, ok := goNativeTypeID(nativeType)
+						spelling, native := goNativeTypeSpelling(nativeType)
+						if ok && native {
+							nativeTypes[id] = spelling
+						}
+					}
+					value := &goExpression{kind: goNativeInvocation, arguments: []*goExpression{mapExpression, keyExpression}, nativeLanguage: "go", nativeTarget: "builtin.map_lookup[" + mapSpelling + "]", nativeSignature: "func(" + mapSpelling + ", " + keySpelling + ") (" + elementSpelling + ", bool)", nativeResultType: productType, nativeResultTypes: productTypes, nativeTypes: nativeTypes}
+					productLocal := *next
+					*next++
+					block.statements = append(block.statements, &goStatement{localName: fmt.Sprintf("seme_product_%d", productLocal), localType: productType, local: productLocal, initializer: value})
+					for resultIndex, target := range statement.Lhs {
+						name, nameOK := target.(*ast.Ident)
+						if !nameOK {
+							return nil, fmt.Errorf("control.multi_binding_target")
+						}
+						if name.Name == "_" {
+							continue
+						}
+						object := info.Defs[name]
+						if object == nil {
+							return nil, fmt.Errorf("control.local_binding_type")
+						}
+						local := *next
+						*next++
+						projected := &goExpression{kind: goProductProject, left: &goExpression{kind: goLocalRead, local: productLocal}, typeID: productType, elementTypeID: productTypes[resultIndex], productIndex: uint64(resultIndex), productTypes: productTypes}
+						block.statements = append(block.statements, &goStatement{localName: name.Name, localType: productTypes[resultIndex], local: local, initializer: projected, mutable: mutable[object]})
+						locals[object] = local
+					}
+					continue
+				}
+				if !isInt64(mapping.Key()) || !isInt64(mapping.Elem()) {
 					return nil, fmt.Errorf("control.multi_binding_shape")
 				}
 				mapExpression, err := analyzeGoExpressionWithProgram(lookup.X, signature, info, locals, functions, records, mutable)
