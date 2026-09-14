@@ -1,6 +1,9 @@
 package executionmodule
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestVersion32AddsNeutralVariantMatchingAndBytesObservation(t *testing.T) {
 	previous, err := Declarations(31)
@@ -414,8 +417,22 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(42); err == nil {
+	if _, err := Declarations(43); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersion42ReusesNativeTypeWithoutChangingSchema(t *testing.T) {
+	previous, err := Declarations(41)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatal("v42 provider milestone changed neutral schemas")
 	}
 }
 

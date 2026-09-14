@@ -131,7 +131,7 @@ func Numbers() []int64 { return []int64{1} }
 }
 
 func TestIncrementalSessionExecutesNeutralGoProductOnceAndProjectsItems(t *testing.T) {
-	module, err := os.ReadFile("../../../modules/execution/v41/module.g1")
+	module, err := os.ReadFile("../../../modules/execution/v42/module.g1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,6 +205,31 @@ func Failed(err error) bool { return err != nil }
 	for _, want := range []string{"0000000000000000000000000000a071", "6275696c74696e2e6572726f722e69735f6e696c"} {
 		if !strings.Contains(result.CanonicalG1, want) {
 			t.Fatalf("native error bridge omitted %s", want)
+		}
+	}
+}
+
+func TestIncrementalSessionRetainsArbitraryGoOwnedTypes(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v42/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-types", Entry: "Identity", Files: map[string]string{
+		"native.go": `package nativetypes
+import "net/http"
+func Identity(request *http.Request) *http.Request { return request }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("Go-owned type boundary rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a071", "2a6e65742f687474702e52657175657374"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("Go-owned type boundary omitted %s", want)
 		}
 	}
 }

@@ -653,6 +653,13 @@ nil test is an attributable native operation rather than a fabricated
 universal exception rule. Map comma-ok remains the existing neutral Option
 mapping. Run `./scripts/check-execution-v41.sh`.
 
+[`Core Execution v42`](spec/core-execution-v42.md) generalizes the existing
+neutral `NativeType` boundary across function parameters and results. The Go
+provider retains imported/runtime-owned types by fully qualified `go/types`
+spelling while continuing to reject unsupported local semantic records. This
+adds no schema and does not make native fields, operators, memory, or methods
+portable. Run `./scripts/check-execution-v42.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

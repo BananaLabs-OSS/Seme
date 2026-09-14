@@ -901,7 +901,8 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	var sources []SourceIdentity
 	var islands []NativeIslandDeclaration
 	for _, function := range functions {
-		entities, source, diagnostic := liftSessionFunction(function, integerID, booleanID, stringID, functionObjects, records, executionModuleVersion(moduleG1) >= 41)
+		version := executionModuleVersion(moduleG1)
+		entities, source, diagnostic := liftSessionFunction(function, integerID, booleanID, stringID, functionObjects, records, version >= 41, version >= 42)
 		if diagnostic != nil {
 			diagnostics = append(diagnostics, *diagnostic)
 			position := function.fset.Position(function.fn.Pos())
@@ -1128,7 +1129,7 @@ func graphFunctionCallCallee(text string) (string, bool) {
 	return "", false
 }
 
-func liftSessionFunction(function sessionFunction, integerID, booleanID, stringID string, functions map[types.Object]string, records map[*types.Named]goRecordInfo, allowProducts bool) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
+func liftSessionFunction(function sessionFunction, integerID, booleanID, stringID string, functions map[types.Object]string, records map[*types.Named]goRecordInfo, allowProducts, allowNativeOwnedTypes bool) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 	position := function.fset.Position(function.fn.Pos())
 	diagnostic := func(code, message string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 		return nil, SourceIdentity{}, &SessionDiagnostic{Code: code, Message: message, File: function.file, Line: position.Line, Column: position.Column, Severity: "warning"}
@@ -1145,6 +1146,7 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		resultType = function.sig.Results().At(0).Type()
 	}
 	resultTypeID := integerID
+	resultNative := false
 	var transitionState, transitionResult types.Type
 	isTransition := false
 	if !unitResult {
@@ -1185,11 +1187,22 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	} else if _, named := resultType.(*types.Named); named {
 		var ok bool
 		resultTypeID, ok = goSupportedTypeID(resultType, integerID, booleanID, stringID, records)
+		if !ok && allowNativeOwnedTypes && goTypeOwnedOutsidePackage(resultType, function.packagePath) {
+			resultTypeID, ok = goNativeTypeID(resultType)
+			resultNative = ok
+		}
 		if !ok {
 			return diagnostic("session.unsupported_result_type", "unsupported record result")
 		}
 	} else if !isInt64(resultType) {
-		return diagnostic("session.unsupported_result_type", "supported result types are int64, bool, string, records, i64 slices, and state transitions")
+		var ok bool
+		if allowNativeOwnedTypes && goTypeOwnedOutsidePackage(resultType, function.packagePath) {
+			resultTypeID, ok = goNativeTypeID(resultType)
+			resultNative = ok
+		}
+		if !ok {
+			return diagnostic("session.unsupported_result_type", "supported result types are neutral values or explicitly Go-owned native values")
+		}
 	}
 	block, err := analyzeGoBlockWithProgram(function.fn.Body.List, function.sig, function.info, functions, records)
 	if err != nil {
@@ -1207,6 +1220,9 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	}
 	if !unitResult {
 		instances = append(instances, goBridgeTypeEntities(resultType, integerID, booleanID, stringID)...)
+		if resultNative {
+			instances = append(instances, goNativeTypeEntity(resultType))
+		}
 	}
 	if unitResult {
 		instances = append(instances, graphEntity{resultTypeID, entity(resultTypeID, "0000000000000000000000000000a06a", nil)})
@@ -1230,6 +1246,9 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		} else if supported, ok := goSupportedTypeID(function.sig.Params().At(index).Type(), integerID, booleanID, stringID, records); ok {
 			parameterTypeID = supported
 			instances = append(instances, goBridgeTypeEntities(function.sig.Params().At(index).Type(), integerID, booleanID, stringID)...)
+		} else if allowNativeOwnedTypes && goTypeOwnedOutsidePackage(function.sig.Params().At(index).Type(), function.packagePath) {
+			parameterTypeID, _ = goNativeTypeID(function.sig.Params().At(index).Type())
+			instances = append(instances, goNativeTypeEntity(function.sig.Params().At(index).Type()))
 		} else if functionSignature, ok := goFunctionSignature(function.sig.Params().At(index).Type()); ok {
 			if !isUnaryI64Function(functionSignature) {
 				return diagnostic("session.unsupported_parameter_type", "only unary i64 function values are supported")
@@ -1418,6 +1437,66 @@ func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, 
 		}
 	}
 	return "", false
+}
+
+func goNativeTypeID(value types.Type) (string, bool) {
+	spelling, ok := goNativeTypeSpelling(value)
+	if !ok {
+		return "", false
+	}
+	return stableID("execution", "type", "native", "go", spelling), true
+}
+
+func goNativeTypeEntity(value types.Type) graphEntity {
+	spelling, _ := goNativeTypeSpelling(value)
+	id := stableID("execution", "type", "native", "go", spelling)
+	return graphEntity{id, entity(id, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, "go"), bytesField(0xa0711, spelling)})}
+}
+
+// goTypeOwnedOutsidePackage prevents an unsupported local record from being
+// mislabeled as a runtime boundary. Predeclared Go mechanics (such as int) and
+// types declared by imported packages are legitimately owned outside the
+// package currently being lifted.
+func goTypeOwnedOutsidePackage(value types.Type, packagePath string) bool {
+	value = types.Unalias(value)
+	switch typed := value.(type) {
+	case *types.Basic:
+		return true
+	case *types.Named:
+		return typed.Obj() != nil && (typed.Obj().Pkg() == nil || typed.Obj().Pkg().Path() != packagePath)
+	case *types.Pointer:
+		return goTypeOwnedOutsidePackage(typed.Elem(), packagePath)
+	case *types.Slice:
+		return goTypeOwnedOutsidePackage(typed.Elem(), packagePath)
+	case *types.Array:
+		return goTypeOwnedOutsidePackage(typed.Elem(), packagePath)
+	case *types.Map:
+		return goTypeOwnedOutsidePackage(typed.Key(), packagePath) && goTypeOwnedOutsidePackage(typed.Elem(), packagePath)
+	case *types.Chan, *types.Signature, *types.Interface:
+		return true
+	default:
+		return false
+	}
+}
+
+// goNativeTypeSpelling retains a type that Go owns without importing its
+// mechanics into neutral Core. The fully-qualified go/types spelling is the
+// realization contract; aliases are resolved so the identity is stable.
+func goNativeTypeSpelling(value types.Type) (string, bool) {
+	if value == nil {
+		return "", false
+	}
+	value = types.Unalias(value)
+	if _, tuple := value.(*types.Tuple); tuple {
+		return "", false
+	}
+	spelling := types.TypeString(value, func(pkg *types.Package) string {
+		if pkg == nil {
+			return ""
+		}
+		return pkg.Path()
+	})
+	return spelling, spelling != "" && spelling != "invalid type"
 }
 
 func goProductTypeID(tuple *types.Tuple, records map[*types.Named]goRecordInfo) (string, []string, bool) {
