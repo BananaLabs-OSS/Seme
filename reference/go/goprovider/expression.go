@@ -1213,10 +1213,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			if selection := info.Selections[selector]; selection != nil && selection.Kind() == types.MethodVal {
 				methodID, exists := functions[selection.Obj()]
 				if !exists {
-					if native, err := analyzeNativeGoMethodInvocation(selection, selector.X, expression.Args, expression.Ellipsis.IsValid(), signature, info, locals, functions, records, mutableLocals); err == nil {
+					native, nativeErr := analyzeNativeGoMethodInvocation(selection, selector.X, expression.Args, expression.Ellipsis.IsValid(), signature, info, locals, functions, records, mutableLocals)
+					if nativeErr == nil {
 						return native, nil
 					}
-					return nil, fmt.Errorf("expression.unsupported_method_call")
+					return nil, fmt.Errorf("expression.unsupported_method_call:%v", nativeErr)
 				}
 				if expression.Ellipsis.IsValid() {
 					return nil, fmt.Errorf("expression.unsupported_method_call")
@@ -1254,9 +1255,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 					return &goExpression{kind: goFunctionCall, callee: callee, arguments: arguments}, nil
 				}
 				if function, exists := info.Uses[selector.Sel].(*types.Func); exists {
-					if native, err := analyzeNativeGoInvocation(function, expression.Args, expression.Ellipsis.IsValid(), signature, info, locals, functions, records, mutableLocals); err == nil {
+					native, nativeErr := analyzeNativeGoInvocation(function, expression.Args, expression.Ellipsis.IsValid(), signature, info, locals, functions, records, mutableLocals)
+					if nativeErr == nil {
 						return native, nil
 					}
+					return nil, fmt.Errorf("expression.unsupported_call:%v", nativeErr)
 				}
 			}
 		}
@@ -1434,9 +1437,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		if !ok || !exists || expression.Ellipsis.IsValid() {
 			if ok {
 				if function, native := info.Uses[identifier].(*types.Func); native {
-					if invocation, err := analyzeNativeGoInvocation(function, expression.Args, expression.Ellipsis.IsValid(), signature, info, locals, functions, records, mutableLocals); err == nil {
+					invocation, nativeErr := analyzeNativeGoInvocation(function, expression.Args, expression.Ellipsis.IsValid(), signature, info, locals, functions, records, mutableLocals)
+					if nativeErr == nil {
 						return invocation, nil
 					}
+					return nil, fmt.Errorf("expression.unsupported_call:%v", nativeErr)
 				}
 			}
 			return nil, fmt.Errorf("expression.unsupported_call")
@@ -1941,7 +1946,12 @@ func nativeGoResultTypeID(signature *types.Signature, records map[*types.Named]g
 		id := stableID("execution", "type", "native", "go", "error")
 		return id, []string{id}, map[string]string{id: "error"}, true
 	default:
-		return "", nil, nil, false
+		spelling, ok := goNativeTypeSpelling(result)
+		if !ok {
+			return "", nil, nil, false
+		}
+		id := stableID("execution", "type", "native", "go", spelling)
+		return id, []string{id}, map[string]string{id: spelling}, true
 	}
 }
 

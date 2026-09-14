@@ -439,6 +439,28 @@ func TestIncrementalSessionRetainsNativeDefaultLocal(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsSingleNativeCallResult(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v45/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-single-result", Entry: "Size", Files: map[string]string{
+		"size.go": "package nativesingleresult\nimport \"strings\"\nfunc Size(value string) int64 { reader := strings.NewReader(value); return reader.Size() }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("single native result rejected: %#v", result)
+	}
+	for _, want := range []string{"737472696e67732e4e6577526561646572", "2a737472696e67732e526561646572", "737472696e67732e282a737472696e67732e526561646572292e53697a65"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("single native result missing %q: %q", want, result.CanonicalG1)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsScopedIfInitializer(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v40/module.g1")
 	if err != nil {

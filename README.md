@@ -680,6 +680,11 @@ declarations while keeping Go-specific zero initialization explicit; neutral
 types continue using neutral zero constructors. Run
 `./scripts/check-execution-v45.sh`.
 
+[`Core Execution v46`](spec/core-execution-v46.md) makes typed native result
+flow symmetric: single results and ordered product items from native functions
+or methods can enter ordinary local bindings without losing their native type
+identity. Run `./scripts/check-execution-v46.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
