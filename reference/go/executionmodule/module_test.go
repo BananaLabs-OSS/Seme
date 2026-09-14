@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(65); err == nil {
+	if _, err := Declarations(66); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -475,6 +475,20 @@ func TestVersion64PreservesVersion63Schema(t *testing.T) {
 	}
 	if len(current) != len(previous) {
 		t.Fatalf("v64 declaration count = %d, want %d", len(current), len(previous))
+	}
+}
+
+func TestVersion65AddsTypedNativeSwitch(t *testing.T) {
+	previous, err := Declarations(64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(65)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+2 || current[len(previous)].Name != "NativeSwitchCase" || current[len(previous)+1].Name != "NativeSwitch" {
+		t.Fatalf("v65 declarations = %#v", current[len(previous):])
 	}
 }
 

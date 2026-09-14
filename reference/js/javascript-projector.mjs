@@ -39,6 +39,9 @@ const schema = {
   whileLoop: "000000000000000000000000000090e4",
   nativeDefer: "0000000000000000000000000000a075",
   nativeFieldAssignment: "0000000000000000000000000000a076",
+  nativeSwitchCase: "0000000000000000000000000000a077",
+  nativeSwitch: "0000000000000000000000000000a078",
+  unitValue: "0000000000000000000000000000a06b",
   when: "000000000000000000000000000090f0",
   effectInvoke: "000000000000000000000000000090f1",
   effect: "00000000000000000000000000000015",
@@ -240,6 +243,22 @@ function projectBlock(id, context, indent) {
       const receiver = projectExpression(reference(field(statement, 0xa0762)), localContext);
       const value = projectExpression(reference(field(statement, 0xa0763)), localContext);
       lines.push(`${indent}Seme.assignNativeField(${JSON.stringify(language)}, ${receiver}, ${JSON.stringify(member)}, ${value});`);
+      continue;
+    }
+    if (statement.schema === schema.nativeSwitch) {
+      const language = text(field(statement, 0xa0780));
+      const subjectID = reference(field(statement, 0xa0781));
+      const subject = required(context.graph, subjectID).schema === schema.unitValue ? "undefined" : projectExpression(subjectID, localContext);
+      const cases = references(field(statement, 0xa0782)).map((caseID) => {
+        const branch = required(context.graph, caseID, schema.nativeSwitchCase);
+        const values = references(field(branch, 0xa0770)).map((valueID) => projectExpression(valueID, localContext));
+        const body = projectBlock(reference(field(branch, 0xa0771)), localContext, `${indent}    `);
+        return `${indent}  { values: [${values.join(", ")}], run: () => {\n${body}\n${indent}  } }`;
+      });
+      const defaults = references(field(statement, 0xa0783));
+      if (defaults.length > 1) fail("javascript_projection.native_switch_default");
+      const fallback = defaults.length === 1 ? projectBlock(defaults[0], localContext, `${indent}    `) : "";
+      lines.push(`${indent}Seme.nativeSwitch(${JSON.stringify(language)}, ${subject}, [\n${cases.join(",\n")}\n${indent}], () => {\n${fallback}\n${indent}});`);
       continue;
     }
     if (statement.schema === schema.when) {

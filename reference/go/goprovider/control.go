@@ -29,6 +29,14 @@ type goStatement struct {
 	nativeFieldReceiver *goExpression
 	nativeFieldName     string
 	nativeFieldValue    *goExpression
+	nativeSwitchSubject *goExpression
+	nativeSwitchCases   []goSwitchCase
+	nativeSwitchDefault *goBlock
+}
+
+type goSwitchCase struct {
+	values []*goExpression
+	body   *goBlock
 }
 
 type goBlock struct {
@@ -1028,6 +1036,56 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			} else {
 				block.statements = append(block.statements, &goStatement{returns: values})
 			}
+		case *ast.SwitchStmt:
+			if goExecutionModuleVersion(functions) < 65 || statement.Init != nil {
+				return nil, fmt.Errorf("control.unsupported_statement:%T", raw)
+			}
+			subject := &goExpression{kind: goUnitValue}
+			if statement.Tag != nil {
+				var err error
+				subject, err = analyzeGoExpressionWithProgram(statement.Tag, signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
+			}
+			cases := []goSwitchCase{}
+			var defaultBlock *goBlock
+			for _, rawClause := range statement.Body.List {
+				clause, ok := rawClause.(*ast.CaseClause)
+				if !ok {
+					return nil, fmt.Errorf("control.switch_clause")
+				}
+				bodyStatements := clause.Body
+				if len(bodyStatements) > 0 {
+					if branch, ok := bodyStatements[len(bodyStatements)-1].(*ast.BranchStmt); ok {
+						if branch.Tok != token.BREAK || branch.Label != nil {
+							return nil, fmt.Errorf("control.switch_branch:%s", branch.Tok)
+						}
+						bodyStatements = bodyStatements[:len(bodyStatements)-1]
+					}
+				}
+				body, err := analyzeGoBlockScoped(bodyStatements, signature, info, locals, functions, records, mutable, next, false)
+				if err != nil {
+					return nil, err
+				}
+				if len(clause.List) == 0 {
+					if defaultBlock != nil {
+						return nil, fmt.Errorf("control.switch_multiple_default")
+					}
+					defaultBlock = body
+					continue
+				}
+				values := make([]*goExpression, len(clause.List))
+				for valueIndex, valueNode := range clause.List {
+					value, err := analyzeGoExpressionWithProgram(valueNode, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					values[valueIndex] = value
+				}
+				cases = append(cases, goSwitchCase{values: values, body: body})
+			}
+			block.statements = append(block.statements, &goStatement{nativeSwitchSubject: subject, nativeSwitchCases: cases, nativeSwitchDefault: defaultBlock})
 		case *ast.IfStmt:
 			ifLocals, ifMutable := locals, mutable
 			var initializer []*goStatement
@@ -1173,17 +1231,35 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			return nil, fmt.Errorf("control.unsupported_statement:%T", raw)
 		}
 	}
-	if requireReturn && (len(block.statements) == 0 || block.statements[len(block.statements)-1].returned == nil && len(block.statements[len(block.statements)-1].returns) == 0) {
+	total := len(block.statements) > 0 && (block.statements[len(block.statements)-1].returned != nil || len(block.statements[len(block.statements)-1].returns) != 0 || nativeSwitchAlwaysReturns(block.statements[len(block.statements)-1]))
+	if requireReturn && !total {
 		if signature.Results().Len() == 0 {
 			block.statements = append(block.statements, &goStatement{returned: &goExpression{kind: goUnitValue}})
 		} else {
 			return nil, fmt.Errorf("control.block_not_total")
 		}
 	}
-	if !requireReturn && len(block.statements) == 0 {
-		return nil, fmt.Errorf("control.loop_body_empty")
-	}
 	return block, nil
+}
+
+func nativeSwitchAlwaysReturns(statement *goStatement) bool {
+	if statement == nil || statement.nativeSwitchSubject == nil || statement.nativeSwitchDefault == nil || !goBlockAlwaysReturns(statement.nativeSwitchDefault) {
+		return false
+	}
+	for _, switchCase := range statement.nativeSwitchCases {
+		if !goBlockAlwaysReturns(switchCase.body) {
+			return false
+		}
+	}
+	return true
+}
+
+func goBlockAlwaysReturns(block *goBlock) bool {
+	if block == nil || len(block.statements) == 0 {
+		return false
+	}
+	last := block.statements[len(block.statements)-1]
+	return last.returned != nil || len(last.returns) != 0 || nativeSwitchAlwaysReturns(last)
 }
 
 // analyzeGoIndexedRange preserves Go's array/slice range mechanics while
@@ -1552,7 +1628,7 @@ func emitCanonicalBlock(block *goBlock, owner, path string, parameterIDs []strin
 }
 
 func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs []string, integerTypeID string, inherited map[int]string, instances *[]graphEntity) (string, error) {
-	if block == nil || len(block.statements) == 0 {
+	if block == nil {
 		return "", fmt.Errorf("control.nil_block")
 	}
 	localIDs := make(map[int]string, len(inherited)+len(block.statements))
@@ -1695,6 +1771,41 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, valueEntities...)
 			statementID = stableID("execution", owner, statementPath, "native-field-assignment")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a076", []graphField{bytesField(0xa0760, "go"), bytesField(0xa0761, statement.nativeFieldName), refField(0xa0762, receiverID), refField(0xa0763, valueID)})})
+		} else if statement.nativeSwitchSubject != nil {
+			subjectEntities, subjectID, err := emitCanonicalExpressionWithLocals(statement.nativeSwitchSubject, owner+":"+statementPath+":native-switch-subject", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, subjectEntities...)
+			caseIDs := make([]string, len(statement.nativeSwitchCases))
+			for caseIndex, switchCase := range statement.nativeSwitchCases {
+				valueIDs := make([]string, len(switchCase.values))
+				for valueIndex, value := range switchCase.values {
+					valueEntities, valueID, err := emitCanonicalExpressionWithLocals(value, owner+":"+statementPath+":native-switch-case:"+strconv.Itoa(caseIndex)+":"+strconv.Itoa(valueIndex), parameterIDs, localIDs, integerTypeID)
+					if err != nil {
+						return "", err
+					}
+					*instances = append(*instances, valueEntities...)
+					valueIDs[valueIndex] = valueID
+				}
+				bodyID, err := emitCanonicalBlockScoped(switchCase.body, owner, statementPath+".native-switch-case."+strconv.Itoa(caseIndex), parameterIDs, integerTypeID, localIDs, instances)
+				if err != nil {
+					return "", err
+				}
+				caseID := stableID("execution", owner, statementPath, "native-switch-case", strconv.Itoa(caseIndex))
+				*instances = append(*instances, graphEntity{caseID, entity(caseID, "0000000000000000000000000000a077", []graphField{refsField(0xa0770, valueIDs), refField(0xa0771, bodyID)})})
+				caseIDs[caseIndex] = caseID
+			}
+			defaultIDs := []string{}
+			if statement.nativeSwitchDefault != nil {
+				defaultID, err := emitCanonicalBlockScoped(statement.nativeSwitchDefault, owner, statementPath+".native-switch-default", parameterIDs, integerTypeID, localIDs, instances)
+				if err != nil {
+					return "", err
+				}
+				defaultIDs = append(defaultIDs, defaultID)
+			}
+			statementID = stableID("execution", owner, statementPath, "native-switch")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a078", []graphField{bytesField(0xa0780, "go"), refField(0xa0781, subjectID), refsField(0xa0782, caseIDs), refsField(0xa0783, defaultIDs)})})
 		} else {
 			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+statementPath+":condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {

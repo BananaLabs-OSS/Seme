@@ -247,6 +247,32 @@ func TestProjectsMutableParameterThroughCanonicalPlace(t *testing.T) {
 	}
 }
 
+func TestProjectsTypedNativeSwitchBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v65/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-switch", Entry: "Select", Files: map[string]string{
+		"switch.go": "package sample\nfunc Select(value string) string { switch value { case \"a\", \"b\": return \"match\"; default: return \"other\" } }\n",
+	}})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"switch value {", `case "a", "b":`, "default:"} {
+		if !strings.Contains(string(projected), fragment) {
+			t.Fatalf("projection lacks %q:\n%s", fragment, projected)
+		}
+	}
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }
