@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(68); err == nil {
+	if _, err := Declarations(69); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -517,6 +517,20 @@ func TestVersion67AddsTypedNativeAddress(t *testing.T) {
 	}
 	if len(current) != len(previous)+1 || current[len(previous)].Name != "NativeAddress" {
 		t.Fatalf("v67 declarations = %#v", current[len(previous):])
+	}
+}
+
+func TestVersion68PreservesVersion67Schema(t *testing.T) {
+	previous, err := Declarations(67)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(68)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous) {
+		t.Fatalf("v68 declaration count = %d, want %d", len(current), len(previous))
 	}
 }
 

@@ -2104,6 +2104,11 @@ func analyzeNativeGoBuiltinCall(name string, call *ast.CallExpr, signature *type
 		}
 		expected = []types.Type{info.TypeOf(call.Args[0])}
 		resultType = nil
+	case "len":
+		if goExecutionModuleVersion(functions) < 68 || len(call.Args) != 1 || resultType == nil {
+			return nil, fmt.Errorf("expression.native_builtin_shape")
+		}
+		expected = []types.Type{info.TypeOf(call.Args[0])}
 	default:
 		return nil, fmt.Errorf("expression.native_builtin_unsupported")
 	}
