@@ -844,6 +844,10 @@ Run `./scripts/check-execution-v82.sh`.
 canonical true-conditioned loops with explicit exits.
 Run `./scripts/check-execution-v83.sh`.
 
+[`Core Execution v84`](spec/core-execution-v84.md) normalizes nonterminal
+`else if` chains into nested canonical conditional branches.
+Run `./scripts/check-execution-v84.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
