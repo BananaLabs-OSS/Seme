@@ -1031,7 +1031,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				return &goExpression{kind: goStringLiteral, text: constant.StringVal(object.Val())}, nil
 			}
 		}
-		if functions[nil] == "core-v43" {
+		if functions[nil] == "native-observation" {
 			if object, ok := info.Uses[expression].(*types.Var); ok && object.Pkg() != nil && object.Parent() == object.Pkg().Scope() {
 				resultTypeID, supported := goSupportedTypeID(object.Type(), stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
 				if supported {
@@ -1808,7 +1808,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			receiverType := info.TypeOf(expression.X)
 			resultType := info.TypeOf(expression)
 			resultTypeID, resultOK := goSupportedTypeID(resultType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
-			if functions[nil] == "core-v43" && ownerPath != "" && goTypeOwnedOutsidePackage(receiverType, ownerPath) && resultOK {
+			if functions[nil] == "native-observation" && ownerPath != "" && goTypeOwnedOutsidePackage(receiverType, ownerPath) && resultOK {
 				receiver, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
 				if err != nil {
 					return nil, err
@@ -1957,12 +1957,6 @@ func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast
 	declared, ok := function.Type().(*types.Signature)
 	if !ok || declared.Recv() == nil {
 		return nil, fmt.Errorf("expression.native_method_signature")
-	}
-	if _, pointer := types.Unalias(declared.Recv().Type()).(*types.Pointer); pointer {
-		return nil, fmt.Errorf("expression.native_method_pointer_receiver")
-	}
-	if _, dynamic := types.Unalias(selection.Recv()).Underlying().(*types.Interface); dynamic {
-		return nil, fmt.Errorf("expression.native_method_dynamic_receiver")
 	}
 	resultType, resultTypes, nativeTypes, ok := nativeGoResultTypeID(declared, records)
 	if !ok {
