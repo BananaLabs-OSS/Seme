@@ -417,6 +417,28 @@ func TestIncrementalSessionRetainsNativeProductItemsInLocals(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsNativeDefaultLocal(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v45/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-default", Entry: "Empty", Files: map[string]string{
+		"empty.go": "package nativedefault\nimport \"bytes\"\nfunc Empty() string { var value bytes.Buffer; return value.String() }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native default local rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a074", "62797465732e427566666572", "62797465732e282a62797465732e427566666572292e537472696e67"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native default local missing %q: %q", want, result.CanonicalG1)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsScopedIfInitializer(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v40/module.g1")
 	if err != nil {

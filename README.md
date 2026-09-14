@@ -674,6 +674,12 @@ be projected once into locals, and Go-owned pointer or interface methods remain
 explicit native invocations rather than becoming false neutral semantics. Run
 `./scripts/check-execution-v44.sh`.
 
+[`Core Execution v45`](spec/core-execution-v45.md) adds an attributable native
+default-value operation. The Go provider can lift ordinary local `var`
+declarations while keeping Go-specific zero initialization explicit; neutral
+types continue using neutral zero constructors. Run
+`./scripts/check-execution-v45.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

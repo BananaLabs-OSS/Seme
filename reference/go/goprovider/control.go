@@ -576,6 +576,56 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 	block := &goBlock{}
 	for index, raw := range statements {
 		switch statement := raw.(type) {
+		case *ast.DeclStmt:
+			if functions[nil] != "native-default" {
+				return nil, fmt.Errorf("control.unsupported_statement:%T", raw)
+			}
+			declaration, ok := statement.Decl.(*ast.GenDecl)
+			if !ok || declaration.Tok != token.VAR {
+				return nil, fmt.Errorf("control.local_declaration_shape")
+			}
+			for _, rawSpec := range declaration.Specs {
+				spec, ok := rawSpec.(*ast.ValueSpec)
+				if !ok || len(spec.Names) == 0 || len(spec.Values) != 0 && len(spec.Values) != len(spec.Names) {
+					return nil, fmt.Errorf("control.local_declaration_shape")
+				}
+				for valueIndex, name := range spec.Names {
+					if name.Name == "_" || info.Defs[name] == nil {
+						return nil, fmt.Errorf("control.local_declaration_binding")
+					}
+					object := info.Defs[name]
+					var initializer *goExpression
+					var err error
+					if len(spec.Values) != 0 {
+						initializer, err = analyzeGoExpressionWithProgram(spec.Values[valueIndex], signature, info, locals, functions, records, mutable)
+					} else {
+						initializer, err = zeroGoExpression(object.Type(), records, map[string]bool{}, 0)
+						if err != nil {
+							spelling, native := goNativeTypeSpelling(object.Type())
+							if !native {
+								return nil, fmt.Errorf("control.local_declaration_type")
+							}
+							typeID := stableID("execution", "type", "native", "go", spelling)
+							initializer = &goExpression{kind: goNativeDefaultValue, nativeLanguage: "go", nativeResultType: typeID, nativeTypes: map[string]string{typeID: spelling}}
+							err = nil
+						}
+					}
+					if err != nil {
+						return nil, err
+					}
+					localType, typeOK := goLocalSemanticType(object.Type(), records)
+					if !typeOK && initializer.kind == goNativeDefaultValue {
+						localType, typeOK = initializer.nativeResultType, true
+					}
+					if !typeOK {
+						return nil, fmt.Errorf("control.local_declaration_type")
+					}
+					local := *next
+					*next++
+					block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer, mutable: mutable[object]})
+					locals[object] = local
+				}
+			}
 		case *ast.AssignStmt:
 			// A multi-result call is one product-valued evaluation. Bind that product
 			// once, then project each Go binding from it in source order.
