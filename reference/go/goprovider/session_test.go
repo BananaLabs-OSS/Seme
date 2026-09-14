@@ -2035,6 +2035,26 @@ func TestIncrementalSessionLiftsNearestLoopBranch(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsNativeAddress(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v67/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-address", Entry: "Address", Files: map[string]string{
+		"address.go": "package sample\nfunc Address(value int64) *int64 { return &value }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native address = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a07a") {
+		t.Fatal("typed native address missing")
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {

@@ -87,6 +87,7 @@ const (
 	sNativeSwitchCase    = "0000000000000000000000000000a077"
 	sNativeSwitch        = "0000000000000000000000000000a078"
 	sNativeBranch        = "0000000000000000000000000000a079"
+	sNativeAddress       = "0000000000000000000000000000a07a"
 	sWhen                = "000000000000000000000000000090f0"
 	sIf                  = "000000000000000000000000000090c0"
 	sLessEqual           = "00000000000000000000000000009021"
@@ -2078,6 +2079,18 @@ func expr(id string, c context) (string, error) {
 			arguments[2] = "int(" + arguments[2] + ")"
 		}
 		return filepath.Base(path) + "." + name + "(" + strings.Join(arguments, ", ") + ")", nil
+	case sNativeAddress:
+		language, languageErr := text(e, "000000000000000000000000000a07a0")
+		operandID, operandErr := ref(e, "000000000000000000000000000a07a1")
+		_, typeErr := ref(e, "000000000000000000000000000a07a2")
+		if languageErr != nil || operandErr != nil || typeErr != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_address")
+		}
+		operand, err := expr(operandID, c)
+		if err != nil {
+			return "", err
+		}
+		return "&(" + operand + ")", nil
 	case sAdd, sConcat, sMultiply, sSubtract, sLessEqual, sAnd, sOr:
 		leftField, rightField := "00000000000000000000000000009140", "00000000000000000000000000009141"
 		op := "+"

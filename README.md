@@ -775,6 +775,10 @@ tagged, expressionless, multi-value, and default forms. Run
 `break` and `continue` as typed nearest-breakable transfers while other languages
 retain explicit adapter boundaries. Run `./scripts/check-execution-v66.sh`.
 
+[`Core Execution v67`](spec/core-execution-v67.md) preserves Go address
+expressions as typed language-owned operations over canonical operands, with
+explicit JavaScript and Lua adapter views. Run `./scripts/check-execution-v67.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
