@@ -44,6 +44,7 @@ const schema = {
   unitValue: "0000000000000000000000000000a06b",
   nativeBranch: "0000000000000000000000000000a079",
   nativeAddress: "0000000000000000000000000000a07a",
+  nativeInvocation: "0000000000000000000000000000a06d",
   when: "000000000000000000000000000090f0",
   effectInvoke: "000000000000000000000000000090f1",
   effect: "00000000000000000000000000000015",
@@ -377,6 +378,7 @@ function projectMutableClosure(expression, context) {
 
 function projectExpression(id, context) {
   const expression = required(context.graph, id);
+  if (expression.schema === schema.nativeInvocation) return `Seme.nativeInvoke(${JSON.stringify(text(field(expression, 0xa06d0)))}, ${JSON.stringify(text(field(expression, 0xa06d1)))}, ${JSON.stringify(text(field(expression, 0xa06d2)))}, [${references(field(expression, 0xa06d3)).map(value => projectExpression(value, context)).join(", ")}], ${JSON.stringify(reference(field(expression, 0xa06d4)))})`;
   if (expression.schema === schema.nativeAddress) return `Seme.nativeAddress(${JSON.stringify(text(field(expression, 0xa07a0)))}, ${projectExpression(reference(field(expression, 0xa07a1)), context)}, ${JSON.stringify(reference(field(expression, 0xa07a2)))})`;
   if (expression.schema === schema.captureRead) {
     const capture = context.captures?.get(reference(field(expression, 0xa0220)));

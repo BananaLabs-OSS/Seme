@@ -13,6 +13,7 @@ import (
 	"go/parser"
 	"go/token"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -229,6 +230,9 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 		language, languageErr := text(e, "000000000000000000000000000a06d0")
 		callable, callableErr := text(e, "000000000000000000000000000a06d1")
 		if languageErr == nil && callableErr == nil && language == "go" {
+			if strings.HasPrefix(callable, "builtin.") {
+				continue
+			}
 			if dot := strings.LastIndexByte(callable, '.'); dot > 0 {
 				importSet[callable[:dot]] = true
 			}
@@ -2053,14 +2057,6 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		dot := strings.LastIndexByte(callable, '.')
-		if dot <= 0 || dot == len(callable)-1 {
-			return "", fmt.Errorf("go_projection.native_invocation_callable")
-		}
-		path, name := callable[:dot], callable[dot+1:]
-		if !identifier(name) {
-			return "", fmt.Errorf("go_projection.native_invocation_callable")
-		}
 		argumentIDs, err := refs(e, "000000000000000000000000000a06d3")
 		if err != nil {
 			return "", err
@@ -2071,6 +2067,112 @@ func expr(id string, c context) (string, error) {
 			if err != nil {
 				return "", err
 			}
+		}
+		if strings.HasPrefix(callable, "builtin.") {
+			if callable == "builtin.error.is_nil" {
+				if len(arguments) != 1 {
+					return "", fmt.Errorf("go_projection.native_builtin_arity")
+				}
+				return "(" + arguments[0] + " == nil)", nil
+			}
+			open, close := strings.IndexByte(callable, '['), strings.LastIndexByte(callable, ']')
+			if open <= len("builtin.") || close < open {
+				return "", fmt.Errorf("go_projection.native_builtin_callable")
+			}
+			name, payload := callable[len("builtin."):open], localizeNativeSpelling(callable[open+1:close], c)
+			suffix := callable[close+1:]
+			switch name {
+			case "make":
+				arguments = append([]string{payload}, arguments...)
+			case "new":
+				if !strings.HasPrefix(payload, "*") || len(arguments) != 0 {
+					return "", fmt.Errorf("go_projection.native_builtin_new")
+				}
+				arguments = []string{strings.TrimPrefix(payload, "*")}
+			case "append", "delete", "copy", "cap", "clear", "len":
+			case "assignment_convert":
+				if len(arguments) != 1 {
+					return "", fmt.Errorf("go_projection.native_builtin_arity")
+				}
+				return payload + "(" + arguments[0] + ")", nil
+			case "index":
+				if len(arguments) != 2 {
+					return "", fmt.Errorf("go_projection.native_builtin_arity")
+				}
+				return arguments[0] + "[" + arguments[1] + "]", nil
+			case "add":
+				if len(arguments) != 2 {
+					return "", fmt.Errorf("go_projection.native_builtin_arity")
+				}
+				return "(" + arguments[0] + " + " + arguments[1] + ")", nil
+			case "compare":
+				parts := strings.Split(payload, ";")
+				if len(parts) < 1 || len(arguments) != 2 {
+					return "", fmt.Errorf("go_projection.native_builtin_compare")
+				}
+				return "(" + arguments[0] + " " + parts[0] + " " + arguments[1] + ")", nil
+			case "compound":
+				parts := strings.Split(payload, ";")
+				if len(parts) < 1 || len(arguments) != 2 || !strings.HasSuffix(parts[0], "=") {
+					return "", fmt.Errorf("go_projection.native_builtin_compound")
+				}
+				return "(" + arguments[0] + " " + strings.TrimSuffix(parts[0], "=") + " " + arguments[1] + ")", nil
+			case "type_assert_comma_ok":
+				if len(arguments) != 1 {
+					return "", fmt.Errorf("go_projection.native_builtin_arity")
+				}
+				return arguments[0] + ".(" + payload + ")", nil
+			case "composite_literal":
+				parts := strings.SplitN(payload, ";", 2)
+				if len(parts) != 2 {
+					return "", fmt.Errorf("go_projection.native_builtin_composite")
+				}
+				shapes, values, argument := strings.Split(parts[1], ","), make([]string, 0), 0
+				for _, shape := range shapes {
+					if argument >= len(arguments) {
+						return "", fmt.Errorf("go_projection.native_builtin_composite_arity")
+					}
+					switch {
+					case shape == "position":
+						values = append(values, arguments[argument])
+						argument++
+					case strings.HasPrefix(shape, "field:"):
+						values = append(values, strings.TrimPrefix(shape, "field:")+": "+arguments[argument])
+						argument++
+					case shape == "key":
+						if argument+1 >= len(arguments) {
+							return "", fmt.Errorf("go_projection.native_builtin_composite_arity")
+						}
+						values = append(values, arguments[argument]+": "+arguments[argument+1])
+						argument += 2
+					default:
+						return "", fmt.Errorf("go_projection.native_builtin_composite_shape")
+					}
+				}
+				if argument != len(arguments) {
+					return "", fmt.Errorf("go_projection.native_builtin_composite_arity")
+				}
+				return parts[0] + "{" + strings.Join(values, ", ") + "}", nil
+			default:
+				return "", fmt.Errorf("go_projection.native_builtin_name")
+			}
+			if suffix == ".ellipsis" {
+				if name != "append" || len(arguments) == 0 {
+					return "", fmt.Errorf("go_projection.native_builtin_ellipsis")
+				}
+				arguments[len(arguments)-1] += "..."
+			} else if suffix != "" {
+				return "", fmt.Errorf("go_projection.native_builtin_suffix")
+			}
+			return name + "(" + strings.Join(arguments, ", ") + ")", nil
+		}
+		dot := strings.LastIndexByte(callable, '.')
+		if dot <= 0 || dot == len(callable)-1 {
+			return "", fmt.Errorf("go_projection.native_invocation_callable")
+		}
+		path, name := callable[:dot], callable[dot+1:]
+		if !identifier(name) {
+			return "", fmt.Errorf("go_projection.native_invocation_callable")
 		}
 		// slices.Replace's indices are native Go ints. Seme's neutral integer
 		// projections are int64, so restore the checked native call boundary.
@@ -2127,6 +2229,21 @@ func expr(id string, c context) (string, error) {
 	default:
 		return "", fmt.Errorf("go_projection.unsupported_expression:%s", e.schema)
 	}
+}
+
+func localizeNativeSpelling(spelling string, c context) string {
+	names := make([]string, 0, len(c.records)+len(c.typeNames))
+	for _, record := range c.records {
+		names = append(names, record.name)
+	}
+	for _, name := range c.typeNames {
+		names = append(names, name)
+	}
+	for _, name := range names {
+		qualified := regexp.MustCompile(`[[:alnum:]_./-]+\.` + regexp.QuoteMeta(name) + `\b`)
+		spelling = qualified.ReplaceAllString(spelling, name)
+	}
+	return spelling
 }
 
 func projectMatchExpression(match entity, c context) (string, error) {
@@ -2420,17 +2537,8 @@ func typeNameRelative(g map[string]entity, id string, names, families map[string
 			}
 		}
 		for _, localName := range localTypeNames {
-			qualified := "." + localName
-			if strings.HasSuffix(spelling, qualified) {
-				prefix := spelling[:len(spelling)-len(qualified)]
-				for len(prefix) > 0 && (prefix[0] == '*' || prefix[0] == '[' || prefix[0] == ']') {
-					if prefix[0] == '*' {
-						return "*" + localName, nil
-					}
-					break
-				}
-				return localName, nil
-			}
+			qualified := regexp.MustCompile(`[[:alnum:]_./-]+\.` + regexp.QuoteMeta(localName) + `\b`)
+			spelling = qualified.ReplaceAllString(spelling, localName)
 		}
 		if _, err := parser.ParseExpr(spelling); err != nil {
 			return "", fmt.Errorf("go_projection.native_type_spelling")

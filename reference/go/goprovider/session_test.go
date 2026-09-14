@@ -2055,6 +2055,26 @@ func TestIncrementalSessionLiftsNativeAddress(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsNativeLength(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v68/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-length", Entry: "Size", Files: map[string]string{
+		"length.go": "package sample\nfunc Size(values map[string]int) int { return len(values) }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native length = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, hex.EncodeToString([]byte("builtin.len["))) {
+		t.Fatal("typed native length missing")
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {

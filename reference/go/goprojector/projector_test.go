@@ -188,7 +188,7 @@ func TestProjectsNativeDeferBackToGoSyntax(t *testing.T) {
 	if !first.Valid || len(first.NativeIslands) != 0 {
 		t.Fatalf("initial lift: %#v", first)
 	}
-	projected, err := goprojector.Project([]byte(first.CanonicalG1), "sample")
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "nativeproof")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,6 +319,61 @@ func TestProjectsNativeAddressBackToGoSyntax(t *testing.T) {
 	if !strings.Contains(string(projected), "return &(value)") {
 		t.Fatalf("projection lacks address expression:\n%s", projected)
 	}
+}
+
+func TestProjectsNativeLengthBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v68/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-length", Entry: "Size", Files: map[string]string{
+		"length.go": "package sample\nfunc Size(values map[string]int) int { return len(values) }\n",
+	}})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "return len(") || !strings.Contains(string(projected), "values") {
+		t.Fatalf("projection lacks native length:\n%s", projected)
+	}
+}
+
+func TestProjectsNativeCollectionBuiltinsBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v68/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-builtins", Entry: "Build", Files: map[string]string{
+		"builtins.go": "package sample\ntype Item struct { Value int64 }\nfunc Build(values []Item, value Item) []Item { out := make([]Item, 0, 1); out = append(out, values...); out = append(out, value); return out }\n",
+	}})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	for _, fragment := range []string{"make([]Item", "append(", "values)...", "Item(value)"} {
+		if !strings.Contains(source, fragment) {
+			t.Fatalf("projection lacks %q:\n%s", fragment, source)
+		}
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) {
+	got := Build([]Item{{Value: 1}}, Item{Value: 2})
+	if len(got) != 2 || got[0].Value != 1 || got[1].Value != 2 { t.Fatal(got) }
+}`)
 }
 
 func runNative(t *testing.T, files map[string]string) {
