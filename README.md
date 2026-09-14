@@ -795,6 +795,10 @@ projectable. Run `./scripts/check-execution-v70.sh`.
 slicing with optional low, high, and maximum bounds and explicit Go,
 JavaScript, and Lua realizations. Run `./scripts/check-execution-v71.sh`.
 
+[`Core Execution v72`](spec/core-execution-v72.md) preserves typed native Go
+pointer dereference while exposing explicit JavaScript and Lua adapter views.
+Run `./scripts/check-execution-v72.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
