@@ -713,6 +713,10 @@ surrounding control flow. Run `./scripts/check-execution-v51.sh`.
 assignments as exactly-once discarded evaluations instead of malformed local
 declarations. Run `./scripts/check-execution-v52.sh`.
 
+[`Core Execution v53`](spec/core-execution-v53.md) represents unsupported
+application-owned composite literals and returned values as explicit typed Go
+native boundaries. Run `./scripts/check-execution-v53.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

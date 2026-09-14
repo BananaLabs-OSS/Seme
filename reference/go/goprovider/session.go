@@ -1213,7 +1213,7 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	} else if _, named := resultType.(*types.Named); named {
 		var ok bool
 		resultTypeID, ok = goSupportedTypeID(resultType, integerID, booleanID, stringID, records)
-		if !ok && allowNativeOwnedTypes && goTypeOwnedOutsidePackage(resultType, function.packagePath) {
+		if !ok && allowNativeOwnedTypes {
 			resultTypeID, ok = goNativeTypeID(resultType)
 			resultNative = ok
 		}
@@ -1222,7 +1222,7 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		}
 	} else if !isInt64(resultType) {
 		var ok bool
-		if allowNativeOwnedTypes && goTypeOwnedOutsidePackage(resultType, function.packagePath) {
+		if allowNativeOwnedTypes {
 			resultTypeID, ok = goNativeTypeID(resultType)
 			resultNative = ok
 		}
