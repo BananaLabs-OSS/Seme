@@ -297,6 +297,30 @@ func TestProjectsNearestLoopBranchBackToGoSyntax(t *testing.T) {
 	}
 }
 
+func TestProjectsNativeAddressBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v67/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-address", Entry: "Address", Files: map[string]string{
+		"address.go": "package sample\nfunc Address(value int64) *int64 { return &value }\n",
+	}})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "return &(value)") {
+		t.Fatalf("projection lacks address expression:\n%s", projected)
+	}
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

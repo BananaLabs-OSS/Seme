@@ -58,6 +58,7 @@ const schema = {
   nativeSwitch: "0000000000000000000000000000a078",
   unitValue: "0000000000000000000000000000a06b",
   nativeBranch: "0000000000000000000000000000a079",
+  nativeAddress: "0000000000000000000000000000a07a",
   effectInvoke:"000000000000000000000000000090f1",effect:"00000000000000000000000000000015",capability:"00000000000000000000000000000016",
   branch: "000000000000000000000000000090c0", recordConstruct: "00000000000000000000000000009033",
   receiverBinding: "0000000000000000000000000000a000", receiverRead: "0000000000000000000000000000a001", method: "0000000000000000000000000000a002",
@@ -259,6 +260,7 @@ function isProtocolDispatchBranch(branch,context){for(const key of [0x9c01,0x9c0
 
 function projectExpression(id, context) {
   const expression = required(context.graph, id);
+  if(expression.schema===schema.nativeAddress)return `Seme.native_address(${JSON.stringify(text(field(expression,0xa07a0)))}, ${projectExpression(reference(field(expression,0xa07a1)),context)}, ${JSON.stringify(reference(field(expression,0xa07a2)))})`;
   if (expression.schema === schema.read) {
     const parameter = context.parameters.get(reference(field(expression, 0x9130)));
     if (!parameter) fail("lua_projection.read_scope");

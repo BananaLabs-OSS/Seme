@@ -89,6 +89,7 @@ const (
 	goNativeFieldRead
 	goNativeBindingRead
 	goNativeDefaultValue
+	goNativeAddress
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -234,6 +235,22 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			id := expressionNodeID(owner, path, "native-default")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a074", []graphField{
 				bytesField(0xa0740, expression.nativeLanguage), refField(0xa0741, expression.nativeResultType),
+			})}
+			return id, nil
+		case goNativeAddress:
+			if expression.nativeLanguage == "" || expression.nativeResultType == "" || expression.left == nil {
+				return "", fmt.Errorf("expression.native_address_incomplete")
+			}
+			operand, err := emit(expression.left, path+".operand")
+			if err != nil {
+				return "", err
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, expression.nativeLanguage), bytesField(0xa0711, spelling)})}
+			}
+			id := expressionNodeID(owner, path, "native-address")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a07a", []graphField{
+				bytesField(0xa07a0, expression.nativeLanguage), refField(0xa07a1, operand), refField(0xa07a2, expression.nativeResultType),
 			})}
 			return id, nil
 		case goNativeMethodInvocation:
@@ -1179,6 +1196,19 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		return result, nil
 	case *ast.UnaryExpr:
+		if expression.Op == token.AND && goExecutionModuleVersion(functions) >= 67 {
+			value, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			resultType := info.TypeOf(expression)
+			resultID, ok := goNativeTypeID(resultType)
+			spelling, spellingOK := goNativeTypeSpelling(resultType)
+			if !ok || !spellingOK {
+				return nil, fmt.Errorf("expression.native_address_type")
+			}
+			return &goExpression{kind: goNativeAddress, left: value, nativeLanguage: "go", nativeResultType: resultID, nativeTypes: map[string]string{resultID: spelling}}, nil
+		}
 		if expression.Op != token.NOT {
 			return nil, fmt.Errorf("expression.unsupported_unary_operator:%s", expression.Op)
 		}
