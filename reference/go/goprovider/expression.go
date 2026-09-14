@@ -1707,6 +1707,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			if value == nil && keyedLiteral {
 				var err error
 				values[index], err = zeroGoExpression(record.ordered[index].Type(), records, map[string]bool{}, 0)
+				if err != nil && functions[nil] == "native-default" && named.Obj() != nil && named.Obj().Pkg() != nil && goTypeOwnedOutsidePackage(record.ordered[index].Type(), named.Obj().Pkg().Path()) {
+					if nativeID, ok := goNativeTypeID(record.ordered[index].Type()); ok {
+						spelling, _ := goNativeTypeSpelling(record.ordered[index].Type())
+						values[index] = &goExpression{kind: goNativeDefaultValue, nativeLanguage: "go", nativeResultType: nativeID, nativeTypes: map[string]string{nativeID: spelling}}
+						err = nil
+					}
+				}
 				if err != nil {
 					return nil, err
 				}
