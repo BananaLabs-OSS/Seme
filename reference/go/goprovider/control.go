@@ -90,6 +90,12 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 	mutable := map[types.Object]bool{}
 	for _, statement := range statements {
 		ast.Inspect(statement, func(node ast.Node) bool {
+			if increment, ok := node.(*ast.IncDecStmt); ok && goExecutionModuleVersion(functions) >= 87 {
+				if name, ok := ast.Unparen(increment.X).(*ast.Ident); ok && info.Uses[name] != nil {
+					mutable[info.Uses[name]] = true
+				}
+				return true
+			}
 			assignment, ok := node.(*ast.AssignStmt)
 			compound := false
 			if ok && goExecutionModuleVersion(functions) >= 75 {
@@ -1158,6 +1164,42 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			*next++
 			block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer, mutable: mutable[object]})
 			locals[object] = local
+		case *ast.IncDecStmt:
+			if goExecutionModuleVersion(functions) < 87 {
+				return nil, fmt.Errorf("control.unsupported_statement:%T", raw)
+			}
+			name, ok := ast.Unparen(statement.X).(*ast.Ident)
+			if !ok {
+				return nil, fmt.Errorf("control.incdec_target")
+			}
+			object := info.Uses[name]
+			local, exists := locals[object]
+			if object == nil || !exists || !mutable[object] {
+				return nil, fmt.Errorf("control.incdec_target")
+			}
+			left := &goExpression{kind: goPlaceRead, local: local}
+			var value *goExpression
+			if isInt64(object.Type()) {
+				kind := goIntegerAdd
+				if statement.Tok == token.DEC {
+					kind = goIntegerSubtract
+				} else if statement.Tok != token.INC {
+					return nil, fmt.Errorf("control.incdec_operator")
+				}
+				value = &goExpression{kind: kind, left: left, right: &goExpression{kind: goIntegerLiteral, integer: 1}}
+			} else {
+				spelling, native := goNativeTypeSpelling(object.Type())
+				resultID, idOK := goNativeTypeID(object.Type())
+				if !native || !idOK || functions[nil] != "native-default" || statement.Tok != token.INC && statement.Tok != token.DEC {
+					return nil, fmt.Errorf("control.incdec_type")
+				}
+				op := "+="
+				if statement.Tok == token.DEC {
+					op = "-="
+				}
+				value = &goExpression{kind: goNativeInvocation, arguments: []*goExpression{left, &goExpression{kind: goIntegerLiteral, integer: 1}}, nativeLanguage: "go", nativeTarget: "builtin.compound[" + op + ";" + spelling + "]", nativeSignature: "func(" + spelling + ", " + spelling + ") " + spelling, nativeResultType: resultID, nativeTypes: map[string]string{resultID: spelling}}
+			}
+			block.statements = append(block.statements, &goStatement{local: local, mutable: true, assignment: value})
 		case *ast.ReturnStmt:
 			forwardedProduct := len(statement.Results) == 1 && signature.Results().Len() > 1
 			if forwardedProduct {
