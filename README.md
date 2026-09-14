@@ -733,6 +733,10 @@ operation. Run `./scripts/check-execution-v56.sh`.
 Go-owned pointers, interfaces, integers, named values, and contextual `nil` as
 explicit typed native operations. Run `./scripts/check-execution-v57.sh`.
 
+[`Core Execution v58`](spec/core-execution-v58.md) retains `len` over Go-owned
+collections as an explicit typed native operation returning Go `int`. Run
+`./scripts/check-execution-v58.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

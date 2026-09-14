@@ -1389,7 +1389,28 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			array, arrayOK := underlying.(*types.Array)
 			slice, sliceOK := underlying.(*types.Slice)
 			if (!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !(isInt64(slice.Elem()) || isBool(slice.Elem()) || isPureString(slice.Elem()))) {
-				return nil, fmt.Errorf("expression.unsupported_collection_length")
+				if functions[nil] != "native-default" {
+					return nil, fmt.Errorf("expression.unsupported_collection_length")
+				}
+				collectionType := info.TypeOf(expression.Args[0])
+				collection, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+				if err != nil {
+					return nil, err
+				}
+				collection, collectionID, materialized := nativeGoAssignmentValue(collection, collectionType)
+				if !materialized {
+					return nil, fmt.Errorf("expression.unsupported_collection_length")
+				}
+				collectionSpelling, _ := goNativeTypeSpelling(collectionType)
+				intType := types.Universe.Lookup("int").Type()
+				intID, _ := goNativeTypeID(intType)
+				intSpelling, _ := goNativeTypeSpelling(intType)
+				return &goExpression{
+					kind: goNativeInvocation, arguments: []*goExpression{collection}, nativeLanguage: "go",
+					nativeTarget:    "builtin.len[" + collectionSpelling + "]",
+					nativeSignature: "func(" + collectionSpelling + ") int", nativeResultType: intID,
+					nativeTypes: map[string]string{collectionID: collectionSpelling, intID: intSpelling},
+				}, nil
 			}
 			collection, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
