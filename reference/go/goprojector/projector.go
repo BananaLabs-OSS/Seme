@@ -90,6 +90,7 @@ const (
 	sWhile               = "000000000000000000000000000090e4"
 	sNativeDefer         = "0000000000000000000000000000a075"
 	sNativeFieldAssign   = "0000000000000000000000000000a076"
+	sNativeBindingAssign = "0000000000000000000000000000a082"
 	sNativeSwitchCase    = "0000000000000000000000000000a077"
 	sNativeSwitch        = "0000000000000000000000000000a078"
 	sNativeRangeBinding  = "0000000000000000000000000000a07b"
@@ -975,6 +976,23 @@ func projectBlock(id string, c context) (string, error) {
 				return "", err
 			}
 			lines = append(lines, "\t"+receiver+"."+name+" = "+value)
+		case sNativeBindingAssign:
+			if language, err := text(statement, "000000000000000000000000000a0820"); err != nil || language != "go" {
+				return "", fmt.Errorf("go_projection.native_binding_assignment_language")
+			}
+			name, err := text(statement, "000000000000000000000000000a0821")
+			if err != nil || !identifier(name) {
+				return "", fmt.Errorf("go_projection.native_binding_assignment_binding")
+			}
+			valueID, err := ref(statement, "000000000000000000000000000a0822")
+			if err != nil {
+				return "", err
+			}
+			value, err := expr(valueID, c)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\t"+name+" = "+value)
 		case sNativeIndexAssign:
 			if language, err := text(statement, "000000000000000000000000000a0800"); err != nil || language != "go" {
 				return "", fmt.Errorf("go_projection.native_index_assignment_language")

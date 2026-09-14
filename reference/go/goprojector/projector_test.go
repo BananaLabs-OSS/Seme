@@ -346,6 +346,31 @@ func TestProjectsCharacterLiteralInTypedCallBackToGo(t *testing.T) {
 }`)
 }
 
+func TestProjectsPackageBindingAssignmentBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v94/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/binding", Entry: "Enable", Files: map[string]string{
+		"binding.go": "package sample\nvar Enabled bool\nfunc Enable(value bool) { Enabled = value }\n",
+	}})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "Enabled = value") {
+		t.Fatalf("projection lacks package binding assignment:\n%s", projected)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected), "binding.go": "package nativeproof\nvar Enabled bool\n"}, `func TestNative(t *testing.T) { Enable(true); if !Enabled { t.Fatal("binding") } }`)
+}
+
 func TestProjectsMutableParameterThroughCanonicalPlace(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v64/module.g1")
 	if err != nil {

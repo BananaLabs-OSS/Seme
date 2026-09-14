@@ -33,6 +33,8 @@ type goStatement struct {
 	nativeIndexCollection *goExpression
 	nativeIndex           *goExpression
 	nativeIndexValue      *goExpression
+	nativeBindingName     string
+	nativeBindingValue    *goExpression
 	nativeSwitchSubject   *goExpression
 	nativeSwitchCases     []goSwitchCase
 	nativeSwitchDefault   *goBlock
@@ -765,6 +767,18 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				}
 			}
 		case *ast.AssignStmt:
+			if goExecutionModuleVersion(functions) >= 94 && functions[nil] == "native-default" && statement.Tok == token.ASSIGN && len(statement.Lhs) == 1 && len(statement.Rhs) == 1 {
+				if name, ok := ast.Unparen(statement.Lhs[0]).(*ast.Ident); ok {
+					if object, ok := info.Uses[name].(*types.Var); ok && object.Pkg() != nil && object.Parent() == object.Pkg().Scope() {
+						value, err := analyzeGoExpressionExpected(statement.Rhs[0], object.Type(), signature, info, locals, functions, records, mutable)
+						if err != nil {
+							return nil, err
+						}
+						block.statements = append(block.statements, &goStatement{nativeBindingName: object.Name(), nativeBindingValue: value})
+						continue
+					}
+				}
+			}
 			if goExecutionModuleVersion(functions) >= 74 && statement.Tok == token.ASSIGN && len(statement.Lhs) == 1 && len(statement.Rhs) == 1 {
 				if indexed, ok := ast.Unparen(statement.Lhs[0]).(*ast.IndexExpr); ok {
 					collection, err := analyzeGoExpressionWithProgram(indexed.X, signature, info, locals, functions, records, mutable)
@@ -2219,6 +2233,14 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, valueEntities...)
 			statementID = stableID("execution", owner, statementPath, "native-field-assignment")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a076", []graphField{bytesField(0xa0760, "go"), bytesField(0xa0761, statement.nativeFieldName), refField(0xa0762, receiverID), refField(0xa0763, valueID)})})
+		} else if statement.nativeBindingValue != nil {
+			valueEntities, valueID, err := emitCanonicalExpressionWithLocals(statement.nativeBindingValue, owner+":"+statementPath+":native-binding-value", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, valueEntities...)
+			statementID = stableID("execution", owner, statementPath, "native-binding-assignment")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a082", []graphField{bytesField(0xa0820, "go"), bytesField(0xa0821, statement.nativeBindingName), refField(0xa0822, valueID)})})
 		} else if statement.nativeIndexCollection != nil {
 			collectionEntities, collectionID, err := emitCanonicalExpressionWithLocals(statement.nativeIndexCollection, owner+":"+statementPath+":native-index-collection", parameterIDs, localIDs, integerTypeID)
 			if err != nil {
