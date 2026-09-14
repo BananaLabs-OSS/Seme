@@ -145,6 +145,27 @@ func validateType(g wire.Envelope, x wire.ID, visiting map[wire.ID]bool, budget 
 	switch e.Schema {
 	case id(0x9010), id(0x9020), id(0x9040), id(0x9041):
 		return nil
+	case id(0xa071):
+		language, languageErr := field(e, 0xa0710)
+		spelling, spellingErr := field(e, 0xa0711)
+		if languageErr != nil || spellingErr != nil || language.Tag != 5 || spelling.Tag != 5 || len(language.Bytes) == 0 || len(spelling.Bytes) == 0 {
+			return fmt.Errorf("native_type")
+		}
+		return nil
+	case id(0xa06f):
+		items, er := field(e, 0xa06f0)
+		if er != nil || items.Tag != 7 || len(items.List) < 2 || len(items.List) > 16 {
+			return fmt.Errorf("product_items")
+		}
+		for _, item := range items.List {
+			if item.Tag != 6 {
+				return fmt.Errorf("product_item_reference")
+			}
+			if er := validateType(g, item.Reference, visiting, budget-1); er != nil {
+				return er
+			}
+		}
+		return nil
 	case id(0x90f2):
 		if er := recurse(0x9f20); er != nil {
 			return er
@@ -211,6 +232,23 @@ func validateValue(g wire.Envelope, typeID wire.ID, v Value, budget int) error {
 		return fmt.Errorf("type_missing")
 	}
 	switch t.Schema {
+	case id(0xa071):
+		if v.Kind != "native" {
+			return fmt.Errorf("native")
+		}
+	case id(0xa06f):
+		items, er := field(t, 0xa06f0)
+		if er != nil || items.Tag != 7 || v.Kind != "product" || len(v.Items) != len(items.List) {
+			return fmt.Errorf("product")
+		}
+		for index, item := range items.List {
+			if item.Tag != 6 {
+				return fmt.Errorf("product_item")
+			}
+			if er := validateValue(g, item.Reference, v.Items[index], budget-1); er != nil {
+				return er
+			}
+		}
 	case id(0x9010):
 		n, ok := new(big.Int).SetString(v.I64, 10)
 		if v.Kind != "i64" || !ok || n.Cmp(new(big.Int).Neg(new(big.Int).Lsh(big.NewInt(1), 63))) < 0 || n.Cmp(new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 63), big.NewInt(1))) > 0 {
@@ -493,6 +531,20 @@ func expressionType(g wire.Envelope, expressionID wire.ID) (wire.ID, bool) {
 		t, err := field(e, 0xa0050)
 		return t.Reference, err == nil && t.Tag == 6
 	}
+	if e.Schema == id(0xa070) {
+		item, itemErr := field(e, 0xa0703)
+		productType, typeErr := field(e, 0xa0701)
+		index, indexErr := field(e, 0xa0702)
+		if itemErr != nil || typeErr != nil || indexErr != nil || item.Tag != 6 || productType.Tag != 6 || index.Tag != 3 {
+			return wire.ID{}, false
+		}
+		product, ok := g.Entities[productType.Reference]
+		items, itemsErr := field(product, 0xa06f0)
+		if !ok || product.Schema != id(0xa06f) || itemsErr != nil || items.Tag != 7 || index.Unsigned >= uint64(len(items.List)) || items.List[index.Unsigned].Tag != 6 || items.List[index.Unsigned].Reference != item.Reference {
+			return wire.ID{}, false
+		}
+		return item.Reference, true
+	}
 	if e.Schema == id(0xa062) {
 		okBlock, okErr := field(e, 0xa0622)
 		errorBlock, errorErr := field(e, 0xa0624)
@@ -524,10 +576,40 @@ func returnedBlockType(g wire.Envelope, blockID wire.ID) (wire.ID, bool) {
 	}
 	statement, ok := g.Entities[last.Reference]
 	values, err := field(statement, 0x9810)
-	if !ok || statement.Schema != id(0x9081) || err != nil || values.Tag != 7 || len(values.List) != 1 || values.List[0].Tag != 6 {
+	if !ok || statement.Schema != id(0x9081) || err != nil || values.Tag != 7 || len(values.List) == 0 {
 		return wire.ID{}, false
 	}
-	return expressionType(g, values.List[0].Reference)
+	if len(values.List) == 1 && values.List[0].Tag == 6 {
+		return expressionType(g, values.List[0].Reference)
+	}
+	itemTypes := make([]wire.ID, len(values.List))
+	for index, value := range values.List {
+		if value.Tag != 6 {
+			return wire.ID{}, false
+		}
+		var typed bool
+		itemTypes[index], typed = expressionType(g, value.Reference)
+		if !typed {
+			return wire.ID{}, false
+		}
+	}
+	for candidate, entity := range g.Entities {
+		if entity.Schema != id(0xa06f) {
+			continue
+		}
+		items, er := field(entity, 0xa06f0)
+		if er != nil || items.Tag != 7 || len(items.List) != len(itemTypes) {
+			continue
+		}
+		matches := true
+		for index, item := range items.List {
+			matches = matches && item.Tag == 6 && item.Reference == itemTypes[index]
+		}
+		if matches {
+			return candidate, true
+		}
+	}
+	return wire.ID{}, false
 }
 
 // ExpressionType exposes the evaluator's fail-closed canonical type
@@ -592,11 +674,23 @@ func execBlock(g wire.Envelope, block wire.ID, env map[wire.ID]Value, budget int
 			holder.runtime.trace = append(holder.runtime.trace, EffectObservation{Capability: capability, Value: value.Bool})
 		case id(0x9081):
 			values, er := field(s, 0x9810)
-			if er != nil || values.Tag != 7 || len(values.List) != 1 || values.List[0].Tag != 6 {
+			if er != nil || values.Tag != 7 || len(values.List) == 0 {
 				return Value{}, false, fmt.Errorf("canonicaleval.return")
 			}
-			v, er := eval(g, values.List[0].Reference, env, budget-1)
-			return v, true, er
+			returned := make([]Value, len(values.List))
+			for index, value := range values.List {
+				if value.Tag != 6 {
+					return Value{}, false, fmt.Errorf("canonicaleval.return")
+				}
+				returned[index], er = eval(g, value.Reference, env, budget-1)
+				if er != nil {
+					return Value{}, false, er
+				}
+			}
+			if len(returned) == 1 {
+				return returned[0], true, nil
+			}
+			return Value{Kind: "product", Items: returned}, true, nil
 		case id(0x90d1), id(0x90e1):
 			key := uint64(0x9d10)
 			definitionSchema := id(0x90d0)
@@ -1027,6 +1121,21 @@ func eval(g wire.Envelope, x wire.ID, env map[wire.ID]Value, budget int) (Value,
 			callEnv[parameters.List[index].Reference] = value
 		}
 		return evalBlock(g, body.Reference, callEnv, budget-1)
+	case id(0xa070):
+		productRef, pe := refField(0xa0700)
+		productType, te := refField(0xa0701)
+		index, ie := field(e, 0xa0702)
+		itemType, ite := refField(0xa0703)
+		typeEntity, exists := g.Entities[productType]
+		items, itemsErr := field(typeEntity, 0xa06f0)
+		if pe != nil || te != nil || ie != nil || ite != nil || !exists || typeEntity.Schema != id(0xa06f) || index.Tag != 3 || itemsErr != nil || items.Tag != 7 || index.Unsigned >= uint64(len(items.List)) || items.List[index.Unsigned].Tag != 6 || items.List[index.Unsigned].Reference != itemType {
+			return Value{}, fmt.Errorf("canonicaleval.product_project")
+		}
+		product, er := eval(g, productRef, env, budget-1)
+		if er != nil || product.Kind != "product" || index.Unsigned >= uint64(len(product.Items)) {
+			return Value{}, fmt.Errorf("canonicaleval.product_project_value")
+		}
+		return product.Items[index.Unsigned], nil
 	case id(0x9033):
 		typeID, te := refField(0x9330)
 		values, ve := field(e, 0x9331)

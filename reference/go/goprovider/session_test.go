@@ -130,6 +130,130 @@ func Numbers() []int64 { return []int64{1} }
 	}
 }
 
+func TestIncrementalSessionExecutesNeutralGoProductOnceAndProjectsItems(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v41/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/products", Entry: "Choose", Files: map[string]string{
+		"products.go": `package products
+func Pair(value string, present bool) (string, bool) { return value, present }
+func Choose(value string) string {
+	selected, present := Pair(value, true)
+	if present { return selected }
+	return ""
+}`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("neutral product rejected: %#v", result)
+	}
+	for _, schema := range []string{"0000000000000000000000000000a06f", "0000000000000000000000000000a070"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("neutral product omitted schema %s", schema)
+		}
+	}
+	dir := t.TempDir()
+	in, out := filepath.Join(dir, "in.g1"), filepath.Join(dir, "out.seme")
+	if err = os.WriteFile(in, []byte(result.CanonicalG1), 0600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(context.Background(), "../../../bootstrap/seme-k0-linux-amd64", "../../../compiler/g1-compiler.k0", in, out)
+	if data, runErr := cmd.CombinedOutput(); runErr != nil {
+		t.Fatalf("compile: %v: %s", runErr, data)
+	}
+	data, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	graph, err := wire.Decode(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var choose wire.ID
+	for identity, entity := range graph.Entities {
+		if entity.Schema == sessionTestID("9011") && string(entity.Fields[sessionTestID("9110")].Bytes) == "Choose" {
+			choose = identity
+		}
+	}
+	got, err := canonicaleval.EvaluateFunction(graph, choose, []canonicaleval.Value{{Kind: "text", Text: "ironclad"}})
+	if err != nil || got.Kind != "text" || got.Text != "ironclad" {
+		t.Fatalf("product execution: %#v %v", got, err)
+	}
+}
+
+func TestIncrementalSessionRetainsBoundedGoErrorAsNativeType(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v41/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-error", Entry: "Failed", Files: map[string]string{
+		"error.go": `package nativeerror
+func Failed(err error) bool { return err != nil }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("bounded native error rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a071", "6275696c74696e2e6572726f722e69735f6e696c"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native error bridge omitted %s", want)
+		}
+	}
+}
+
+func TestIncrementalSessionRetainsNativeValueErrorProduct(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v41/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-value-error", Entry: "Read", Files: map[string]string{
+		"read.go": `package nativevalueerror
+import "os"
+func Read(path string) ([]byte, error) { return os.ReadFile(path) }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native value-plus-error product rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a06d", "0000000000000000000000000000a06f", "0000000000000000000000000000a071"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native value-plus-error product omitted %s", want)
+		}
+	}
+}
+
+func TestIncrementalSessionRetainsExplicitNativeVariadicArguments(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v41/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-variadic", Entry: "Join", Files: map[string]string{
+		"join.go": "package nativevariadic\nimport \"path/filepath\"\nfunc Join(left, right string) string { return filepath.Join(left, right) }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("explicit native variadic call rejected: %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "706174682f66696c65706174682e4a6f696e") {
+		t.Fatal("native filepath.Join identity missing")
+	}
+}
+
 func TestIncrementalSessionRetainsTypedNativeValueMethod(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v40/module.g1")
 	if err != nil {

@@ -414,8 +414,22 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(41); err == nil {
+	if _, err := Declarations(42); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersion41AddsNeutralProducts(t *testing.T) {
+	previous, err := Declarations(40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(41)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+3 || current[len(previous)].Name != "ProductType" || current[len(previous)+1].Name != "ProductProject" || current[len(previous)+2].Name != "NativeType" {
+		t.Fatalf("v41 declarations = %#v", current[len(previous):])
 	}
 }
 

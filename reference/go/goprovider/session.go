@@ -901,7 +901,7 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	var sources []SourceIdentity
 	var islands []NativeIslandDeclaration
 	for _, function := range functions {
-		entities, source, diagnostic := liftSessionFunction(function, integerID, booleanID, stringID, functionObjects, records)
+		entities, source, diagnostic := liftSessionFunction(function, integerID, booleanID, stringID, functionObjects, records, executionModuleVersion(moduleG1) >= 41)
 		if diagnostic != nil {
 			diagnostics = append(diagnostics, *diagnostic)
 			position := function.fset.Position(function.fn.Pos())
@@ -1128,17 +1128,20 @@ func graphFunctionCallCallee(text string) (string, bool) {
 	return "", false
 }
 
-func liftSessionFunction(function sessionFunction, integerID, booleanID, stringID string, functions map[types.Object]string, records map[*types.Named]goRecordInfo) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
+func liftSessionFunction(function sessionFunction, integerID, booleanID, stringID string, functions map[types.Object]string, records map[*types.Named]goRecordInfo, allowProducts bool) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 	position := function.fset.Position(function.fn.Pos())
 	diagnostic := func(code, message string) ([]graphEntity, SourceIdentity, *SessionDiagnostic) {
 		return nil, SourceIdentity{}, &SessionDiagnostic{Code: code, Message: message, File: function.file, Line: position.Line, Column: position.Column, Severity: "warning"}
 	}
-	if function.sig.Results().Len() > 1 {
-		return diagnostic("session.unsupported_function_shape", "supported functions require one result")
-	}
 	unitResult := function.sig.Results().Len() == 0
+	multiResult := function.sig.Results().Len() > 1
+	if multiResult && !allowProducts {
+		return diagnostic("session.unsupported_function_shape", "multiple results require Core Execution v41")
+	}
 	var resultType types.Type
-	if !unitResult {
+	if multiResult {
+		resultType = function.sig.Results()
+	} else if !unitResult {
 		resultType = function.sig.Results().At(0).Type()
 	}
 	resultTypeID := integerID
@@ -1149,6 +1152,12 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	}
 	if unitResult {
 		resultTypeID = stableID("execution", "type", "unit")
+	} else if multiResult {
+		var ok bool
+		resultTypeID, _, ok = goProductTypeID(function.sig.Results(), records)
+		if !ok {
+			return diagnostic("session.unsupported_result_type", "product result items must have supported semantic types")
+		}
 	} else if isTransition {
 		var ok bool
 		resultTypeID, ok = goSupportedTypeID(resultType, integerID, booleanID, stringID, records)
@@ -1319,8 +1328,18 @@ func goTransitionTypeID(state, result types.Type) string {
 
 func goSemanticTypeIdentity(value types.Type) string {
 	value = types.Unalias(value)
+	if tuple, ok := value.(*types.Tuple); ok {
+		parts := []string{"execution", "type", "product"}
+		for index := 0; index < tuple.Len(); index++ {
+			parts = append(parts, goSemanticTypeIdentity(tuple.At(index).Type()))
+		}
+		return stableID(parts...)
+	}
 	if isInt64(value) {
 		return stableID("execution", "type", "i64")
+	}
+	if isGoErrorType(value) {
+		return stableID("execution", "type", "native", "go", "error")
 	}
 	if isBool(value) {
 		return stableID("execution", "type", "bool")
@@ -1355,6 +1374,13 @@ func goSemanticTypeIdentity(value types.Type) string {
 
 func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, records map[*types.Named]goRecordInfo) (string, bool) {
 	value = types.Unalias(value)
+	if tuple, ok := value.(*types.Tuple); ok {
+		id, _, supported := goProductTypeID(tuple, records)
+		return id, supported
+	}
+	if isGoErrorType(value) {
+		return stableID("execution", "type", "native", "go", "error"), true
+	}
 	if isInt64(value) {
 		return integerID, true
 	}
@@ -1394,6 +1420,26 @@ func goSupportedTypeID(value types.Type, integerID, booleanID, stringID string, 
 	return "", false
 }
 
+func goProductTypeID(tuple *types.Tuple, records map[*types.Named]goRecordInfo) (string, []string, bool) {
+	if tuple == nil || tuple.Len() < 2 || tuple.Len() > 16 {
+		return "", nil, false
+	}
+	itemTypes := make([]string, tuple.Len())
+	parts := []string{"execution", "type", "product"}
+	integerID := stableID("execution", "type", "i64")
+	booleanID := stableID("execution", "type", "bool")
+	stringID := stableID("execution", "type", "string")
+	for index := 0; index < tuple.Len(); index++ {
+		item, ok := goSupportedTypeID(tuple.At(index).Type(), integerID, booleanID, stringID, records)
+		if !ok {
+			return "", nil, false
+		}
+		itemTypes[index] = item
+		parts = append(parts, item)
+	}
+	return stableID(parts...), itemTypes, true
+}
+
 func goOptionValueType(value types.Type) (types.Type, bool) {
 	value = types.Unalias(value)
 	named, ok := value.(*types.Named)
@@ -1421,6 +1467,20 @@ func goResultTypes(value types.Type) (types.Type, types.Type, bool) {
 	return success, failure, types.Identical(structure.Field(1).Type(), success) && types.Identical(structure.Field(2).Type(), failure)
 }
 func goBridgeTypeEntities(value types.Type, integerID, booleanID, stringID string) []graphEntity {
+	if isGoErrorType(value) {
+		id := stableID("execution", "type", "native", "go", "error")
+		return []graphEntity{{id, entity(id, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, "go"), bytesField(0xa0711, "error")})}}
+	}
+	if tuple, ok := types.Unalias(value).(*types.Tuple); ok {
+		id := goSemanticTypeIdentity(tuple)
+		items := make([]string, tuple.Len())
+		entities := []graphEntity{}
+		for index := 0; index < tuple.Len(); index++ {
+			items[index] = goSemanticTypeIdentity(tuple.At(index).Type())
+			entities = append(entities, goBridgeTypeEntities(tuple.At(index).Type(), integerID, booleanID, stringID)...)
+		}
+		return append(entities, graphEntity{id, entity(id, "0000000000000000000000000000a06f", []graphField{refsField(0xa06f0, items)})})
+	}
 	if element, ok := goPrimitiveSliceElement(value); ok {
 		elementID := goSemanticTypeIdentity(element)
 		tag, _ := goPrimitiveTypeTag(element)

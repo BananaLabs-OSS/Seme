@@ -11,6 +11,7 @@ import (
 type goStatement struct {
 	condition   *goExpression
 	returned    *goExpression
+	returns     []*goExpression
 	thenBlock   *goBlock
 	elseBlock   *goBlock
 	localName   string
@@ -576,6 +577,47 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 	for index, raw := range statements {
 		switch statement := raw.(type) {
 		case *ast.AssignStmt:
+			// A multi-result call is one product-valued evaluation. Bind that product
+			// once, then project each Go binding from it in source order.
+			if statement.Tok == token.DEFINE && len(statement.Lhs) > 1 && len(statement.Rhs) == 1 {
+				_, callOK := ast.Unparen(statement.Rhs[0]).(*ast.CallExpr)
+				if tuple, ok := types.Unalias(info.TypeOf(statement.Rhs[0])).(*types.Tuple); callOK && ok && tuple.Len() == len(statement.Lhs) {
+					productType, productTypes, supported := goProductTypeID(tuple, records)
+					if !supported {
+						return nil, fmt.Errorf("control.multi_result_type")
+					}
+					value, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					productLocal := *next
+					*next++
+					block.statements = append(block.statements, &goStatement{localName: fmt.Sprintf("seme_product_%d", productLocal), localType: productType, local: productLocal, initializer: value})
+					for resultIndex, target := range statement.Lhs {
+						name, nameOK := target.(*ast.Ident)
+						if !nameOK {
+							return nil, fmt.Errorf("control.multi_binding_target")
+						}
+						if name.Name == "_" {
+							continue
+						}
+						object := info.Defs[name]
+						if object == nil {
+							return nil, fmt.Errorf("control.local_binding_type")
+						}
+						localType, typeOK := goLocalSemanticType(object.Type(), records)
+						if !typeOK {
+							return nil, fmt.Errorf("control.local_binding_type")
+						}
+						local := *next
+						*next++
+						projected := &goExpression{kind: goProductProject, left: &goExpression{kind: goLocalRead, local: productLocal}, typeID: productType, elementTypeID: goSemanticTypeIdentity(tuple.At(resultIndex).Type()), productIndex: uint64(resultIndex), productTypes: productTypes}
+						block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: projected, mutable: mutable[object]})
+						locals[object] = local
+					}
+					continue
+				}
+			}
 			// Go's two-result map lookup is one semantic operation. Normalize its
 			// value and presence results into ordinary immutable bindings backed by
 			// MapLookupOption, so later stages never need Go's tuple convention.
@@ -702,13 +744,8 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if object == nil {
 				return nil, fmt.Errorf("control.local_binding_type")
 			}
-			named, isRecord := types.Unalias(object.Type()).(*types.Named)
-			record, recordSupported := findGoRecord(records, named)
-			_, _, isResult := goResultTypes(object.Type())
-			functionSignature, isFunction := goFunctionSignature(object.Type())
-			isFunction = isFunction && isUnaryI64Function(functionSignature)
-			_, isPrimitiveSlice := goPrimitiveSliceElement(object.Type())
-			if !isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type()) && !isPrimitiveSlice && !isI64Map(object.Type()) && !isResult && !isFunction && !(isRecord && recordSupported) {
+			localType, typeOK := goLocalSemanticType(object.Type(), records)
+			if !typeOK {
 				return nil, fmt.Errorf("control.local_binding_type")
 			}
 			initializer, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
@@ -725,44 +762,34 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			}
 			local := *next
 			*next++
-			localType := "i64"
-			if isBool(object.Type()) {
-				localType = "bool"
-			}
-			if isPureString(object.Type()) {
-				localType = "string"
-			}
-			if isRecord && recordSupported {
-				localType = record.id
-			}
-			if element, ok := goPrimitiveSliceElement(object.Type()); ok {
-				tag, _ := goPrimitiveTypeTag(element)
-				localType = stableID("execution", "type", "slice", tag)
-			}
-			if isI64Map(object.Type()) {
-				localType = stableID("execution", "type", "map", "i64", "i64")
-			}
-			if isResult {
-				localType = goSemanticTypeIdentity(object.Type())
-			}
-			if isFunction {
-				localType = goFunctionTypeID(functionSignature)
-			}
 			block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer, mutable: mutable[object]})
 			locals[object] = local
 		case *ast.ReturnStmt:
-			if index != len(statements)-1 || (len(statement.Results) != 1 && !(signature.Results().Len() == 0 && len(statement.Results) == 0)) {
+			forwardedProduct := len(statement.Results) == 1 && signature.Results().Len() > 1
+			if forwardedProduct {
+				tuple, ok := types.Unalias(info.TypeOf(statement.Results[0])).(*types.Tuple)
+				forwardedProduct = ok && tuple.Len() == signature.Results().Len()
+			}
+			if index != len(statements)-1 || len(statement.Results) != signature.Results().Len() && !forwardedProduct {
 				return nil, fmt.Errorf("control.return_arity")
 			}
 			if len(statement.Results) == 0 {
 				block.statements = append(block.statements, &goStatement{returned: &goExpression{kind: goUnitValue}})
 				continue
 			}
-			expression, err := analyzeGoExpressionWithProgram(statement.Results[0], signature, info, locals, functions, records, mutable)
-			if err != nil {
-				return nil, err
+			values := make([]*goExpression, len(statement.Results))
+			for resultIndex, result := range statement.Results {
+				expression, err := analyzeGoExpressionWithProgram(result, signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
+				values[resultIndex] = expression
 			}
-			block.statements = append(block.statements, &goStatement{returned: expression})
+			if len(values) == 1 {
+				block.statements = append(block.statements, &goStatement{returned: values[0]})
+			} else {
+				block.statements = append(block.statements, &goStatement{returns: values})
+			}
 		case *ast.IfStmt:
 			ifLocals, ifMutable := locals, mutable
 			var initializer []*goStatement
@@ -893,7 +920,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			return nil, fmt.Errorf("control.unsupported_statement")
 		}
 	}
-	if requireReturn && (len(block.statements) == 0 || block.statements[len(block.statements)-1].returned == nil) {
+	if requireReturn && (len(block.statements) == 0 || block.statements[len(block.statements)-1].returned == nil && len(block.statements[len(block.statements)-1].returns) == 0) {
 		if signature.Results().Len() == 0 {
 			block.statements = append(block.statements, &goStatement{returned: &goExpression{kind: goUnitValue}})
 		} else {
@@ -907,6 +934,10 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 }
 
 func goLocalSemanticType(t types.Type, records map[*types.Named]goRecordInfo) (string, bool) {
+	if tuple, ok := types.Unalias(t).(*types.Tuple); ok {
+		id, _, supported := goProductTypeID(tuple, records)
+		return id, supported
+	}
 	if isInt64(t) {
 		return "i64", true
 	}
@@ -915,6 +946,12 @@ func goLocalSemanticType(t types.Type, records map[*types.Named]goRecordInfo) (s
 	}
 	if isPureString(t) {
 		return "string", true
+	}
+	if isBytes(t) {
+		return stableID("execution", "type", "bytes"), true
+	}
+	if isGoErrorType(t) {
+		return stableID("execution", "type", "native", "go", "error"), true
 	}
 	if element, ok := goPrimitiveSliceElement(t); ok {
 		tag, _ := goPrimitiveTypeTag(element)
@@ -1100,6 +1137,18 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, expressions...)
 			statementID = stableID("execution", owner, statementPath, "return")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "00000000000000000000000000009081", []graphField{refsField(0x9810, []string{expressionID})})})
+		} else if len(statement.returns) != 0 {
+			values := make([]string, len(statement.returns))
+			for valueIndex, value := range statement.returns {
+				expressions, expressionID, err := emitCanonicalExpressionWithLocals(value, owner+":"+path+":return:"+strconv.Itoa(valueIndex), parameterIDs, localIDs, integerTypeID)
+				if err != nil {
+					return "", err
+				}
+				*instances = append(*instances, expressions...)
+				values[valueIndex] = expressionID
+			}
+			statementID = stableID("execution", owner, statementPath, "return")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "00000000000000000000000000009081", []graphField{refsField(0x9810, values)})})
 		} else if statement.loopBlock != nil {
 			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+statementPath+":loop-condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {
