@@ -4,6 +4,14 @@ import test from "node:test";
 import { liftJavaScript } from "./javascript-provider.mjs";
 import { projectJavaScript } from "./javascript-projector.mjs";
 
+const scopedTypeProgram = fs.readFileSync(new URL("../../fixtures/go-execution-v81/program.g1", import.meta.url), "utf8");
+
+test("projects scoped semantic types through an explicit JavaScript adapter", () => {
+  const projected = projectJavaScript(scopedTypeProgram);
+  assert.match(projected, /Seme\.scopedType\(/);
+  assert.doesNotMatch(projected, /@typedef \{Object\} local/);
+});
+
 const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v14/module.g1", import.meta.url), "utf8");
 const moduleV15G1 = fs.readFileSync(new URL("../../modules/execution/v15/module.g1", import.meta.url), "utf8");
 const moduleV16G1 = fs.readFileSync(new URL("../../modules/execution/v16/module.g1", import.meta.url), "utf8");

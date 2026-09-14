@@ -9,6 +9,7 @@ import (
 )
 
 type goStatement struct {
+	scopedType            string
 	condition             *goExpression
 	returned              *goExpression
 	returns               []*goExpression
@@ -643,6 +644,28 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				return nil, fmt.Errorf("control.unsupported_statement:%T", raw)
 			}
 			declaration, ok := statement.Decl.(*ast.GenDecl)
+			if ok && goExecutionModuleVersion(functions) >= 81 && declaration.Tok == token.TYPE {
+				for _, rawSpec := range declaration.Specs {
+					spec, ok := rawSpec.(*ast.TypeSpec)
+					if !ok || spec.Assign.IsValid() {
+						return nil, fmt.Errorf("control.local_type_declaration_shape")
+					}
+					object, ok := info.Defs[spec.Name].(*types.TypeName)
+					if !ok {
+						return nil, fmt.Errorf("control.local_type_declaration_binding")
+					}
+					named, ok := types.Unalias(object.Type()).(*types.Named)
+					if !ok {
+						return nil, fmt.Errorf("control.local_type_declaration_type")
+					}
+					record, ok := findGoRecord(records, named)
+					if !ok {
+						return nil, fmt.Errorf("control.local_type_declaration_type")
+					}
+					block.statements = append(block.statements, &goStatement{scopedType: record.id})
+				}
+				continue
+			}
 			if !ok || declaration.Tok != token.VAR {
 				return nil, fmt.Errorf("control.local_declaration_shape")
 			}
@@ -1814,7 +1837,10 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 	for index, statement := range block.statements {
 		statementPath := path + ".statement." + strconv.Itoa(index)
 		statementID := ""
-		if statement.initializer != nil {
+		if statement.scopedType != "" {
+			statementID = stableID("execution", owner, statementPath, "scoped-type-declaration")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a081", []graphField{refField(0xa0810, statement.scopedType)})})
+		} else if statement.initializer != nil {
 			bindingID := stableID("execution", owner, path, "local", strconv.Itoa(statement.local))
 			localTypeID := integerTypeID
 			if statement.localType == "bool" {
