@@ -1282,8 +1282,8 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 		} else if supported, ok := goSupportedTypeID(function.sig.Params().At(index).Type(), integerID, booleanID, stringID, records); ok {
 			parameterTypeID = supported
 			instances = append(instances, goBridgeTypeEntities(function.sig.Params().At(index).Type(), integerID, booleanID, stringID)...)
-		} else if allowNativeOwnedTypes && goTypeOwnedOutsidePackage(function.sig.Params().At(index).Type(), function.packagePath) {
-			parameterTypeID, _ = goNativeTypeID(function.sig.Params().At(index).Type())
+		} else if nativeTypeID, nativeTypeOK := goNativeTypeID(function.sig.Params().At(index).Type()); allowNativeOwnedTypes && nativeTypeOK {
+			parameterTypeID = nativeTypeID
 			instances = append(instances, goNativeTypeEntity(function.sig.Params().At(index).Type()))
 		} else if functionSignature, ok := goFunctionSignature(function.sig.Params().At(index).Type()); ok {
 			if !isUnaryI64Function(functionSignature) {
@@ -1313,6 +1313,12 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	}
 	if function.method {
 		receiverTypeID, ok := goSupportedTypeID(function.sig.Recv().Type(), integerID, booleanID, stringID, records)
+		if !ok && allowNativeOwnedTypes {
+			receiverTypeID, ok = goNativeTypeID(function.sig.Recv().Type())
+			if ok {
+				instances = append(instances, goNativeTypeEntity(function.sig.Recv().Type()))
+			}
+		}
 		if !ok {
 			return diagnostic("session.unsupported_receiver_type", "value receiver must have a supported record type")
 		}

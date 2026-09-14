@@ -1172,6 +1172,39 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return nil, err
 		}
 		return &goExpression{kind: goBooleanNot, left: value}, nil
+	case *ast.TypeAssertExpr:
+		if functions[nil] == "" || expression.Type == nil {
+			return nil, fmt.Errorf("expression.unsupported_type_assertion")
+		}
+		tuple, commaOK := types.Unalias(info.TypeOf(expression)).(*types.Tuple)
+		if !commaOK || tuple.Len() != 2 || !isBool(tuple.At(1).Type()) {
+			return nil, fmt.Errorf("expression.unsupported_type_assertion")
+		}
+		assertedType := tuple.At(0).Type()
+		assertedID, ok := goNativeTypeID(assertedType)
+		if !ok {
+			return nil, fmt.Errorf("expression.unsupported_type_assertion_target")
+		}
+		receiver, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+		if err != nil {
+			return nil, err
+		}
+		booleanID := stableID("execution", "type", "bool")
+		productTypes := []string{assertedID, booleanID}
+		productID := stableID("execution", "type", "product", assertedID, booleanID)
+		spelling, _ := goNativeTypeSpelling(assertedType)
+		return &goExpression{
+			kind: goNativeInvocation, arguments: []*goExpression{receiver}, nativeLanguage: "go",
+			nativeTarget: "builtin.type_assert_comma_ok[" + spelling + "]",
+			nativeSignature: types.TypeString(tuple, func(pkg *types.Package) string {
+				if pkg == nil {
+					return ""
+				}
+				return pkg.Path()
+			}),
+			nativeResultType: productID, nativeResultTypes: productTypes,
+			nativeTypes: map[string]string{assertedID: spelling},
+		}, nil
 	case *ast.CallExpr:
 		if function, ok := ast.Unparen(expression.Fun).(*ast.FuncLit); ok {
 			if match, valid := structuralTaggedMatchCall(function, expression, signature, info, locals, functions, records, mutableLocals); valid {
@@ -1844,7 +1877,8 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 					nativeTypes = map[string]string{nativeID: spelling}
 				}
 			}
-			if functions[nil] != "" && ownerPath != "" && goTypeOwnedOutsidePackage(receiverType, ownerPath) && resultOK {
+			_, receiverNative := goNativeTypeID(receiverType)
+			if functions[nil] != "" && ownerPath != "" && receiverNative && resultOK {
 				receiver, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
 				if err != nil {
 					return nil, err

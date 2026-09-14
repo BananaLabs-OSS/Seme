@@ -437,6 +437,62 @@ func Choose(outer bool, inner bool, value string) string {
 	}
 }
 
+func TestIncrementalSessionRetainsCommaOKTypeAssertion(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v50/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/type-assert", Entry: "IsCloser", Files: map[string]string{
+		"assert.go": `package typeassert
+import "io"
+func IsCloser(value any) bool {
+	_, ok := value.(io.Closer)
+	return ok
+}
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("comma-ok type assertion rejected: %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "6275696c74696e2e747970655f6173736572745f636f6d6d615f6f6b") {
+		t.Fatal("comma-ok type assertion target omitted")
+	}
+}
+
+func TestIncrementalSessionRetainsFieldsOnNativeApplicationReceiver(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v50/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-receiver", Entry: "IsCloser", Files: map[string]string{
+		"holder.go": `package nativereceiver
+import "io"
+type Holder struct { Next *Holder; Value any }
+func (holder *Holder) IsCloser() bool {
+	_, ok := holder.Value.(io.Closer)
+	return ok
+}
+func IsCloser(holder *Holder) bool { return holder.IsCloser() }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native application receiver field rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a071", "0000000000000000000000000000a072"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native application receiver field omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {

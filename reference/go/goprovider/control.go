@@ -635,7 +635,8 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			// once, then project each Go binding from it in source order.
 			if statement.Tok == token.DEFINE && len(statement.Lhs) > 1 && len(statement.Rhs) == 1 {
 				_, callOK := ast.Unparen(statement.Rhs[0]).(*ast.CallExpr)
-				if tuple, ok := types.Unalias(info.TypeOf(statement.Rhs[0])).(*types.Tuple); callOK && ok && tuple.Len() == len(statement.Lhs) {
+				_, assertionOK := ast.Unparen(statement.Rhs[0]).(*ast.TypeAssertExpr)
+				if tuple, ok := types.Unalias(info.TypeOf(statement.Rhs[0])).(*types.Tuple); (callOK || assertionOK) && ok && tuple.Len() == len(statement.Lhs) {
 					value, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
 					if err != nil {
 						return nil, err
@@ -1078,8 +1079,9 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 	}
 	if len(assignment.Lhs) > 1 {
 		_, callOK := ast.Unparen(assignment.Rhs[0]).(*ast.CallExpr)
+		_, assertionOK := ast.Unparen(assignment.Rhs[0]).(*ast.TypeAssertExpr)
 		tuple, tupleOK := types.Unalias(info.TypeOf(assignment.Rhs[0])).(*types.Tuple)
-		if !callOK || !tupleOK || tuple.Len() != len(assignment.Lhs) {
+		if !callOK && !assertionOK || !tupleOK || tuple.Len() != len(assignment.Lhs) {
 			return nil, nil, nil, fmt.Errorf("control.if_init_shape")
 		}
 		value, err := analyzeGoExpressionWithProgram(assignment.Rhs[0], signature, info, locals, functions, records, mutable)
