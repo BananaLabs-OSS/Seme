@@ -832,6 +832,10 @@ Run `./scripts/check-execution-v79.sh`.
 guards and their Go initializer declarations one shared lexical scope. Run
 `./scripts/check-execution-v80.sh`.
 
+[`Core Execution v81`](spec/core-execution-v81.md) preserves block-scoped type
+declarations without hoisting their identities into package scope. Run
+`./scripts/check-execution-v81.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

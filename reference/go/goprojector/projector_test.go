@@ -801,3 +801,35 @@ func TestRejectsUnsupportedCanonicalExpression(t *testing.T) {
 		t.Fatalf("unsupported semantic expression accepted: %v", err)
 	}
 }
+
+func TestProjectsScopedRecordTypeInsideFunction(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v81/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := `package scoped
+func Read(value int64) int64 {
+	type local struct { Value int64 }
+	item := local{Value: value}
+	return item.Value
+}
+`
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/scoped", Entry: "Read", Files: map[string]string{"scoped.go": source}})
+	if !first.Valid {
+		t.Fatal(first.Diagnostics)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	functionAt := strings.Index(string(projected), "func Read")
+	typeAt := strings.Index(string(projected), "type local struct")
+	if functionAt < 0 || typeAt < functionAt {
+		t.Fatalf("local type was hoisted or lost:\n%s", projected)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) { if Read(9) != 9 { t.Fatal(Read(9)) } }`)
+}

@@ -4,6 +4,14 @@ import test from "node:test";
 import { liftLua } from "./lua-provider.mjs";
 import { projectLua } from "./lua-projector.mjs";
 
+const scopedTypeProgram = fs.readFileSync(new URL("../../fixtures/go-execution-v81/program.g1", import.meta.url), "utf8");
+
+test("projects scoped semantic types through an explicit Lua adapter", () => {
+  const projected = projectLua(scopedTypeProgram);
+  assert.match(projected, /Seme\.scoped_type\(/);
+  assert.doesNotMatch(projected, /---@class local/);
+});
+
 const moduleG1 = fs.readFileSync(new URL("../../modules/execution/v30/module.g1", import.meta.url), "utf8");
 const moduleV31G1 = fs.readFileSync(new URL("../../modules/execution/v31/module.g1", import.meta.url), "utf8");
 const moduleV33G1 = fs.readFileSync(new URL("../../modules/execution/v33/module.g1", import.meta.url), "utf8");

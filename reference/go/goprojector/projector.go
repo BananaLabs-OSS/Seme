@@ -92,6 +92,7 @@ const (
 	sNativeSwitch        = "0000000000000000000000000000a078"
 	sNativeRangeBinding  = "0000000000000000000000000000a07b"
 	sNativeRange         = "0000000000000000000000000000a07c"
+	sScopedType          = "0000000000000000000000000000a081"
 	sNativeSlice         = "0000000000000000000000000000a07d"
 	sNativeDereference   = "0000000000000000000000000000a07e"
 	sNativeBinary        = "0000000000000000000000000000a07f"
@@ -274,7 +275,21 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 	if err != nil {
 		return nil, err
 	}
+	scopedRecords := map[string]bool{}
+	for _, candidate := range graph {
+		if candidate.schema != sScopedType {
+			continue
+		}
+		id, e := ref(candidate, "000000000000000000000000000a0810")
+		if e != nil || records[id].name == "" {
+			return nil, fmt.Errorf("go_projection.invalid_scoped_type")
+		}
+		scopedRecords[id] = true
+	}
 	for _, id := range sortedRecordIDs(records) {
+		if scopedRecords[id] {
+			continue
+		}
 		r := records[id]
 		fmt.Fprintf(&out, "//seme:id %s\n", id)
 		fmt.Fprintf(&out, "type %s struct {\n", r.name)
@@ -706,6 +721,24 @@ func projectBlock(id string, c context) (string, error) {
 			return "", fmt.Errorf("go_projection.unsupported_statement")
 		}
 		switch statement.schema {
+		case sScopedType:
+			typeID, err := ref(statement, "000000000000000000000000000a0810")
+			if err != nil {
+				return "", err
+			}
+			records, err := collectRecords(c.graph)
+			if err != nil {
+				return "", err
+			}
+			r, ok := records[typeID]
+			if !ok {
+				return "", fmt.Errorf("go_projection.invalid_scoped_type")
+			}
+			lines = append(lines, "\ttype "+r.name+" struct {")
+			for _, field := range r.fields {
+				lines = append(lines, "\t\t"+field.name+" "+field.typ)
+			}
+			lines = append(lines, "\t}")
 		case sBindLocal:
 			if line, consumed, ok, err := projectProductBinding(index, statements, c); err != nil {
 				return "", err

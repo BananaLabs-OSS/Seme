@@ -50,6 +50,7 @@ const schema = {
   nativeDereference: "0000000000000000000000000000a07e",
   nativeBinary: "0000000000000000000000000000a07f",
   nativeIndexAssignment: "0000000000000000000000000000a080",
+  scopedTypeDeclaration: "0000000000000000000000000000a081",
   nativeInvocation: "0000000000000000000000000000a06d",
   nativeType: "0000000000000000000000000000a071",
   when: "000000000000000000000000000090f0",
@@ -143,6 +144,7 @@ export function projectJavaScript(canonicalG1) {
     });
     records.set(entity.id, { id: entity.id, name, fields });
   }
+	const scopedRecordIDs = new Set([...graph.values()].filter((entity) => entity.schema === schema.scopedTypeDeclaration).map((entity) => reference(field(entity, 0xa0810))));
   const names = new Map();
   for (const [id, fn] of functions) {
     const name = text(field(fn, 0x9110));
@@ -151,8 +153,8 @@ export function projectJavaScript(canonicalG1) {
   }
   const program = { graph, functions, names, records, methods, interfaces };
   const interfaceDocs = [...interfaces.values()].map((interface_) => ["/**", ` * @interface ${interface_.name}`, ...interface_.requirements.flatMap((requirement) => [` * @method ${requirement.name}`, ...requirement.parameters.map((type, index) => ` * @param {${type}} argument${index}`), ` * @returns {${requirement.result}}`]), " */"].join("\n")).join("\n\n");
-  const typedefs = [...records.values()].map((record) => ["/**", ` * @typedef {Object} ${record.name}`, ...record.fields.map((item) => ` * @property {${item.type}} ${item.name}`), " */"].join("\n")).join("\n\n");
-  const classes = [...records.values()].map((record) => projectClass(record, program)).filter(Boolean).join("\n");
+  const typedefs = [...records.values()].filter((record) => !scopedRecordIDs.has(record.id)).map((record) => ["/**", ` * @typedef {Object} ${record.name}`, ...record.fields.map((item) => ` * @property {${item.type}} ${item.name}`), " */"].join("\n")).join("\n\n");
+  const classes = [...records.values()].filter((record) => !scopedRecordIDs.has(record.id)).map((record) => projectClass(record, program)).filter(Boolean).join("\n");
   const body = functionIDs.map((id) => projectFunction(id, functions.get(id), id === entryID, program)).join("\n");
   return [interfaceDocs, typedefs, classes, body].filter(Boolean).join("\n\n");
 }
@@ -215,6 +217,13 @@ function projectBlock(id, context, indent) {
       continue;
     }
     const statement = required(context.graph, statements[index]);
+	if (statement.schema === schema.scopedTypeDeclaration) {
+	  const typeID = reference(field(statement, 0xa0810));
+	  const record = context.records.get(typeID);
+	  if (!record) fail("javascript_projection.invalid_scoped_type");
+	  lines.push(`${indent}Seme.scopedType(${JSON.stringify(typeID)}, ${JSON.stringify(record.name)}, ${JSON.stringify(record.fields.map((item) => item.name))});`);
+	  continue;
+	}
     if (statement.schema === schema.bindLocal || statement.schema === schema.declarePlace) {
 	  const mutable = statement.schema === schema.declarePlace;
 	  const binding = required(context.graph, reference(field(statement, mutable ? 0x9e10 : 0x9d10)), mutable ? schema.mutablePlace : schema.localBinding);
