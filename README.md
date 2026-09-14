@@ -828,6 +828,10 @@ existing mutable places. Run `./scripts/check-execution-v78.sh`.
 inside loops and other nonterminal blocks while retaining ordinary fallthrough.
 Run `./scripts/check-execution-v79.sh`.
 
+[`Core Execution v80`](spec/core-execution-v80.md) gives nonterminal returning
+guards and their Go initializer declarations one shared lexical scope. Run
+`./scripts/check-execution-v80.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
