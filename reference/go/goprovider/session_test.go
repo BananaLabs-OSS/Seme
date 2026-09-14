@@ -97,6 +97,89 @@ func TestIncrementalSessionRetainsTypedNativeGoInvocation(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsPrimitiveSlicesWithoutChangingI64Identity(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v39/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/slices", Entry: "First", Files: map[string]string{
+		"slices.go": `package slices
+func First(values []string) string { return values[0] }
+func Grow(values []string, value string) []string { return append(values, value) }
+func Flags() []bool { return []bool{true, false} }
+func Numbers() []int64 { return []int64{1} }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("primitive slices were not lifted: %#v", result)
+	}
+	i64SliceID := stableID("execution", "type", "slice", "i64")
+	stringSliceID := stableID("execution", "type", "slice", "string")
+	boolSliceID := stableID("execution", "type", "slice", "bool")
+	for _, id := range []string{i64SliceID, stringSliceID, boolSliceID} {
+		if !strings.Contains(result.CanonicalG1, id) {
+			t.Fatalf("slice type %s missing: %q", id, result.CanonicalG1)
+		}
+	}
+	if i64SliceID != "80dec2d5a0fbf1cccfa189e452f0d024" {
+		t.Fatalf("established i64 slice identity changed: %s", i64SliceID)
+	}
+}
+
+func TestIncrementalSessionRetainsTypedNativeValueMethod(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v40/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/nativemethod", Entry: "Show", Files: map[string]string{
+		"method.go": "package nativemethod\nimport \"time\"\nfunc Show(value time.Duration) string { return value.String() }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("typed native value method was not retained: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a06e", "74696d652e2874696d652e4475726174696f6e292e537472696e67"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native method missing %q: %q", want, result.CanonicalG1)
+		}
+	}
+}
+
+func TestIncrementalSessionLiftsScopedIfInitializer(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v40/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/ifinit", Entry: "Before", Files: map[string]string{
+		"if.go": `package ifinit
+import "strings"
+func Before(value string) string {
+	if clean := strings.TrimSpace(value); clean == value { return clean }
+	return value
+}
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("scoped if initializer was not lifted: %#v", result)
+	}
+	for _, want := range []string{"000000000000000000000000000090d0", "000000000000000000000000000090c0", "737472696e67732e5472696d5370616365"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("scoped if initializer missing %q: %q", want, result.CanonicalG1)
+		}
+	}
+}
+
 func TestIdentityBindingPreservesCanonicalFunctionAcrossProjectRename(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
 	if err != nil {

@@ -707,7 +707,8 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			_, _, isResult := goResultTypes(object.Type())
 			functionSignature, isFunction := goFunctionSignature(object.Type())
 			isFunction = isFunction && isUnaryI64Function(functionSignature)
-			if !isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type()) && !isI64Slice(object.Type()) && !isI64Map(object.Type()) && !isResult && !isFunction && !(isRecord && recordSupported) {
+			_, isPrimitiveSlice := goPrimitiveSliceElement(object.Type())
+			if !isInt64(object.Type()) && !isBool(object.Type()) && !isPureString(object.Type()) && !isPrimitiveSlice && !isI64Map(object.Type()) && !isResult && !isFunction && !(isRecord && recordSupported) {
 				return nil, fmt.Errorf("control.local_binding_type")
 			}
 			initializer, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
@@ -734,8 +735,9 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			if isRecord && recordSupported {
 				localType = record.id
 			}
-			if isI64Slice(object.Type()) {
-				localType = stableID("execution", "type", "slice", "i64")
+			if element, ok := goPrimitiveSliceElement(object.Type()); ok {
+				tag, _ := goPrimitiveTypeTag(element)
+				localType = stableID("execution", "type", "slice", tag)
 			}
 			if isI64Map(object.Type()) {
 				localType = stableID("execution", "type", "map", "i64", "i64")
@@ -762,35 +764,46 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			}
 			block.statements = append(block.statements, &goStatement{returned: expression})
 		case *ast.IfStmt:
-			if statement.Init == nil && statement.Else == nil && !blockContainsReturn(statement.Body.List) {
-				condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
+			ifLocals, ifMutable := locals, mutable
+			var initializer []*goStatement
+			if statement.Else == nil && !blockContainsReturn(statement.Body.List) || statement.Else != nil && (index < len(statements)-1 || !requireReturn) {
+				var err error
+				ifLocals, ifMutable, initializer, err = analyzeGoIfInitializer(statement.Init, signature, info, locals, functions, records, mutable, next)
 				if err != nil {
 					return nil, err
 				}
-				body, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, functions, records, mutable, next, false)
+			}
+			if statement.Else == nil && !blockContainsReturn(statement.Body.List) {
+				condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, ifLocals, functions, records, ifMutable)
 				if err != nil {
 					return nil, err
 				}
+				body, err := analyzeGoBlockScoped(statement.Body.List, signature, info, ifLocals, functions, records, ifMutable, next, false)
+				if err != nil {
+					return nil, err
+				}
+				block.statements = append(block.statements, initializer...)
 				block.statements = append(block.statements, &goStatement{condition: condition, whenBlock: body})
 				continue
 			}
-			if statement.Init == nil && statement.Else != nil && (index < len(statements)-1 || !requireReturn) {
+			if statement.Else != nil && (index < len(statements)-1 || !requireReturn) {
 				alternate, ok := statement.Else.(*ast.BlockStmt)
 				if !ok {
 					return nil, fmt.Errorf("control.else_unsupported")
 				}
-				condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
+				condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, ifLocals, functions, records, ifMutable)
 				if err != nil {
 					return nil, err
 				}
-				thenBlock, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, functions, records, mutable, next, false)
+				thenBlock, err := analyzeGoBlockScoped(statement.Body.List, signature, info, ifLocals, functions, records, ifMutable, next, false)
 				if err != nil {
 					return nil, err
 				}
-				elseBlock, err := analyzeGoBlockScoped(alternate.List, signature, info, locals, functions, records, mutable, next, false)
+				elseBlock, err := analyzeGoBlockScoped(alternate.List, signature, info, ifLocals, functions, records, ifMutable, next, false)
 				if err != nil {
 					return nil, err
 				}
+				block.statements = append(block.statements, initializer...)
 				block.statements = append(block.statements, &goStatement{condition: condition, thenBlock: thenBlock, elseBlock: elseBlock})
 				continue
 			}
@@ -903,8 +916,9 @@ func goLocalSemanticType(t types.Type, records map[*types.Named]goRecordInfo) (s
 	if isPureString(t) {
 		return "string", true
 	}
-	if isI64Slice(t) {
-		return stableID("execution", "type", "slice", "i64"), true
+	if element, ok := goPrimitiveSliceElement(t); ok {
+		tag, _ := goPrimitiveTypeTag(element)
+		return stableID("execution", "type", "slice", tag), true
 	}
 	if isI64Map(t) {
 		return stableID("execution", "type", "map", "i64", "i64"), true
@@ -945,20 +959,56 @@ func cloneLocalScope(source map[types.Object]int) map[types.Object]int {
 	return result
 }
 
+func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool, next *int) (map[types.Object]int, map[types.Object]bool, []*goStatement, error) {
+	if initializer == nil {
+		return locals, mutable, nil, nil
+	}
+	assignment, ok := initializer.(*ast.AssignStmt)
+	if !ok || assignment.Tok != token.DEFINE || len(assignment.Lhs) != 1 || len(assignment.Rhs) != 1 {
+		return nil, nil, nil, fmt.Errorf("control.if_init_shape")
+	}
+	name, ok := assignment.Lhs[0].(*ast.Ident)
+	if !ok || name.Name == "_" {
+		return nil, nil, nil, fmt.Errorf("control.if_init_binding")
+	}
+	object := info.Defs[name]
+	if object == nil {
+		return nil, nil, nil, fmt.Errorf("control.if_init_binding")
+	}
+	localType, ok := goLocalSemanticType(object.Type(), records)
+	if !ok {
+		return nil, nil, nil, fmt.Errorf("control.if_init_type")
+	}
+	value, err := analyzeGoExpressionWithProgram(assignment.Rhs[0], signature, info, locals, functions, records, mutable)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	scopedLocals := cloneLocalScope(locals)
+	scopedMutable := make(map[types.Object]bool, len(mutable))
+	for object, value := range mutable {
+		scopedMutable[object] = value
+	}
+	local := *next
+	*next++
+	scopedLocals[object] = local
+	return scopedLocals, scopedMutable, []*goStatement{{localName: name.Name, localType: localType, local: local, initializer: value, mutable: scopedMutable[object]}}, nil
+}
+
 func analyzeTerminalIf(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info) (*goBlock, error) {
 	next := 0
 	return analyzeTerminalIfScoped(statement, following, signature, info, map[types.Object]int{}, nil, nil, nil, &next)
 }
 
 func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool, next *int) (*goBlock, error) {
-	if statement.Init != nil {
-		return nil, fmt.Errorf("control.if_init_unsupported")
-	}
-	condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
+	ifLocals, ifMutable, initializer, err := analyzeGoIfInitializer(statement.Init, signature, info, locals, functions, records, mutable, next)
 	if err != nil {
 		return nil, err
 	}
-	thenBlock, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, functions, records, mutable, next, true)
+	condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, ifLocals, functions, records, ifMutable)
+	if err != nil {
+		return nil, err
+	}
+	thenBlock, err := analyzeGoBlockScoped(statement.Body.List, signature, info, ifLocals, functions, records, ifMutable, next, true)
 	if err != nil {
 		return nil, err
 	}
@@ -974,9 +1024,9 @@ func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signat
 		}
 		switch alternate := statement.Else.(type) {
 		case *ast.BlockStmt:
-			elseBlock, err = analyzeGoBlockScoped(alternate.List, signature, info, locals, functions, records, mutable, next, true)
+			elseBlock, err = analyzeGoBlockScoped(alternate.List, signature, info, ifLocals, functions, records, ifMutable, next, true)
 		case *ast.IfStmt:
-			elseBlock, err = analyzeTerminalIfScoped(alternate, nil, signature, info, locals, functions, records, mutable, next)
+			elseBlock, err = analyzeTerminalIfScoped(alternate, nil, signature, info, ifLocals, functions, records, ifMutable, next)
 		default:
 			err = fmt.Errorf("control.else_unsupported")
 		}
@@ -984,7 +1034,7 @@ func analyzeTerminalIfScoped(statement *ast.IfStmt, following []ast.Stmt, signat
 	if err != nil {
 		return nil, err
 	}
-	return &goBlock{statements: []*goStatement{{condition: condition, thenBlock: thenBlock, elseBlock: elseBlock}}}, nil
+	return &goBlock{statements: append(initializer, &goStatement{condition: condition, thenBlock: thenBlock, elseBlock: elseBlock})}, nil
 }
 
 func emitCanonicalBlock(block *goBlock, owner, path string, parameterIDs []string, integerTypeID string, instances *[]graphEntity) (string, error) {

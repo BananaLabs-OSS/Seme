@@ -83,6 +83,7 @@ const (
 	goBytesEqual
 	goUnitValue
 	goNativeInvocation
+	goNativeMethodInvocation
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -121,6 +122,7 @@ type goExpression struct {
 	nativeTarget     string
 	nativeSignature  string
 	nativeResultType string
+	elementTypeID    string
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -195,6 +197,28 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a06d", []graphField{
 				bytesField(0xa06d0, expression.nativeLanguage), bytesField(0xa06d1, expression.nativeTarget),
 				bytesField(0xa06d2, expression.nativeSignature), refsField(0xa06d3, arguments), refField(0xa06d4, expression.nativeResultType),
+			})}
+			return id, nil
+		case goNativeMethodInvocation:
+			if expression.nativeLanguage == "" || expression.nativeTarget == "" || expression.nativeSignature == "" || expression.nativeResultType == "" || expression.left == nil {
+				return "", fmt.Errorf("expression.native_method_invocation_incomplete")
+			}
+			receiver, err := emit(expression.left, path+".receiver")
+			if err != nil {
+				return "", err
+			}
+			arguments := make([]string, len(expression.arguments))
+			for index, argument := range expression.arguments {
+				id, err := emit(argument, path+".argument."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+				arguments[index] = id
+			}
+			id := expressionNodeID(owner, path, "native-method-invocation")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a06e", []graphField{
+				bytesField(0xa06e0, expression.nativeLanguage), bytesField(0xa06e1, expression.nativeTarget), bytesField(0xa06e2, expression.nativeSignature),
+				refField(0xa06e3, receiver), refsField(0xa06e4, arguments), refField(0xa06e5, expression.nativeResultType),
 			})}
 			return id, nil
 		case goRecordConstruct:
@@ -324,7 +348,11 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			emitted[id] = graphEntity{id, entity(id, "000000000000000000000000000090fc", []graphField{refField(0x9fc0, collection), refField(0x9fc1, index), refField(0x9fc2, value)})}
 			return id, nil
 		case goSliceConstruct:
-			emitted[expression.typeID] = graphEntity{expression.typeID, entity(expression.typeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, integerID)})}
+			elementTypeID := expression.elementTypeID
+			if elementTypeID == "" {
+				elementTypeID = integerID
+			}
+			emitted[expression.typeID] = graphEntity{expression.typeID, entity(expression.typeID, "000000000000000000000000000090f8", []graphField{refField(0x9f80, elementTypeID)})}
 			values := make([]string, len(expression.values))
 			for index, value := range expression.values {
 				var err error
@@ -1072,7 +1100,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		if selector, ok := ast.Unparen(expression.Fun).(*ast.SelectorExpr); ok {
 			if selection := info.Selections[selector]; selection != nil && selection.Kind() == types.MethodVal {
 				methodID, exists := functions[selection.Obj()]
-				if !exists || expression.Ellipsis.IsValid() {
+				if !exists {
+					if native, err := analyzeNativeGoMethodInvocation(selection, selector.X, expression.Args, expression.Ellipsis.IsValid(), signature, info, locals, functions, records, mutableLocals); err == nil {
+						return native, nil
+					}
+					return nil, fmt.Errorf("expression.unsupported_method_call")
+				}
+				if expression.Ellipsis.IsValid() {
 					return nil, fmt.Errorf("expression.unsupported_method_call")
 				}
 				receiver, err := analyzeGoExpressionWithProgram(selector.X, signature, info, locals, functions, records, mutableLocals)
@@ -1173,7 +1207,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				}
 			}
 		}
-		if ok && identifier.Name == "append" && info.Uses[identifier] == types.Universe.Lookup("append") && len(expression.Args) == 2 && !expression.Ellipsis.IsValid() && isI64Slice(info.TypeOf(expression.Args[0])) && isInt64(info.TypeOf(expression.Args[1])) {
+		if ok && identifier.Name == "append" && info.Uses[identifier] == types.Universe.Lookup("append") && len(expression.Args) == 2 && !expression.Ellipsis.IsValid() && isPrimitiveSlice(info.TypeOf(expression.Args[0])) && types.AssignableTo(info.TypeOf(expression.Args[1]), goUnderlying(info, expression.Args[0]).(*types.Slice).Elem()) {
 			collection, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
 				return nil, err
@@ -1188,7 +1222,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			underlying := goUnderlying(info, expression.Args[0])
 			array, arrayOK := underlying.(*types.Array)
 			slice, sliceOK := underlying.(*types.Slice)
-			if (!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !isInt64(slice.Elem())) {
+			if (!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !(isInt64(slice.Elem()) || isBool(slice.Elem()) || isPureString(slice.Elem()))) {
 				return nil, fmt.Errorf("expression.unsupported_collection_length")
 			}
 			collection, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
@@ -1197,10 +1231,10 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return &goExpression{kind: goCollectionLength, left: collection}, nil
 		}
-		if selector, selectorOK := ast.Unparen(expression.Fun).(*ast.SelectorExpr); selectorOK && isSlicesFunction(info, selector, "Clone") && len(expression.Args) == 1 && !expression.Ellipsis.IsValid() && isI64Slice(info.TypeOf(expression.Args[0])) {
+		if selector, selectorOK := ast.Unparen(expression.Fun).(*ast.SelectorExpr); selectorOK && isSlicesFunction(info, selector, "Clone") && len(expression.Args) == 1 && !expression.Ellipsis.IsValid() && isPrimitiveSlice(info.TypeOf(expression.Args[0])) {
 			return analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
 		}
-		if selector, selectorOK := ast.Unparen(expression.Fun).(*ast.SelectorExpr); selectorOK && isSlicesFunction(info, selector, "Replace") && len(expression.Args) == 4 && !expression.Ellipsis.IsValid() && isI64Slice(info.TypeOf(expression.Args[0])) && isInt64(info.TypeOf(expression.Args[3])) {
+		if selector, selectorOK := ast.Unparen(expression.Fun).(*ast.SelectorExpr); selectorOK && isSlicesFunction(info, selector, "Replace") && len(expression.Args) == 4 && !expression.Ellipsis.IsValid() && isPrimitiveSlice(info.TypeOf(expression.Args[0])) && types.AssignableTo(info.TypeOf(expression.Args[3]), goUnderlying(info, expression.Args[0]).(*types.Slice).Elem()) {
 			clone, cloneOK := ast.Unparen(expression.Args[0]).(*ast.CallExpr)
 			cloneSelector, cloneSelectorOK := func() (*ast.SelectorExpr, bool) {
 				if !cloneOK {
@@ -1244,7 +1278,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return &goExpression{kind: goCollectionUpdate, left: collection, initial: index, right: value}, nil
 		}
-		if selector, selectorOK := ast.Unparen(expression.Fun).(*ast.SelectorExpr); selectorOK && isSlicesFunction(info, selector, "Delete") && len(expression.Args) == 3 && !expression.Ellipsis.IsValid() && isI64Slice(info.TypeOf(expression.Args[0])) {
+		if selector, selectorOK := ast.Unparen(expression.Fun).(*ast.SelectorExpr); selectorOK && isSlicesFunction(info, selector, "Delete") && len(expression.Args) == 3 && !expression.Ellipsis.IsValid() && isPrimitiveSlice(info.TypeOf(expression.Args[0])) {
 			clone, cloneOK := ast.Unparen(expression.Args[0]).(*ast.CallExpr)
 			cloneSelector, cloneSelectorOK := func() (*ast.SelectorExpr, bool) {
 				if !cloneOK {
@@ -1485,7 +1519,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			length := uint64(array.Len())
 			return &goExpression{kind: goFixedArrayConstruct, arrayType: stableID("execution", "type", "fixed-array", "i64", strconv.FormatUint(length, 10)), arrayLen: length, values: values}, nil
 		}
-		if slice, ok := goUnderlying(info, expression).(*types.Slice); ok && isInt64(slice.Elem()) {
+		if slice, ok := goUnderlying(info, expression).(*types.Slice); ok && (isInt64(slice.Elem()) || isBool(slice.Elem()) || isPureString(slice.Elem())) {
 			if len(expression.Elts) > 512 {
 				return nil, fmt.Errorf("expression.slice_construct_bounds")
 			}
@@ -1500,7 +1534,9 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				}
 				values[index] = value
 			}
-			return &goExpression{kind: goSliceConstruct, typeID: stableID("execution", "type", "slice", "i64"), values: values}, nil
+			elementTypeID := goSemanticTypeIdentity(slice.Elem())
+			tag, _ := goPrimitiveTypeTag(slice.Elem())
+			return &goExpression{kind: goSliceConstruct, typeID: stableID("execution", "type", "slice", tag), elementTypeID: elementTypeID, values: values}, nil
 		}
 		if isI64Map(info.TypeOf(expression)) {
 			if len(expression.Elts) != 0 {
@@ -1676,7 +1712,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		slice, sliceOK := underlying.(*types.Slice)
 		mapping, mapOK := underlying.(*types.Map)
 		indexBasic, indexOK := goUnderlying(info, expression.Index).(*types.Basic)
-		if ((!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !isInt64(slice.Elem())) && (!mapOK || !isInt64(mapping.Key()) || !isInt64(mapping.Elem()))) || !indexOK || (indexBasic.Kind() != types.Int && indexBasic.Kind() != types.Int64) {
+		if ((!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !(isInt64(slice.Elem()) || isBool(slice.Elem()) || isPureString(slice.Elem()))) && (!mapOK || !isInt64(mapping.Key()) || !isInt64(mapping.Elem()))) || !indexOK || (indexBasic.Kind() != types.Int && indexBasic.Kind() != types.Int64) {
 			return nil, fmt.Errorf("expression.unsupported_index_read")
 		}
 		collection, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
@@ -1710,15 +1746,8 @@ func analyzeNativeGoInvocation(function *types.Func, argumentsAST []ast.Expr, el
 	if !ok || callSignature.Results().Len() != 1 || callSignature.Variadic() {
 		return nil, fmt.Errorf("expression.native_call_signature")
 	}
-	resultType := ""
-	switch result := callSignature.Results().At(0).Type(); {
-	case isInt64(result):
-		resultType = stableID("execution", "type", "i64")
-	case isBool(result):
-		resultType = stableID("execution", "type", "bool")
-	case isPureString(result):
-		resultType = stableID("execution", "type", "string")
-	default:
+	resultType, ok := nativeGoResultTypeID(callSignature)
+	if !ok {
 		return nil, fmt.Errorf("expression.native_call_result_type")
 	}
 	arguments := make([]*goExpression, len(argumentsAST))
@@ -1731,6 +1760,71 @@ func analyzeNativeGoInvocation(function *types.Func, argumentsAST []ast.Expr, el
 	}
 	target := function.Pkg().Path() + "." + function.Name()
 	return &goExpression{kind: goNativeInvocation, arguments: arguments, nativeLanguage: "go", nativeTarget: target, nativeSignature: types.TypeString(callSignature, func(pkg *types.Package) string {
+		if pkg == nil {
+			return ""
+		}
+		return pkg.Path()
+	}), nativeResultType: resultType}, nil
+}
+
+func nativeGoResultTypeID(signature *types.Signature) (string, bool) {
+	if signature == nil || signature.Results().Len() != 1 {
+		return "", false
+	}
+	result := signature.Results().At(0).Type()
+	switch {
+	case isInt64(result):
+		return stableID("execution", "type", "i64"), true
+	case isBool(result):
+		return stableID("execution", "type", "bool"), true
+	case isPureString(result):
+		return stableID("execution", "type", "string"), true
+	default:
+		return "", false
+	}
+}
+
+func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast.Expr, argumentsAST []ast.Expr, ellipsis bool, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
+	if selection == nil || selection.Kind() != types.MethodVal || ellipsis {
+		return nil, fmt.Errorf("expression.native_method_target")
+	}
+	function, ok := selection.Obj().(*types.Func)
+	if !ok || function.Pkg() == nil {
+		return nil, fmt.Errorf("expression.native_method_target")
+	}
+	declared, ok := function.Type().(*types.Signature)
+	if !ok || declared.Recv() == nil || declared.Variadic() {
+		return nil, fmt.Errorf("expression.native_method_signature")
+	}
+	if _, pointer := types.Unalias(declared.Recv().Type()).(*types.Pointer); pointer {
+		return nil, fmt.Errorf("expression.native_method_pointer_receiver")
+	}
+	if _, dynamic := types.Unalias(selection.Recv()).Underlying().(*types.Interface); dynamic {
+		return nil, fmt.Errorf("expression.native_method_dynamic_receiver")
+	}
+	resultType, ok := nativeGoResultTypeID(declared)
+	if !ok {
+		return nil, fmt.Errorf("expression.native_method_result_type")
+	}
+	receiver, err := analyzeGoExpressionWithProgram(receiverAST, signature, info, locals, functions, records, mutableLocals)
+	if err != nil {
+		return nil, err
+	}
+	arguments := make([]*goExpression, len(argumentsAST))
+	for index, argument := range argumentsAST {
+		arguments[index], err = analyzeGoExpressionWithProgram(argument, signature, info, locals, functions, records, mutableLocals)
+		if err != nil {
+			return nil, err
+		}
+	}
+	receiverType := types.TypeString(declared.Recv().Type(), func(pkg *types.Package) string {
+		if pkg == nil {
+			return ""
+		}
+		return pkg.Path()
+	})
+	target := function.Pkg().Path() + ".(" + receiverType + ")." + function.Name()
+	return &goExpression{kind: goNativeMethodInvocation, left: receiver, arguments: arguments, nativeLanguage: "go", nativeTarget: target, nativeSignature: types.TypeString(declared, func(pkg *types.Package) string {
 		if pkg == nil {
 			return ""
 		}
@@ -1754,8 +1848,11 @@ func zeroGoExpression(value types.Type, records map[*types.Named]goRecordInfo, v
 		return &goExpression{kind: goStringLiteral}, nil
 	case isBytes(value):
 		return &goExpression{kind: goBytesLiteral}, nil
-	case isI64Slice(value):
-		return &goExpression{kind: goSliceConstruct, typeID: stableID("execution", "type", "slice", "i64")}, nil
+	case isPrimitiveSlice(value):
+		element, _ := goPrimitiveSliceElement(value)
+		tag, _ := goPrimitiveTypeTag(element)
+		elementTypeID := goSemanticTypeIdentity(element)
+		return &goExpression{kind: goSliceConstruct, typeID: stableID("execution", "type", "slice", tag), elementTypeID: elementTypeID}, nil
 	case isI64Map(value):
 		return &goExpression{kind: goEmptyMap, typeID: stableID("execution", "type", "map", "i64", "i64")}, nil
 	}

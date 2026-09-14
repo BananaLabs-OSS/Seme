@@ -414,8 +414,26 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(40); err == nil {
+	if _, err := Declarations(41); err == nil {
 		t.Fatal("unsupported version accepted")
+	}
+}
+
+func TestVersion40AddsTypedNativeMethodInvocation(t *testing.T) {
+	previous, err := Declarations(39)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(40)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa06e || current[len(previous)].Name != "NativeMethodInvocation" {
+		t.Fatalf("v40 declarations = %#v", current[len(previous):])
+	}
+	fields := current[len(previous)].Fields
+	if len(fields) != 6 || fields[3].Kind != 5 || fields[4].Card != 2 || fields[5].Kind != 5 {
+		t.Fatalf("NativeMethodInvocation fields = %#v", fields)
 	}
 }
 
