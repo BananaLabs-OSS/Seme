@@ -1991,7 +1991,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		selection := info.Selections[expression]
 		if selection == nil {
 			qualifier, qualified := ast.Unparen(expression.X).(*ast.Ident)
-			_, imported := info.Uses[qualifier].(*types.PkgName)
+			packageName, imported := info.Uses[qualifier].(*types.PkgName)
 			object, constantOK := info.Uses[expression.Sel].(*types.Const)
 			if qualified && imported && constantOK {
 				switch object.Val().Kind() {
@@ -2007,6 +2007,22 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 					return &goExpression{kind: goStringLiteral, text: constant.StringVal(object.Val())}, nil
 				default:
 					return nil, fmt.Errorf("expression.imported_constant_kind")
+				}
+			}
+			if goExecutionModuleVersion(functions) >= 91 && qualified && imported && functions[nil] == "native-default" {
+				if object, ok := info.Uses[expression.Sel].(*types.Var); ok {
+					resultTypeID, supported := goSupportedTypeID(object.Type(), stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+					nativeTypes := map[string]string(nil)
+					if !supported {
+						if nativeID, native := goNativeTypeID(object.Type()); native {
+							resultTypeID, supported = nativeID, true
+							spelling, _ := goNativeTypeSpelling(object.Type())
+							nativeTypes = map[string]string{nativeID: spelling}
+						}
+					}
+					if supported {
+						return &goExpression{kind: goNativeBindingRead, nativeLanguage: "go", nativeTarget: packageName.Imported().Path() + "." + object.Name(), nativeResultType: resultTypeID, nativeTypes: nativeTypes}, nil
+					}
 				}
 			}
 			return nil, fmt.Errorf("expression.unsupported_selector")

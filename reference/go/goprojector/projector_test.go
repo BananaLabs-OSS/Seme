@@ -271,6 +271,31 @@ func TestProjectsParallelFieldAssignmentWithGoOrdering(t *testing.T) {
 }`)
 }
 
+func TestProjectsImportedPackageBindingBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v91/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/package-binding", Entry: "Output", Files: map[string]string{
+		"output.go": "package sample\nimport \"os\"\nfunc Output() *os.File { return os.Stdout }\n",
+	}, ExternalImporter: importer.Default()})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "return os.Stdout") {
+		t.Fatalf("projection lacks imported package binding:\n%s", projected)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) { if Output() == nil { t.Fatal("stdout") } }`)
+}
+
 func TestProjectsMutableParameterThroughCanonicalPlace(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v64/module.g1")
 	if err != nil {
