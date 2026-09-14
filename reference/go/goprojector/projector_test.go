@@ -508,6 +508,28 @@ func TestProjectsNativeIndexAssignmentBackToGoSyntax(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { values:=map[string]int64{}; if Set(values,"x",7)!=7 { t.Fatal(values) } }`)
 }
 
+func TestProjectsCompoundAssignmentAsCanonicalMutation(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v75/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-compound", Entry: "Add", Files: map[string]string{
+		"compound.go": "package sample\nfunc Add(value int64) int64 { total := value; total += 2; return total }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("compound lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) { if Add(5)!=7 { t.Fatal(Add(5)) } }`)
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

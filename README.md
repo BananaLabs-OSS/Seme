@@ -807,6 +807,10 @@ views. Run `./scripts/check-execution-v73.sh`.
 assignment with exact Go and explicit JavaScript/Lua adapter views. Run
 `./scripts/check-execution-v74.sh`.
 
+[`Core Execution v75`](spec/core-execution-v75.md) recognizes all Go compound
+assignments during mutability analysis so existing typed updates compose
+correctly. Run `./scripts/check-execution-v75.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
