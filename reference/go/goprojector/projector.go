@@ -56,6 +56,9 @@ const (
 	sSliceRemove         = "0000000000000000000000000000a066"
 	sMapRemove           = "0000000000000000000000000000a067"
 	sNativeInvocation    = "0000000000000000000000000000a06d"
+	sUnitType            = "0000000000000000000000000000a06a"
+	sUnitValue           = "0000000000000000000000000000a06b"
+	sNativeType          = "0000000000000000000000000000a071"
 	sSliceConstruct      = "0000000000000000000000000000a068"
 	sBooleanNot          = "0000000000000000000000000000a069"
 	sBytes               = "00000000000000000000000000009041"
@@ -80,6 +83,7 @@ const (
 	sAssignPlace         = "000000000000000000000000000090e3"
 	sWhile               = "000000000000000000000000000090e4"
 	sNativeDefer         = "0000000000000000000000000000a075"
+	sNativeFieldAssign   = "0000000000000000000000000000a076"
 	sWhen                = "000000000000000000000000000090f0"
 	sIf                  = "000000000000000000000000000090c0"
 	sLessEqual           = "00000000000000000000000000009021"
@@ -440,7 +444,7 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 	}
 	formatted, err := format.Source([]byte(out.String()))
 	if err != nil {
-		return nil, fmt.Errorf("go_projection.format: %w", err)
+		return nil, fmt.Errorf("go_projection.format: %w\n%s", err, out.String())
 	}
 	return formatted, nil
 }
@@ -713,6 +717,31 @@ func projectBlock(id string, c context) (string, error) {
 				return "", err
 			}
 			lines = append(lines, "\tdefer "+invocation)
+		case sNativeFieldAssign:
+			if language, err := text(statement, "000000000000000000000000000a0760"); err != nil || language != "go" {
+				return "", fmt.Errorf("go_projection.native_field_assignment_language")
+			}
+			name, err := text(statement, "000000000000000000000000000a0761")
+			if err != nil || !identifier(name) {
+				return "", fmt.Errorf("go_projection.native_field_assignment_field")
+			}
+			receiverID, err := ref(statement, "000000000000000000000000000a0762")
+			if err != nil {
+				return "", err
+			}
+			valueID, err := ref(statement, "000000000000000000000000000a0763")
+			if err != nil {
+				return "", err
+			}
+			receiver, err := expr(receiverID, c)
+			if err != nil {
+				return "", err
+			}
+			value, err := expr(valueID, c)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\t"+receiver+"."+name+" = "+value)
 		case sIf:
 			conditionID, err := ref(statement, "00000000000000000000000000009c00")
 			if err != nil {
@@ -750,6 +779,10 @@ func projectBlock(id string, c context) (string, error) {
 			values, err := refs(statement, "00000000000000000000000000009810")
 			if err != nil || len(values) != 1 {
 				return "", fmt.Errorf("go_projection.return_arity")
+			}
+			if value, ok := c.graph[values[0]]; ok && value.schema == sUnitValue {
+				lines = append(lines, "\treturn")
+				continue
 			}
 			if folded, ok, err := projectFoldReturn(values[0], c); err != nil {
 				return "", err
@@ -1175,6 +1208,8 @@ func expr(id string, c context) (string, error) {
 		return "", fmt.Errorf("go_projection.missing_expression")
 	}
 	switch e.schema {
+	case sUnitValue:
+		return "", nil
 	case sRead:
 		pid, err := ref(e, "00000000000000000000000000009130")
 		if err != nil {
@@ -2271,8 +2306,47 @@ func typeNameRelative(g map[string]entity, id string, names, families map[string
 			return "", fmt.Errorf("go_projection.unsupported_map_type")
 		}
 		return "map[int64]int64", nil
+	case sNativeType:
+		language, err := text(e, "000000000000000000000000000a0710")
+		if err != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_type_language")
+		}
+		spelling, err := text(e, "000000000000000000000000000a0711")
+		if err != nil || spelling == "" {
+			return "", fmt.Errorf("go_projection.native_type_spelling")
+		}
+		localTypeNames := make([]string, 0, len(names))
+		for _, localName := range names {
+			localTypeNames = append(localTypeNames, localName)
+		}
+		for _, candidate := range g {
+			if candidate.schema == sRecordType {
+				if localName, nameErr := text(candidate, "00000000000000000000000000009300"); nameErr == nil {
+					localTypeNames = append(localTypeNames, localName)
+				}
+			}
+		}
+		for _, localName := range localTypeNames {
+			qualified := "." + localName
+			if strings.HasSuffix(spelling, qualified) {
+				prefix := spelling[:len(spelling)-len(qualified)]
+				for len(prefix) > 0 && (prefix[0] == '*' || prefix[0] == '[' || prefix[0] == ']') {
+					if prefix[0] == '*' {
+						return "*" + localName, nil
+					}
+					break
+				}
+				return localName, nil
+			}
+		}
+		if _, err := parser.ParseExpr(spelling); err != nil {
+			return "", fmt.Errorf("go_projection.native_type_spelling")
+		}
+		return spelling, nil
+	case sUnitType:
+		return "", nil
 	}
-	return "", fmt.Errorf("go_projection.unsupported_type")
+	return "", fmt.Errorf("go_projection.unsupported_type:%s", e.schema)
 }
 
 func collectRecords(graph map[string]entity) (map[string]record, error) {

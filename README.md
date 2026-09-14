@@ -757,6 +757,10 @@ exit mechanics without treating defer as an immediate call. Run
 Go parallel and multi-result assignments without losing evaluation or effects.
 Run `./scripts/check-execution-v62.sh`.
 
+[`Core Execution v63`](spec/core-execution-v63.md) preserves typed Go field
+mutation as an explicit native mechanic inside otherwise canonical functions.
+Run `./scripts/check-execution-v63.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
