@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(70); err == nil {
+	if _, err := Declarations(71); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -545,6 +545,20 @@ func TestVersion69PreservesVersion68Schema(t *testing.T) {
 	}
 	if len(current) != len(previous) {
 		t.Fatalf("v69 declaration count = %d, want %d", len(current), len(previous))
+	}
+}
+
+func TestVersion70AddsNativeRange(t *testing.T) {
+	previous, err := Declarations(69)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(70)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+2 || current[len(previous)].Name != "NativeRangeBinding" || current[len(previous)+1].Name != "NativeRange" {
+		t.Fatalf("v70 declarations = %#v", current[len(previous):])
 	}
 }
 

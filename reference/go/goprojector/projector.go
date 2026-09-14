@@ -87,6 +87,8 @@ const (
 	sNativeFieldAssign   = "0000000000000000000000000000a076"
 	sNativeSwitchCase    = "0000000000000000000000000000a077"
 	sNativeSwitch        = "0000000000000000000000000000a078"
+	sNativeRangeBinding  = "0000000000000000000000000000a07b"
+	sNativeRange         = "0000000000000000000000000000a07c"
 	sNativeBranch        = "0000000000000000000000000000a079"
 	sNativeAddress       = "0000000000000000000000000000a07a"
 	sWhen                = "000000000000000000000000000090f0"
@@ -712,6 +714,72 @@ func projectBlock(id string, c context) (string, error) {
 				return "", err
 			}
 			lines = append(lines, "\t"+keyword+condition+" {", indentBlock(body), "\t}")
+		case sNativeRange:
+			if language, err := text(statement, "000000000000000000000000000a07c0"); err != nil || language != "go" {
+				return "", fmt.Errorf("go_projection.native_range_language")
+			}
+			collectionID, err := ref(statement, "000000000000000000000000000a07c1")
+			if err != nil {
+				return "", err
+			}
+			collection, err := expr(collectionID, c)
+			if err != nil {
+				return "", err
+			}
+			child := c
+			child.locals = cloneNames(c.locals)
+			bindingName := func(field string) (string, error) {
+				ids, err := refs(statement, field)
+				if err != nil || len(ids) > 1 {
+					return "", fmt.Errorf("go_projection.native_range_binding")
+				}
+				if len(ids) == 0 {
+					return "_", nil
+				}
+				binding, ok := c.graph[ids[0]]
+				if !ok || binding.schema != sNativeRangeBinding {
+					return "", fmt.Errorf("go_projection.native_range_binding")
+				}
+				name, err := text(binding, "000000000000000000000000000a07b0")
+				if err != nil || !identifier(name) {
+					return "", fmt.Errorf("go_projection.native_range_binding")
+				}
+				child.locals[ids[0]] = name
+				return name, nil
+			}
+			key, err := bindingName("000000000000000000000000000a07c2")
+			if err != nil {
+				return "", err
+			}
+			valueIDs, err := refs(statement, "000000000000000000000000000a07c3")
+			if err != nil || len(valueIDs) > 1 {
+				return "", fmt.Errorf("go_projection.native_range_binding")
+			}
+			value := ""
+			if len(valueIDs) == 1 {
+				binding, ok := c.graph[valueIDs[0]]
+				if !ok || binding.schema != sNativeRangeBinding {
+					return "", fmt.Errorf("go_projection.native_range_binding")
+				}
+				value, err = text(binding, "000000000000000000000000000a07b0")
+				if err != nil || !identifier(value) {
+					return "", fmt.Errorf("go_projection.native_range_binding")
+				}
+				child.locals[valueIDs[0]] = value
+			}
+			bodyID, err := ref(statement, "000000000000000000000000000a07c4")
+			if err != nil {
+				return "", err
+			}
+			body, err := projectBlock(bodyID, child)
+			if err != nil {
+				return "", err
+			}
+			header := key
+			if value != "" {
+				header += ", " + value
+			}
+			lines = append(lines, "\tfor "+header+" := range "+collection+" {", indentBlock(body), "\t}")
 		case sNativeDefer:
 			if language, err := text(statement, "000000000000000000000000000a0750"); err != nil || language != "go" {
 				return "", fmt.Errorf("go_projection.native_defer_language")

@@ -33,6 +33,17 @@ type goStatement struct {
 	nativeSwitchCases   []goSwitchCase
 	nativeSwitchDefault *goBlock
 	nativeBranch        string
+	nativeRange         *goExpression
+	nativeRangeKey      *goRangeBinding
+	nativeRangeValue    *goRangeBinding
+	nativeRangeBody     *goBlock
+}
+
+type goRangeBinding struct {
+	name           string
+	typeID         string
+	local          int
+	nativeSpelling string
 }
 
 type goSwitchCase struct {
@@ -1202,6 +1213,13 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			}
 			block.statements = append(block.statements, &goStatement{condition: condition, loopBlock: body})
 		case *ast.RangeStmt:
+			if ranged, ok, err := analyzeGoNativeMapRange(statement, signature, info, locals, functions, records, mutable, next); ok || err != nil {
+				if err != nil {
+					return nil, err
+				}
+				block.statements = append(block.statements, ranged)
+				continue
+			}
 			rangeStatements, err := analyzeGoIndexedRange(statement, signature, info, locals, functions, records, mutable, next)
 			if err != nil {
 				return nil, err
@@ -1270,6 +1288,78 @@ func goBlockAlwaysReturns(block *goBlock) bool {
 	}
 	last := block.statements[len(block.statements)-1]
 	return last.returned != nil || len(last.returns) != 0 || nativeSwitchAlwaysReturns(last)
+}
+
+func analyzeGoNativeMapRange(statement *ast.RangeStmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool, next *int) (*goStatement, bool, error) {
+	if goExecutionModuleVersion(functions) < 70 || functions[nil] != "native-default" {
+		return nil, false, nil
+	}
+	mapping, ok := info.TypeOf(statement.X).Underlying().(*types.Map)
+	if !ok {
+		return nil, false, nil
+	}
+	if statement.Tok != token.DEFINE {
+		return nil, true, fmt.Errorf("control.native_range_assignment")
+	}
+	collection, err := analyzeGoExpressionWithProgram(statement.X, signature, info, locals, functions, records, mutable)
+	if err != nil {
+		return nil, true, err
+	}
+	loopLocals := cloneLocalScope(locals)
+	loopMutable := cloneMutableScope(mutable)
+	bind := func(node ast.Expr, typ types.Type) (*goRangeBinding, error) {
+		identifier, ok := node.(*ast.Ident)
+		if !ok {
+			return nil, fmt.Errorf("control.range_binding")
+		}
+		if identifier.Name == "_" {
+			return nil, nil
+		}
+		object := info.Defs[identifier]
+		if object == nil {
+			return nil, fmt.Errorf("control.range_binding")
+		}
+		typeID, ok := goLocalSemanticType(typ, records)
+		spelling := ""
+		if ok {
+			switch typeID {
+			case "i64":
+				typeID = stableID("execution", "type", "i64")
+			case "bool":
+				typeID = stableID("execution", "type", "bool")
+			case "string":
+				typeID = stableID("execution", "type", "string")
+			}
+		}
+		if !ok {
+			typeID, ok = goNativeTypeID(typ)
+			spelling, _ = goNativeTypeSpelling(typ)
+		}
+		if !ok {
+			return nil, fmt.Errorf("control.range_element_type")
+		}
+		local := *next
+		*next++
+		loopLocals[object] = local
+		loopMutable[object] = mutable[object]
+		return &goRangeBinding{name: identifier.Name, typeID: typeID, local: local, nativeSpelling: spelling}, nil
+	}
+	key, err := bind(statement.Key, mapping.Key())
+	if err != nil {
+		return nil, true, err
+	}
+	var value *goRangeBinding
+	if statement.Value != nil {
+		value, err = bind(statement.Value, mapping.Elem())
+		if err != nil {
+			return nil, true, err
+		}
+	}
+	body, err := analyzeGoBlockScoped(statement.Body.List, signature, info, loopLocals, functions, records, loopMutable, next, false)
+	if err != nil {
+		return nil, true, err
+	}
+	return &goStatement{nativeRange: collection, nativeRangeKey: key, nativeRangeValue: value, nativeRangeBody: body}, true, nil
 }
 
 // analyzeGoIndexedRange preserves Go's array/slice range mechanics while
@@ -1739,6 +1829,36 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			}
 			statementID = stableID("execution", owner, statementPath, "return")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "00000000000000000000000000009081", []graphField{refsField(0x9810, values)})})
+		} else if statement.nativeRange != nil {
+			expressions, collectionID, err := emitCanonicalExpressionWithLocals(statement.nativeRange, owner+":"+statementPath+":native-range-collection", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, expressions...)
+			bodyLocals := make(map[int]string, len(localIDs)+2)
+			for key, value := range localIDs {
+				bodyLocals[key] = value
+			}
+			emitBinding := func(binding *goRangeBinding, role string) []string {
+				if binding == nil {
+					return nil
+				}
+				id := stableID("execution", owner, statementPath, "native-range-"+role)
+				if binding.nativeSpelling != "" {
+					*instances = append(*instances, graphEntity{binding.typeID, entity(binding.typeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, "go"), bytesField(0xa0711, binding.nativeSpelling)})})
+				}
+				*instances = append(*instances, graphEntity{id, entity(id, "0000000000000000000000000000a07b", []graphField{bytesField(0xa07b0, binding.name), refField(0xa07b1, binding.typeID)})})
+				bodyLocals[binding.local] = id
+				return []string{id}
+			}
+			keyIDs := emitBinding(statement.nativeRangeKey, "key")
+			valueIDs := emitBinding(statement.nativeRangeValue, "value")
+			bodyID, err := emitCanonicalBlockScoped(statement.nativeRangeBody, owner, statementPath+".native-range", parameterIDs, integerTypeID, bodyLocals, instances)
+			if err != nil {
+				return "", err
+			}
+			statementID = stableID("execution", owner, statementPath, "native-range")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a07c", []graphField{bytesField(0xa07c0, "go"), refField(0xa07c1, collectionID), refsField(0xa07c2, keyIDs), refsField(0xa07c3, valueIDs), refField(0xa07c4, bodyID)})})
 		} else if statement.loopBlock != nil {
 			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+statementPath+":loop-condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {

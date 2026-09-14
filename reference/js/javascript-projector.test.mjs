@@ -44,6 +44,13 @@ test("projection rejects a graph without one executable program", () => {
   assert.throws(() => projectJavaScript(moduleG1), /javascript_projection\.requires_one_program/);
 });
 
+test("projects Go-owned map range through an explicit JavaScript adapter", () => {
+  const canonical = fs.readFileSync(new URL("../../fixtures/go-execution-v70/program.g1", import.meta.url), "utf8");
+  const projected = projectJavaScript(canonical);
+  assert.match(projected, /Seme\.nativeRange\("go"/);
+  assert.match(projected, /value/);
+});
+
 test("projection rejects duplicate semantic identities", () => {
   const canonical = liftJavaScript({ source, moduleG1, packagePath: "example.test/duplicate", revision: 1 });
   const entity = canonical.slice(canonical.indexOf("\nen ") + 1);

@@ -44,7 +44,10 @@ const schema = {
   unitValue: "0000000000000000000000000000a06b",
   nativeBranch: "0000000000000000000000000000a079",
   nativeAddress: "0000000000000000000000000000a07a",
+  nativeRangeBinding: "0000000000000000000000000000a07b",
+  nativeRange: "0000000000000000000000000000a07c",
   nativeInvocation: "0000000000000000000000000000a06d",
+  nativeType: "0000000000000000000000000000a071",
   when: "000000000000000000000000000090f0",
   effectInvoke: "000000000000000000000000000090f1",
   effect: "00000000000000000000000000000015",
@@ -232,6 +235,16 @@ function projectBlock(id, context, indent) {
       const condition = projectExpression(reference(field(statement, 0x9e40)), localContext);
       const body = projectBlock(reference(field(statement, 0x9e41)), localContext, `${indent}  `);
       lines.push(`${indent}while (${condition}) {\n${body}\n${indent}}`);
+      continue;
+    }
+    if (statement.schema === schema.nativeRange) {
+      const language = text(field(statement, 0xa07c0));
+      const collection = projectExpression(reference(field(statement, 0xa07c1)), localContext);
+      const child = { ...localContext, locals: new Map(localContext.locals) };
+      const binding = (fieldID) => { const ids = references(field(statement, fieldID)); if (ids.length > 1) fail("javascript_projection.native_range_binding"); if (!ids.length) return null; const item = required(context.graph, ids[0], schema.nativeRangeBinding); const name = text(field(item, 0xa07b0)); child.locals.set(ids[0], { name, type: typeName(reference(field(item, 0xa07b1)), context.graph), mutable: false }); return name; };
+      const key = binding(0xa07c2), value = binding(0xa07c3);
+      const body = projectBlock(reference(field(statement, 0xa07c4)), child, `${indent}    `);
+      lines.push(`${indent}Seme.nativeRange(${JSON.stringify(language)}, ${collection}, ${JSON.stringify(key)}, ${JSON.stringify(value)}, (${key ?? "_key"}, ${value ?? "_value"}) => {\n${body}\n${indent}});`);
       continue;
     }
     if (statement.schema === schema.nativeDefer) {
@@ -660,6 +673,7 @@ function typeName(id, graph) {
 		return "bigint[]";
 	}
   if (type.schema === schema.transitionType) return `Transition<${typeName(reference(field(type, 0xa0040)), graph)},${typeName(reference(field(type, 0xa0041)), graph)}>`;
+  if (type.schema === schema.nativeType) return `Seme.Native<${JSON.stringify(text(field(type, 0xa0710)))},${JSON.stringify(text(field(type, 0xa0711)))}>`;
   fail("javascript_projection.unsupported_type");
 }
 

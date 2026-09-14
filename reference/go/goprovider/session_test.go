@@ -2097,6 +2097,28 @@ func TestIncrementalSessionRetainsLocalNativeFieldInBuiltin(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsTypedNativeMapRange(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v70/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-map-range", Entry: "Total", Files: map[string]string{
+		"range.go": "package sample\nfunc Total(values map[string]int64) int64 { total := int64(0); for _, value := range values { total = total + value }; return total }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native map range = %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a07b", "0000000000000000000000000000a07c"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native map range omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {
