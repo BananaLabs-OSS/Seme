@@ -1022,17 +1022,17 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		if signature.Recv() != nil && info.Uses[expression] == signature.Recv() {
 			return &goExpression{kind: goReceiverRead, receiverID: goReceiverID(signature, records)}, nil
 		}
-		for index := 0; index < signature.Params().Len(); index++ {
-			if info.Uses[expression] == signature.Params().At(index) {
-				return &goExpression{kind: goParameterRead, parameter: index}, nil
-			}
-		}
 		if local, ok := locals[info.Uses[expression]]; ok {
 			kind := goLocalRead
 			if mutableLocals[info.Uses[expression]] {
 				kind = goPlaceRead
 			}
 			return &goExpression{kind: kind, local: local}, nil
+		}
+		for index := 0; index < signature.Params().Len(); index++ {
+			if info.Uses[expression] == signature.Params().At(index) {
+				return &goExpression{kind: goParameterRead, parameter: index}, nil
+			}
 		}
 		if object, ok := info.Uses[expression].(*types.Const); ok {
 			switch object.Val().Kind() {

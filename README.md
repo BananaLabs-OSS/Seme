@@ -761,6 +761,11 @@ Run `./scripts/check-execution-v62.sh`.
 mutation as an explicit native mechanic inside otherwise canonical functions.
 Run `./scripts/check-execution-v63.sh`.
 
+[`Core Execution v64`](spec/core-execution-v64.md) lowers reassigned function
+parameters to canonical mutable places, so later reads observe the updated
+value without importing Go's parameter mechanics into neutral core. Run
+`./scripts/check-execution-v64.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

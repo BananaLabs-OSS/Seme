@@ -2,6 +2,7 @@ package goprojector_test
 
 import (
 	"bytes"
+	"go/importer"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -217,6 +218,32 @@ func TestProjectsNativeFieldAssignmentBackToGoSyntax(t *testing.T) {
 	}
 	if !strings.Contains(string(projected), "state.Name = name") {
 		t.Fatalf("projection lacks field assignment:\n%s", projected)
+	}
+}
+
+func TestProjectsMutableParameterThroughCanonicalPlace(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v64/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/mutable-parameter", Entry: "Normalize", Files: map[string]string{
+		"parameter.go": "package sample\nimport \"strings\"\nfunc Normalize(value string) string { value = strings.TrimSpace(value); return value }\n",
+	}, ExternalImporter: importer.Default()})
+	if !first.Valid || len(first.NativeIslands) != 0 {
+		t.Fatalf("initial lift: %#v", first)
+	}
+	projected, err := goprojector.Project([]byte(first.CanonicalG1), "sample")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fragment := range []string{"seme_mutable_value := value", "seme_mutable_value = strings.TrimSpace(seme_mutable_value)", "return seme_mutable_value"} {
+		if !strings.Contains(string(projected), fragment) {
+			t.Fatalf("projection lacks %q:\n%s", fragment, projected)
+		}
 	}
 }
 
