@@ -551,6 +551,33 @@ func TestProjectsNativeMultiResultAndIfInitializerBindings(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `func TestNative(t *testing.T) { if Read(11)!=11 { t.Fatal(Read(11)) } }`)
 }
 
+func TestProjectsPredeclaredErrorMethod(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v77/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/predeclared-method", Entry: "Text", Files: map[string]string{
+		"method.go": "package sample\nfunc Text(failure error) string { return failure.Error() }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("predeclared method lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(projected), "return failure.Error()") {
+		t.Fatalf("projection lacks native method call:\n%s", projected)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": string(projected)}, `type failure string
+func (f failure) Error() string { return string(f) }
+func TestNative(t *testing.T) { if Text(failure("broken")) != "broken" { t.Fatal("method") } }`)
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

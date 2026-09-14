@@ -2553,12 +2553,23 @@ func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast
 		return nil, fmt.Errorf("expression.native_method_target")
 	}
 	function, ok := selection.Obj().(*types.Func)
-	if !ok || function.Pkg() == nil {
+	if !ok {
 		return nil, fmt.Errorf("expression.native_method_target")
 	}
 	declared, ok := function.Type().(*types.Signature)
 	if !ok || declared.Recv() == nil {
 		return nil, fmt.Errorf("expression.native_method_signature")
+	}
+	packagePath := ""
+	if function.Pkg() != nil {
+		packagePath = function.Pkg().Path()
+	} else if goExecutionModuleVersion(functions) >= 77 && function.Name() == "Error" && isGoErrorType(declared.Recv().Type()) {
+		// The method of Go's predeclared error interface deliberately has no
+		// package. Give that native mechanic an explicit builtin owner rather
+		// than rejecting an otherwise fully typed method call.
+		packagePath = "builtin"
+	} else {
+		return nil, fmt.Errorf("expression.native_method_target")
 	}
 	resultType, resultTypes, nativeTypes, ok := nativeGoResultTypeID(declared, records)
 	if !ok {
@@ -2581,7 +2592,7 @@ func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast
 		}
 		return pkg.Path()
 	})
-	target := function.Pkg().Path() + ".(" + receiverType + ")." + function.Name()
+	target := packagePath + ".(" + receiverType + ")." + function.Name()
 	return &goExpression{kind: goNativeMethodInvocation, left: receiver, arguments: arguments, nativeLanguage: "go", nativeTarget: target, nativeSignature: types.TypeString(declared, func(pkg *types.Package) string {
 		if pkg == nil {
 			return ""

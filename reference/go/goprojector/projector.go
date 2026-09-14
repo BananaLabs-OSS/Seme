@@ -57,6 +57,7 @@ const (
 	sSliceRemove         = "0000000000000000000000000000a066"
 	sMapRemove           = "0000000000000000000000000000a067"
 	sNativeInvocation    = "0000000000000000000000000000a06d"
+	sNativeMethodCall    = "0000000000000000000000000000a06e"
 	sProductType         = "0000000000000000000000000000a06f"
 	sProductProject      = "0000000000000000000000000000a070"
 	sUnitType            = "0000000000000000000000000000a06a"
@@ -2395,6 +2396,39 @@ func expr(id string, c context) (string, error) {
 			arguments[2] = "int(" + arguments[2] + ")"
 		}
 		return filepath.Base(path) + "." + name + "(" + strings.Join(arguments, ", ") + ")", nil
+	case sNativeMethodCall:
+		language, err := text(e, "000000000000000000000000000a06e0")
+		if err != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_method_language")
+		}
+		target, err := text(e, "000000000000000000000000000a06e1")
+		if err != nil {
+			return "", err
+		}
+		receiverID, err := ref(e, "000000000000000000000000000a06e3")
+		if err != nil {
+			return "", err
+		}
+		receiver, err := expr(receiverID, c)
+		if err != nil {
+			return "", err
+		}
+		argumentIDs, err := refs(e, "000000000000000000000000000a06e4")
+		if err != nil {
+			return "", err
+		}
+		arguments := make([]string, len(argumentIDs))
+		for index, argumentID := range argumentIDs {
+			arguments[index], err = expr(argumentID, c)
+			if err != nil {
+				return "", err
+			}
+		}
+		dot := strings.LastIndexByte(target, '.')
+		if dot <= 0 || dot == len(target)-1 || !identifier(target[dot+1:]) {
+			return "", fmt.Errorf("go_projection.native_method_target")
+		}
+		return receiver + "." + target[dot+1:] + "(" + strings.Join(arguments, ", ") + ")", nil
 	case sNativeAddress:
 		language, languageErr := text(e, "000000000000000000000000000a07a0")
 		operandID, operandErr := ref(e, "000000000000000000000000000a07a1")
