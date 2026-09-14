@@ -815,6 +815,11 @@ correctly. Run `./scripts/check-execution-v75.sh`.
 resolution consistently to multi-result bindings and scoped `if` initializers.
 Run `./scripts/check-execution-v76.sh`.
 
+[`Core Execution v77`](spec/core-execution-v77.md) gives package-less native
+methods explicit ownership, beginning with Go's predeclared `error.Error()`,
+and projects typed native method calls back to ordinary Go receiver syntax.
+Run `./scripts/check-execution-v77.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

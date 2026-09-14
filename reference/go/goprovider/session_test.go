@@ -2232,6 +2232,28 @@ func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *test
 	}
 }
 
+func TestIncrementalSessionRetainsPredeclaredErrorMethod(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v77/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/predeclared-method", Entry: "Text", Files: map[string]string{
+		"method.go": "package sample\nfunc Text(failure error) string { return failure.Error() }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("predeclared method lift = %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a06e", "6275696c74696e2e286572726f72292e4572726f72"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("canonical graph lacks %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {
