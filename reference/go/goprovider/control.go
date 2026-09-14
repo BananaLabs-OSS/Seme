@@ -1229,7 +1229,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			block.statements = append(block.statements, branch.statements...)
 			return block, nil
 		case *ast.ForStmt:
-			if statement.Cond == nil {
+			if statement.Cond == nil && goExecutionModuleVersion(functions) < 83 {
 				return nil, fmt.Errorf("control.for_shape")
 			}
 			if statement.Init != nil || statement.Post != nil {
@@ -1278,9 +1278,13 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				block.statements = append(block.statements, &goStatement{condition: condition, loopBlock: body})
 				continue
 			}
-			condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
-			if err != nil {
-				return nil, err
+			condition := &goExpression{kind: goBooleanLiteral, boolean: true}
+			if statement.Cond != nil {
+				var err error
+				condition, err = analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
 			}
 			body, err := analyzeGoBlockScoped(statement.Body.List, signature, info, locals, functions, records, mutable, next, false)
 			if err != nil {
