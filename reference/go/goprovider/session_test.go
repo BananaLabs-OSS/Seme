@@ -1881,6 +1881,28 @@ func TestIncrementalSessionLiftsNativeElementSliceRange(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsTypedNativeBuiltins(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v59/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-builtins", Entry: "Build", Files: map[string]string{
+		"builtins.go": "package sample\ntype Item struct { Value int64 }\nfunc Build(values []Item, value Item) []Item { out := make([]Item, 0, 1); out = append(out, values...); out = append(out, value); return out }\nfunc Drop(values map[string]Item, key string) { delete(values, key) }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native builtin result = %#v", result)
+	}
+	for _, target := range []string{"builtin.make[[]example.test/native-builtins.Item]", "builtin.append[[]example.test/native-builtins.Item].ellipsis", "builtin.append[[]example.test/native-builtins.Item]", "builtin.delete[unit]"} {
+		if !strings.Contains(result.CanonicalG1, hex.EncodeToString([]byte(target))) {
+			t.Fatalf("native builtin target %q missing", target)
+		}
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {

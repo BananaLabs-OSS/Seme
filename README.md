@@ -743,6 +743,11 @@ for collection evaluation, indexing, and `int` iteration. It also retains
 general native indexing and compound assignment without widening neutral Core.
 Run `./scripts/check-execution-v59.sh`.
 
+[`Core Execution v60`](spec/core-execution-v60.md) retains allocation,
+collection mutation, capacity, copying, and related Go built-ins as typed native
+operations inside otherwise canonical programs. Run
+`./scripts/check-execution-v60.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
