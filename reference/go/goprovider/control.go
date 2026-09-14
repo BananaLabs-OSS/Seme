@@ -90,7 +90,14 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 	for _, statement := range statements {
 		ast.Inspect(statement, func(node ast.Node) bool {
 			assignment, ok := node.(*ast.AssignStmt)
-			if !ok || assignment.Tok != token.ASSIGN {
+			compound := false
+			if ok && goExecutionModuleVersion(functions) >= 75 {
+				switch assignment.Tok {
+				case token.ADD_ASSIGN, token.SUB_ASSIGN, token.MUL_ASSIGN, token.QUO_ASSIGN, token.REM_ASSIGN, token.AND_ASSIGN, token.OR_ASSIGN, token.XOR_ASSIGN, token.SHL_ASSIGN, token.SHR_ASSIGN, token.AND_NOT_ASSIGN:
+					compound = true
+				}
+			}
+			if !ok || assignment.Tok != token.ASSIGN && !compound {
 				return true
 			}
 			for _, target := range assignment.Lhs {

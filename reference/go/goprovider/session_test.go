@@ -2199,6 +2199,23 @@ func TestIncrementalSessionRetainsTypedNativeIndexAssignment(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRecognizesCompoundAssignmentMutability(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v75/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-compound", Entry: "Add", Files: map[string]string{
+		"compound.go": "package sample\nfunc Add(value int64) int64 { total := value; total += 2; return total }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("compound assignment = %#v", result)
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {
