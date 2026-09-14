@@ -856,6 +856,10 @@ Run `./scripts/check-execution-v85.sh`.
 two-result map lookups as one typed native operation with canonical projections.
 Run `./scripts/check-execution-v86.sh`.
 
+[`Core Execution v87`](spec/core-execution-v87.md) lowers standalone increment
+and decrement statements to mutable-place updates.
+Run `./scripts/check-execution-v87.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
