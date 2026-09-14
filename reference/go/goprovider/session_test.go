@@ -575,6 +575,32 @@ func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsApplicationNativeBindingRead(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v54/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/application-binding", Entry: "Current", Files: map[string]string{
+		"binding.go": `package applicationbinding
+type Holder struct { Next *Holder }
+var current *Holder
+func Current() *Holder { return current }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("application native binding read rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a071", "0000000000000000000000000000a073"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("application native binding read omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsNativeProcedureAsUnit(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {
