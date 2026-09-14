@@ -92,6 +92,7 @@ const (
 	sNativeSlice         = "0000000000000000000000000000a07d"
 	sNativeDereference   = "0000000000000000000000000000a07e"
 	sNativeBinary        = "0000000000000000000000000000a07f"
+	sNativeIndexAssign   = "0000000000000000000000000000a080"
 	sNativeBranch        = "0000000000000000000000000000a079"
 	sNativeAddress       = "0000000000000000000000000000a07a"
 	sWhen                = "000000000000000000000000000090f0"
@@ -821,6 +822,35 @@ func projectBlock(id string, c context) (string, error) {
 				return "", err
 			}
 			lines = append(lines, "\t"+receiver+"."+name+" = "+value)
+		case sNativeIndexAssign:
+			if language, err := text(statement, "000000000000000000000000000a0800"); err != nil || language != "go" {
+				return "", fmt.Errorf("go_projection.native_index_assignment_language")
+			}
+			collectionID, err := ref(statement, "000000000000000000000000000a0801")
+			if err != nil {
+				return "", err
+			}
+			indexID, err := ref(statement, "000000000000000000000000000a0802")
+			if err != nil {
+				return "", err
+			}
+			valueID, err := ref(statement, "000000000000000000000000000a0803")
+			if err != nil {
+				return "", err
+			}
+			collection, err := expr(collectionID, c)
+			if err != nil {
+				return "", err
+			}
+			index, err := expr(indexID, c)
+			if err != nil {
+				return "", err
+			}
+			value, err := expr(valueID, c)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\t"+collection+"["+index+"] = "+value)
 		case sNativeSwitch:
 			if language, err := text(statement, "000000000000000000000000000a0780"); err != nil || language != "go" {
 				return "", fmt.Errorf("go_projection.native_switch_language")

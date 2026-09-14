@@ -482,6 +482,32 @@ func TestProjectsNativeBinaryBackToGoSyntax(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Mix(5, 2) != 22 { t.Fatal(Mix(5, 2)) } }`)
 }
 
+func TestProjectsNativeIndexAssignmentBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v74/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-index-assignment", Entry: "Set", Files: map[string]string{
+		"index.go": "package sample\nfunc Set(values map[string]int64, key string, value int64) int64 { values[key] = value; return values[key] }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native index assignment lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "values[key] = value") {
+		t.Fatalf("projection lacks native index assignment:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { values:=map[string]int64{}; if Set(values,"x",7)!=7 { t.Fatal(values) } }`)
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

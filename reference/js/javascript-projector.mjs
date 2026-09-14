@@ -49,6 +49,7 @@ const schema = {
   nativeSlice: "0000000000000000000000000000a07d",
   nativeDereference: "0000000000000000000000000000a07e",
   nativeBinary: "0000000000000000000000000000a07f",
+  nativeIndexAssignment: "0000000000000000000000000000a080",
   nativeInvocation: "0000000000000000000000000000a06d",
   nativeType: "0000000000000000000000000000a071",
   when: "000000000000000000000000000090f0",
@@ -262,6 +263,14 @@ function projectBlock(id, context, indent) {
       const receiver = projectExpression(reference(field(statement, 0xa0762)), localContext);
       const value = projectExpression(reference(field(statement, 0xa0763)), localContext);
       lines.push(`${indent}Seme.assignNativeField(${JSON.stringify(language)}, ${receiver}, ${JSON.stringify(member)}, ${value});`);
+      continue;
+    }
+    if (statement.schema === schema.nativeIndexAssignment) {
+      const language = text(field(statement, 0xa0800));
+      const collection = projectExpression(reference(field(statement, 0xa0801)), localContext);
+      const index = projectExpression(reference(field(statement, 0xa0802)), localContext);
+      const value = projectExpression(reference(field(statement, 0xa0803)), localContext);
+      lines.push(`${indent}Seme.assignNativeIndex(${JSON.stringify(language)}, ${collection}, ${index}, ${value});`);
       continue;
     }
     if (statement.schema === schema.nativeSwitch) {

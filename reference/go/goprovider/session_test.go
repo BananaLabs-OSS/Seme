@@ -2179,6 +2179,26 @@ func TestIncrementalSessionRetainsTypedNativeBinaryOperators(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsTypedNativeIndexAssignment(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v74/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-index-assignment", Entry: "Set", Files: map[string]string{
+		"index.go": "package sample\nfunc Set(values map[string]int64, key string, value int64) int64 { values[key] = value; return values[key] }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native index assignment = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a080") {
+		t.Fatal("NativeIndexAssignment missing")
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {

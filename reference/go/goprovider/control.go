@@ -9,34 +9,37 @@ import (
 )
 
 type goStatement struct {
-	condition           *goExpression
-	returned            *goExpression
-	returns             []*goExpression
-	thenBlock           *goBlock
-	elseBlock           *goBlock
-	localName           string
-	localType           string
-	local               int
-	initializer         *goExpression
-	mutable             bool
-	assignment          *goExpression
-	loopBlock           *goBlock
-	whenBlock           *goBlock
-	effect              string
-	effectArgs          []*goExpression
-	evaluated           *goExpression
-	deferred            *goExpression
-	nativeFieldReceiver *goExpression
-	nativeFieldName     string
-	nativeFieldValue    *goExpression
-	nativeSwitchSubject *goExpression
-	nativeSwitchCases   []goSwitchCase
-	nativeSwitchDefault *goBlock
-	nativeBranch        string
-	nativeRange         *goExpression
-	nativeRangeKey      *goRangeBinding
-	nativeRangeValue    *goRangeBinding
-	nativeRangeBody     *goBlock
+	condition             *goExpression
+	returned              *goExpression
+	returns               []*goExpression
+	thenBlock             *goBlock
+	elseBlock             *goBlock
+	localName             string
+	localType             string
+	local                 int
+	initializer           *goExpression
+	mutable               bool
+	assignment            *goExpression
+	loopBlock             *goBlock
+	whenBlock             *goBlock
+	effect                string
+	effectArgs            []*goExpression
+	evaluated             *goExpression
+	deferred              *goExpression
+	nativeFieldReceiver   *goExpression
+	nativeFieldName       string
+	nativeFieldValue      *goExpression
+	nativeIndexCollection *goExpression
+	nativeIndex           *goExpression
+	nativeIndexValue      *goExpression
+	nativeSwitchSubject   *goExpression
+	nativeSwitchCases     []goSwitchCase
+	nativeSwitchDefault   *goBlock
+	nativeBranch          string
+	nativeRange           *goExpression
+	nativeRangeKey        *goRangeBinding
+	nativeRangeValue      *goRangeBinding
+	nativeRangeBody       *goBlock
 }
 
 type goRangeBinding struct {
@@ -685,6 +688,24 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				}
 			}
 		case *ast.AssignStmt:
+			if goExecutionModuleVersion(functions) >= 74 && statement.Tok == token.ASSIGN && len(statement.Lhs) == 1 && len(statement.Rhs) == 1 {
+				if indexed, ok := ast.Unparen(statement.Lhs[0]).(*ast.IndexExpr); ok {
+					collection, err := analyzeGoExpressionWithProgram(indexed.X, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					index, err := analyzeGoExpressionWithProgram(indexed.Index, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					value, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					block.statements = append(block.statements, &goStatement{nativeIndexCollection: collection, nativeIndex: index, nativeIndexValue: value})
+					continue
+				}
+			}
 			if goExecutionModuleVersion(functions) >= 63 && statement.Tok == token.ASSIGN && len(statement.Lhs) == 1 && len(statement.Rhs) == 1 {
 				if selector, ok := ast.Unparen(statement.Lhs[0]).(*ast.SelectorExpr); ok {
 					field, fieldOK := info.Uses[selector.Sel].(*types.Var)
@@ -960,11 +981,11 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				continue
 			}
 			if (statement.Tok != token.DEFINE && statement.Tok != token.ASSIGN) || len(statement.Lhs) != 1 || len(statement.Rhs) != 1 {
-				return nil, fmt.Errorf("control.local_binding_shape")
+				return nil, fmt.Errorf("control.local_binding_shape:%s:%d:%d", statement.Tok, len(statement.Lhs), len(statement.Rhs))
 			}
 			name, ok := statement.Lhs[0].(*ast.Ident)
 			if !ok {
-				return nil, fmt.Errorf("control.local_binding_shape")
+				return nil, fmt.Errorf("control.local_binding_shape:%T", statement.Lhs[0])
 			}
 			if statement.Tok == token.ASSIGN && name.Name == "_" {
 				evaluated, err := analyzeGoExpressionWithProgram(statement.Rhs[0], signature, info, locals, functions, records, mutable)
@@ -1932,6 +1953,24 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, valueEntities...)
 			statementID = stableID("execution", owner, statementPath, "native-field-assignment")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a076", []graphField{bytesField(0xa0760, "go"), bytesField(0xa0761, statement.nativeFieldName), refField(0xa0762, receiverID), refField(0xa0763, valueID)})})
+		} else if statement.nativeIndexCollection != nil {
+			collectionEntities, collectionID, err := emitCanonicalExpressionWithLocals(statement.nativeIndexCollection, owner+":"+statementPath+":native-index-collection", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			indexEntities, indexID, err := emitCanonicalExpressionWithLocals(statement.nativeIndex, owner+":"+statementPath+":native-index-index", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			valueEntities, valueID, err := emitCanonicalExpressionWithLocals(statement.nativeIndexValue, owner+":"+statementPath+":native-index-value", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, collectionEntities...)
+			*instances = append(*instances, indexEntities...)
+			*instances = append(*instances, valueEntities...)
+			statementID = stableID("execution", owner, statementPath, "native-index-assignment")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a080", []graphField{bytesField(0xa0800, "go"), refField(0xa0801, collectionID), refField(0xa0802, indexID), refField(0xa0803, valueID)})})
 		} else if statement.nativeSwitchSubject != nil {
 			subjectEntities, subjectID, err := emitCanonicalExpressionWithLocals(statement.nativeSwitchSubject, owner+":"+statementPath+":native-switch-subject", parameterIDs, localIDs, integerTypeID)
 			if err != nil {
