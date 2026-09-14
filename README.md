@@ -783,6 +783,10 @@ explicit JavaScript and Lua adapter views. Run `./scripts/check-execution-v67.sh
 JavaScript, and Lua views for typed native invocations and adds Go-owned `len`
 inside mixed native expressions. Run `./scripts/check-execution-v68.sh`.
 
+[`Core Execution v69`](spec/core-execution-v69.md) retains typed field reads
+from locally declared Go-owned structures so surrounding collection and
+registry logic can remain canonical. Run `./scripts/check-execution-v69.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
