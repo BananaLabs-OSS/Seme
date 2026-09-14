@@ -1574,7 +1574,7 @@ func goProductTypeIDWithNative(tuple *types.Tuple, records map[*types.Named]goRe
 	for index := 0; index < tuple.Len(); index++ {
 		value := tuple.At(index).Type()
 		item, ok := goSupportedTypeID(value, integerID, booleanID, stringID, records)
-		if !ok && allowNative && goTypeOwnedOutsidePackage(value, packagePath) {
+		if !ok && allowNative {
 			item, ok = goNativeTypeID(value)
 			if ok {
 				nativeTypes = append(nativeTypes, value)

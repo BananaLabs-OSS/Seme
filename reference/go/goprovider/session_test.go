@@ -533,6 +533,26 @@ func Make(name string) Pair { return Pair{Name: name} }
 	}
 }
 
+func TestIncrementalSessionRetainsNativeApplicationProductResult(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v53/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-product-result", Entry: "Pair", Files: map[string]string{
+		"pair.go": `package nativeproductresult
+type Holder struct { Next *Holder }
+func Pair(holder *Holder) (*Holder, error) { return holder, nil }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native application product result rejected: %#v", result)
+	}
+}
+
 func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {
