@@ -42,6 +42,7 @@ const schema = {
   nativeSwitchCase: "0000000000000000000000000000a077",
   nativeSwitch: "0000000000000000000000000000a078",
   unitValue: "0000000000000000000000000000a06b",
+  nativeBranch: "0000000000000000000000000000a079",
   when: "000000000000000000000000000090f0",
   effectInvoke: "000000000000000000000000000090f1",
   effect: "00000000000000000000000000000015",
@@ -259,6 +260,13 @@ function projectBlock(id, context, indent) {
       if (defaults.length > 1) fail("javascript_projection.native_switch_default");
       const fallback = defaults.length === 1 ? projectBlock(defaults[0], localContext, `${indent}    `) : "";
       lines.push(`${indent}Seme.nativeSwitch(${JSON.stringify(language)}, ${subject}, [\n${cases.join(",\n")}\n${indent}], () => {\n${fallback}\n${indent}});`);
+      continue;
+    }
+    if (statement.schema === schema.nativeBranch) {
+      const language = text(field(statement, 0xa0790));
+      const operation = text(field(statement, 0xa0791));
+      const target = text(field(statement, 0xa0792));
+      lines.push(`${indent}Seme.nativeBranch(${JSON.stringify(language)}, ${JSON.stringify(operation)}, ${JSON.stringify(target)});`);
       continue;
     }
     if (statement.schema === schema.when) {

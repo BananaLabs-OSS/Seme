@@ -32,6 +32,7 @@ type goStatement struct {
 	nativeSwitchSubject *goExpression
 	nativeSwitchCases   []goSwitchCase
 	nativeSwitchDefault *goBlock
+	nativeBranch        string
 }
 
 type goSwitchCase struct {
@@ -1086,6 +1087,11 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				cases = append(cases, goSwitchCase{values: values, body: body})
 			}
 			block.statements = append(block.statements, &goStatement{nativeSwitchSubject: subject, nativeSwitchCases: cases, nativeSwitchDefault: defaultBlock})
+		case *ast.BranchStmt:
+			if goExecutionModuleVersion(functions) < 66 || statement.Label != nil || statement.Tok != token.BREAK && statement.Tok != token.CONTINUE {
+				return nil, fmt.Errorf("control.unsupported_statement:%T", raw)
+			}
+			block.statements = append(block.statements, &goStatement{nativeBranch: statement.Tok.String()})
 		case *ast.IfStmt:
 			ifLocals, ifMutable := locals, mutable
 			var initializer []*goStatement
@@ -1178,7 +1184,11 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				} else if post.Tok != token.INC {
 					return nil, fmt.Errorf("control.for_post")
 				}
-				body.statements = append(body.statements, &goStatement{local: local, mutable: true, assignment: &goExpression{kind: kind, left: &goExpression{kind: goPlaceRead, local: local}, right: &goExpression{kind: goIntegerLiteral, integer: 1}}})
+				postStep := func() *goStatement {
+					return &goStatement{local: local, mutable: true, assignment: &goExpression{kind: kind, left: &goExpression{kind: goPlaceRead, local: local}, right: &goExpression{kind: goIntegerLiteral, integer: 1}}}
+				}
+				injectBeforeNativeContinue(body, postStep)
+				body.statements = append(body.statements, postStep())
 				block.statements = append(block.statements, &goStatement{condition: condition, loopBlock: body})
 				continue
 			}
@@ -1356,11 +1366,42 @@ func analyzeGoIndexedRange(statement *ast.RangeStmt, signature *types.Signature,
 	body.statements = append(bodyPrefix, body.statements...)
 	one, _, _ := nativeGoAssignmentValue(&goExpression{kind: goIntegerLiteral, integer: 1}, intType)
 	add := &goExpression{kind: goNativeInvocation, arguments: []*goExpression{{kind: goPlaceRead, local: indexLocal}, one}, nativeLanguage: "go", nativeTarget: "builtin.add[int]", nativeSignature: "func(int, int) int", nativeResultType: intID, nativeTypes: map[string]string{intID: intSpelling}}
-	body.statements = append(body.statements, &goStatement{local: indexLocal, mutable: true, assignment: add})
+	postStep := func() *goStatement {
+		return &goStatement{local: indexLocal, mutable: true, assignment: add}
+	}
+	injectBeforeNativeContinue(body, postStep)
+	body.statements = append(body.statements, postStep())
 	length := &goExpression{kind: goNativeInvocation, arguments: []*goExpression{{kind: goLocalRead, local: collectionLocal}}, nativeLanguage: "go", nativeTarget: "builtin.len[" + collectionSpelling + "]", nativeSignature: "func(" + collectionSpelling + ") int", nativeResultType: intID, nativeTypes: map[string]string{collectionID: collectionSpelling, intID: intSpelling}}
 	condition := &goExpression{kind: goNativeInvocation, arguments: []*goExpression{{kind: goPlaceRead, local: indexLocal}, length}, nativeLanguage: "go", nativeTarget: "builtin.compare[<;int;int]", nativeSignature: "func(int, int) bool", nativeResultType: stableID("execution", "type", "bool"), nativeTypes: map[string]string{intID: intSpelling}}
 	out = append(out, &goStatement{condition: condition, loopBlock: body})
 	return out, nil
+}
+
+// injectBeforeNativeContinue preserves source-language loop-post semantics after
+// a Go for/range loop is lowered to canonical while control. Nested loop bodies
+// are deliberately excluded: their continue statements belong to that loop.
+func injectBeforeNativeContinue(block *goBlock, postStep func() *goStatement) {
+	if block == nil {
+		return
+	}
+	statements := make([]*goStatement, 0, len(block.statements))
+	for _, statement := range block.statements {
+		if statement == nil {
+			continue
+		}
+		if statement.nativeBranch == "continue" {
+			statements = append(statements, postStep())
+		}
+		injectBeforeNativeContinue(statement.whenBlock, postStep)
+		injectBeforeNativeContinue(statement.thenBlock, postStep)
+		injectBeforeNativeContinue(statement.elseBlock, postStep)
+		for index := range statement.nativeSwitchCases {
+			injectBeforeNativeContinue(statement.nativeSwitchCases[index].body, postStep)
+		}
+		injectBeforeNativeContinue(statement.nativeSwitchDefault, postStep)
+		statements = append(statements, statement)
+	}
+	block.statements = statements
 }
 
 func nativeGoAssignmentValue(value *goExpression, target types.Type) (*goExpression, string, bool) {
@@ -1806,6 +1847,9 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			}
 			statementID = stableID("execution", owner, statementPath, "native-switch")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a078", []graphField{bytesField(0xa0780, "go"), refField(0xa0781, subjectID), refsField(0xa0782, caseIDs), refsField(0xa0783, defaultIDs)})})
+		} else if statement.nativeBranch != "" {
+			statementID = stableID("execution", owner, statementPath, "native-branch")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a079", []graphField{bytesField(0xa0790, "go"), bytesField(0xa0791, statement.nativeBranch), bytesField(0xa0792, "nearest")})})
 		} else {
 			conditionEntities, conditionID, err := emitCanonicalExpressionWithLocals(statement.condition, owner+":"+statementPath+":condition", parameterIDs, localIDs, integerTypeID)
 			if err != nil {

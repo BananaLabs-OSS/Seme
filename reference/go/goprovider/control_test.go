@@ -8,6 +8,22 @@ import (
 	"testing"
 )
 
+func TestInjectBeforeNativeContinueSkipsNestedLoops(t *testing.T) {
+	outerContinue := &goStatement{nativeBranch: "continue"}
+	nestedContinue := &goStatement{nativeBranch: "continue"}
+	block := &goBlock{statements: []*goStatement{
+		{thenBlock: &goBlock{statements: []*goStatement{outerContinue}}},
+		{loopBlock: &goBlock{statements: []*goStatement{nestedContinue}}},
+	}}
+	injectBeforeNativeContinue(block, func() *goStatement { return &goStatement{localName: "post"} })
+	if got := block.statements[0].thenBlock.statements; len(got) != 2 || got[0].localName != "post" || got[1] != outerContinue {
+		t.Fatalf("outer continue post injection = %#v", got)
+	}
+	if got := block.statements[1].loopBlock.statements; len(got) != 1 || got[0] != nestedContinue {
+		t.Fatalf("nested loop was rewritten = %#v", got)
+	}
+}
+
 func TestAnalyzeGoBlockRejectsMissingIndexTypeWithoutPanic(t *testing.T) {
 	file, err := parser.ParseFile(token.NewFileSet(), "invalid.go", "package p\nfunc Read() int64 { value, ok := missing[0]; _ = ok; return value }", 0)
 	if err != nil {

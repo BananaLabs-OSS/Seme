@@ -86,6 +86,7 @@ const (
 	sNativeFieldAssign   = "0000000000000000000000000000a076"
 	sNativeSwitchCase    = "0000000000000000000000000000a077"
 	sNativeSwitch        = "0000000000000000000000000000a078"
+	sNativeBranch        = "0000000000000000000000000000a079"
 	sWhen                = "000000000000000000000000000090f0"
 	sIf                  = "000000000000000000000000000090c0"
 	sLessEqual           = "00000000000000000000000000009021"
@@ -813,6 +814,14 @@ func projectBlock(id string, c context) (string, error) {
 				}
 			}
 			lines = append(lines, "\t}")
+		case sNativeBranch:
+			language, languageErr := text(statement, "000000000000000000000000000a0790")
+			operation, operationErr := text(statement, "000000000000000000000000000a0791")
+			target, targetErr := text(statement, "000000000000000000000000000a0792")
+			if languageErr != nil || operationErr != nil || targetErr != nil || language != "go" || target != "nearest" || operation != "break" && operation != "continue" {
+				return "", fmt.Errorf("go_projection.native_branch")
+			}
+			lines = append(lines, "\t"+operation)
 		case sIf:
 			conditionID, err := ref(statement, "00000000000000000000000000009c00")
 			if err != nil {
