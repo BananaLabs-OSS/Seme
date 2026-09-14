@@ -2015,6 +2015,26 @@ func TestIncrementalSessionLiftsTypedNativeSwitches(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsNearestLoopBranch(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v66/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-branch", Entry: "Run", Files: map[string]string{
+		"branch.go": "package sample\nfunc Run(enabled bool) bool { remaining := enabled; for remaining { remaining = false; continue }; return remaining }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native branch = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a079") || !strings.Contains(result.CanonicalG1, hex.EncodeToString([]byte("nearest"))) {
+		t.Fatal("typed native nearest branch missing")
+	}
+}
+
 func TestIncrementalSessionLiftsCollectionQueries(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v24/module.g1")
 	if err != nil {

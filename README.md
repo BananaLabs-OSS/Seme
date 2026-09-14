@@ -771,6 +771,10 @@ selection as typed cases containing canonical expressions and blocks, including
 tagged, expressionless, multi-value, and default forms. Run
 `./scripts/check-execution-v65.sh`.
 
+[`Core Execution v66`](spec/core-execution-v66.md) preserves unlabeled Go
+`break` and `continue` as typed nearest-breakable transfers while other languages
+retain explicit adapter boundaries. Run `./scripts/check-execution-v66.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
