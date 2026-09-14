@@ -90,6 +90,7 @@ const (
 	sNativeRangeBinding  = "0000000000000000000000000000a07b"
 	sNativeRange         = "0000000000000000000000000000a07c"
 	sNativeSlice         = "0000000000000000000000000000a07d"
+	sNativeDereference   = "0000000000000000000000000000a07e"
 	sNativeBranch        = "0000000000000000000000000000a079"
 	sNativeAddress       = "0000000000000000000000000000a07a"
 	sWhen                = "000000000000000000000000000090f0"
@@ -2306,6 +2307,18 @@ func expr(id string, c context) (string, error) {
 			inside += ":" + maximum
 		}
 		return collection + "[" + inside + "]", nil
+	case sNativeDereference:
+		language, languageErr := text(e, "000000000000000000000000000a07e0")
+		operandID, operandErr := ref(e, "000000000000000000000000000a07e1")
+		_, typeErr := ref(e, "000000000000000000000000000a07e2")
+		if languageErr != nil || operandErr != nil || typeErr != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_dereference")
+		}
+		operand, err := expr(operandID, c)
+		if err != nil {
+			return "", err
+		}
+		return "*(" + operand + ")", nil
 	case sAdd, sConcat, sMultiply, sSubtract, sLessEqual, sAnd, sOr:
 		leftField, rightField := "00000000000000000000000000009140", "00000000000000000000000000009141"
 		op := "+"

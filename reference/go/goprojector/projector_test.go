@@ -428,6 +428,32 @@ func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { got := Window([]int64{1,2,3}, 1, 3); if len(got)!=2 || got[0]!=2 || got[1]!=3 { t.Fatal(got) } }`)
 }
 
+func TestProjectsNativeDereferenceBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v72/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-dereference", Entry: "Value", Files: map[string]string{
+		"dereference.go": "package sample\nfunc Value(pointer *int64) int64 { return *pointer }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native dereference lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "return *(pointer)") {
+		t.Fatalf("projection lacks native dereference:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { value := int64(9); if Value(&value) != 9 { t.Fatal("dereference") } }`)
+}
+
 func runNative(t *testing.T, files map[string]string) {
 	runNativeWithTest(t, files, "func TestNative(t *testing.T) { if got := Render(\"a\", \"b\"); got != \"[[a][b]]\" { t.Fatal(got) } }")
 }

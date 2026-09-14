@@ -91,6 +91,7 @@ const (
 	goNativeDefaultValue
 	goNativeAddress
 	goNativeSlice
+	goNativeDereference
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -292,6 +293,20 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			}
 			id := expressionNodeID(owner, path, "native-slice")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a07d", []graphField{bytesField(0xa07d0, expression.nativeLanguage), refField(0xa07d1, collection), refsField(0xa07d2, low), refsField(0xa07d3, high), refsField(0xa07d4, maximum), refField(0xa07d5, expression.nativeResultType)})}
+			return id, nil
+		case goNativeDereference:
+			if expression.nativeLanguage == "" || expression.nativeResultType == "" || expression.left == nil {
+				return "", fmt.Errorf("expression.native_dereference_incomplete")
+			}
+			operand, err := emit(expression.left, path+".operand")
+			if err != nil {
+				return "", err
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, expression.nativeLanguage), bytesField(0xa0711, spelling)})}
+			}
+			id := expressionNodeID(owner, path, "native-dereference")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a07e", []graphField{bytesField(0xa07e0, expression.nativeLanguage), refField(0xa07e1, operand), refField(0xa07e2, expression.nativeResultType)})}
 			return id, nil
 		case goNativeMethodInvocation:
 			if expression.nativeLanguage == "" || expression.nativeTarget == "" || expression.nativeSignature == "" || expression.nativeResultType == "" || expression.left == nil {
@@ -2123,6 +2138,27 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			return nil, err
 		}
 		return &goExpression{kind: goNativeSlice, left: collection, nativeLanguage: "go", nativeResultType: resultID, nativeTypes: nativeTypes, nativeSliceLow: low, nativeSliceHigh: high, nativeSliceMax: maximum}, nil
+	case *ast.StarExpr:
+		if goExecutionModuleVersion(functions) < 72 || functions[nil] != "native-default" {
+			return nil, fmt.Errorf("expression.unsupported_node:%T", expression)
+		}
+		operand, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+		if err != nil {
+			return nil, err
+		}
+		resultType := info.TypeOf(expression)
+		resultID, ok := goSupportedTypeID(resultType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+		nativeTypes := map[string]string{}
+		if !ok {
+			resultID, ok = goNativeTypeID(resultType)
+			if spelling, native := goNativeTypeSpelling(resultType); native {
+				nativeTypes[resultID] = spelling
+			}
+		}
+		if !ok {
+			return nil, fmt.Errorf("expression.native_dereference_result")
+		}
+		return &goExpression{kind: goNativeDereference, left: operand, nativeLanguage: "go", nativeResultType: resultID, nativeTypes: nativeTypes}, nil
 	default:
 		return nil, fmt.Errorf("expression.unsupported_node:%T", expression)
 	}
