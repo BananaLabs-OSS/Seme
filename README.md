@@ -748,6 +748,11 @@ collection mutation, capacity, copying, and related Go built-ins as typed native
 operations inside otherwise canonical programs. Run
 `./scripts/check-execution-v60.sh`.
 
+[`Core Execution v61`](spec/core-execution-v61.md) adds an explicit typed native
+defer statement, preserving registration-time capture and native LIFO function
+exit mechanics without treating defer as an immediate call. Run
+`./scripts/check-execution-v61.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

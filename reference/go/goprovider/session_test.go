@@ -1860,7 +1860,7 @@ func TestIncrementalSessionLiftsRuntimeSizedSliceFold(t *testing.T) {
 }
 
 func TestIncrementalSessionLiftsNativeElementSliceRange(t *testing.T) {
-	module, err := os.ReadFile("../../../modules/execution/v58/module.g1")
+	module, err := os.ReadFile("../../../modules/execution/v59/module.g1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1882,7 +1882,7 @@ func TestIncrementalSessionLiftsNativeElementSliceRange(t *testing.T) {
 }
 
 func TestIncrementalSessionRetainsTypedNativeBuiltins(t *testing.T) {
-	module, err := os.ReadFile("../../../modules/execution/v59/module.g1")
+	module, err := os.ReadFile("../../../modules/execution/v60/module.g1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1900,6 +1900,26 @@ func TestIncrementalSessionRetainsTypedNativeBuiltins(t *testing.T) {
 		if !strings.Contains(result.CanonicalG1, hex.EncodeToString([]byte(target))) {
 			t.Fatalf("native builtin target %q missing", target)
 		}
+	}
+}
+
+func TestIncrementalSessionLiftsGoDeferAsNativeControl(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v61/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-defer", Entry: "Run", Files: map[string]string{
+		"defer.go": "package sample\nfunc Finish(value int64) int64 { return value }\nfunc Run(value int64) int64 { defer Finish(value); return value }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native defer result = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a075") {
+		t.Fatal("NativeDefer schema missing")
 	}
 }
 

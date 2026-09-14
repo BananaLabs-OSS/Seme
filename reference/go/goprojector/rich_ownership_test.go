@@ -13,7 +13,9 @@ import (
 )
 
 func TestRichOwnershipValidatesUAB11WithoutGuessingIDs(t *testing.T) {
-	module, err := os.ReadFile("../../../modules/execution/v35/module.g1")
+	// The fixture retains standard-library calls as typed native invocations,
+	// which entered the execution contract in v39.
+	module, err := os.ReadFile("../../../modules/execution/v39/module.g1")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -39,6 +39,16 @@ type DocumentSnapshot struct {
 	IdentityBindings []IdentityBinding
 }
 
+var executionModuleVersionObject types.Object = types.NewVar(token.NoPos, nil, "$seme_execution_module_version", types.Typ[types.Int])
+
+func goExecutionModuleVersion(functions map[types.Object]string) uint64 {
+	if functions == nil {
+		return 0
+	}
+	version, _ := strconv.ParseUint(functions[executionModuleVersionObject], 10, 64)
+	return version
+}
+
 func snapshotTarget(snapshot DocumentSnapshot) (string, string) {
 	goos, goarch := snapshot.GOOS, snapshot.GOARCH
 	if goos == "" {
@@ -673,10 +683,12 @@ func liftDocumentSnapshot(snapshot DocumentSnapshot, moduleG1 []byte) (string, [
 	for _, function := range functions {
 		functionObjects[function.info.Defs[function.fn.Name]] = function.id
 	}
-	if executionModuleVersion(moduleG1) >= 45 {
+	selectedExecutionVersion := executionModuleVersion(moduleG1)
+	functionObjects[executionModuleVersionObject] = strconv.FormatUint(selectedExecutionVersion, 10)
+	if selectedExecutionVersion >= 45 {
 		// nil is reserved metadata, never a Go declaration object.
 		functionObjects[nil] = "native-default"
-	} else if executionModuleVersion(moduleG1) >= 43 {
+	} else if selectedExecutionVersion >= 43 {
 		// nil is reserved metadata, never a Go declaration object.
 		functionObjects[nil] = "native-observation"
 	}

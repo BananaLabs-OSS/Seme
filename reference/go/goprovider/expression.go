@@ -1987,7 +1987,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		mapping, mapOK := underlying.(*types.Map)
 		indexBasic, indexOK := goUnderlying(info, expression.Index).(*types.Basic)
 		if ((!arrayOK || !isInt64(array.Elem())) && (!sliceOK || !(isInt64(slice.Elem()) || isBool(slice.Elem()) || isPureString(slice.Elem()))) && (!mapOK || !isInt64(mapping.Key()) || !isInt64(mapping.Elem()))) || !indexOK || (indexBasic.Kind() != types.Int && indexBasic.Kind() != types.Int64) {
-			if functions[nil] == "native-default" {
+			if goExecutionModuleVersion(functions) >= 59 && functions[nil] == "native-default" {
 				return analyzeNativeGoIndex(expression, signature, info, locals, functions, records, mutableLocals)
 			}
 			return nil, fmt.Errorf("expression.unsupported_index_read")
@@ -2013,7 +2013,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 }
 
 func analyzeNativeGoBuiltinCall(name string, call *ast.CallExpr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
-	if functions[nil] != "native-default" {
+	if goExecutionModuleVersion(functions) < 60 || functions[nil] != "native-default" {
 		return nil, fmt.Errorf("expression.native_builtin_disabled")
 	}
 	var expected []types.Type
