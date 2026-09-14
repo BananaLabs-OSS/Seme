@@ -644,6 +644,23 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				return nil, fmt.Errorf("control.unsupported_statement:%T", raw)
 			}
 			declaration, ok := statement.Decl.(*ast.GenDecl)
+			if ok && goExecutionModuleVersion(functions) >= 82 && declaration.Tok == token.CONST {
+				for _, rawSpec := range declaration.Specs {
+					spec, ok := rawSpec.(*ast.ValueSpec)
+					if !ok || len(spec.Names) == 0 {
+						return nil, fmt.Errorf("control.local_constant_declaration_shape")
+					}
+					for _, name := range spec.Names {
+						if name.Name == "_" {
+							continue
+						}
+						if _, ok := info.Defs[name].(*types.Const); !ok {
+							return nil, fmt.Errorf("control.local_constant_declaration_binding")
+						}
+					}
+				}
+				continue
+			}
 			if ok && goExecutionModuleVersion(functions) >= 81 && declaration.Tok == token.TYPE {
 				for _, rawSpec := range declaration.Specs {
 					spec, ok := rawSpec.(*ast.TypeSpec)
