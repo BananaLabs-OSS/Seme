@@ -644,6 +644,15 @@ slice semantics across `int64`, `bool`, and `string` without changing the
 established `[]int64` identity, and lifts single-binding Go `if` initializers
 with their true lexical scope. Run `./scripts/check-execution-v40.sh`.
 
+[`Core Execution v41`](spec/core-execution-v41.md) adds language-neutral
+ordered products and statically typed projection. The Go provider uses them for
+bounded multiple-result functions, local destructuring, and forwarded native
+value-plus-error calls while evaluating each producer once. Runtime-owned
+types are explicit: Go `error` is retained as a typed Go-native value, and its
+nil test is an attributable native operation rather than a fabricated
+universal exception rule. Map comma-ok remains the existing neutral Option
+mapping. Run `./scripts/check-execution-v41.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
