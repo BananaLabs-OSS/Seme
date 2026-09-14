@@ -1471,6 +1471,31 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 						return &goExpression{kind: goInterfaceValue, left: value, typeID: interfaceID, witnessID: stableID("execution", "witness", concreteID, interfaceID)}, nil
 					}
 				}
+				if goExecutionModuleVersion(functions) >= 92 && functions[nil] == "native-default" {
+					targetType, sourceType := typeName.Type(), info.TypeOf(expression.Args[0])
+					if sourceType != nil && targetType != nil && types.ConvertibleTo(sourceType, targetType) {
+						value, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+						if err != nil {
+							return nil, err
+						}
+						resultTypeID, supported := goSupportedTypeID(targetType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+						nativeTypes := map[string]string{}
+						if !supported {
+							var native bool
+							resultTypeID, native = goNativeTypeID(targetType)
+							if !native {
+								return nil, fmt.Errorf("expression.native_conversion_target")
+							}
+							resultSpelling, _ := goNativeTypeSpelling(targetType)
+							nativeTypes[resultTypeID] = resultSpelling
+						}
+						spelling, native := goNativeTypeSpelling(targetType)
+						if !native {
+							return nil, fmt.Errorf("expression.native_conversion_target")
+						}
+						return &goExpression{kind: goNativeInvocation, arguments: []*goExpression{value}, nativeLanguage: "go", nativeTarget: "builtin.assignment_convert[" + spelling + "]", nativeSignature: "conversion " + spelling, nativeResultType: resultTypeID, nativeTypes: nativeTypes}, nil
+					}
+				}
 			}
 		}
 		if ok && identifier.Name == "int" && info.Uses[identifier] == types.Universe.Lookup("int") && len(expression.Args) == 1 && isInt64(info.TypeOf(expression.Args[0])) {
