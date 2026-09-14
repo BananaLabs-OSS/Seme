@@ -690,6 +690,11 @@ intermediate field values as explicit native types, so nested observations such
 as Go's `request.URL.Path` remain attributable and can return neutral values to
 canonical Seme. Run `./scripts/check-execution-v47.sh`.
 
+[`Core Execution v48`](spec/core-execution-v48.md) permits ordinary function
+products to mix neutral values with explicitly Go-owned result types while
+keeping application-owned records out of the runtime boundary. Run
+`./scripts/check-execution-v48.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

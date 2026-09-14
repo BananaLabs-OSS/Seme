@@ -284,6 +284,30 @@ func Path(request *http.Request) string { return request.URL.Path }
 	}
 }
 
+func TestIncrementalSessionRetainsNativeItemsInFunctionProductResult(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v47/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-product", Entry: "Pair", Files: map[string]string{
+		"pair.go": `package nativeproduct
+func Pair(value string, offset int) (string, int) { return value, offset }
+`,
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native product result rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a06f", "0000000000000000000000000000a071", "by 696e74"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native product result omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v43/module.g1")
 	if err != nil {
