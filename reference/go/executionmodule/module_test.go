@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(115); err == nil {
+	if _, err := Declarations(116); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -1189,6 +1189,20 @@ func TestVersion114AddsNativeMethodExpression(t *testing.T) {
 	}
 	if len(current) != len(previous)+1 || current[len(current)-1].Name != "NativeMethodExpression" {
 		t.Fatalf("v114 declarations = %#v", current[len(previous):])
+	}
+}
+
+func TestVersion115AddsNativeLexicalClosure(t *testing.T) {
+	previous, err := Declarations(114)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(115)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(current)-1].Name != "NativeLexicalClosure" {
+		t.Fatalf("v115 declarations = %#v", current[len(previous):])
 	}
 }
 

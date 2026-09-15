@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"go/ast"
 	"go/format"
 	"go/parser"
 	"go/token"
@@ -66,6 +67,7 @@ const (
 	sNativeType           = "0000000000000000000000000000a071"
 	sNativeFieldRead      = "0000000000000000000000000000a072"
 	sNativeBindingRead    = "0000000000000000000000000000a073"
+	sNativeDefaultValue   = "0000000000000000000000000000a074"
 	sSliceConstruct       = "0000000000000000000000000000a068"
 	sBooleanNot           = "0000000000000000000000000000a069"
 	sBytes                = "00000000000000000000000000009041"
@@ -102,6 +104,7 @@ const (
 	sNativeMethodValue    = "0000000000000000000000000000a089"
 	sNativeIndirectCall   = "0000000000000000000000000000a08a"
 	sNativeMethodExpr     = "0000000000000000000000000000a08c"
+	sNativeLexicalClosure = "0000000000000000000000000000a08d"
 	sNativeSwitchCase     = "0000000000000000000000000000a077"
 	sNativeSwitch         = "0000000000000000000000000000a078"
 	sNativeRangeBinding   = "0000000000000000000000000000a07b"
@@ -2817,6 +2820,37 @@ func expr(id string, c context) (string, error) {
 			return "", err
 		}
 		return "(" + receiver + ")." + name, nil
+	case sNativeLexicalClosure:
+		language, err := text(e, "000000000000000000000000000a08d0")
+		if err != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_lexical_closure_language")
+		}
+		signature, signatureErr := text(e, "000000000000000000000000000a08d1")
+		source, err := text(e, "000000000000000000000000000a08d2")
+		parsed, parseErr := parser.ParseExpr(source)
+		_, closure := parsed.(*ast.FuncLit)
+		if signatureErr != nil || strings.TrimSpace(signature) == "" || err != nil || parseErr != nil || !closure {
+			return "", fmt.Errorf("go_projection.native_lexical_closure_source")
+		}
+		resultType, refErr := ref(e, "000000000000000000000000000a08d3")
+		if refErr != nil || c.graph[resultType].schema != sNativeType {
+			return "", fmt.Errorf("go_projection.native_lexical_closure_type")
+		}
+		return source, nil
+	case sNativeDefaultValue:
+		language, err := text(e, "000000000000000000000000000a0740")
+		if err != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_default_language")
+		}
+		typeID, err := ref(e, "000000000000000000000000000a0741")
+		if err != nil {
+			return "", err
+		}
+		name, err := typeName(c.graph, typeID)
+		if err != nil {
+			return "", err
+		}
+		return "*new(" + name + ")", nil
 	case sNativeMethodCall:
 		language, err := text(e, "000000000000000000000000000a06e0")
 		if err != nil || language != "go" {
