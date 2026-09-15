@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(113); err == nil {
+	if _, err := Declarations(114); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -1152,6 +1152,30 @@ func TestVersion112KeepsSchemaStable(t *testing.T) {
 	if len(current) != len(previous) {
 		t.Fatalf("v112 declaration count = %d, want %d", len(current), len(previous))
 	}
+}
+
+func TestVersion113AddsNativeSelectBindings(t *testing.T) {
+	previous, err := Declarations(112)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(113)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(current)-1].Name != "NativeSelectBinding" {
+		t.Fatalf("v113 declarations = %#v", current[len(previous):])
+	}
+	for _, schema := range current {
+		if schema.Name != "NativeSelectCase" {
+			continue
+		}
+		if len(schema.Fields) != 5 || schema.Fields[4].Name != "native_select_case.bindings" || schema.Fields[4].Schema != 0xa08b {
+			t.Fatalf("v113 native select case fields = %#v", schema.Fields)
+		}
+		return
+	}
+	t.Fatal("NativeSelectCase missing")
 }
 
 func TestVersion60PreservesVersion59Schema(t *testing.T) {

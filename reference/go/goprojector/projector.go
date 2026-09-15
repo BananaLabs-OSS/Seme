@@ -97,6 +97,7 @@ const (
 	sNativeChannelSend    = "0000000000000000000000000000a085"
 	sNativeSelectCase     = "0000000000000000000000000000a086"
 	sNativeSelect         = "0000000000000000000000000000a087"
+	sNativeSelectBinding  = "0000000000000000000000000000a08b"
 	sNativeChannelReceive = "0000000000000000000000000000a088"
 	sNativeMethodValue    = "0000000000000000000000000000a089"
 	sNativeIndirectCall   = "0000000000000000000000000000a08a"
@@ -1135,6 +1136,41 @@ func projectBlock(id string, c context) (string, error) {
 					return "", err
 				}
 				header := "\tdefault:"
+				bindingIDs := []string{}
+				if _, present := selectCase.fields["000000000000000000000000000a0864"]; present {
+					bindingIDs, err = refs(selectCase, "000000000000000000000000000a0864")
+					if err != nil {
+						return "", err
+					}
+				}
+				sort.SliceStable(bindingIDs, func(i, j int) bool {
+					left, lok := c.graph[bindingIDs[i]]
+					right, rok := c.graph[bindingIDs[j]]
+					if !lok || !rok {
+						return bindingIDs[i] < bindingIDs[j]
+					}
+					li, _ := unsigned(left, "000000000000000000000000000a08b2")
+					ri, _ := unsigned(right, "000000000000000000000000000a08b2")
+					return li < ri
+				})
+				bindingNames := make([]string, len(bindingIDs))
+				for index, bindingID := range bindingIDs {
+					binding, ok := c.graph[bindingID]
+					if !ok {
+						return "", fmt.Errorf("go_projection.native_select_binding_missing:%s", bindingID)
+					}
+					if binding.schema != sNativeSelectBinding {
+						return "", fmt.Errorf("go_projection.native_select_binding_schema:%s", binding.schema)
+					}
+					name, err := text(binding, "000000000000000000000000000a08b0")
+					if err != nil {
+						return "", fmt.Errorf("go_projection.native_select_binding_name:%w", err)
+					}
+					if !identifier(name) {
+						return "", fmt.Errorf("go_projection.native_select_binding_identifier:%s", name)
+					}
+					bindingNames[index] = name
+				}
 				switch operation {
 				case "receive":
 					if len(channelIDs) != 1 || len(valueIDs) != 0 {
@@ -1144,7 +1180,11 @@ func projectBlock(id string, c context) (string, error) {
 					if err != nil {
 						return "", err
 					}
-					header = "\tcase <-" + channel + ":"
+					if len(bindingNames) == 0 {
+						header = "\tcase <-" + channel + ":"
+					} else {
+						header = "\tcase " + strings.Join(bindingNames, ", ") + " := <-" + channel + ":"
+					}
 				case "send":
 					if len(channelIDs) != 1 || len(valueIDs) != 1 {
 						return "", fmt.Errorf("go_projection.native_select_send")
@@ -1171,6 +1211,9 @@ func projectBlock(id string, c context) (string, error) {
 				}
 				child := c
 				child.locals = cloneNames(c.locals)
+				for index, bindingID := range bindingIDs {
+					child.locals[bindingID] = bindingNames[index]
+				}
 				body, err := projectBlock(bodyID, child)
 				if err != nil {
 					return "", err

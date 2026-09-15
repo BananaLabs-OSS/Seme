@@ -869,6 +869,32 @@ func TestProjectsNativeSelectBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { done := make(chan struct{}); var tick chan struct{}; if Wait(done, tick) != 3 { t.Fatal("default") } }`)
 }
 
+func TestProjectsNativeSelectReceiveBindingsBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v113/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-select-bindings", Entry: "Receive", Files: map[string]string{
+		"select.go": "package sample\nfunc Receive(input <-chan int64) int64 { result := int64(0); select { case value, ok := <-input: if ok { result = value }; default: result = 1 }; return result }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native select binding lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "case value, ok := <-input:") {
+		t.Fatalf("projection lacks receive bindings:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { input := make(chan int64, 1); input <- 7; if Receive(input) != 7 { t.Fatal("receive") }; close(input); if Receive(input) != 0 { t.Fatal("closed") } }`)
+}
+
 func TestProjectsParallelClassicForBackToGo(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v102/module.g1")
 	if err != nil {
