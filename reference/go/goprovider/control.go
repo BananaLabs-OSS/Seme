@@ -38,6 +38,8 @@ type goStatement struct {
 	nativePointer         *goExpression
 	nativePointerValue    *goExpression
 	nativeConcurrentStart *goExpression
+	nativeSendChannel     *goExpression
+	nativeSendValue       *goExpression
 	nativeSwitchSubject   *goExpression
 	nativeSwitchCases     []goSwitchCase
 	nativeSwitchDefault   *goBlock
@@ -1566,6 +1568,23 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				return nil, err
 			}
 			block.statements = append(block.statements, &goStatement{nativeConcurrentStart: invocation})
+		case *ast.SendStmt:
+			if goExecutionModuleVersion(functions) < 100 || functions[nil] != "native-default" {
+				return nil, fmt.Errorf("control.unsupported_statement:%T", statement)
+			}
+			channel, err := analyzeGoExpressionWithProgram(statement.Chan, signature, info, locals, functions, records, mutable)
+			if err != nil {
+				return nil, err
+			}
+			channelType, ok := goUnderlying(info, statement.Chan).(*types.Chan)
+			if !ok {
+				return nil, fmt.Errorf("control.channel_send_target")
+			}
+			value, err := analyzeGoExpressionExpected(statement.Value, channelType.Elem(), signature, info, locals, functions, records, mutable)
+			if err != nil {
+				return nil, err
+			}
+			block.statements = append(block.statements, &goStatement{nativeSendChannel: channel, nativeSendValue: value})
 		case *ast.ExprStmt:
 			call, ok := statement.X.(*ast.CallExpr)
 			if !ok {
@@ -2350,6 +2369,19 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, valueEntities...)
 			statementID = stableID("execution", owner, statementPath, "native-field-assignment")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a076", []graphField{bytesField(0xa0760, "go"), bytesField(0xa0761, statement.nativeFieldName), refField(0xa0762, receiverID), refField(0xa0763, valueID)})})
+		} else if statement.nativeSendChannel != nil {
+			channelEntities, channelID, err := emitCanonicalExpressionWithLocals(statement.nativeSendChannel, owner+":"+statementPath+":native-send-channel", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			valueEntities, valueID, err := emitCanonicalExpressionWithLocals(statement.nativeSendValue, owner+":"+statementPath+":native-send-value", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, channelEntities...)
+			*instances = append(*instances, valueEntities...)
+			statementID = stableID("execution", owner, statementPath, "native-channel-send")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a085", []graphField{bytesField(0xa0850, "go"), refField(0xa0851, channelID), refField(0xa0852, valueID)})})
 		} else if statement.nativeConcurrentStart != nil {
 			invocationEntities, invocationID, err := emitCanonicalExpressionWithLocals(statement.nativeConcurrentStart, owner+":"+statementPath+":native-concurrent-start", parameterIDs, localIDs, integerTypeID)
 			if err != nil {

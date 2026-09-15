@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(100); err == nil {
+	if _, err := Declarations(101); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -965,6 +965,20 @@ func TestVersion99AddsNativeConcurrentStart(t *testing.T) {
 	}
 	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa084 || current[len(previous)].Name != "NativeConcurrentStart" {
 		t.Fatalf("v99 declarations = %#v", current[len(previous):])
+	}
+}
+
+func TestVersion100AddsNativeChannelSend(t *testing.T) {
+	previous, err := Declarations(99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa085 || current[len(previous)].Name != "NativeChannelSend" {
+		t.Fatalf("v100 declarations = %#v", current[len(previous):])
 	}
 }
 

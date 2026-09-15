@@ -685,6 +685,32 @@ func TestProjectsNativeConcurrentStartBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { Start(1) }`)
 }
 
+func TestProjectsNativeChannelSendBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v100/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-channel-send", Entry: "Send", Files: map[string]string{
+		"send.go": "package sample\nfunc Send(done chan struct{}) { done <- struct{}{} }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native channel send lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "done <- struct{}{}") {
+		t.Fatalf("projection lacks channel send:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { done := make(chan struct{}, 1); Send(done); <-done }`)
+}
+
 func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
 	if err != nil {
