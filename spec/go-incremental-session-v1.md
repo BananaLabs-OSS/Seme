@@ -20,6 +20,13 @@ declarations through the existing compositional expression and structured-body
 lifter. Source mappings connect stable semantic identities to document byte
 ranges and line/column locations.
 
+Function and method source mappings also carry the complete Go signature,
+receiver, ordered parameter names and types, ordered result types, and variadic
+marker established by the same type-checking pass. Consumers can therefore
+construct an explicit typed native bridge when another language projector
+cannot lower the complete graph; they do not need to infer a calling shape from
+source text or a declaration name.
+
 Results use three dispositions:
 
 - `accepted-valid`: the snapshot parsed, type-checked, and produced at least one
