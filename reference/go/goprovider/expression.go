@@ -94,6 +94,7 @@ const (
 	goNativeDereference
 	goNativeBinary
 	goNativeMethodValue
+	goNativeIndirectInvocation
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -441,6 +442,33 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a089", []graphField{
 				bytesField(0xa0890, expression.nativeLanguage), bytesField(0xa0891, expression.nativeTarget), bytesField(0xa0892, expression.nativeSignature),
 				refField(0xa0893, receiver), refField(0xa0894, expression.nativeResultType),
+			})}
+			return id, nil
+		case goNativeIndirectInvocation:
+			if expression.left == nil || expression.nativeLanguage == "" || expression.nativeSignature == "" || expression.nativeResultType == "" {
+				return "", fmt.Errorf("expression.native_indirect_invocation_incomplete")
+			}
+			callable, err := emit(expression.left, path+".callable")
+			if err != nil {
+				return "", err
+			}
+			arguments := make([]string, len(expression.arguments))
+			for index, argument := range expression.arguments {
+				arguments[index], err = emit(argument, path+".argument."+strconv.Itoa(index))
+				if err != nil {
+					return "", err
+				}
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, expression.nativeLanguage), bytesField(0xa0711, spelling)})}
+			}
+			if len(expression.nativeResultTypes) > 1 {
+				emitted[expression.nativeResultType] = graphEntity{expression.nativeResultType, entity(expression.nativeResultType, "0000000000000000000000000000a06f", []graphField{refsField(0xa06f0, expression.nativeResultTypes)})}
+			}
+			id := expressionNodeID(owner, path, "native-indirect-invocation")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a08a", []graphField{
+				bytesField(0xa08a0, expression.nativeLanguage), bytesField(0xa08a1, expression.nativeSignature), refField(0xa08a2, callable),
+				refsField(0xa08a3, arguments), refField(0xa08a4, expression.nativeResultType),
 			})}
 			return id, nil
 		case goFixedArrayConstruct:
@@ -1687,6 +1715,42 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 					return invocation, nil
 				} else {
 					return nil, fmt.Errorf("expression.unsupported_call:%v", builtinErr)
+				}
+			}
+		}
+		if goExecutionModuleVersion(functions) >= 107 && functions[nil] == "native-default" {
+			if callSignature, signatureOK := goFunctionSignature(info.TypeOf(expression.Fun)); signatureOK {
+				_, declaredFunction := info.Uses[identifier].(*types.Func)
+				if !declaredFunction {
+					if expression.Ellipsis.IsValid() && !callSignature.Variadic() {
+						return nil, fmt.Errorf("expression.native_indirect_call_target")
+					}
+					callable, err := analyzeGoExpressionWithProgram(expression.Fun, signature, info, locals, functions, records, mutableLocals)
+					if err != nil {
+						return nil, err
+					}
+					resultType, resultTypes, nativeTypes, resultOK := nativeGoResultTypeID(callSignature, records)
+					if !resultOK {
+						return nil, fmt.Errorf("expression.native_indirect_call_result_type")
+					}
+					arguments := make([]*goExpression, len(expression.Args))
+					for index, argument := range expression.Args {
+						expected := goCallArgumentType(callSignature, index, expression.Ellipsis.IsValid(), len(expression.Args))
+						arguments[index], err = analyzeGoExpressionExpected(argument, expected, signature, info, locals, functions, records, mutableLocals)
+						if err != nil {
+							return nil, err
+						}
+					}
+					signatureText := types.TypeString(callSignature, func(pkg *types.Package) string {
+						if pkg == nil {
+							return ""
+						}
+						return pkg.Path()
+					})
+					if expression.Ellipsis.IsValid() {
+						signatureText += ".ellipsis"
+					}
+					return &goExpression{kind: goNativeIndirectInvocation, left: callable, arguments: arguments, nativeLanguage: "go", nativeSignature: signatureText, nativeResultType: resultType, nativeResultTypes: resultTypes, nativeTypes: nativeTypes}, nil
 				}
 			}
 		}

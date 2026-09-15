@@ -737,6 +737,32 @@ func TestProjectsVariadicNativeMethodCallBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Run(&Runner{Base: 1}, []int64{2}) != 3 { t.Fatal("variadic method") } }`)
 }
 
+func TestProjectsNativeIndirectInvocationBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v107/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "nativeproof", Entry: "Run", Files: map[string]string{
+		"call.go": "package sample\nfunc Run(cancel func()) { cancel() }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native indirect invocation lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "cancel()") {
+		t.Fatalf("projection lacks native indirect invocation:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { called := false; Run(func() { called = true }); if !called { t.Fatal("not called") } }`)
+}
+
 func TestProjectsNativeChannelSendBackToGo(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v100/module.g1")
 	if err != nil {
