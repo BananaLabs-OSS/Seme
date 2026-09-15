@@ -2316,6 +2316,23 @@ func TestIncrementalSessionRetainsMapLookupIfInitializer(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsNativeIntegerForBinding(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v98/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-for-binding", Entry: "Sum", Files: map[string]string{
+		"loop.go": "package sample\nfunc Sum(limit int) int { total := 0; for index := 0; index < limit; index++ { total += index }; return total }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native integer for binding = %#v", result)
+	}
+}
+
 func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
 	if err != nil {

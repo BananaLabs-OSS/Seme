@@ -1470,16 +1470,24 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					return nil, fmt.Errorf("control.for_binding")
 				}
 				object := info.Defs[name]
-				if info.Uses[postName] != object || object == nil || !isInt64(object.Type()) {
+				if info.Uses[postName] != object || object == nil || !isInt64(object.Type()) && goExecutionModuleVersion(functions) < 98 {
 					return nil, fmt.Errorf("control.for_binding")
 				}
 				initializer, err := analyzeGoExpressionWithProgram(init.Rhs[0], signature, info, locals, functions, records, mutable)
 				if err != nil {
 					return nil, err
 				}
+				localType := "i64"
+				if !isInt64(object.Type()) {
+					var ok bool
+					initializer, localType, ok = nativeGoAssignmentValue(initializer, object.Type())
+					if !ok {
+						return nil, fmt.Errorf("control.for_binding")
+					}
+				}
 				local := *next
 				*next++
-				block.statements = append(block.statements, &goStatement{localName: name.Name, localType: "i64", local: local, initializer: initializer, mutable: true})
+				block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localType, local: local, initializer: initializer, mutable: true})
 				locals[object] = local
 				mutable[object] = true
 				condition, err := analyzeGoExpressionWithProgram(statement.Cond, signature, info, locals, functions, records, mutable)
@@ -1497,7 +1505,16 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					return nil, fmt.Errorf("control.for_post")
 				}
 				postStep := func() *goStatement {
-					return &goStatement{local: local, mutable: true, assignment: &goExpression{kind: kind, left: &goExpression{kind: goPlaceRead, local: local}, right: &goExpression{kind: goIntegerLiteral, integer: 1}}}
+					value := &goExpression{kind: kind, left: &goExpression{kind: goPlaceRead, local: local}, right: &goExpression{kind: goIntegerLiteral, integer: 1}}
+					if !isInt64(object.Type()) {
+						spelling, _ := goNativeTypeSpelling(object.Type())
+						op := "+="
+						if post.Tok == token.DEC {
+							op = "-="
+						}
+						value = &goExpression{kind: goNativeInvocation, arguments: []*goExpression{{kind: goPlaceRead, local: local}, {kind: goIntegerLiteral, integer: 1}}, nativeLanguage: "go", nativeTarget: "builtin.compound[" + op + ";" + spelling + "]", nativeSignature: "func(" + spelling + ", " + spelling + ") " + spelling, nativeResultType: localType, nativeTypes: map[string]string{localType: spelling}}
+					}
+					return &goStatement{local: local, mutable: true, assignment: value}
 				}
 				injectBeforeNativeContinue(body, postStep)
 				body.statements = append(body.statements, postStep())
