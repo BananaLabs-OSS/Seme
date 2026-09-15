@@ -1413,6 +1413,39 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return &goExpression{kind: kind, left: mapping, initial: key, right: value}, nil
 		}
+		// A Go conversion is syntactically a call, but its target may be any type
+		// expression rather than only a plain identifier: []byte(text),
+		// (*Item)(value), and pkg.Named(value) are common in real applications.
+		// Keep the existing neutral conversions below for the shapes that Seme can
+		// represent portably; this native-default path preserves every other typed
+		// conversion explicitly and lets the Go projector reconstruct it.
+		if goExecutionModuleVersion(functions) >= 108 && functions[nil] == "native-default" && len(expression.Args) == 1 && !expression.Ellipsis.IsValid() {
+			if callable := info.Types[expression.Fun]; callable.IsType() {
+				targetType, sourceType := callable.Type, info.TypeOf(expression.Args[0])
+				if targetType != nil && sourceType != nil && types.ConvertibleTo(sourceType, targetType) {
+					value, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+					if err != nil {
+						return nil, err
+					}
+					resultTypeID, supported := goSupportedTypeID(targetType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+					nativeTypes := map[string]string{}
+					if !supported {
+						var native bool
+						resultTypeID, native = goNativeTypeID(targetType)
+						if !native {
+							return nil, fmt.Errorf("expression.native_conversion_target")
+						}
+						resultSpelling, _ := goNativeTypeSpelling(targetType)
+						nativeTypes[resultTypeID] = resultSpelling
+					}
+					spelling, native := goNativeTypeSpelling(targetType)
+					if !native {
+						return nil, fmt.Errorf("expression.native_conversion_target")
+					}
+					return &goExpression{kind: goNativeInvocation, arguments: []*goExpression{value}, nativeLanguage: "go", nativeTarget: "builtin.assignment_convert[" + spelling + "]", nativeSignature: "conversion " + spelling, nativeResultType: resultTypeID, nativeTypes: nativeTypes}, nil
+				}
+			}
+		}
 		if selector, ok := ast.Unparen(expression.Fun).(*ast.SelectorExpr); ok && isBytesFunction(info, selector, "Equal") && len(expression.Args) == 2 && !expression.Ellipsis.IsValid() {
 			left, err := analyzeGoExpressionExpected(expression.Args[0], info.TypeOf(expression.Args[0]), signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
