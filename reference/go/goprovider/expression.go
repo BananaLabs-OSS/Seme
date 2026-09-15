@@ -1442,24 +1442,27 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			kind, valid := structuralImmutableMapCall(function, expression, info)
 			if !valid {
-				return nil, fmt.Errorf("expression.unsupported_function_literal_call")
+				if goExecutionModuleVersion(functions) < 111 || functions[nil] != "native-default" {
+					return nil, fmt.Errorf("expression.unsupported_function_literal_call")
+				}
+			} else {
+				mapping, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+				if err != nil {
+					return nil, err
+				}
+				key, err := analyzeGoExpressionWithProgram(expression.Args[1], signature, info, locals, functions, records, mutableLocals)
+				if err != nil {
+					return nil, err
+				}
+				if kind == goMapRemove {
+					return &goExpression{kind: kind, left: mapping, right: key}, nil
+				}
+				value, err := analyzeGoExpressionWithProgram(expression.Args[2], signature, info, locals, functions, records, mutableLocals)
+				if err != nil {
+					return nil, err
+				}
+				return &goExpression{kind: kind, left: mapping, initial: key, right: value}, nil
 			}
-			mapping, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
-			if err != nil {
-				return nil, err
-			}
-			key, err := analyzeGoExpressionWithProgram(expression.Args[1], signature, info, locals, functions, records, mutableLocals)
-			if err != nil {
-				return nil, err
-			}
-			if kind == goMapRemove {
-				return &goExpression{kind: kind, left: mapping, right: key}, nil
-			}
-			value, err := analyzeGoExpressionWithProgram(expression.Args[2], signature, info, locals, functions, records, mutableLocals)
-			if err != nil {
-				return nil, err
-			}
-			return &goExpression{kind: kind, left: mapping, initial: key, right: value}, nil
 		}
 		// A Go conversion is syntactically a call, but its target may be any type
 		// expression rather than only a plain identifier: []byte(text),
