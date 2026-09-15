@@ -2296,6 +2296,26 @@ func TestIncrementalSessionRetainsNativeStringRange(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsMapLookupIfInitializer(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v97/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/map-if-initializer", Entry: "Lookup", Files: map[string]string{
+		"lookup.go": "package sample\nfunc Lookup(values map[string]string, key string) string { if value, ok := values[key]; ok { return value }; return \"missing\" }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("map lookup if initializer = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "6275696c74696e2e6d61705f6c6f6f6b7570") {
+		t.Fatal("native map lookup target missing")
+	}
+}
+
 func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
 	if err != nil {

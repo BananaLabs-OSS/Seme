@@ -603,6 +603,34 @@ func TestProjectsNativeStringRangeBackToGoSyntax(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Count("a界") != 2 { t.Fatal("range") } }`)
 }
 
+func TestProjectsMapLookupIfInitializerBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v97/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/map-if-initializer", Entry: "Lookup", Files: map[string]string{
+		"lookup.go": "package sample\nfunc Lookup(values map[string]string, key string) string { if value, ok := values[key]; ok { return value }; return \"missing\" }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("map lookup if initializer lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	for _, fragment := range []string{"(map[string]string)(values)[string(key)]", "if ok", "return value"} {
+		if !strings.Contains(source, fragment) {
+			t.Fatalf("projection lacks %q:\n%s", fragment, source)
+		}
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Lookup(map[string]string{"a":"yes"}, "a") != "yes" || Lookup(nil, "x") != "missing" { t.Fatal("lookup") } }`)
+}
+
 func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
 	if err != nil {

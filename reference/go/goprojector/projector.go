@@ -2415,6 +2415,11 @@ func expr(id string, c context) (string, error) {
 					return "", fmt.Errorf("go_projection.native_builtin_arity")
 				}
 				return arguments[0] + "[" + arguments[1] + "]", nil
+			case "map_lookup":
+				if len(arguments) != 2 {
+					return "", fmt.Errorf("go_projection.native_builtin_arity")
+				}
+				return arguments[0] + "[" + arguments[1] + "]", nil
 			case "add":
 				if len(arguments) != 2 {
 					return "", fmt.Errorf("go_projection.native_builtin_arity")

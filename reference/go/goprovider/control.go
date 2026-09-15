@@ -1901,6 +1901,40 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 		return nil, nil, nil, fmt.Errorf("control.if_init_shape")
 	}
 	if len(assignment.Lhs) > 1 {
+		if goExecutionModuleVersion(functions) >= 97 && assignment.Tok == token.DEFINE && len(assignment.Lhs) == 2 {
+			if lookup, lookupOK := ast.Unparen(assignment.Rhs[0]).(*ast.IndexExpr); lookupOK {
+				if mapping, mapOK := goUnderlying(info, lookup.X).(*types.Map); mapOK {
+					value, productType, productTypes, err := analyzeGoNativeMapLookupProduct(lookup, mapping, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, nil, nil, err
+					}
+					scopedLocals := cloneLocalScope(locals)
+					scopedMutable := cloneMutableScope(mutable)
+					productLocal := *next
+					*next++
+					statements := []*goStatement{{localName: fmt.Sprintf("seme_product_%d", productLocal), localType: productType, local: productLocal, initializer: value}}
+					for resultIndex, target := range assignment.Lhs {
+						name, nameOK := target.(*ast.Ident)
+						if !nameOK {
+							return nil, nil, nil, fmt.Errorf("control.if_init_binding")
+						}
+						if name.Name == "_" {
+							continue
+						}
+						object := info.Defs[name]
+						if object == nil {
+							return nil, nil, nil, fmt.Errorf("control.if_init_binding")
+						}
+						local := *next
+						*next++
+						projected := &goExpression{kind: goProductProject, left: &goExpression{kind: goLocalRead, local: productLocal}, typeID: productType, elementTypeID: productTypes[resultIndex], productIndex: uint64(resultIndex), productTypes: productTypes}
+						statements = append(statements, &goStatement{localName: name.Name, localType: productTypes[resultIndex], local: local, initializer: projected, mutable: scopedMutable[object]})
+						scopedLocals[object] = local
+					}
+					return scopedLocals, scopedMutable, statements, nil
+				}
+			}
+		}
 		_, callOK := ast.Unparen(assignment.Rhs[0]).(*ast.CallExpr)
 		_, assertionOK := ast.Unparen(assignment.Rhs[0]).(*ast.TypeAssertExpr)
 		tuple, tupleOK := types.Unalias(info.TypeOf(assignment.Rhs[0])).(*types.Tuple)
@@ -1998,6 +2032,36 @@ func analyzeGoIfInitializer(initializer ast.Stmt, signature *types.Signature, in
 	*next++
 	scopedLocals[object] = local
 	return scopedLocals, scopedMutable, []*goStatement{{localName: name.Name, localType: localType, local: local, initializer: value, mutable: scopedMutable[object]}}, nil
+}
+
+func analyzeGoNativeMapLookupProduct(lookup *ast.IndexExpr, mapping *types.Map, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool) (*goExpression, string, []string, error) {
+	mapExpression, err := analyzeGoExpressionWithProgram(lookup.X, signature, info, locals, functions, records, mutable)
+	if err != nil {
+		return nil, "", nil, err
+	}
+	mapExpression, mapTypeID, mapOK := nativeGoAssignmentValue(mapExpression, info.TypeOf(lookup.X))
+	keyExpression, keyTypeID, keySpelling, err := analyzeNativeGoOperand(lookup.Index, mapping.Key(), signature, info, locals, functions, records, mutable)
+	if err != nil || !mapOK {
+		return nil, "", nil, fmt.Errorf("control.if_init_shape")
+	}
+	boolType := types.Universe.Lookup("bool").Type()
+	tuple := types.NewTuple(types.NewVar(token.NoPos, nil, "value", mapping.Elem()), types.NewVar(token.NoPos, nil, "present", boolType))
+	productType, productTypes, nativeResultTypes, supported := goProductTypeIDWithNative(tuple, records, "", true)
+	if !supported {
+		return nil, "", nil, fmt.Errorf("control.if_init_type")
+	}
+	mapSpelling, _ := goNativeTypeSpelling(info.TypeOf(lookup.X))
+	elementSpelling := types.TypeString(mapping.Elem(), nil)
+	nativeTypes := map[string]string{mapTypeID: mapSpelling, keyTypeID: keySpelling}
+	for _, nativeType := range nativeResultTypes {
+		id, ok := goNativeTypeID(nativeType)
+		spelling, native := goNativeTypeSpelling(nativeType)
+		if ok && native {
+			nativeTypes[id] = spelling
+		}
+	}
+	value := &goExpression{kind: goNativeInvocation, arguments: []*goExpression{mapExpression, keyExpression}, nativeLanguage: "go", nativeTarget: "builtin.map_lookup[" + mapSpelling + "]", nativeSignature: "func(" + mapSpelling + ", " + keySpelling + ") (" + elementSpelling + ", bool)", nativeResultType: productType, nativeResultTypes: productTypes, nativeTypes: nativeTypes}
+	return value, productType, productTypes, nil
 }
 
 func cloneMutableScope(mutable map[types.Object]bool) map[types.Object]bool {
