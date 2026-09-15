@@ -791,6 +791,29 @@ func TestProjectsNativeChannelReceiveBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { done := make(chan struct{}, 1); done <- struct{}{}; Wait(done) }`)
 }
 
+func TestProjectsEmptyRecordLiteralBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v104/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/empty-record", Entry: "Empty", Files: map[string]string{
+		"empty.go": "package sample\ntype Entry struct { Count int64; Name string }\nfunc Empty() Entry { return Entry{} }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("empty record lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { got := Empty(); if got.Count != 0 || got.Name != "" { t.Fatalf("%+v", got) } }`)
+}
+
 func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
 	if err != nil {
