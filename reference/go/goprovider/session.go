@@ -107,9 +107,12 @@ type SessionDiagnostic struct {
 }
 
 type SourceIdentity struct {
-	ID, Kind, Name, Document string
-	Start, End               int
-	Line, Column             int
+	ID, Kind, Name, Document, Signature, Receiver string
+	Parameters, ParameterTypes, ResultTypes       []string
+	Start, End                                    int
+	Line, Column                                  int
+	Method                                        bool
+	Variadic                                      bool
 }
 
 // ReferenceOccurrence binds a source-language use site to a stable semantic
@@ -353,7 +356,14 @@ func clonePackageFunctions(in []PackageFunctionMetadata) []PackageFunctionMetada
 }
 
 func cloneSources(sources []SourceIdentity) []SourceIdentity {
-	return append([]SourceIdentity(nil), sources...)
+	out := make([]SourceIdentity, len(sources))
+	for index, source := range sources {
+		out[index] = source
+		out[index].Parameters = append([]string(nil), source.Parameters...)
+		out[index].ParameterTypes = append([]string(nil), source.ParameterTypes...)
+		out[index].ResultTypes = append([]string(nil), source.ResultTypes...)
+	}
+	return out
 }
 
 func cloneReferences(references []ReferenceOccurrence) []ReferenceOccurrence {
@@ -1350,7 +1360,27 @@ func liftSessionFunction(function sessionFunction, integerID, booleanID, stringI
 	if function.method {
 		kind = "method"
 	}
-	source := SourceIdentity{ID: function.id, Kind: kind, Name: function.name, Document: function.file, Start: start.Offset, End: end.Offset, Line: start.Line, Column: start.Column}
+	receiver := ""
+	if function.sig.Recv() != nil {
+		receiver = types.TypeString(function.sig.Recv().Type(), func(pkg *types.Package) string {
+			if pkg == nil {
+				return ""
+			}
+			return pkg.Path()
+		})
+	}
+	source := SourceIdentity{
+		ID: function.id, Kind: kind, Name: function.name, Document: function.file,
+		Signature: types.TypeString(function.sig, func(pkg *types.Package) string {
+			if pkg == nil {
+				return ""
+			}
+			return pkg.Path()
+		}),
+		Receiver: receiver, Parameters: nativeParameterNames(function.sig), ParameterTypes: nativeTupleTypes(function.sig.Params()),
+		ResultTypes: nativeTupleTypes(function.sig.Results()), Method: function.method, Variadic: function.sig.Variadic(),
+		Start: start.Offset, End: end.Offset, Line: start.Line, Column: start.Column,
+	}
 	return instances, source, nil
 }
 

@@ -1627,6 +1627,9 @@ func TestIncrementalSessionRetainsLastValidGraph(t *testing.T) {
 	if valid.Sources[0].Name != "Combine" || valid.Sources[0].Document != "value.go" || valid.Sources[0].Line != 2 || valid.Sources[0].ID == "" {
 		t.Fatalf("source mapping = %#v", valid.Sources[0])
 	}
+	if valid.Sources[0].Signature != "func(left int64, right int64) int64" || strings.Join(valid.Sources[0].Parameters, ",") != "left,right" || strings.Join(valid.Sources[0].ParameterTypes, ",") != "int64,int64" || strings.Join(valid.Sources[0].ResultTypes, ",") != "int64" {
+		t.Fatalf("typed source mapping = %#v", valid.Sources[0])
+	}
 	baseline := valid.CanonicalG1
 
 	incomplete := session.Apply(DocumentSnapshot{Revision: 2, PackagePath: "example.test/session", Files: map[string]string{
