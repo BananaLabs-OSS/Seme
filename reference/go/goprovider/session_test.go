@@ -2395,6 +2395,23 @@ func TestIncrementalSessionRetainsNativeSelect(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsParallelClassicFor(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v102/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/parallel-for", Entry: "Reverse", Files: map[string]string{
+		"reverse.go": "package sample\nfunc Reverse(values []int64) []int64 { for i, j := 0, len(values)-1; i < j; i, j = i+1, j-1 { values[i], values[j] = values[j], values[i] }; return values }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("parallel classic for = %#v", result)
+	}
+}
+
 func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
 	if err != nil {

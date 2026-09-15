@@ -739,6 +739,32 @@ func TestProjectsNativeSelectBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { done := make(chan struct{}); var tick chan struct{}; if Wait(done, tick) != 3 { t.Fatal("default") } }`)
 }
 
+func TestProjectsParallelClassicForBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v102/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/parallel-for", Entry: "Reverse", Files: map[string]string{
+		"reverse.go": "package sample\nfunc Reverse(values []int64) []int64 { for i, j := 0, len(values)-1; i < j; i, j = i+1, j-1 { values[i], values[j] = values[j], values[i] }; return values }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("parallel classic for lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "for ") {
+		t.Fatalf("projection lacks loop:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { got := Reverse([]int64{1,2,3,4}); want := []int64{4,3,2,1}; for i := range want { if got[i] != want[i] { t.Fatalf("%v", got) } } }`)
+}
+
 func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
 	if err != nil {

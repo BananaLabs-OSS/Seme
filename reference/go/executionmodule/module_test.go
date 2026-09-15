@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(102); err == nil {
+	if _, err := Declarations(103); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -993,6 +993,20 @@ func TestVersion101AddsNativeSelect(t *testing.T) {
 	}
 	if len(current) != len(previous)+2 || current[len(previous)].ID != 0xa086 || current[len(previous)].Name != "NativeSelectCase" || current[len(previous)+1].ID != 0xa087 || current[len(previous)+1].Name != "NativeSelect" {
 		t.Fatalf("v101 declarations = %#v", current[len(previous):])
+	}
+}
+
+func TestVersion102PreservesVersion101Schema(t *testing.T) {
+	previous, err := Declarations(101)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(102)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatal("v102 unexpectedly changed canonical schema")
 	}
 }
 
