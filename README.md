@@ -945,6 +945,10 @@ composite and qualified Go types. Run `./scripts/check-execution-v108.sh`.
 [`Core Execution v109`](spec/core-execution-v109.md) preserves contextually
 typed nil inside those conversions. Run `./scripts/check-execution-v109.sh`.
 
+[`Core Execution v110`](spec/core-execution-v110.md) generalizes immutable Go
+closures with typed captures and block bodies. Run
+`./scripts/check-execution-v110.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

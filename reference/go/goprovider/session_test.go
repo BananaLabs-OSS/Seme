@@ -723,6 +723,28 @@ func TestIncrementalSessionRetainsCompositeTypeConversion(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionLiftsGeneralImmutableClosureBlock(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v110/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/general-closure", Entry: "Run", Files: map[string]string{
+		"closure.go": "package generalclosure\nfunc Run(base int64) func(int64) int64 { return func(value int64) int64 { total := base + value; return total } }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("general immutable closure rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a023", "00000000000000000000000000009800", "0000000000000000000000000000a021"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("general closure omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsApplicationNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v54/module.g1")
 	if err != nil {
