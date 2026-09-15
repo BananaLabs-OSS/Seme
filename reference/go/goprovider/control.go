@@ -1022,14 +1022,47 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			// Go's special multi-result convention.
 			if len(statement.Lhs) > 1 && len(statement.Lhs) == len(statement.Rhs) && (statement.Tok == token.DEFINE || statement.Tok == token.ASSIGN) {
 				receiverLocals := make([]int, len(statement.Lhs))
+				indexCollectionLocals := make([]int, len(statement.Lhs))
+				indexLocals := make([]int, len(statement.Lhs))
 				for i := range receiverLocals {
 					receiverLocals[i] = -1
+					indexCollectionLocals[i] = -1
+					indexLocals[i] = -1
 				}
 				if statement.Tok == token.ASSIGN && goExecutionModuleVersion(functions) >= 90 {
 					// Go evaluates every field receiver before any RHS. Materialize
 					// them first so later assignments cannot change which object an
 					// earlier selector denoted.
 					for i, target := range statement.Lhs {
+						if indexed, indexOK := ast.Unparen(target).(*ast.IndexExpr); indexOK && goExecutionModuleVersion(functions) >= 102 {
+							collection, err := analyzeGoExpressionWithProgram(indexed.X, signature, info, locals, functions, records, mutable)
+							if err != nil {
+								return nil, err
+							}
+							indexValue, err := analyzeGoExpressionWithProgram(indexed.Index, signature, info, locals, functions, records, mutable)
+							if err != nil {
+								return nil, err
+							}
+							collectionType, collectionOK := goLocalSemanticType(info.TypeOf(indexed.X), records)
+							if !collectionOK && functions[nil] == "native-default" {
+								collection, collectionType, collectionOK = nativeGoAssignmentValue(collection, info.TypeOf(indexed.X))
+							}
+							indexType, indexOK := goLocalSemanticType(info.TypeOf(indexed.Index), records)
+							if !indexOK && functions[nil] == "native-default" {
+								indexValue, indexType, indexOK = nativeGoAssignmentValue(indexValue, info.TypeOf(indexed.Index))
+							}
+							if !collectionOK || !indexOK {
+								return nil, fmt.Errorf("control.multi_index_target")
+							}
+							collectionLocal, indexLocal := *next, *next+1
+							*next += 2
+							block.statements = append(block.statements,
+								&goStatement{localName: fmt.Sprintf("seme_parallel_collection_%d", i), localType: collectionType, local: collectionLocal, initializer: collection},
+								&goStatement{localName: fmt.Sprintf("seme_parallel_index_%d", i), localType: indexType, local: indexLocal, initializer: indexValue},
+							)
+							indexCollectionLocals[i], indexLocals[i] = collectionLocal, indexLocal
+							continue
+						}
 						selector, selectorOK := ast.Unparen(target).(*ast.SelectorExpr)
 						if !selectorOK {
 							continue
@@ -1072,6 +1105,8 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 						if field, ok := info.Uses[target.Sel].(*types.Var); ok && field.IsField() {
 							expected = field.Type()
 						}
+					case *ast.IndexExpr:
+						expected = info.TypeOf(target)
 					}
 					value, err := analyzeGoExpressionExpected(rhs, expected, signature, info, locals, functions, records, mutable)
 					if err != nil {
@@ -1082,14 +1117,26 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				if statement.Tok == token.ASSIGN {
 					for i, target := range statement.Lhs {
 						name, ok := ast.Unparen(target).(*ast.Ident)
-						if !ok && receiverLocals[i] < 0 {
+						if !ok && receiverLocals[i] < 0 && indexCollectionLocals[i] < 0 {
 							return nil, fmt.Errorf("control.multi_binding_target")
 						}
 						if !ok {
-							field := info.Uses[ast.Unparen(target).(*ast.SelectorExpr).Sel].(*types.Var)
-							localType, typeOK := goLocalSemanticType(field.Type(), records)
+							var targetType types.Type
+							switch target := ast.Unparen(target).(type) {
+							case *ast.SelectorExpr:
+								field, fieldOK := info.Uses[target.Sel].(*types.Var)
+								if !fieldOK || !field.IsField() {
+									return nil, fmt.Errorf("control.multi_binding_target")
+								}
+								targetType = field.Type()
+							case *ast.IndexExpr:
+								targetType = info.TypeOf(target)
+							default:
+								return nil, fmt.Errorf("control.multi_binding_target")
+							}
+							localType, typeOK := goLocalSemanticType(targetType, records)
 							if !typeOK && functions[nil] == "native-default" {
-								initializers[i], localType, typeOK = nativeGoAssignmentValue(initializers[i], field.Type())
+								initializers[i], localType, typeOK = nativeGoAssignmentValue(initializers[i], targetType)
 							}
 							if !typeOK {
 								return nil, fmt.Errorf("control.local_binding_type")
@@ -1131,6 +1178,10 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 					}
 				}
 				for i, target := range statement.Lhs {
+					if indexCollectionLocals[i] >= 0 {
+						block.statements = append(block.statements, &goStatement{nativeIndexCollection: &goExpression{kind: goLocalRead, local: indexCollectionLocals[i]}, nativeIndex: &goExpression{kind: goLocalRead, local: indexLocals[i]}, nativeIndexValue: initializers[i]})
+						continue
+					}
 					if receiverLocals[i] >= 0 {
 						selector := ast.Unparen(target).(*ast.SelectorExpr)
 						block.statements = append(block.statements, &goStatement{nativeFieldReceiver: &goExpression{kind: goLocalRead, local: receiverLocals[i]}, nativeFieldName: selector.Sel.Name, nativeFieldValue: initializers[i]})
@@ -1468,6 +1519,75 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 		case *ast.ForStmt:
 			if statement.Cond == nil && goExecutionModuleVersion(functions) < 83 {
 				return nil, fmt.Errorf("control.for_shape")
+			}
+			if goExecutionModuleVersion(functions) >= 102 && (statement.Init != nil || statement.Post != nil) {
+				loopLocals := cloneLocalScope(locals)
+				loopMutable := cloneMutableScope(mutable)
+				if init, ok := statement.Init.(*ast.AssignStmt); ok && init.Tok == token.DEFINE {
+					for _, target := range init.Lhs {
+						if name, ok := ast.Unparen(target).(*ast.Ident); ok && info.Defs[name] != nil {
+							loopMutable[info.Defs[name]] = true
+						}
+					}
+				}
+				if statement.Init != nil {
+					init, ok := statement.Init.(*ast.AssignStmt)
+					if !ok || init.Tok != token.DEFINE || len(init.Lhs) == 0 || len(init.Lhs) != len(init.Rhs) {
+						return nil, fmt.Errorf("control.for_init_shape")
+					}
+					initializers := make([]*goExpression, len(init.Rhs))
+					objects := make([]types.Object, len(init.Lhs))
+					localTypes := make([]string, len(init.Lhs))
+					for initializerIndex, target := range init.Lhs {
+						name, ok := ast.Unparen(target).(*ast.Ident)
+						if !ok || name.Name == "_" || info.Defs[name] == nil {
+							return nil, fmt.Errorf("control.for_init_binding")
+						}
+						object := info.Defs[name]
+						value, err := analyzeGoExpressionExpected(init.Rhs[initializerIndex], object.Type(), signature, info, loopLocals, functions, records, loopMutable)
+						if err != nil {
+							return nil, fmt.Errorf("control.for_init:%w", err)
+						}
+						localType, typeOK := goLocalSemanticType(object.Type(), records)
+						if !typeOK && functions[nil] == "native-default" {
+							value, localType, typeOK = nativeGoAssignmentValue(value, object.Type())
+						}
+						if !typeOK {
+							return nil, fmt.Errorf("control.for_init_type")
+						}
+						initializers[initializerIndex], objects[initializerIndex], localTypes[initializerIndex] = value, object, localType
+					}
+					for initializerIndex, target := range init.Lhs {
+						local := *next
+						*next++
+						name := ast.Unparen(target).(*ast.Ident)
+						block.statements = append(block.statements, &goStatement{localName: name.Name, localType: localTypes[initializerIndex], local: local, initializer: initializers[initializerIndex], mutable: true})
+						loopLocals[objects[initializerIndex]] = local
+						loopMutable[objects[initializerIndex]] = true
+					}
+				}
+				condition := &goExpression{kind: goBooleanLiteral, boolean: true}
+				if statement.Cond != nil {
+					var err error
+					condition, err = analyzeGoExpressionWithProgram(statement.Cond, signature, info, loopLocals, functions, records, loopMutable)
+					if err != nil {
+						return nil, err
+					}
+				}
+				body, err := analyzeGoBlockScoped(statement.Body.List, signature, info, loopLocals, functions, records, loopMutable, next, false)
+				if err != nil {
+					return nil, err
+				}
+				if statement.Post != nil {
+					post, err := analyzeGoBlockScoped([]ast.Stmt{statement.Post}, signature, info, loopLocals, functions, records, loopMutable, next, false)
+					if err != nil {
+						return nil, fmt.Errorf("control.for_post:%w", err)
+					}
+					injectBeforeNativeContinueMany(body, post.statements)
+					body.statements = append(body.statements, post.statements...)
+				}
+				block.statements = append(block.statements, &goStatement{condition: condition, loopBlock: body})
+				continue
 			}
 			if statement.Init != nil || statement.Post != nil {
 				init, initOK := statement.Init.(*ast.AssignStmt)
@@ -1917,6 +2037,36 @@ func injectBeforeNativeContinue(block *goBlock, postStep func() *goStatement) {
 			injectBeforeNativeContinue(statement.nativeSwitchCases[index].body, postStep)
 		}
 		injectBeforeNativeContinue(statement.nativeSwitchDefault, postStep)
+		for index := range statement.nativeSelectCases {
+			injectBeforeNativeContinue(statement.nativeSelectCases[index].body, postStep)
+		}
+		statements = append(statements, statement)
+	}
+	block.statements = statements
+}
+
+func injectBeforeNativeContinueMany(block *goBlock, postSteps []*goStatement) {
+	if block == nil {
+		return
+	}
+	statements := make([]*goStatement, 0, len(block.statements))
+	for _, statement := range block.statements {
+		if statement == nil {
+			continue
+		}
+		if statement.nativeBranch == "continue" {
+			statements = append(statements, postSteps...)
+		}
+		injectBeforeNativeContinueMany(statement.whenBlock, postSteps)
+		injectBeforeNativeContinueMany(statement.thenBlock, postSteps)
+		injectBeforeNativeContinueMany(statement.elseBlock, postSteps)
+		for index := range statement.nativeSwitchCases {
+			injectBeforeNativeContinueMany(statement.nativeSwitchCases[index].body, postSteps)
+		}
+		injectBeforeNativeContinueMany(statement.nativeSwitchDefault, postSteps)
+		for index := range statement.nativeSelectCases {
+			injectBeforeNativeContinueMany(statement.nativeSelectCases[index].body, postSteps)
+		}
 		statements = append(statements, statement)
 	}
 	block.statements = statements
