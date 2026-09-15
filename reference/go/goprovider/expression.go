@@ -1407,7 +1407,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 					return nil, fmt.Errorf("expression.unsupported_method_call:%v", nativeErr)
 				}
 				if expression.Ellipsis.IsValid() {
-					return nil, fmt.Errorf("expression.unsupported_method_call")
+					native, nativeErr := analyzeNativeGoMethodInvocation(selection, selector.X, expression.Args, true, signature, info, locals, functions, records, mutableLocals)
+					if nativeErr != nil {
+						return nil, fmt.Errorf("expression.unsupported_method_call:%v", nativeErr)
+					}
+					return native, nil
 				}
 				receiver, err := analyzeGoExpressionWithProgram(selector.X, signature, info, locals, functions, records, mutableLocals)
 				if err != nil {
@@ -2740,7 +2744,7 @@ func isGoErrorType(value types.Type) bool {
 }
 
 func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast.Expr, argumentsAST []ast.Expr, ellipsis bool, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
-	if selection == nil || selection.Kind() != types.MethodVal || ellipsis {
+	if selection == nil || selection.Kind() != types.MethodVal {
 		return nil, fmt.Errorf("expression.native_method_target")
 	}
 	function, ok := selection.Obj().(*types.Func)
@@ -2750,6 +2754,9 @@ func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast
 	declared, ok := function.Type().(*types.Signature)
 	if !ok || declared.Recv() == nil {
 		return nil, fmt.Errorf("expression.native_method_signature")
+	}
+	if ellipsis && (goExecutionModuleVersion(functions) < 106 || !declared.Variadic()) {
+		return nil, fmt.Errorf("expression.native_method_target")
 	}
 	packagePath := ""
 	if function.Pkg() != nil {
@@ -2772,10 +2779,7 @@ func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast
 	}
 	arguments := make([]*goExpression, len(argumentsAST))
 	for index, argument := range argumentsAST {
-		var expected types.Type
-		if index < declared.Params().Len() {
-			expected = declared.Params().At(index).Type()
-		}
+		expected := goCallArgumentType(declared, index, ellipsis, len(argumentsAST))
 		arguments[index], err = analyzeGoExpressionExpected(argument, expected, signature, info, locals, functions, records, mutableLocals)
 		if err != nil {
 			return nil, err
@@ -2788,6 +2792,9 @@ func analyzeNativeGoMethodInvocation(selection *types.Selection, receiverAST ast
 		return pkg.Path()
 	})
 	target := packagePath + ".(" + receiverType + ")." + function.Name()
+	if ellipsis {
+		target += ".ellipsis"
+	}
 	return &goExpression{kind: goNativeMethodInvocation, left: receiver, arguments: arguments, nativeLanguage: "go", nativeTarget: target, nativeSignature: types.TypeString(declared, func(pkg *types.Package) string {
 		if pkg == nil {
 			return ""

@@ -313,6 +313,20 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 		out.WriteString("}\n\n")
 	}
 	methods := map[string]string{}
+	variadicMethods := map[string]bool{}
+	for _, value := range graph {
+		if value.schema != sNativeMethodCall {
+			continue
+		}
+		target, targetErr := text(value, "000000000000000000000000000a06e1")
+		if targetErr != nil || !strings.HasSuffix(target, ".ellipsis") {
+			continue
+		}
+		target = strings.TrimSuffix(target, ".ellipsis")
+		if dot := strings.LastIndexByte(target, '.'); dot >= 0 {
+			variadicMethods[target[dot+1:]] = true
+		}
+	}
 	methodIDs := []string{}
 	for id, value := range graph {
 		if value.schema == sMethod {
@@ -424,6 +438,12 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 			}
 			params[pid] = name
 			declarations = append(declarations, name+" "+typ)
+		}
+		if variadicMethods[methods[mid]] && len(declarations) > 0 {
+			last := len(declarations) - 1
+			if split := strings.LastIndex(declarations[last], " []"); split >= 0 {
+				declarations[last] = declarations[last][:split] + " ..." + declarations[last][split+3:]
+			}
 		}
 		resultID, e := ref(method, "000000000000000000000000000a0023")
 		if e != nil {
@@ -2736,6 +2756,14 @@ func expr(id string, c context) (string, error) {
 			if err != nil {
 				return "", err
 			}
+		}
+		ellipsis := strings.HasSuffix(target, ".ellipsis")
+		if ellipsis {
+			target = strings.TrimSuffix(target, ".ellipsis")
+			if len(arguments) == 0 {
+				return "", fmt.Errorf("go_projection.native_method_ellipsis")
+			}
+			arguments[len(arguments)-1] += "..."
 		}
 		dot := strings.LastIndexByte(target, '.')
 		if dot <= 0 || dot == len(target)-1 || !identifier(target[dot+1:]) {
