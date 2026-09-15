@@ -711,6 +711,32 @@ func TestProjectsNativeMethodValueBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Bind(&Router{Base: 1})(2) != 3 { t.Fatal("method value") } }`)
 }
 
+func TestProjectsVariadicNativeMethodCallBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v106/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "nativeproof", Entry: "Run", Files: map[string]string{
+		"method.go": "package sample\ntype Runner struct{ Base int64 }\nfunc (r *Runner) Sum(values ...int64) int64 { return r.Base + values[0] }\nfunc Run(r *Runner, values []int64) int64 { return r.Sum(values...) }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("variadic native method lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "r.Sum(values...)") {
+		t.Fatalf("projection lacks variadic method call:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Run(&Runner{Base: 1}, []int64{2}) != 3 { t.Fatal("variadic method") } }`)
+}
+
 func TestProjectsNativeChannelSendBackToGo(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v100/module.g1")
 	if err != nil {
