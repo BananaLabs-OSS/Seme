@@ -949,6 +949,10 @@ typed nil inside those conversions. Run `./scripts/check-execution-v109.sh`.
 closures with typed captures and block bodies. Run
 `./scripts/check-execution-v110.sh`.
 
+[`Core Execution v111`](spec/core-execution-v111.md) permits those canonical
+closures as immediately invoked typed call targets. Run
+`./scripts/check-execution-v111.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
