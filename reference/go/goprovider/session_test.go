@@ -681,6 +681,26 @@ func TestIncrementalSessionRetainsVariadicNativeMethodCall(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsTypedNativeIndirectInvocation(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v107/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-indirect-call", Entry: "Run", Files: map[string]string{
+		"call.go": "package nativeindirectcall\nfunc Run(cancel func()) { cancel() }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("native indirect invocation rejected: %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a08a") {
+		t.Fatal("native indirect invocation omitted")
+	}
+}
+
 func TestIncrementalSessionRetainsApplicationNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v54/module.g1")
 	if err != nil {

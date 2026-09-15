@@ -57,6 +57,7 @@ const (
 	sSliceRemove          = "0000000000000000000000000000a066"
 	sMapRemove            = "0000000000000000000000000000a067"
 	sNativeInvocation     = "0000000000000000000000000000a06d"
+	sEvaluate             = "0000000000000000000000000000a06c"
 	sNativeMethodCall     = "0000000000000000000000000000a06e"
 	sProductType          = "0000000000000000000000000000a06f"
 	sProductProject       = "0000000000000000000000000000a070"
@@ -98,6 +99,7 @@ const (
 	sNativeSelect         = "0000000000000000000000000000a087"
 	sNativeChannelReceive = "0000000000000000000000000000a088"
 	sNativeMethodValue    = "0000000000000000000000000000a089"
+	sNativeIndirectCall   = "0000000000000000000000000000a08a"
 	sNativeSwitchCase     = "0000000000000000000000000000a077"
 	sNativeSwitch         = "0000000000000000000000000000a078"
 	sNativeRangeBinding   = "0000000000000000000000000000a07b"
@@ -759,6 +761,16 @@ func projectBlock(id string, c context) (string, error) {
 			return "", fmt.Errorf("go_projection.unsupported_statement")
 		}
 		switch statement.schema {
+		case sEvaluate:
+			valueID, err := ref(statement, "000000000000000000000000000a06c0")
+			if err != nil {
+				return "", err
+			}
+			value, err := expr(valueID, c)
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\t"+value)
 		case sScopedType:
 			typeID, err := ref(statement, "000000000000000000000000000a0810")
 			if err != nil {
@@ -2770,6 +2782,32 @@ func expr(id string, c context) (string, error) {
 			return "", fmt.Errorf("go_projection.native_method_target")
 		}
 		return receiver + "." + target[dot+1:] + "(" + strings.Join(arguments, ", ") + ")", nil
+	case sNativeIndirectCall:
+		language, languageErr := text(e, "000000000000000000000000000a08a0")
+		signature, signatureErr := text(e, "000000000000000000000000000a08a1")
+		callableID, callableErr := ref(e, "000000000000000000000000000a08a2")
+		argumentIDs, argumentsErr := refs(e, "000000000000000000000000000a08a3")
+		if languageErr != nil || signatureErr != nil || callableErr != nil || argumentsErr != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_indirect_invocation")
+		}
+		callable, err := expr(callableID, c)
+		if err != nil {
+			return "", err
+		}
+		arguments := make([]string, len(argumentIDs))
+		for index, argumentID := range argumentIDs {
+			arguments[index], err = expr(argumentID, c)
+			if err != nil {
+				return "", err
+			}
+		}
+		if strings.HasSuffix(signature, ".ellipsis") {
+			if len(arguments) == 0 {
+				return "", fmt.Errorf("go_projection.native_indirect_ellipsis")
+			}
+			arguments[len(arguments)-1] += "..."
+		}
+		return callable + "(" + strings.Join(arguments, ", ") + ")", nil
 	case sNativeAddress:
 		language, languageErr := text(e, "000000000000000000000000000a07a0")
 		operandID, operandErr := ref(e, "000000000000000000000000000a07a1")

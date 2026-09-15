@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(107); err == nil {
+	if _, err := Declarations(108); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -1067,6 +1067,20 @@ func TestVersion106PreservesVersion105Schema(t *testing.T) {
 	}
 	if !reflect.DeepEqual(current, previous) {
 		t.Fatal("v106 unexpectedly changed canonical schema")
+	}
+}
+
+func TestVersion107AddsNativeIndirectInvocation(t *testing.T) {
+	previous, err := Declarations(106)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(107)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa08a || current[len(previous)].Name != "NativeIndirectInvocation" {
+		t.Fatalf("v107 declarations = %#v", current[len(previous):])
 	}
 }
 

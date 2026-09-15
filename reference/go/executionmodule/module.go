@@ -32,7 +32,7 @@ func ValidateSliceConstructElementCount(count int) error {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 106 {
+	if version < 2 || version > 107 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -457,6 +457,15 @@ func Declarations(version int) ([]Schema, error) {
 			field(0xa0892, "native_method_value.signature", 4, 0, 0),
 			field(0xa0893, "native_method_value.receiver", 5, 0, 0),
 			field(0xa0894, "native_method_value.result_type", 5, 0xa071, 0),
+		}})
+	}
+	if version >= 107 {
+		schemas = append(schemas, Schema{0xa08a, "NativeIndirectInvocation", []Field{
+			field(0xa08a0, "native_indirect_invocation.language", 4, 0, 0),
+			field(0xa08a1, "native_indirect_invocation.signature", 4, 0, 0),
+			field(0xa08a2, "native_indirect_invocation.callable", 5, 0, 0),
+			field(0xa08a3, "native_indirect_invocation.arguments", 5, 0, 2),
+			field(0xa08a4, "native_indirect_invocation.result_type", 5, 0, 0),
 		}})
 	}
 	return schemas, nil

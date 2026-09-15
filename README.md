@@ -935,6 +935,10 @@ values as explicit typed native operations. Run
 method expansion as a typed native call mechanic. Run
 `./scripts/check-execution-v106.sh`.
 
+[`Core Execution v107`](spec/core-execution-v107.md) preserves typed calls
+through function-valued parameters and locals. Run
+`./scripts/check-execution-v107.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
