@@ -173,6 +173,9 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 			if increment, ok := node.(*ast.IncDecStmt); ok && goExecutionModuleVersion(functions) >= 87 {
 				if name, ok := ast.Unparen(increment.X).(*ast.Ident); ok && info.Uses[name] != nil {
 					mutable[info.Uses[name]] = true
+					if goExecutionModuleVersion(functions) >= 112 && functions != nil {
+						functions[info.Uses[name]] = "mutable-last:" + strconv.Itoa(int(increment.Pos()))
+					}
 				}
 				return true
 			}
@@ -191,6 +194,9 @@ func analyzeGoBlockWithProgram(statements []ast.Stmt, signature *types.Signature
 			for _, target := range assignment.Lhs {
 				if name, ok := target.(*ast.Ident); ok && info.Uses[name] != nil {
 					mutable[info.Uses[name]] = true
+					if goExecutionModuleVersion(functions) >= 112 && functions != nil {
+						functions[info.Uses[name]] = "mutable-last:" + strconv.Itoa(int(assignment.Pos()))
+					}
 				}
 			}
 			return true

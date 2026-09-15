@@ -2542,7 +2542,17 @@ func analyzeGeneralGoClosure(function *ast.FuncLit, outer *types.Signature, info
 				return fmt.Errorf("expression.unsupported_closure_capture_type")
 			}
 		}
-		candidates[object] = capture{object: object, name: object.Name(), typeID: typeID, value: value, mutable: mutable[object]}
+		isMutable := mutable[object]
+		if isMutable && goExecutionModuleVersion(functions) >= 112 {
+			if _, recursiveCell := types.Unalias(object.Type()).Underlying().(*types.Signature); !recursiveCell {
+				if marker := functions[object]; strings.HasPrefix(marker, "mutable-last:") {
+					if last, err := strconv.Atoi(strings.TrimPrefix(marker, "mutable-last:")); err == nil && token.Pos(last) < function.Pos() {
+						isMutable = false
+					}
+				}
+			}
+		}
+		candidates[object] = capture{object: object, name: object.Name(), typeID: typeID, value: value, mutable: isMutable}
 		return nil
 	}
 	if outer.Recv() != nil {

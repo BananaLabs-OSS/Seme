@@ -953,6 +953,10 @@ closures with typed captures and block bodies. Run
 closures as immediately invoked typed call targets. Run
 `./scripts/check-execution-v111.sh`.
 
+[`Core Execution v112`](spec/core-execution-v112.md) preserves quiescent local
+values as exact immutable closure captures. Run
+`./scripts/check-execution-v112.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
