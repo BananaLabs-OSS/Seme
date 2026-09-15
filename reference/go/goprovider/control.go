@@ -1599,8 +1599,18 @@ func analyzeGoNativeMapRange(statement *ast.RangeStmt, signature *types.Signatur
 	if goExecutionModuleVersion(functions) < 70 || functions[nil] != "native-default" {
 		return nil, false, nil
 	}
-	mapping, ok := info.TypeOf(statement.X).Underlying().(*types.Map)
-	if !ok {
+	var keyType, valueType types.Type
+	switch ranged := info.TypeOf(statement.X).Underlying().(type) {
+	case *types.Map:
+		keyType, valueType = ranged.Key(), ranged.Elem()
+	case *types.Basic:
+		if goExecutionModuleVersion(functions) < 96 || ranged.Info()&types.IsString == 0 {
+			return nil, false, nil
+		}
+		// Go defines string range as byte-index plus decoded Unicode code point.
+		// Keep that mechanic native and retain its exact `int`/`rune` bindings.
+		keyType, valueType = types.Typ[types.Int], types.Typ[types.Rune]
+	default:
 		return nil, false, nil
 	}
 	if statement.Tok != token.DEFINE {
@@ -1649,13 +1659,13 @@ func analyzeGoNativeMapRange(statement *ast.RangeStmt, signature *types.Signatur
 		loopMutable[object] = mutable[object]
 		return &goRangeBinding{name: identifier.Name, typeID: typeID, local: local, nativeSpelling: spelling}, nil
 	}
-	key, err := bind(statement.Key, mapping.Key())
+	key, err := bind(statement.Key, keyType)
 	if err != nil {
 		return nil, true, err
 	}
 	var value *goRangeBinding
 	if statement.Value != nil {
-		value, err = bind(statement.Value, mapping.Elem())
+		value, err = bind(statement.Value, valueType)
 		if err != nil {
 			return nil, true, err
 		}

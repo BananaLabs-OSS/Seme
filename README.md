@@ -892,6 +892,10 @@ values visible. Run `./scripts/check-execution-v94.sh`.
 typed native pointers while retaining both pointer and assigned value.
 Run `./scripts/check-execution-v95.sh`.
 
+[`Core Execution v96`](spec/core-execution-v96.md) preserves Go's native Unicode
+string range with exact byte-index and rune bindings. Run
+`./scripts/check-execution-v96.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

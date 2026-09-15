@@ -577,6 +577,32 @@ func TestProjectsNativeMapRangeBackToGoSyntax(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Total(map[string]int64{"a": 2, "b": 3}) != 5 { t.Fatal("range") } }`)
 }
 
+func TestProjectsNativeStringRangeBackToGoSyntax(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v96/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-string-range", Entry: "Count", Files: map[string]string{
+		"range.go": "package sample\nfunc Count(value string) int64 { total := int64(0); for index, codepoint := range value { if index >= 0 && codepoint > 0 { total = total + 1 } }; return total }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native string range lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "for index, codepoint := range value") {
+		t.Fatalf("projection lacks string range:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Count("a界") != 2 { t.Fatal("range") } }`)
+}
+
 func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
 	if err != nil {
