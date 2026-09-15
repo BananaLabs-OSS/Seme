@@ -1423,7 +1423,13 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			if callable := info.Types[expression.Fun]; callable.IsType() {
 				targetType, sourceType := callable.Type, info.TypeOf(expression.Args[0])
 				if targetType != nil && sourceType != nil && types.ConvertibleTo(sourceType, targetType) {
-					value, err := analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+					var value *goExpression
+					var err error
+					if goExecutionModuleVersion(functions) >= 109 {
+						value, err = analyzeGoExpressionExpected(expression.Args[0], targetType, signature, info, locals, functions, records, mutableLocals)
+					} else {
+						value, err = analyzeGoExpressionWithProgram(expression.Args[0], signature, info, locals, functions, records, mutableLocals)
+					}
 					if err != nil {
 						return nil, err
 					}
