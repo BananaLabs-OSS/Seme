@@ -763,6 +763,32 @@ func TestProjectsNativeIndirectInvocationBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { called := false; Run(func() { called = true }); if !called { t.Fatal("not called") } }`)
 }
 
+func TestProjectsCompositeTypeConversionBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v108/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "nativeproof", Entry: "Run", Files: map[string]string{
+		"conversion.go": "package sample\nfunc Run(text string) []byte { return []byte(text) }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("composite type conversion lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "([]byte)(text)") {
+		t.Fatalf("projection lacks composite type conversion:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if string(Run("seme")) != "seme" { t.Fatal("conversion") } }`)
+}
+
 func TestProjectsNativeChannelSendBackToGo(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v100/module.g1")
 	if err != nil {

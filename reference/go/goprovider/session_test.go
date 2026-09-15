@@ -701,6 +701,28 @@ func TestIncrementalSessionRetainsTypedNativeIndirectInvocation(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsCompositeTypeConversion(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v108/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/composite-conversion", Entry: "Run", Files: map[string]string{
+		"conversion.go": "package compositeconversion\nfunc Run(text string) []byte { return []byte(text) }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("composite type conversion rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a06d", "6275696c74696e2e61737369676e6d656e745f636f6e766572745b5b5d627974655d"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("composite type conversion omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsApplicationNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v54/module.g1")
 	if err != nil {

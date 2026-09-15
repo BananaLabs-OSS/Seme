@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(108); err == nil {
+	if _, err := Declarations(109); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -1081,6 +1081,20 @@ func TestVersion107AddsNativeIndirectInvocation(t *testing.T) {
 	}
 	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa08a || current[len(previous)].Name != "NativeIndirectInvocation" {
 		t.Fatalf("v107 declarations = %#v", current[len(previous):])
+	}
+}
+
+func TestVersion108KeepsSchemaStable(t *testing.T) {
+	previous, err := Declarations(107)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(108)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous) {
+		t.Fatalf("v108 declaration count = %d, want %d", len(current), len(previous))
 	}
 }
 
