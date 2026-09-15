@@ -37,6 +37,7 @@ type goStatement struct {
 	nativeBindingValue    *goExpression
 	nativePointer         *goExpression
 	nativePointerValue    *goExpression
+	nativeConcurrentStart *goExpression
 	nativeSwitchSubject   *goExpression
 	nativeSwitchCases     []goSwitchCase
 	nativeSwitchDefault   *goBlock
@@ -1556,6 +1557,15 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				return nil, err
 			}
 			block.statements = append(block.statements, &goStatement{deferred: invocation})
+		case *ast.GoStmt:
+			if goExecutionModuleVersion(functions) < 99 || functions[nil] != "native-default" {
+				return nil, fmt.Errorf("control.unsupported_statement:%T", statement)
+			}
+			invocation, err := analyzeGoExpressionWithProgram(statement.Call, signature, info, locals, functions, records, mutable)
+			if err != nil {
+				return nil, err
+			}
+			block.statements = append(block.statements, &goStatement{nativeConcurrentStart: invocation})
 		case *ast.ExprStmt:
 			call, ok := statement.X.(*ast.CallExpr)
 			if !ok {
@@ -2340,6 +2350,14 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, valueEntities...)
 			statementID = stableID("execution", owner, statementPath, "native-field-assignment")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a076", []graphField{bytesField(0xa0760, "go"), bytesField(0xa0761, statement.nativeFieldName), refField(0xa0762, receiverID), refField(0xa0763, valueID)})})
+		} else if statement.nativeConcurrentStart != nil {
+			invocationEntities, invocationID, err := emitCanonicalExpressionWithLocals(statement.nativeConcurrentStart, owner+":"+statementPath+":native-concurrent-start", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, invocationEntities...)
+			statementID = stableID("execution", owner, statementPath, "native-concurrent-start")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a084", []graphField{bytesField(0xa0840, "go"), refField(0xa0841, invocationID)})})
 		} else if statement.nativePointer != nil {
 			pointerEntities, pointerID, err := emitCanonicalExpressionWithLocals(statement.nativePointer, owner+":"+statementPath+":native-pointer", parameterIDs, localIDs, integerTypeID)
 			if err != nil {

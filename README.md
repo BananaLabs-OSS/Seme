@@ -904,6 +904,10 @@ lookup inside an `if` initializer as one typed native product. Run
 bindings, comparisons, and increments in classic `for` loops. Run
 `./scripts/check-execution-v98.sh`.
 
+[`Core Execution v99`](spec/core-execution-v99.md) preserves a Go goroutine
+launch as an explicit language-qualified concurrent start. Run
+`./scripts/check-execution-v99.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

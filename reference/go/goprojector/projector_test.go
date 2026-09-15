@@ -659,6 +659,32 @@ func TestProjectsNativeIntegerForBindingBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Sum(5) != 10 { t.Fatal(Sum(5)) } }`)
 }
 
+func TestProjectsNativeConcurrentStartBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v99/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-concurrent-start", Entry: "Start", Files: map[string]string{
+		"start.go": "package sample\nfunc Work(value int64) {}\nfunc Start(value int64) { go Work(value) }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native concurrent start lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "go Work(value)") {
+		t.Fatalf("projection lacks concurrent start:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { Start(1) }`)
+}
+
 func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
 	if err != nil {

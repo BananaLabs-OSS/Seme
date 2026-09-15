@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(99); err == nil {
+	if _, err := Declarations(100); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -951,6 +951,20 @@ func TestVersion98PreservesVersion97Schema(t *testing.T) {
 	}
 	if !reflect.DeepEqual(current, previous) {
 		t.Fatal("v98 unexpectedly changed canonical schema")
+	}
+}
+
+func TestVersion99AddsNativeConcurrentStart(t *testing.T) {
+	previous, err := Declarations(98)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(99)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa084 || current[len(previous)].Name != "NativeConcurrentStart" {
+		t.Fatalf("v99 declarations = %#v", current[len(previous):])
 	}
 }
 
