@@ -95,6 +95,7 @@ const (
 	goNativeBinary
 	goNativeMethodValue
 	goNativeIndirectInvocation
+	goNativeMethodExpression
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -448,6 +449,19 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a089", []graphField{
 				bytesField(0xa0890, expression.nativeLanguage), bytesField(0xa0891, expression.nativeTarget), bytesField(0xa0892, expression.nativeSignature),
 				refField(0xa0893, receiver), refField(0xa0894, expression.nativeResultType),
+			})}
+			return id, nil
+		case goNativeMethodExpression:
+			if expression.nativeLanguage == "" || expression.nativeTarget == "" || expression.receiverID == "" || expression.nativeResultType == "" {
+				return "", fmt.Errorf("expression.native_method_expression_incomplete")
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, expression.nativeLanguage), bytesField(0xa0711, spelling)})}
+			}
+			id := expressionNodeID(owner, path, "native-method-expression")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a08c", []graphField{
+				bytesField(0xa08c0, expression.nativeLanguage), bytesField(0xa08c1, expression.nativeTarget),
+				refField(0xa08c2, expression.receiverID), refField(0xa08c3, expression.nativeResultType),
 			})}
 			return id, nil
 		case goNativeIndirectInvocation:
@@ -2244,6 +2258,20 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			}
 			return nil, fmt.Errorf("expression.unsupported_selector")
 		}
+		if method, ok := selection.Obj().(*types.Func); ok && selection.Kind() == types.MethodExpr && goExecutionModuleVersion(functions) >= 114 && functions[nil] == "native-default" {
+			receiverTypeID, receiverOK := goNativeTypeID(selection.Recv())
+			resultTypeID, resultOK := goNativeTypeID(info.TypeOf(expression))
+			if !receiverOK || !resultOK {
+				return nil, fmt.Errorf("expression.native_method_expression_type")
+			}
+			receiverSpelling, _ := goNativeTypeSpelling(selection.Recv())
+			resultSpelling, _ := goNativeTypeSpelling(info.TypeOf(expression))
+			return &goExpression{
+				kind: goNativeMethodExpression, nativeLanguage: "go", nativeTarget: method.Name(),
+				receiverID: receiverTypeID, nativeResultType: resultTypeID,
+				nativeTypes: map[string]string{receiverTypeID: receiverSpelling, resultTypeID: resultSpelling},
+			}, nil
+		}
 		if method, ok := selection.Obj().(*types.Func); ok && selection.Kind() == types.MethodVal && goExecutionModuleVersion(functions) >= 105 && functions[nil] == "native-default" {
 			receiver, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
 			if err != nil {
@@ -2572,6 +2600,15 @@ func analyzeGeneralGoClosure(function *ast.FuncLit, outer *types.Signature, info
 		}
 		_ = add(object, &goExpression{kind: kind, local: index})
 	}
+	if goExecutionModuleVersion(functions) >= 114 {
+		for object, binding := range functions {
+			if object != nil && strings.HasPrefix(binding, "closure-capture:") {
+				if err := add(object, &goExpression{kind: goCaptureRead, bindingID: binding}); err != nil {
+					return nil, err
+				}
+			}
+		}
+	}
 	ordered := []capture{}
 	seen := map[types.Object]bool{}
 	var captureErr error
@@ -2579,7 +2616,7 @@ func analyzeGeneralGoClosure(function *ast.FuncLit, outer *types.Signature, info
 		if captureErr != nil {
 			return false
 		}
-		if nested, ok := node.(*ast.FuncLit); ok && nested != function {
+		if nested, ok := node.(*ast.FuncLit); ok && nested != function && goExecutionModuleVersion(functions) < 114 {
 			captureErr = fmt.Errorf("expression.unsupported_nested_closure")
 			return false
 		}

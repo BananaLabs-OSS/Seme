@@ -101,6 +101,7 @@ const (
 	sNativeChannelReceive = "0000000000000000000000000000a088"
 	sNativeMethodValue    = "0000000000000000000000000000a089"
 	sNativeIndirectCall   = "0000000000000000000000000000a08a"
+	sNativeMethodExpr     = "0000000000000000000000000000a08c"
 	sNativeSwitchCase     = "0000000000000000000000000000a077"
 	sNativeSwitch         = "0000000000000000000000000000a078"
 	sNativeRangeBinding   = "0000000000000000000000000000a07b"
@@ -2798,6 +2799,24 @@ func expr(id string, c context) (string, error) {
 			return "", err
 		}
 		return "(" + receiver + ")." + name, nil
+	case sNativeMethodExpr:
+		language, err := text(e, "000000000000000000000000000a08c0")
+		if err != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_method_expression_language")
+		}
+		name, err := text(e, "000000000000000000000000000a08c1")
+		if err != nil || !identifier(name) {
+			return "", fmt.Errorf("go_projection.native_method_expression_method")
+		}
+		receiverID, err := ref(e, "000000000000000000000000000a08c2")
+		if err != nil {
+			return "", err
+		}
+		receiver, err := typeName(c.graph, receiverID)
+		if err != nil {
+			return "", err
+		}
+		return "(" + receiver + ")." + name, nil
 	case sNativeMethodCall:
 		language, err := text(e, "000000000000000000000000000a06e0")
 		if err != nil || language != "go" {
@@ -3314,6 +3333,22 @@ func typeNameRelative(g map[string]entity, id string, names, families map[string
 			if candidate.schema == sRecordType {
 				if localName, nameErr := text(candidate, "00000000000000000000000000009300"); nameErr == nil {
 					localTypeNames = append(localTypeNames, localName)
+				}
+			}
+			if candidate.schema == sReceiverBinding {
+				typeID, typeErr := ref(candidate, "000000000000000000000000000a0001")
+				typeEntity, exists := g[typeID]
+				if typeErr == nil && exists && typeEntity.schema == sNativeType {
+					receiverSpelling, spellingErr := text(typeEntity, "000000000000000000000000000a0711")
+					if spellingErr == nil {
+						last := strings.LastIndexByte(receiverSpelling, '.')
+						if last >= 0 {
+							name := receiverSpelling[last+1:]
+							if identifier(name) {
+								localTypeNames = append(localTypeNames, name)
+							}
+						}
+					}
 				}
 			}
 		}

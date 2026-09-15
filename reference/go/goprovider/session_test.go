@@ -2525,6 +2525,44 @@ func TestIncrementalSessionRetainsNativeSelectReceiveBindings(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsNestedImmutableClosures(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v114/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "package sample\nfunc Run(value int64) int64 { decorate := func(fn func(int64) int64) func(int64) int64 { return func(input int64) int64 { return fn(input) + value } }; addOne := func(input int64) int64 { return input + 1 }; return decorate(addOne)(2) }\n"
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/nested-closure", Entry: "Run", Files: map[string]string{"closure.go": source}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("nested closure = %#v", result)
+	}
+	if strings.Count(result.CanonicalG1, "0000000000000000000000000000a023") < 3 {
+		t.Fatal("nested ClosureConstruct entities missing")
+	}
+}
+
+func TestIncrementalSessionRetainsNativeMethodExpressions(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v114/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "package sample\ntype Handler struct{ Offset int64 }\nfunc (h *Handler) Apply(value int64) int64 { return value + h.Offset }\nfunc Run(value int64) int64 { fn := (*Handler).Apply; return fn(&Handler{Offset: 1}, value) }\n"
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "sample", Entry: "Run", Files: map[string]string{"method.go": source}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("method expression = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a08c") {
+		t.Fatal("NativeMethodExpression missing")
+	}
+}
+
 func TestIncrementalSessionRetainsParallelClassicFor(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v102/module.g1")
 	if err != nil {

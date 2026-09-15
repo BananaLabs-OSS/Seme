@@ -111,6 +111,12 @@ func bindClosureCaptureIDs(block *goBlock, ids []string) {
 		for _, child := range value.values {
 			expression(child)
 		}
+		// A nested closure's captured values are evaluated in this closure's
+		// lexical environment. Its body is deliberately excluded: its own
+		// capture placeholders are bound when that closure is emitted.
+		for _, child := range value.captureValues {
+			expression(child)
+		}
 	}
 	var visitBlock func(*goBlock)
 	visitBlock = func(current *goBlock) {

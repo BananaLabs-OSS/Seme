@@ -1692,7 +1692,40 @@ func isUnaryI64Function(signature *types.Signature) bool {
 }
 
 func goFunctionTypeID(signature *types.Signature) string {
-	return stableID("execution", "type", "function", "i64", "i64")
+	if isUnaryI64Function(signature) {
+		// Preserve the established identity used by earlier execution versions.
+		return stableID("execution", "type", "function", "i64", "i64")
+	}
+	parts := []string{"execution", "type", "function", "parameters"}
+	for index := 0; index < signature.Params().Len(); index++ {
+		parts = append(parts, goFunctionTypeKey(signature.Params().At(index).Type()))
+	}
+	parts = append(parts, "results")
+	for index := 0; index < signature.Results().Len(); index++ {
+		parts = append(parts, goFunctionTypeKey(signature.Results().At(index).Type()))
+	}
+	return stableID(parts...)
+}
+
+func goFunctionTypeKey(value types.Type) string {
+	value = types.Unalias(value)
+	if signature, ok := goFunctionSignature(value); ok {
+		return "function:" + goFunctionTypeID(signature)
+	}
+	switch {
+	case isInt64(value):
+		return "i64"
+	case isBool(value):
+		return "bool"
+	case isPureString(value):
+		return "string"
+	}
+	return "go:" + types.TypeString(value, func(pkg *types.Package) string {
+		if pkg == nil {
+			return ""
+		}
+		return pkg.Path()
+	})
 }
 
 func snapshotDigest(snapshot DocumentSnapshot) string {
