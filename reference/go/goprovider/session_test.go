@@ -2412,6 +2412,26 @@ func TestIncrementalSessionRetainsParallelClassicFor(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsNativeChannelReceive(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v103/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-channel-receive", Entry: "Wait", Files: map[string]string{
+		"receive.go": "package sample\nfunc Wait(done chan struct{}) { <-done }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native channel receive = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a088") {
+		t.Fatal("NativeChannelReceive missing")
+	}
+}
+
 func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
 	if err != nil {

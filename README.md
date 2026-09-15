@@ -920,6 +920,10 @@ selection as typed receive, send, and default cases. Run
 Go `for` initialization and parallel post assignments. Run
 `./scripts/check-execution-v102.sh`.
 
+[`Core Execution v103`](spec/core-execution-v103.md) preserves standalone Go
+channel receives as explicit native operations. Run
+`./scripts/check-execution-v103.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

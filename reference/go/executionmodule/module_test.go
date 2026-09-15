@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(103); err == nil {
+	if _, err := Declarations(104); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -1007,6 +1007,20 @@ func TestVersion102PreservesVersion101Schema(t *testing.T) {
 	}
 	if !reflect.DeepEqual(current, previous) {
 		t.Fatal("v102 unexpectedly changed canonical schema")
+	}
+}
+
+func TestVersion103AddsNativeChannelReceive(t *testing.T) {
+	previous, err := Declarations(102)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(103)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa088 || current[len(previous)].Name != "NativeChannelReceive" {
+		t.Fatalf("v103 declarations = %#v", current[len(previous):])
 	}
 }
 
