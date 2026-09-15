@@ -2333,6 +2333,26 @@ func TestIncrementalSessionRetainsNativeIntegerForBinding(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsNativeConcurrentStart(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v99/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-concurrent-start", Entry: "Start", Files: map[string]string{
+		"start.go": "package sample\nfunc Work(value int64) {}\nfunc Start(value int64) { go Work(value) }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native concurrent start = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a084") {
+		t.Fatal("NativeConcurrentStart missing")
+	}
+}
+
 func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
 	if err != nil {
