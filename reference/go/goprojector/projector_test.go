@@ -947,6 +947,31 @@ func TestProjectsNativeMethodExpressionsBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": projectedSource}, `func TestNative(t *testing.T) { if Run(4) != 5 { t.Fatal(Run(4)) } }`)
 }
 
+func TestProjectsRecursiveMutableNativeClosureBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v115/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "package sample\nfunc Run(n int64) int64 { total := int64(0); var walk func(int64) int64; walk = func(v int64) int64 { total += v; if v > 0 { return walk(v-1) }; return total }; return walk(n) }\n"
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "sample", Entry: "Run", Files: map[string]string{"recursive.go": source}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("recursive mutable closure lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	projectedSource := string(projected)
+	if !strings.Contains(projectedSource, "total += v") || !strings.Contains(projectedSource, "walk(v - 1)") {
+		t.Fatalf("native lexical closure missing:\n%s", projectedSource)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": projectedSource}, `func TestNative(t *testing.T) { if Run(3) != 6 { t.Fatal(Run(3)) } }`)
+}
+
 func TestProjectsParallelClassicForBackToGo(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v102/module.g1")
 	if err != nil {

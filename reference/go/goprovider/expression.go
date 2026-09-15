@@ -1,9 +1,11 @@
 package goprovider
 
 import (
+	"bytes"
 	"fmt"
 	"go/ast"
 	"go/constant"
+	"go/format"
 	"go/token"
 	"go/types"
 	"strconv"
@@ -96,6 +98,7 @@ const (
 	goNativeMethodValue
 	goNativeIndirectInvocation
 	goNativeMethodExpression
+	goNativeLexicalClosure
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -462,6 +465,19 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a08c", []graphField{
 				bytesField(0xa08c0, expression.nativeLanguage), bytesField(0xa08c1, expression.nativeTarget),
 				refField(0xa08c2, expression.receiverID), refField(0xa08c3, expression.nativeResultType),
+			})}
+			return id, nil
+		case goNativeLexicalClosure:
+			if expression.nativeLanguage != "go" || expression.nativeSignature == "" || expression.text == "" || expression.nativeResultType == "" {
+				return "", fmt.Errorf("expression.native_lexical_closure_incomplete")
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, expression.nativeLanguage), bytesField(0xa0711, spelling)})}
+			}
+			id := expressionNodeID(owner, path, "native-lexical-closure")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a08d", []graphField{
+				bytesField(0xa08d0, expression.nativeLanguage), bytesField(0xa08d1, expression.nativeSignature),
+				bytesField(0xa08d2, expression.text), refField(0xa08d3, expression.nativeResultType),
 			})}
 			return id, nil
 		case goNativeIndirectInvocation:
@@ -1912,6 +1928,22 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			if closure, err := analyzeGeneralGoClosure(expression, signature, info, locals, functions, records, mutableLocals); err == nil {
 				return closure, nil
 			}
+		}
+		if goExecutionModuleVersion(functions) >= 115 && functions[nil] == "native-default" {
+			closureSignature, ok := info.TypeOf(expression.Type).(*types.Signature)
+			if !ok {
+				return nil, fmt.Errorf("expression.native_lexical_closure_signature")
+			}
+			var source bytes.Buffer
+			if err := format.Node(&source, token.NewFileSet(), expression); err != nil {
+				return nil, fmt.Errorf("expression.native_lexical_closure_source:%w", err)
+			}
+			typeID, ok := goNativeTypeID(closureSignature)
+			spelling, spellingOK := goNativeTypeSpelling(closureSignature)
+			if !ok || !spellingOK {
+				return nil, fmt.Errorf("expression.native_lexical_closure_type")
+			}
+			return &goExpression{kind: goNativeLexicalClosure, nativeLanguage: "go", nativeSignature: spelling, nativeResultType: typeID, nativeTypes: map[string]string{typeID: spelling}, text: source.String()}, nil
 		}
 		closureSignature, ok := info.TypeOf(expression.Type).(*types.Signature)
 		if !ok || !isUnaryI64Function(closureSignature) || len(expression.Body.List) != 1 {

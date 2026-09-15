@@ -32,7 +32,7 @@ func ValidateSliceConstructElementCount(count int) error {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 114 {
+	if version < 2 || version > 115 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -485,6 +485,14 @@ func Declarations(version int) ([]Schema, error) {
 			field(0xa08c1, "native_method_expression.method", 4, 0, 0),
 			field(0xa08c2, "native_method_expression.receiver_type", 5, 0xa071, 0),
 			field(0xa08c3, "native_method_expression.result_type", 5, 0xa071, 0),
+		}})
+	}
+	if version >= 115 {
+		schemas = append(schemas, Schema{0xa08d, "NativeLexicalClosure", []Field{
+			field(0xa08d0, "native_lexical_closure.language", 4, 0, 0),
+			field(0xa08d1, "native_lexical_closure.signature", 4, 0, 0),
+			field(0xa08d2, "native_lexical_closure.source", 4, 0, 0),
+			field(0xa08d3, "native_lexical_closure.result_type", 5, 0, 0),
 		}})
 	}
 	return schemas, nil

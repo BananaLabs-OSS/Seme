@@ -2563,6 +2563,25 @@ func TestIncrementalSessionRetainsNativeMethodExpressions(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsRecursiveMutableNativeClosure(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v115/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "package sample\nfunc Run(n int64) int64 { total := int64(0); var walk func(int64) int64; walk = func(v int64) int64 { total += v; if v > 0 { return walk(v-1) }; return total }; return walk(n) }\n"
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "sample", Entry: "Run", Files: map[string]string{"recursive.go": source}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("recursive mutable closure = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a08d") {
+		t.Fatal("NativeLexicalClosure missing")
+	}
+}
+
 func TestIncrementalSessionRetainsParallelClassicFor(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v102/module.g1")
 	if err != nil {
