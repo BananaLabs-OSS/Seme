@@ -927,6 +927,10 @@ channel receives as explicit native operations. Run
 [`Core Execution v104`](spec/core-execution-v104.md) materializes typed zero
 fields for empty Go struct literals. Run `./scripts/check-execution-v104.sh`.
 
+[`Core Execution v105`](spec/core-execution-v105.md) preserves bound Go method
+values as explicit typed native operations. Run
+`./scripts/check-execution-v105.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested

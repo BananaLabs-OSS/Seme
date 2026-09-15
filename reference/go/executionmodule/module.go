@@ -32,7 +32,7 @@ func ValidateSliceConstructElementCount(count int) error {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 104 {
+	if version < 2 || version > 105 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -448,6 +448,15 @@ func Declarations(version int) ([]Schema, error) {
 		schemas = append(schemas, Schema{0xa088, "NativeChannelReceive", []Field{
 			field(0xa0880, "native_channel_receive.language", 4, 0, 0),
 			field(0xa0881, "native_channel_receive.channel", 5, 0, 0),
+		}})
+	}
+	if version >= 105 {
+		schemas = append(schemas, Schema{0xa089, "NativeMethodValue", []Field{
+			field(0xa0890, "native_method_value.language", 4, 0, 0),
+			field(0xa0891, "native_method_value.method", 4, 0, 0),
+			field(0xa0892, "native_method_value.signature", 4, 0, 0),
+			field(0xa0893, "native_method_value.receiver", 5, 0, 0),
+			field(0xa0894, "native_method_value.result_type", 5, 0xa071, 0),
 		}})
 	}
 	return schemas, nil

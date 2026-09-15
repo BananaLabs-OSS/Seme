@@ -637,6 +637,28 @@ func TestIncrementalSessionRetainsTypedNativeBindingRead(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsTypedNativeMethodValue(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v105/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-method-value", Entry: "Bind", Files: map[string]string{
+		"binding.go": "package nativemethodvalue\ntype Router struct{ Base int64 }\nfunc (r *Router) Resolve(value int64) int64 { return r.Base + value }\nfunc Bind(r *Router) func(int64) int64 { return r.Resolve }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 || len(result.Diagnostics) != 0 {
+		t.Fatalf("typed native method value rejected: %#v", result)
+	}
+	for _, want := range []string{"0000000000000000000000000000a089", "6578616d706c652e746573742f6e61746976652d6d6574686f642d76616c75652e5265736f6c7665"} {
+		if !strings.Contains(result.CanonicalG1, want) {
+			t.Fatalf("native method value omitted %s", want)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsApplicationNativeBindingRead(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v54/module.g1")
 	if err != nil {

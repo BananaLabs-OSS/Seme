@@ -97,6 +97,7 @@ const (
 	sNativeSelectCase     = "0000000000000000000000000000a086"
 	sNativeSelect         = "0000000000000000000000000000a087"
 	sNativeChannelReceive = "0000000000000000000000000000a088"
+	sNativeMethodValue    = "0000000000000000000000000000a089"
 	sNativeSwitchCase     = "0000000000000000000000000000a077"
 	sNativeSwitch         = "0000000000000000000000000000a078"
 	sNativeRangeBinding   = "0000000000000000000000000000a07b"
@@ -397,6 +398,10 @@ func project(g1 []byte, packageName string, allowDuplicateNames bool) ([]byte, e
 		if e != nil {
 			return nil, e
 		}
+		// A method declaration's receiver necessarily belongs to the package being
+		// projected. Native Go type spellings retain their defining import path for
+		// stable identity, so remove that qualifier only at this declaration site.
+		receiverType = regexp.MustCompile(`^(\*?)[[:alnum:]_./-]+\.([[:alpha:]_][[:alnum:]_]*)$`).ReplaceAllString(receiverType, `$1$2`)
 		parameterIDs, e := refs(method, "000000000000000000000000000a0022")
 		if e != nil {
 			return nil, e
@@ -2678,6 +2683,32 @@ func expr(id string, c context) (string, error) {
 			return "", fmt.Errorf("go_projection.native_binding_read_target")
 		}
 		return filepath.Base(target[:dot]) + "." + target[dot+1:], nil
+	case sNativeMethodValue:
+		language, err := text(e, "000000000000000000000000000a0890")
+		if err != nil || language != "go" {
+			return "", fmt.Errorf("go_projection.native_method_value_language")
+		}
+		target, err := text(e, "000000000000000000000000000a0891")
+		if err != nil {
+			return "", err
+		}
+		dot := strings.LastIndexByte(target, '.')
+		name := target
+		if dot >= 0 {
+			name = target[dot+1:]
+		}
+		if !identifier(name) {
+			return "", fmt.Errorf("go_projection.native_method_value_target")
+		}
+		receiverID, err := ref(e, "000000000000000000000000000a0893")
+		if err != nil {
+			return "", err
+		}
+		receiver, err := expr(receiverID, c)
+		if err != nil {
+			return "", err
+		}
+		return "(" + receiver + ")." + name, nil
 	case sNativeMethodCall:
 		language, err := text(e, "000000000000000000000000000a06e0")
 		if err != nil || language != "go" {
