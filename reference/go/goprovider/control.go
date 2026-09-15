@@ -43,6 +43,7 @@ type goStatement struct {
 	nativeSendValue       *goExpression
 	nativeReceiveChannel  *goExpression
 	nativeSelectCases     []goSelectCase
+	nativeSelectBindings  bool
 	nativeSwitchSubject   *goExpression
 	nativeSwitchCases     []goSwitchCase
 	nativeSwitchDefault   *goBlock
@@ -69,11 +70,20 @@ type goSelectCase struct {
 	operation string
 	channel   *goExpression
 	value     *goExpression
+	bindings  []*goRangeBinding
 	body      *goBlock
 }
 
 type goBlock struct {
 	statements []*goStatement
+}
+
+func cloneGoLocals(values map[types.Object]int) map[types.Object]int {
+	copy := make(map[types.Object]int, len(values))
+	for object, index := range values {
+		copy[object] = index
+	}
+	return copy
 }
 
 func bindClosureCaptureIDs(block *goBlock, ids []string) {
@@ -1824,6 +1834,62 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 						return nil, err
 					}
 					selectCase.operation, selectCase.channel, selectCase.value = "send", channel, value
+				case *ast.AssignStmt:
+					if goExecutionModuleVersion(functions) < 113 || communication.Tok != token.DEFINE || len(communication.Rhs) != 1 || len(communication.Lhs) < 1 || len(communication.Lhs) > 2 {
+						return nil, fmt.Errorf("control.select_communication:%T", communication)
+					}
+					receive, ok := ast.Unparen(communication.Rhs[0]).(*ast.UnaryExpr)
+					if !ok || receive.Op != token.ARROW {
+						return nil, fmt.Errorf("control.select_receive_assignment")
+					}
+					channelType, ok := goUnderlying(info, receive.X).(*types.Chan)
+					if !ok {
+						return nil, fmt.Errorf("control.select_receive_target")
+					}
+					channel, err := analyzeGoExpressionWithProgram(receive.X, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					caseLocals := cloneGoLocals(locals)
+					for index, raw := range communication.Lhs {
+						name, ok := raw.(*ast.Ident)
+						if !ok {
+							return nil, fmt.Errorf("control.select_receive_binding")
+						}
+						object := info.Defs[name]
+						if name.Name != "_" && object == nil {
+							return nil, fmt.Errorf("control.select_receive_binding")
+						}
+						bindingType := channelType.Elem()
+						if index == 1 {
+							bindingType = types.Typ[types.Bool]
+						}
+						typeID, supported := goSupportedTypeID(bindingType, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+						spelling := ""
+						if !supported {
+							var native bool
+							typeID, native = goNativeTypeID(bindingType)
+							if !native {
+								return nil, fmt.Errorf("control.select_receive_binding_type")
+							}
+							spelling, _ = goNativeTypeSpelling(bindingType)
+						}
+						local := -1
+						if name.Name != "_" {
+							local = *next
+							*next++
+							caseLocals[object] = local
+						}
+						selectCase.bindings = append(selectCase.bindings, &goRangeBinding{name: name.Name, typeID: typeID, local: local, nativeSpelling: spelling})
+					}
+					selectCase.operation, selectCase.channel = "receive", channel
+					body, err := analyzeGoBlockScoped(clause.Body, signature, info, caseLocals, functions, records, mutable, next, false)
+					if err != nil {
+						return nil, err
+					}
+					selectCase.body = body
+					cases = append(cases, selectCase)
+					continue
 				default:
 					return nil, fmt.Errorf("control.select_communication:%T", communication)
 				}
@@ -1834,7 +1900,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				selectCase.body = body
 				cases = append(cases, selectCase)
 			}
-			block.statements = append(block.statements, &goStatement{nativeSelectCases: cases})
+			block.statements = append(block.statements, &goStatement{nativeSelectCases: cases, nativeSelectBindings: goExecutionModuleVersion(functions) >= 113})
 		case *ast.ExprStmt:
 			if receive, ok := ast.Unparen(statement.X).(*ast.UnaryExpr); ok && receive.Op == token.ARROW && goExecutionModuleVersion(functions) >= 103 && functions[nil] == "native-default" {
 				channel, err := analyzeGoExpressionWithProgram(receive.X, signature, info, locals, functions, records, mutable)
@@ -2739,6 +2805,22 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 		} else if statement.nativeSelectCases != nil {
 			caseIDs := make([]string, len(statement.nativeSelectCases))
 			for caseIndex, selectCase := range statement.nativeSelectCases {
+				bodyLocals := make(map[int]string, len(localIDs)+len(selectCase.bindings))
+				for local, binding := range localIDs {
+					bodyLocals[local] = binding
+				}
+				bindingIDs := make([]string, len(selectCase.bindings))
+				for bindingIndex, binding := range selectCase.bindings {
+					bindingID := stableID("execution", owner, statementPath, "native-select-binding", strconv.Itoa(caseIndex), strconv.Itoa(bindingIndex))
+					bindingIDs[bindingIndex] = bindingID
+					if binding.local >= 0 {
+						bodyLocals[binding.local] = bindingID
+					}
+					if binding.nativeSpelling != "" {
+						*instances = append(*instances, graphEntity{binding.typeID, entity(binding.typeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, "go"), bytesField(0xa0711, binding.nativeSpelling)})})
+					}
+					*instances = append(*instances, graphEntity{bindingID, entity(bindingID, "0000000000000000000000000000a08b", []graphField{bytesField(0xa08b0, binding.name), refField(0xa08b1, binding.typeID), unsignedField(0xa08b2, uint64(bindingIndex))})})
+				}
 				channelIDs := []string{}
 				if selectCase.channel != nil {
 					channelEntities, channelID, err := emitCanonicalExpressionWithLocals(selectCase.channel, owner+":"+statementPath+":native-select-channel:"+strconv.Itoa(caseIndex), parameterIDs, localIDs, integerTypeID)
@@ -2757,12 +2839,16 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 					*instances = append(*instances, valueEntities...)
 					valueIDs = append(valueIDs, valueID)
 				}
-				bodyID, err := emitCanonicalBlockScoped(selectCase.body, owner, statementPath+".native-select-case."+strconv.Itoa(caseIndex), parameterIDs, integerTypeID, localIDs, instances)
+				bodyID, err := emitCanonicalBlockScoped(selectCase.body, owner, statementPath+".native-select-case."+strconv.Itoa(caseIndex), parameterIDs, integerTypeID, bodyLocals, instances)
 				if err != nil {
 					return "", err
 				}
 				caseID := stableID("execution", owner, statementPath, "native-select-case", strconv.Itoa(caseIndex))
-				*instances = append(*instances, graphEntity{caseID, entity(caseID, "0000000000000000000000000000a086", []graphField{bytesField(0xa0860, selectCase.operation), refsField(0xa0861, channelIDs), refsField(0xa0862, valueIDs), refField(0xa0863, bodyID)})})
+				fields := []graphField{bytesField(0xa0860, selectCase.operation), refsField(0xa0861, channelIDs), refsField(0xa0862, valueIDs), refField(0xa0863, bodyID)}
+				if statement.nativeSelectBindings {
+					fields = append(fields, refsField(0xa0864, bindingIDs))
+				}
+				*instances = append(*instances, graphEntity{caseID, entity(caseID, "0000000000000000000000000000a086", fields)})
 				caseIDs[caseIndex] = caseID
 			}
 			statementID = stableID("execution", owner, statementPath, "native-select")

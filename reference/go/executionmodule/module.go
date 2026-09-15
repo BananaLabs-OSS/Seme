@@ -32,7 +32,7 @@ func ValidateSliceConstructElementCount(count int) error {
 }
 
 func Declarations(version int) ([]Schema, error) {
-	if version < 2 || version > 112 {
+	if version < 2 || version > 113 {
 		return nil, fmt.Errorf("unsupported Core Execution version %d", version)
 	}
 	schemas := []Schema{
@@ -431,13 +431,17 @@ func Declarations(version int) ([]Schema, error) {
 		}})
 	}
 	if version >= 101 {
+		selectCaseFields := []Field{
+			field(0xa0860, "native_select_case.operation", 4, 0, 0),
+			field(0xa0861, "native_select_case.channel", 5, 0, 2),
+			field(0xa0862, "native_select_case.value", 5, 0, 2),
+			field(0xa0863, "native_select_case.body", 5, 0x9080, 0),
+		}
+		if version >= 113 {
+			selectCaseFields = append(selectCaseFields, field(0xa0864, "native_select_case.bindings", 5, 0xa08b, 2))
+		}
 		schemas = append(schemas,
-			Schema{0xa086, "NativeSelectCase", []Field{
-				field(0xa0860, "native_select_case.operation", 4, 0, 0),
-				field(0xa0861, "native_select_case.channel", 5, 0, 2),
-				field(0xa0862, "native_select_case.value", 5, 0, 2),
-				field(0xa0863, "native_select_case.body", 5, 0x9080, 0),
-			}},
+			Schema{0xa086, "NativeSelectCase", selectCaseFields},
 			Schema{0xa087, "NativeSelect", []Field{
 				field(0xa0870, "native_select.language", 4, 0, 0),
 				field(0xa0871, "native_select.cases", 5, 0xa086, 2),
@@ -466,6 +470,13 @@ func Declarations(version int) ([]Schema, error) {
 			field(0xa08a2, "native_indirect_invocation.callable", 5, 0, 0),
 			field(0xa08a3, "native_indirect_invocation.arguments", 5, 0, 2),
 			field(0xa08a4, "native_indirect_invocation.result_type", 5, 0, 0),
+		}})
+	}
+	if version >= 113 {
+		schemas = append(schemas, Schema{0xa08b, "NativeSelectBinding", []Field{
+			field(0xa08b0, "native_select_binding.name", 4, 0, 0),
+			field(0xa08b1, "native_select_binding.type", 5, 0, 0),
+			field(0xa08b2, "native_select_binding.position", 3, 0, 0),
 		}})
 	}
 	return schemas, nil

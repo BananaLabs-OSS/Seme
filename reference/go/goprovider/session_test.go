@@ -2503,6 +2503,28 @@ func TestIncrementalSessionRetainsNativeSelect(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsNativeSelectReceiveBindings(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v113/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-select-bindings", Entry: "Receive", Files: map[string]string{
+		"select.go": "package sample\nfunc Receive(input <-chan int64) int64 { result := int64(0); select { case value, ok := <-input: if ok { result = value }; default: result = 1 }; return result }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native select bindings = %#v", result)
+	}
+	for _, schema := range []string{"0000000000000000000000000000a086", "0000000000000000000000000000a087", "0000000000000000000000000000a08b"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("native select binding schema %s missing", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsParallelClassicFor(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v102/module.g1")
 	if err != nil {
