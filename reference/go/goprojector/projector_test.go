@@ -789,6 +789,32 @@ func TestProjectsCompositeTypeConversionBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if string(Run("seme")) != "seme" { t.Fatal("conversion") } }`)
 }
 
+func TestProjectsGeneralImmutableClosureBlockBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v110/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "nativeproof", Entry: "Run", Files: map[string]string{
+		"closure.go": "package sample\nfunc Run(base int64) func(int64) int64 { return func(value int64) int64 { total := base + value; return total } }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("general closure lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "func(value int64) int64") || !strings.Contains(source, "total := (base + value)") {
+		t.Fatalf("projection lacks general closure block:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Run(4)(5) != 9 { t.Fatal("closure") } }`)
+}
+
 func TestProjectsNativeChannelSendBackToGo(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v100/module.g1")
 	if err != nil {

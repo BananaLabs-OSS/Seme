@@ -2238,9 +2238,12 @@ func expr(id string, c context) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		result, err := typeNameRelative(c.graph, resultID, c.typeNames, c.familyNames)
-		if err != nil {
-			return "", err
+		result := ""
+		if resultType, ok := c.graph[resultID]; !ok || resultType.schema != sUnitType {
+			result, err = typeNameRelative(c.graph, resultID, c.typeNames, c.familyNames)
+			if err != nil {
+				return "", err
+			}
 		}
 		next := c
 		next.parameters = cloneNames(c.parameters)
@@ -2276,6 +2279,17 @@ func expr(id string, c context) (string, error) {
 				return "", er
 			}
 			next.captures[captureID] = rendered
+		}
+		if bodyEntity, ok := c.graph[bodyID]; ok && bodyEntity.schema == sBlock {
+			body, err := projectBlock(bodyID, next)
+			if err != nil {
+				return "", err
+			}
+			resultClause := ""
+			if result != "" {
+				resultClause = " " + result
+			}
+			return "func(" + strings.Join(declarations, ", ") + ")" + resultClause + " {\n" + body + "\n}", nil
 		}
 		body, err := expr(bodyID, next)
 		if err != nil {

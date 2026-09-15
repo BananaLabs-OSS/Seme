@@ -141,6 +141,12 @@ type goExpression struct {
 	elementTypeID     string
 	productIndex      uint64
 	productTypes      []string
+	closureBody       *goBlock
+	closureParamNames []string
+	closureParamTypes []string
+	captureNames      []string
+	captureTypes      []string
+	captureValues     []*goExpression
 }
 
 func emitCanonicalExpression(expression *goExpression, owner string, parameterIDs []string, integerID string) ([]graphEntity, string, error) {
@@ -660,6 +666,45 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			emitted[id] = graphEntity{id, entity(id, "00000000000000000000000000009013", []graphField{refField(0x9130, expression.bindingID)})}
 			return id, nil
 		case goClosureConstruct:
+			if expression.closureBody != nil {
+				if len(expression.closureParamNames) != len(expression.closureParamTypes) || len(expression.captureNames) != len(expression.captureTypes) || len(expression.captureNames) != len(expression.captureValues) || expression.nativeResultType == "" {
+					return "", fmt.Errorf("expression.general_closure_incomplete")
+				}
+				for nativeID, spelling := range expression.nativeTypes {
+					emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, "go"), bytesField(0xa0711, spelling)})}
+				}
+				unitType := stableID("execution", "type", "unit")
+				if expression.nativeResultType == unitType {
+					emitted[unitType] = graphEntity{unitType, entity(unitType, "0000000000000000000000000000a06a", nil)}
+				}
+				parameterIDs := make([]string, len(expression.closureParamNames))
+				for index, name := range expression.closureParamNames {
+					parameterIDs[index] = expressionNodeID(owner, path, "closure-parameter-"+strconv.Itoa(index))
+					emitted[parameterIDs[index]] = graphEntity{parameterIDs[index], entity(parameterIDs[index], "00000000000000000000000000009012", []graphField{bytesField(0x9120, name), refField(0x9121, expression.closureParamTypes[index]), unsignedField(0x9122, uint64(index))})}
+				}
+				captureIDs := make([]string, len(expression.captureNames))
+				for index, name := range expression.captureNames {
+					value, err := emit(expression.captureValues[index], path+".capture."+strconv.Itoa(index)+".value")
+					if err != nil {
+						return "", err
+					}
+					captureIDs[index] = expressionNodeID(owner, path, "capture-"+strconv.Itoa(index))
+					emitted[captureIDs[index]] = graphEntity{captureIDs[index], entity(captureIDs[index], "0000000000000000000000000000a021", []graphField{bytesField(0xa0210, name), refField(0xa0211, expression.captureTypes[index]), refField(0xa0212, value)})}
+				}
+				bindClosureCaptureIDs(expression.closureBody, captureIDs)
+				extra := []graphEntity{}
+				body, err := emitCanonicalBlockScoped(expression.closureBody, owner, path+".body", parameterIDs, integerID, map[int]string{}, &extra)
+				if err != nil {
+					return "", err
+				}
+				for _, item := range extra {
+					emitted[item.id] = item
+				}
+				emitted[expression.typeID] = graphEntity{expression.typeID, entity(expression.typeID, "0000000000000000000000000000a020", []graphField{refsField(0xa0200, expression.closureParamTypes), refField(0xa0201, expression.nativeResultType)})}
+				id := expressionNodeID(owner, path, "closure")
+				emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a023", []graphField{refField(0xa0230, expression.typeID), refsField(0xa0231, parameterIDs), refsField(0xa0232, captureIDs), refField(0xa0233, body)})}
+				return id, nil
+			}
 			captured, err := emit(expression.left, path+".capture.value")
 			if err != nil {
 				return "", err
@@ -1156,6 +1201,9 @@ type goRecordInfo struct {
 func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {
 	switch expression := ast.Unparen(expression).(type) {
 	case *ast.Ident:
+		if binding := functions[info.Uses[expression]]; strings.HasPrefix(binding, "closure-capture:") {
+			return &goExpression{kind: goCaptureRead, bindingID: binding}, nil
+		}
 		if signature.Recv() != nil && info.Uses[expression] == signature.Recv() {
 			return &goExpression{kind: goReceiverRead, receiverID: goReceiverID(signature, records)}, nil
 		}
@@ -1843,6 +1891,11 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 		}
 		return &goExpression{kind: goFunctionCall, callee: callee, arguments: arguments}, nil
 	case *ast.FuncLit:
+		if goExecutionModuleVersion(functions) >= 110 && functions[nil] == "native-default" {
+			if closure, err := analyzeGeneralGoClosure(expression, signature, info, locals, functions, records, mutableLocals); err == nil {
+				return closure, nil
+			}
+		}
 		closureSignature, ok := info.TypeOf(expression.Type).(*types.Signature)
 		if !ok || !isUnaryI64Function(closureSignature) || len(expression.Body.List) != 1 {
 			return nil, fmt.Errorf("expression.unsupported_closure")
@@ -2454,6 +2507,149 @@ func goNilableType(value types.Type) bool {
 	default:
 		return false
 	}
+}
+
+// analyzeGeneralGoClosure lifts an ordinary immutable Go closure as a canonical
+// ClosureConstruct with a real Block body. Captures are restricted to immutable
+// outer parameters, receivers, and locals: this is the exact Go value-capture
+// model for those bindings, while mutable capture cells remain a distinct
+// semantic feature.
+func analyzeGeneralGoClosure(function *ast.FuncLit, outer *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool) (*goExpression, error) {
+	closureSignature, ok := info.TypeOf(function.Type).(*types.Signature)
+	if !ok || closureSignature.Results().Len() > 1 {
+		return nil, fmt.Errorf("expression.unsupported_closure_signature")
+	}
+	type capture struct {
+		object  types.Object
+		name    string
+		typeID  string
+		value   *goExpression
+		mutable bool
+	}
+	candidates := map[types.Object]capture{}
+	add := func(object types.Object, value *goExpression) error {
+		if object == nil || value == nil {
+			return fmt.Errorf("expression.invalid_closure_capture")
+		}
+		typeID, supported := goSupportedTypeID(object.Type(), stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+		if !supported {
+			var native bool
+			typeID, native = goNativeTypeID(object.Type())
+			if !native {
+				return fmt.Errorf("expression.unsupported_closure_capture_type")
+			}
+		}
+		candidates[object] = capture{object: object, name: object.Name(), typeID: typeID, value: value, mutable: mutable[object]}
+		return nil
+	}
+	if outer.Recv() != nil {
+		if err := add(outer.Recv(), &goExpression{kind: goReceiverRead, receiverID: goReceiverID(outer, records)}); err != nil {
+			return nil, err
+		}
+	}
+	for index := 0; index < outer.Params().Len(); index++ {
+		if err := add(outer.Params().At(index), &goExpression{kind: goParameterRead, parameter: index}); err != nil {
+			return nil, err
+		}
+	}
+	for object, index := range locals {
+		kind := goLocalRead
+		if mutable[object] {
+			kind = goPlaceRead
+		}
+		_ = add(object, &goExpression{kind: kind, local: index})
+	}
+	ordered := []capture{}
+	seen := map[types.Object]bool{}
+	var captureErr error
+	ast.Inspect(function.Body, func(node ast.Node) bool {
+		if captureErr != nil {
+			return false
+		}
+		if nested, ok := node.(*ast.FuncLit); ok && nested != function {
+			captureErr = fmt.Errorf("expression.unsupported_nested_closure")
+			return false
+		}
+		name, ok := node.(*ast.Ident)
+		if !ok {
+			return true
+		}
+		object := info.Uses[name]
+		candidate, exists := candidates[object]
+		if !exists || seen[object] {
+			return true
+		}
+		if candidate.mutable {
+			captureErr = fmt.Errorf("expression.unsupported_mutable_closure_capture")
+			return false
+		}
+		seen[object] = true
+		ordered = append(ordered, candidate)
+		return true
+	})
+	if captureErr != nil {
+		return nil, captureErr
+	}
+	closureFunctions := make(map[types.Object]string, len(functions)+len(ordered))
+	for object, value := range functions {
+		closureFunctions[object] = value
+	}
+	for index, item := range ordered {
+		closureFunctions[item.object] = "closure-capture:" + strconv.Itoa(index)
+	}
+	next := 0
+	body, err := analyzeGoBlockScoped(function.Body.List, closureSignature, info, map[types.Object]int{}, closureFunctions, records, map[types.Object]bool{}, &next, false)
+	if err != nil {
+		return nil, err
+	}
+	nativeTypes := map[string]string{}
+	parameterNames := make([]string, closureSignature.Params().Len())
+	parameterTypes := make([]string, closureSignature.Params().Len())
+	for index := 0; index < closureSignature.Params().Len(); index++ {
+		parameter := closureSignature.Params().At(index)
+		parameterNames[index] = parameter.Name()
+		if parameterNames[index] == "" {
+			parameterNames[index] = "parameter_" + strconv.Itoa(index)
+		}
+		typeID, supported := goSupportedTypeID(parameter.Type(), stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+		if !supported {
+			var native bool
+			typeID, native = goNativeTypeID(parameter.Type())
+			if !native {
+				return nil, fmt.Errorf("expression.unsupported_closure_parameter_type")
+			}
+			spelling, _ := goNativeTypeSpelling(parameter.Type())
+			nativeTypes[typeID] = spelling
+		}
+		parameterTypes[index] = typeID
+	}
+	resultType := stableID("execution", "type", "unit")
+	if closureSignature.Results().Len() == 1 {
+		result := closureSignature.Results().At(0).Type()
+		var supported bool
+		resultType, supported = goSupportedTypeID(result, stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records)
+		if !supported {
+			var native bool
+			resultType, native = goNativeTypeID(result)
+			if !native {
+				return nil, fmt.Errorf("expression.unsupported_closure_result_type")
+			}
+			spelling, _ := goNativeTypeSpelling(result)
+			nativeTypes[resultType] = spelling
+		}
+	}
+	result := &goExpression{kind: goClosureConstruct, typeID: goFunctionTypeID(closureSignature), closureBody: body, closureParamNames: parameterNames, closureParamTypes: parameterTypes, nativeResultType: resultType, nativeTypes: nativeTypes}
+	for _, item := range ordered {
+		result.captureNames = append(result.captureNames, item.name)
+		result.captureTypes = append(result.captureTypes, item.typeID)
+		result.captureValues = append(result.captureValues, item.value)
+		if spelling, ok := goNativeTypeSpelling(item.object.Type()); ok {
+			if _, supported := goSupportedTypeID(item.object.Type(), stableID("execution", "type", "i64"), stableID("execution", "type", "bool"), stableID("execution", "type", "string"), records); !supported {
+				result.nativeTypes[item.typeID] = spelling
+			}
+		}
+	}
+	return result, nil
 }
 
 func analyzeNativeGoBuiltinCall(name string, call *ast.CallExpr, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutableLocals map[types.Object]bool) (*goExpression, error) {

@@ -6,6 +6,7 @@ import (
 	"go/token"
 	"go/types"
 	"strconv"
+	"strings"
 )
 
 type goStatement struct {
@@ -73,6 +74,69 @@ type goSelectCase struct {
 
 type goBlock struct {
 	statements []*goStatement
+}
+
+func bindClosureCaptureIDs(block *goBlock, ids []string) {
+	var expression func(*goExpression)
+	expression = func(value *goExpression) {
+		if value == nil {
+			return
+		}
+		if value.kind == goCaptureRead && strings.HasPrefix(value.bindingID, "closure-capture:") {
+			if index, err := strconv.Atoi(strings.TrimPrefix(value.bindingID, "closure-capture:")); err == nil && index >= 0 && index < len(ids) {
+				value.bindingID = ids[index]
+			}
+		}
+		expression(value.left)
+		expression(value.right)
+		expression(value.initial)
+		expression(value.body)
+		expression(value.alternate)
+		expression(value.nativeSliceLow)
+		expression(value.nativeSliceHigh)
+		expression(value.nativeSliceMax)
+		for _, child := range value.arguments {
+			expression(child)
+		}
+		for _, child := range value.values {
+			expression(child)
+		}
+	}
+	var visitBlock func(*goBlock)
+	visitBlock = func(current *goBlock) {
+		if current == nil {
+			return
+		}
+		for _, statement := range current.statements {
+			for _, value := range []*goExpression{statement.condition, statement.returned, statement.initializer, statement.assignment, statement.evaluated, statement.deferred, statement.nativeFieldReceiver, statement.nativeFieldValue, statement.nativeIndexCollection, statement.nativeIndex, statement.nativeIndexValue, statement.nativeBindingValue, statement.nativePointer, statement.nativePointerValue, statement.nativeConcurrentStart, statement.nativeSendChannel, statement.nativeSendValue, statement.nativeReceiveChannel, statement.nativeSwitchSubject, statement.nativeRange} {
+				expression(value)
+			}
+			for _, value := range statement.returns {
+				expression(value)
+			}
+			for _, value := range statement.effectArgs {
+				expression(value)
+			}
+			for index := range statement.nativeSelectCases {
+				expression(statement.nativeSelectCases[index].channel)
+				expression(statement.nativeSelectCases[index].value)
+				visitBlock(statement.nativeSelectCases[index].body)
+			}
+			for index := range statement.nativeSwitchCases {
+				for _, value := range statement.nativeSwitchCases[index].values {
+					expression(value)
+				}
+				visitBlock(statement.nativeSwitchCases[index].body)
+			}
+			visitBlock(statement.thenBlock)
+			visitBlock(statement.elseBlock)
+			visitBlock(statement.loopBlock)
+			visitBlock(statement.whenBlock)
+			visitBlock(statement.nativeSwitchDefault)
+			visitBlock(statement.nativeRangeBody)
+		}
+	}
+	visitBlock(block)
 }
 
 func analyzeGoBlock(statements []ast.Stmt, signature *types.Signature, info *types.Info) (*goBlock, error) {
