@@ -93,6 +93,7 @@ const (
 	goNativeSlice
 	goNativeDereference
 	goNativeBinary
+	goNativeMethodValue
 )
 
 // goExpression is the provider's small typed source-expression tree. It keeps
@@ -423,6 +424,23 @@ func emitCanonicalExpressionWithLocals(expression *goExpression, owner string, p
 			id := expressionNodeID(owner, path, "native-binding-read")
 			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a073", []graphField{
 				bytesField(0xa0730, expression.nativeLanguage), bytesField(0xa0731, expression.nativeTarget), refField(0xa0732, expression.nativeResultType),
+			})}
+			return id, nil
+		case goNativeMethodValue:
+			if expression.left == nil || expression.nativeLanguage == "" || expression.nativeTarget == "" || expression.nativeSignature == "" || expression.nativeResultType == "" {
+				return "", fmt.Errorf("expression.native_method_value_incomplete")
+			}
+			receiver, err := emit(expression.left, path+".receiver")
+			if err != nil {
+				return "", err
+			}
+			for nativeID, spelling := range expression.nativeTypes {
+				emitted[nativeID] = graphEntity{nativeID, entity(nativeID, "0000000000000000000000000000a071", []graphField{bytesField(0xa0710, expression.nativeLanguage), bytesField(0xa0711, spelling)})}
+			}
+			id := expressionNodeID(owner, path, "native-method-value")
+			emitted[id] = graphEntity{id, entity(id, "0000000000000000000000000000a089", []graphField{
+				bytesField(0xa0890, expression.nativeLanguage), bytesField(0xa0891, expression.nativeTarget), bytesField(0xa0892, expression.nativeSignature),
+				refField(0xa0893, receiver), refField(0xa0894, expression.nativeResultType),
 			})}
 			return id, nil
 		case goFixedArrayConstruct:
@@ -2062,6 +2080,32 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 				}
 			}
 			return nil, fmt.Errorf("expression.unsupported_selector")
+		}
+		if method, ok := selection.Obj().(*types.Func); ok && selection.Kind() == types.MethodVal && goExecutionModuleVersion(functions) >= 105 && functions[nil] == "native-default" {
+			receiver, err := analyzeGoExpressionWithProgram(expression.X, signature, info, locals, functions, records, mutableLocals)
+			if err != nil {
+				return nil, err
+			}
+			resultType := info.TypeOf(expression)
+			resultTypeID, native := goNativeTypeID(resultType)
+			spelling, spelled := goNativeTypeSpelling(resultType)
+			if !native || !spelled {
+				return nil, fmt.Errorf("expression.native_method_value_type")
+			}
+			target := method.Name()
+			if method.Pkg() != nil {
+				target = method.Pkg().Path() + "." + target
+			}
+			return &goExpression{
+				kind: goNativeMethodValue, left: receiver, nativeLanguage: "go", nativeTarget: target,
+				nativeSignature: types.TypeString(method.Type(), func(pkg *types.Package) string {
+					if pkg == nil {
+						return ""
+					}
+					return pkg.Path()
+				}), nativeResultType: resultTypeID,
+				nativeTypes: map[string]string{resultTypeID: spelling},
+			}, nil
 		}
 		field, ok := selection.Obj().(*types.Var)
 		if !ok {

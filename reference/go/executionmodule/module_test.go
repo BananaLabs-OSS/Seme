@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(105); err == nil {
+	if _, err := Declarations(106); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -1035,6 +1035,24 @@ func TestVersion104PreservesVersion103Schema(t *testing.T) {
 	}
 	if !reflect.DeepEqual(current, previous) {
 		t.Fatal("v104 unexpectedly changed canonical schema")
+	}
+}
+
+func TestVersion105AddsNativeMethodValue(t *testing.T) {
+	previous, err := Declarations(104)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(105)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa089 || current[len(previous)].Name != "NativeMethodValue" {
+		t.Fatalf("v105 declarations = %#v", current[len(previous):])
+	}
+	fields := current[len(previous)].Fields
+	if len(fields) != 5 || fields[0].Kind != 4 || fields[1].Kind != 4 || fields[2].Kind != 4 || fields[3].Kind != 5 || fields[4].Kind != 5 || fields[4].Schema != 0xa071 {
+		t.Fatalf("NativeMethodValue fields = %#v", fields)
 	}
 }
 

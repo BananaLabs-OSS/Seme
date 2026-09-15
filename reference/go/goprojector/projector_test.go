@@ -685,6 +685,32 @@ func TestProjectsNativeConcurrentStartBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { Start(1) }`)
 }
 
+func TestProjectsNativeMethodValueBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v105/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "nativeproof", Entry: "Bind", Files: map[string]string{
+		"binding.go": "package sample\ntype Router struct{ Base int64 }\nfunc (r *Router) Resolve(value int64) int64 { return r.Base + value }\nfunc Bind(r *Router) func(int64) int64 { return r.Resolve }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native method value lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "return (r).Resolve") {
+		t.Fatalf("projection lacks method value:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Bind(&Router{Base: 1})(2) != 3 { t.Fatal("method value") } }`)
+}
+
 func TestProjectsNativeChannelSendBackToGo(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v100/module.g1")
 	if err != nil {
