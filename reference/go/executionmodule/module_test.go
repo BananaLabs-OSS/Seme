@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(96); err == nil {
+	if _, err := Declarations(97); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -909,6 +909,20 @@ func TestVersion95AddsNativeDereferenceAssignment(t *testing.T) {
 	}
 	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa083 || current[len(previous)].Name != "NativeDereferenceAssignment" {
 		t.Fatalf("v95 declarations = %#v", current[len(previous):])
+	}
+}
+
+func TestVersion96PreservesVersion95Schema(t *testing.T) {
+	previous, err := Declarations(95)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(96)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(current, previous) {
+		t.Fatal("v96 unexpectedly changed canonical schema")
 	}
 }
 

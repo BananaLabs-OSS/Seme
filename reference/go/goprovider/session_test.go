@@ -2276,6 +2276,26 @@ func TestIncrementalSessionRecognizesCompoundAssignmentMutability(t *testing.T) 
 	}
 }
 
+func TestIncrementalSessionRetainsNativeStringRange(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v96/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-string-range", Entry: "Count", Files: map[string]string{
+		"range.go": "package sample\nfunc Count(value string) int64 { total := int64(0); for index, codepoint := range value { if index >= 0 && codepoint > 0 { total = total + 1 } }; return total }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native string range = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a07c") {
+		t.Fatal("NativeRange missing")
+	}
+}
+
 func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
 	if err != nil {
