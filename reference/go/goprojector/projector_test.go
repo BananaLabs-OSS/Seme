@@ -711,6 +711,34 @@ func TestProjectsNativeChannelSendBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { done := make(chan struct{}, 1); Send(done); <-done }`)
 }
 
+func TestProjectsNativeSelectBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v101/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-select", Entry: "Wait", Files: map[string]string{
+		"select.go": "package sample\nfunc Wait(done, tick chan struct{}) int64 { for { select { case <-done: return 1; case tick <- struct{}{}: return 2; default: return 3 } } }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native select lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	for _, fragment := range []string{"select {", "case <-done:", "case tick <- struct{}{}:", "default:"} {
+		if !strings.Contains(source, fragment) {
+			t.Fatalf("projection lacks %q:\n%s", fragment, source)
+		}
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { done := make(chan struct{}); var tick chan struct{}; if Wait(done, tick) != 3 { t.Fatal("default") } }`)
+}
+
 func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
 	if err != nil {

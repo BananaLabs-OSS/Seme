@@ -94,6 +94,8 @@ const (
 	sNativeDerefAssign   = "0000000000000000000000000000a083"
 	sNativeConcurrent    = "0000000000000000000000000000a084"
 	sNativeChannelSend   = "0000000000000000000000000000a085"
+	sNativeSelectCase    = "0000000000000000000000000000a086"
+	sNativeSelect        = "0000000000000000000000000000a087"
 	sNativeSwitchCase    = "0000000000000000000000000000a077"
 	sNativeSwitch        = "0000000000000000000000000000a078"
 	sNativeRangeBinding  = "0000000000000000000000000000a07b"
@@ -874,7 +876,11 @@ func projectBlock(id string, c context) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			lines = append(lines, "\t"+keyword+condition+" {", indentBlock(body), "\t}")
+			header := keyword + condition
+			if statement.schema == sWhile && condition == "true" {
+				header = "for"
+			}
+			lines = append(lines, "\t"+header+" {", indentBlock(body), "\t}")
 		case sNativeRange:
 			if language, err := text(statement, "000000000000000000000000000a07c0"); err != nil || language != "go" {
 				return "", fmt.Errorf("go_projection.native_range_language")
@@ -1051,6 +1057,79 @@ func projectBlock(id string, c context) (string, error) {
 				return "", err
 			}
 			lines = append(lines, "\t"+channel+" <- "+value)
+		case sNativeSelect:
+			if language, err := text(statement, "000000000000000000000000000a0870"); err != nil || language != "go" {
+				return "", fmt.Errorf("go_projection.native_select_language")
+			}
+			caseIDs, err := refs(statement, "000000000000000000000000000a0871")
+			if err != nil {
+				return "", err
+			}
+			lines = append(lines, "\tselect {")
+			for _, caseID := range caseIDs {
+				selectCase, ok := c.graph[caseID]
+				if !ok || selectCase.schema != sNativeSelectCase {
+					return "", fmt.Errorf("go_projection.native_select_case")
+				}
+				operation, err := text(selectCase, "000000000000000000000000000a0860")
+				if err != nil {
+					return "", err
+				}
+				channelIDs, err := refs(selectCase, "000000000000000000000000000a0861")
+				if err != nil {
+					return "", err
+				}
+				valueIDs, err := refs(selectCase, "000000000000000000000000000a0862")
+				if err != nil {
+					return "", err
+				}
+				header := "\tdefault:"
+				switch operation {
+				case "receive":
+					if len(channelIDs) != 1 || len(valueIDs) != 0 {
+						return "", fmt.Errorf("go_projection.native_select_receive")
+					}
+					channel, err := expr(channelIDs[0], c)
+					if err != nil {
+						return "", err
+					}
+					header = "\tcase <-" + channel + ":"
+				case "send":
+					if len(channelIDs) != 1 || len(valueIDs) != 1 {
+						return "", fmt.Errorf("go_projection.native_select_send")
+					}
+					channel, err := expr(channelIDs[0], c)
+					if err != nil {
+						return "", err
+					}
+					value, err := expr(valueIDs[0], c)
+					if err != nil {
+						return "", err
+					}
+					header = "\tcase " + channel + " <- " + value + ":"
+				case "default":
+					if len(channelIDs) != 0 || len(valueIDs) != 0 {
+						return "", fmt.Errorf("go_projection.native_select_default")
+					}
+				default:
+					return "", fmt.Errorf("go_projection.native_select_operation")
+				}
+				bodyID, err := ref(selectCase, "000000000000000000000000000a0863")
+				if err != nil {
+					return "", err
+				}
+				child := c
+				child.locals = cloneNames(c.locals)
+				body, err := projectBlock(bodyID, child)
+				if err != nil {
+					return "", err
+				}
+				lines = append(lines, header)
+				if body != "" {
+					lines = append(lines, indentBlock(body))
+				}
+			}
+			lines = append(lines, "\t}")
 		case sNativeIndexAssign:
 			if language, err := text(statement, "000000000000000000000000000a0800"); err != nil || language != "go" {
 				return "", fmt.Errorf("go_projection.native_index_assignment_language")
