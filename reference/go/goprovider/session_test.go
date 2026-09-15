@@ -2353,6 +2353,26 @@ func TestIncrementalSessionRetainsNativeConcurrentStart(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsNativeChannelSend(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v100/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-channel-send", Entry: "Send", Files: map[string]string{
+		"send.go": "package sample\nfunc Send(done chan struct{}) { done <- struct{}{} }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native channel send = %#v", result)
+	}
+	if !strings.Contains(result.CanonicalG1, "0000000000000000000000000000a085") {
+		t.Fatal("NativeChannelSend missing")
+	}
+}
+
 func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
 	if err != nil {
