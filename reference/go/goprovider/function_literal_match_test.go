@@ -31,14 +31,13 @@ func Read(result Result[Settings, int64]) int64 {
 	}
 }
 
-func TestFunctionLiteralMatchRejectsExtraBehaviorAndStandalonePartialRecord(t *testing.T) {
+func TestFunctionLiteralMatchRejectsExtraBehavior(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v36/module.g1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for name, body := range map[string]string{
-		"extra-behavior":  `value := func() Settings { matched := result; matched.Ok = false; if matched.Ok { return matched.Value }; return Settings{} }(); return value.Limit`,
-		"standalone-zero": `value := Settings{}; return value.Limit`,
+		"extra-behavior": `value := func() Settings { matched := result; matched.Ok = false; if matched.Ok { return matched.Value }; return Settings{} }(); return value.Limit`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			source := "package match\ntype Result[T, E any] struct { Ok bool; Value T; Error E }\ntype Settings struct { Limit int64 }\nfunc Read(result Result[Settings, int64]) int64 { " + body + " }"

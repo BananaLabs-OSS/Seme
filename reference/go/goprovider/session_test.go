@@ -2432,6 +2432,23 @@ func TestIncrementalSessionRetainsNativeChannelReceive(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsEmptyRecordLiteral(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v104/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/empty-record", Entry: "Empty", Files: map[string]string{
+		"empty.go": "package sample\ntype Entry struct { Count int64; Name string }\nfunc Empty() Entry { return Entry{} }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("empty record literal = %#v", result)
+	}
+}
+
 func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
 	if err != nil {

@@ -2005,7 +2005,7 @@ func analyzeGoExpressionWithProgram(expression ast.Expr, signature *types.Signat
 			values[fieldIndex] = value
 		}
 		for index, value := range values {
-			if value == nil && keyedLiteral {
+			if value == nil && (keyedLiteral || len(expression.Elts) == 0) {
 				var err error
 				values[index], err = zeroGoExpression(record.ordered[index].Type(), records, map[string]bool{}, 0)
 				if err != nil && functions[nil] == "native-default" && named.Obj() != nil && named.Obj().Pkg() != nil && goTypeOwnedOutsidePackage(record.ordered[index].Type(), named.Obj().Pkg().Path()) {
