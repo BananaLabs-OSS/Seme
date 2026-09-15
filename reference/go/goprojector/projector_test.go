@@ -631,6 +631,34 @@ func TestProjectsMapLookupIfInitializerBackToGoSyntax(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Lookup(map[string]string{"a":"yes"}, "a") != "yes" || Lookup(nil, "x") != "missing" { t.Fatal("lookup") } }`)
 }
 
+func TestProjectsNativeIntegerForBindingBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v98/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-for-binding", Entry: "Sum", Files: map[string]string{
+		"loop.go": "package sample\nfunc Sum(limit int) int { total := 0; for index := 0; index < limit; index++ { total += index }; return total }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native integer for binding lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	for _, fragment := range []string{"index := int(0)", "for !(limit <= index)", "index = (index + 1)"} {
+		if !strings.Contains(source, fragment) {
+			t.Fatalf("projection lacks %q:\n%s", fragment, source)
+		}
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { if Sum(5) != 10 { t.Fatal(Sum(5)) } }`)
+}
+
 func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
 	if err != nil {
