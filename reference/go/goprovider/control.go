@@ -40,6 +40,7 @@ type goStatement struct {
 	nativeConcurrentStart *goExpression
 	nativeSendChannel     *goExpression
 	nativeSendValue       *goExpression
+	nativeReceiveChannel  *goExpression
 	nativeSelectCases     []goSelectCase
 	nativeSwitchSubject   *goExpression
 	nativeSwitchCases     []goSwitchCase
@@ -1765,6 +1766,17 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			}
 			block.statements = append(block.statements, &goStatement{nativeSelectCases: cases})
 		case *ast.ExprStmt:
+			if receive, ok := ast.Unparen(statement.X).(*ast.UnaryExpr); ok && receive.Op == token.ARROW && goExecutionModuleVersion(functions) >= 103 && functions[nil] == "native-default" {
+				channel, err := analyzeGoExpressionWithProgram(receive.X, signature, info, locals, functions, records, mutable)
+				if err != nil {
+					return nil, err
+				}
+				if _, ok := goUnderlying(info, receive.X).(*types.Chan); !ok {
+					return nil, fmt.Errorf("control.channel_receive_target")
+				}
+				block.statements = append(block.statements, &goStatement{nativeReceiveChannel: channel})
+				continue
+			}
 			call, ok := statement.X.(*ast.CallExpr)
 			if !ok {
 				return nil, fmt.Errorf("control.effect_shape")
@@ -2646,6 +2658,14 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, valueEntities...)
 			statementID = stableID("execution", owner, statementPath, "native-index-assignment")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a080", []graphField{bytesField(0xa0800, "go"), refField(0xa0801, collectionID), refField(0xa0802, indexID), refField(0xa0803, valueID)})})
+		} else if statement.nativeReceiveChannel != nil {
+			channelEntities, channelID, err := emitCanonicalExpressionWithLocals(statement.nativeReceiveChannel, owner+":"+statementPath+":native-channel-receive", parameterIDs, localIDs, integerTypeID)
+			if err != nil {
+				return "", err
+			}
+			*instances = append(*instances, channelEntities...)
+			statementID = stableID("execution", owner, statementPath, "native-channel-receive")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a088", []graphField{bytesField(0xa0880, "go"), refField(0xa0881, channelID)})})
 		} else if statement.nativeSelectCases != nil {
 			caseIDs := make([]string, len(statement.nativeSelectCases))
 			for caseIndex, selectCase := range statement.nativeSelectCases {

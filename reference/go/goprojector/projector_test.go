@@ -765,6 +765,32 @@ func TestProjectsParallelClassicForBackToGo(t *testing.T) {
 	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { got := Reverse([]int64{1,2,3,4}); want := []int64{4,3,2,1}; for i := range want { if got[i] != want[i] { t.Fatalf("%v", got) } } }`)
 }
 
+func TestProjectsNativeChannelReceiveBackToGo(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v103/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := goprovider.NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(goprovider.DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-channel-receive", Entry: "Wait", Files: map[string]string{
+		"receive.go": "package sample\nfunc Wait(done chan struct{}) { <-done }\n",
+	}})
+	if !result.Valid || len(result.NativeIslands) != 0 {
+		t.Fatalf("native channel receive lift = %#v", result)
+	}
+	projected, err := goprojector.Project([]byte(result.CanonicalG1), "nativeproof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(projected)
+	if !strings.Contains(source, "<-done") {
+		t.Fatalf("projection lacks channel receive:\n%s", source)
+	}
+	runNativeWithTest(t, map[string]string{"projected.go": source}, `func TestNative(t *testing.T) { done := make(chan struct{}, 1); done <- struct{}{}; Wait(done) }`)
+}
+
 func TestProjectsNativeSliceBackToGoSyntax(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v71/module.g1")
 	if err != nil {
