@@ -40,6 +40,7 @@ type goStatement struct {
 	nativeConcurrentStart *goExpression
 	nativeSendChannel     *goExpression
 	nativeSendValue       *goExpression
+	nativeSelectCases     []goSelectCase
 	nativeSwitchSubject   *goExpression
 	nativeSwitchCases     []goSwitchCase
 	nativeSwitchDefault   *goBlock
@@ -60,6 +61,13 @@ type goRangeBinding struct {
 type goSwitchCase struct {
 	values []*goExpression
 	body   *goBlock
+}
+
+type goSelectCase struct {
+	operation string
+	channel   *goExpression
+	value     *goExpression
+	body      *goBlock
 }
 
 type goBlock struct {
@@ -1585,6 +1593,57 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 				return nil, err
 			}
 			block.statements = append(block.statements, &goStatement{nativeSendChannel: channel, nativeSendValue: value})
+		case *ast.SelectStmt:
+			if goExecutionModuleVersion(functions) < 101 || functions[nil] != "native-default" {
+				return nil, fmt.Errorf("control.unsupported_statement:%T", statement)
+			}
+			cases := make([]goSelectCase, 0, len(statement.Body.List))
+			for _, rawClause := range statement.Body.List {
+				clause, ok := rawClause.(*ast.CommClause)
+				if !ok {
+					return nil, fmt.Errorf("control.select_clause")
+				}
+				selectCase := goSelectCase{operation: "default"}
+				switch communication := clause.Comm.(type) {
+				case nil:
+				case *ast.ExprStmt:
+					receive, ok := ast.Unparen(communication.X).(*ast.UnaryExpr)
+					if !ok || receive.Op != token.ARROW {
+						return nil, fmt.Errorf("control.select_receive_shape")
+					}
+					channel, err := analyzeGoExpressionWithProgram(receive.X, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					if _, ok := goUnderlying(info, receive.X).(*types.Chan); !ok {
+						return nil, fmt.Errorf("control.select_receive_target")
+					}
+					selectCase.operation, selectCase.channel = "receive", channel
+				case *ast.SendStmt:
+					channelType, ok := goUnderlying(info, communication.Chan).(*types.Chan)
+					if !ok {
+						return nil, fmt.Errorf("control.select_send_target")
+					}
+					channel, err := analyzeGoExpressionWithProgram(communication.Chan, signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					value, err := analyzeGoExpressionExpected(communication.Value, channelType.Elem(), signature, info, locals, functions, records, mutable)
+					if err != nil {
+						return nil, err
+					}
+					selectCase.operation, selectCase.channel, selectCase.value = "send", channel, value
+				default:
+					return nil, fmt.Errorf("control.select_communication:%T", communication)
+				}
+				body, err := analyzeGoBlockScoped(clause.Body, signature, info, locals, functions, records, mutable, next, false)
+				if err != nil {
+					return nil, err
+				}
+				selectCase.body = body
+				cases = append(cases, selectCase)
+			}
+			block.statements = append(block.statements, &goStatement{nativeSelectCases: cases})
 		case *ast.ExprStmt:
 			call, ok := statement.X.(*ast.CallExpr)
 			if !ok {
@@ -1610,7 +1669,7 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 			return nil, fmt.Errorf("control.unsupported_statement:%T", raw)
 		}
 	}
-	total := len(block.statements) > 0 && (block.statements[len(block.statements)-1].returned != nil || len(block.statements[len(block.statements)-1].returns) != 0 || nativeSwitchAlwaysReturns(block.statements[len(block.statements)-1]))
+	total := len(block.statements) > 0 && goStatementDoesNotFallThrough(block.statements[len(block.statements)-1])
 	if requireReturn && !total {
 		if signature.Results().Len() == 0 {
 			block.statements = append(block.statements, &goStatement{returned: &goExpression{kind: goUnitValue}})
@@ -1619,6 +1678,14 @@ func analyzeGoBlockScoped(statements []ast.Stmt, signature *types.Signature, inf
 		}
 	}
 	return block, nil
+}
+
+func goStatementDoesNotFallThrough(statement *goStatement) bool {
+	if statement == nil {
+		return false
+	}
+	return statement.returned != nil || len(statement.returns) != 0 || nativeSwitchAlwaysReturns(statement) ||
+		statement.loopBlock != nil && statement.condition != nil && statement.condition.kind == goBooleanLiteral && statement.condition.boolean
 }
 
 func nativeSwitchAlwaysReturns(statement *goStatement) bool {
@@ -1638,7 +1705,7 @@ func goBlockAlwaysReturns(block *goBlock) bool {
 		return false
 	}
 	last := block.statements[len(block.statements)-1]
-	return last.returned != nil || len(last.returns) != 0 || nativeSwitchAlwaysReturns(last)
+	return goStatementDoesNotFallThrough(last)
 }
 
 func analyzeGoNativeMapRange(statement *ast.RangeStmt, signature *types.Signature, info *types.Info, locals map[types.Object]int, functions map[types.Object]string, records map[*types.Named]goRecordInfo, mutable map[types.Object]bool, next *int) (*goStatement, bool, error) {
@@ -2429,6 +2496,37 @@ func emitCanonicalBlockScoped(block *goBlock, owner, path string, parameterIDs [
 			*instances = append(*instances, valueEntities...)
 			statementID = stableID("execution", owner, statementPath, "native-index-assignment")
 			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a080", []graphField{bytesField(0xa0800, "go"), refField(0xa0801, collectionID), refField(0xa0802, indexID), refField(0xa0803, valueID)})})
+		} else if statement.nativeSelectCases != nil {
+			caseIDs := make([]string, len(statement.nativeSelectCases))
+			for caseIndex, selectCase := range statement.nativeSelectCases {
+				channelIDs := []string{}
+				if selectCase.channel != nil {
+					channelEntities, channelID, err := emitCanonicalExpressionWithLocals(selectCase.channel, owner+":"+statementPath+":native-select-channel:"+strconv.Itoa(caseIndex), parameterIDs, localIDs, integerTypeID)
+					if err != nil {
+						return "", err
+					}
+					*instances = append(*instances, channelEntities...)
+					channelIDs = append(channelIDs, channelID)
+				}
+				valueIDs := []string{}
+				if selectCase.value != nil {
+					valueEntities, valueID, err := emitCanonicalExpressionWithLocals(selectCase.value, owner+":"+statementPath+":native-select-value:"+strconv.Itoa(caseIndex), parameterIDs, localIDs, integerTypeID)
+					if err != nil {
+						return "", err
+					}
+					*instances = append(*instances, valueEntities...)
+					valueIDs = append(valueIDs, valueID)
+				}
+				bodyID, err := emitCanonicalBlockScoped(selectCase.body, owner, statementPath+".native-select-case."+strconv.Itoa(caseIndex), parameterIDs, integerTypeID, localIDs, instances)
+				if err != nil {
+					return "", err
+				}
+				caseID := stableID("execution", owner, statementPath, "native-select-case", strconv.Itoa(caseIndex))
+				*instances = append(*instances, graphEntity{caseID, entity(caseID, "0000000000000000000000000000a086", []graphField{bytesField(0xa0860, selectCase.operation), refsField(0xa0861, channelIDs), refsField(0xa0862, valueIDs), refField(0xa0863, bodyID)})})
+				caseIDs[caseIndex] = caseID
+			}
+			statementID = stableID("execution", owner, statementPath, "native-select")
+			*instances = append(*instances, graphEntity{statementID, entity(statementID, "0000000000000000000000000000a087", []graphField{bytesField(0xa0870, "go"), refsField(0xa0871, caseIDs)})})
 		} else if statement.nativeSwitchSubject != nil {
 			subjectEntities, subjectID, err := emitCanonicalExpressionWithLocals(statement.nativeSwitchSubject, owner+":"+statementPath+":native-switch-subject", parameterIDs, localIDs, integerTypeID)
 			if err != nil {

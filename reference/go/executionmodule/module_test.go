@@ -417,7 +417,7 @@ func TestVersionNineteenAddsStructuredWhen(t *testing.T) {
 }
 
 func TestUnsupportedVersionRejects(t *testing.T) {
-	if _, err := Declarations(101); err == nil {
+	if _, err := Declarations(102); err == nil {
 		t.Fatal("unsupported version accepted")
 	}
 }
@@ -979,6 +979,20 @@ func TestVersion100AddsNativeChannelSend(t *testing.T) {
 	}
 	if len(current) != len(previous)+1 || current[len(previous)].ID != 0xa085 || current[len(previous)].Name != "NativeChannelSend" {
 		t.Fatalf("v100 declarations = %#v", current[len(previous):])
+	}
+}
+
+func TestVersion101AddsNativeSelect(t *testing.T) {
+	previous, err := Declarations(100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	current, err := Declarations(101)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(current) != len(previous)+2 || current[len(previous)].ID != 0xa086 || current[len(previous)].Name != "NativeSelectCase" || current[len(previous)+1].ID != 0xa087 || current[len(previous)+1].Name != "NativeSelect" {
+		t.Fatalf("v101 declarations = %#v", current[len(previous):])
 	}
 }
 

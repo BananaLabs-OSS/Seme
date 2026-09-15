@@ -2373,6 +2373,28 @@ func TestIncrementalSessionRetainsNativeChannelSend(t *testing.T) {
 	}
 }
 
+func TestIncrementalSessionRetainsNativeSelect(t *testing.T) {
+	module, err := os.ReadFile("../../../modules/execution/v101/module.g1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	session, err := NewIncrementalSession(module)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := session.Apply(DocumentSnapshot{Revision: 1, PackagePath: "example.test/native-select", Entry: "Wait", Files: map[string]string{
+		"select.go": "package sample\nfunc Wait(done, tick chan struct{}) int64 { for { select { case <-done: return 1; case tick <- struct{}{}: return 2; default: return 3 } } }\n",
+	}})
+	if !result.Valid || len(result.Diagnostics) != 0 || len(result.NativeIslands) != 0 {
+		t.Fatalf("native select = %#v", result)
+	}
+	for _, schema := range []string{"0000000000000000000000000000a086", "0000000000000000000000000000a087"} {
+		if !strings.Contains(result.CanonicalG1, schema) {
+			t.Fatalf("native select schema %s missing", schema)
+		}
+	}
+}
+
 func TestIncrementalSessionRetainsNativeMultiResultAndIfInitializerTypes(t *testing.T) {
 	module, err := os.ReadFile("../../../modules/execution/v76/module.g1")
 	if err != nil {

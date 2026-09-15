@@ -912,6 +912,10 @@ launch as an explicit language-qualified concurrent start. Run
 channel send as an explicit language-qualified operation. Run
 `./scripts/check-execution-v100.sh`.
 
+[`Core Execution v101`](spec/core-execution-v101.md) preserves Go channel
+selection as typed receive, send, and default cases. Run
+`./scripts/check-execution-v101.sh`.
+
 The bounded [`Pure Value ABI v1`](spec/pure-value-abi-v1.md) derives recursive
 Bytes, Result, and Option layouts from canonical types. Its first executable
 reactor profile proves `Option<Result<bytes,text>> -> Boolean` with nested
